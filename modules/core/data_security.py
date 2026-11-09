@@ -1,0 +1,190 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+
+"""Fail-closed inspection SQL validation and recursive disclosure controls."""
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
+import re
+from collections.abc import Mapping
+
+_SECRET = re.compile(r'password|passwd|pwd|secret|token|private.?key|credential', re.I)
+_ASSIGNMENT = re.compile(r'(?i)(password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*(?:\{[^}]*\}|\"[^\"]*\"|\'[^\']*\'|[^\s;,]+)')
+_IPV4 = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
+_EMAIL = re.compile(r'\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b')
+_DENIED = set(
+    (
+        'INSERT UPDATE DELETE DROP ALTER TRUNCATE CREATE REPLACE MERGE GRANT REVOKE COMMENT RENAME  '
+        'SET EXEC EXECUTE BEGIN COMMIT ROLLBACK SAVEPOINT CALL LOCK UNLOCK FLUSH PURGE ANALYZE  '
+        'ANALYSE VACUUM INTO OUTFILE DUMPFILE ATTACH DETACH COPY LOAD_FILE SLEEP BENCHMARK WAITFOR  '
+        'NEXTVAL SETVAL PG_SLEEP PG_READ_FILE PG_WRITE_FILE LO_IMPORT LO_EXPORT GET_LOCK  '
+        'RELEASE_LOCK OPENROWSET OPENDATASOURCE DBLINK_EXEC '
+    ).split()
+)
+_READ_FUNCTIONS = set(
+    (
+        'IS_MEMBER COUNT SUM MIN MAX AVG ROUND FLOOR CEIL CEILING ABS MOD TRUNC COALESCE NULLIF NVL  '
+        'NVL2 DECODE CAST CONVERT TRY_CONVERT TO_CHAR TO_DATE TO_NUMBER TO_TIMESTAMP UPPER LOWER  '
+        'LENGTH CHAR_LENGTH SUBSTR SUBSTRING LEFT RIGHT REPLACE CONCAT CONCAT_WS TRIM LTRIM RTRIM  '
+        'REVERSE INSTR LOCATE LPAD RPAD REGEXP_REPLACE REGEXP_SUBSTR EXTRACT DATE_PART DATE_TRUNC  '
+        'DATEADD DATEDIFF GETDATE GETUTCDATE CURRENT_TIMESTAMP NOW VERSION SERVERPROPERTY  '
+        'STATS_DATE IS_SRVROLEMEMBER OBJECTPROPERTY OBJECTPROPERTYEX DATABASEPROPERTYEX OBJECT_NAME  '
+        'OBJECT_ID DB_NAME DB_ID SCHEMA_NAME USER_NAME SUSER_SNAME FILEPROPERTY  '
+        'SQL_VARIANT_PROPERTY ISNULL IIF FORMAT ROW_NUMBER RANK DENSE_RANK LAG LEAD FIRST_VALUE  '
+        'LAST_VALUE PERCENTILE_CONT PERCENTILE_DISC GROUPING GROUPING_ID POWER SQRT LOG LN EXP  '
+        'PERCENT_RANK CUME_DIST SYS_CONTEXT NVL DECODE IN OVER AS FROM WHERE HAVING WITH VALUES  '
+        'EXISTS PARTITION SETS GROUP BY ROLLUP CUBE SELECT DISTINCT TABLE PG_SIZE_PRETTY  '
+        'PG_DATABASE_SIZE PG_TABLE_SIZE PG_TOTAL_RELATION_SIZE PG_RELATION_SIZE  '
+        'PG_STAT_GET_BACKEND_PID CURRENT_SETTING HAS_TABLE_PRIVILEGE HAS_DATABASE_PRIVILEGE  '
+        'HAS_SCHEMA_PRIVILEGE HAS_FUNCTION_PRIVILEGE HAS_COLUMN_PRIVILEGE ARRAY_AGG STRING_AGG  '
+        'LISTAGG XMLAGG XMLPARSE XMLSERIALIZE GREATEST LEAST NTILE BITAND HASHBYTES CHECKSUM  '
+        'CHECKSUM_AGG TIMESTAMPDIFF PG_POSTMASTER_START_TIME PG_TABLESPACE_SIZE PG_CURRENT_WAL_LSN '
+        'PG_IS_IN_RECOVERY PG_WALFILE_NAME PG_WAL_LSN_DIFF PG_LAST_WAL_RECEIVE_LSN AGE FILTER '
+        'PG_LS_DIR JOIN AND OR DATALENGTH DM_DB_INDEX_PHYSICAL_STATS DM_EXEC_SQL_TEXT NVARCHAR DBINFO '
+    ).split()
+)
+
+
+def assert_readonly_sql(sql):
+    """Accept one read statement, rejecting executable comments and known side effects.
+
+    This is an additional guard. Dedicated least-privilege accounts and fixed
+    metadata query catalogs remain required for customer inspection collection.
+    """
+    if not isinstance(sql, str) or not sql.strip() or len(sql) > 100000:
+        raise ValueError('巡检 SQL 为空或超出长度限制')
+    if '/*!' in sql or any(ord(c) < 32 and c not in '\r\n\t' for c in sql):
+        raise ValueError('禁止可执行注释或控制字符')
+    tokens = []
+    i = 0
+    semicolon = False
+    while i < len(sql):
+        char = sql[i]
+        if char.isspace():
+            i += 1
+            continue
+        if sql.startswith('--', i) or char == '#':
+            if sql.startswith('--', i) and i + 2 < len(sql) and not sql[i + 2].isspace():
+                raise ValueError('拒绝存在方言歧义的行注释')
+            end = sql.find('\n', i)
+            i = len(sql) if end < 0 else end + 1
+            continue
+        if sql.startswith('/*', i):
+            end = sql.find('*/', i + 2)
+            if end < 0:
+                raise ValueError('SQL 注释未闭合')
+            i = end + 2
+            continue
+        if semicolon:
+            raise ValueError('巡检只允许单条 SQL')
+        if char in "'\"`[":
+            end_char = ']' if char == '[' else char
+            i += 1
+            while i < len(sql):
+                if sql[i] == '\\' and char == "'":
+                    i += 2
+                    continue
+                if sql[i] == end_char:
+                    if i + 1 < len(sql) and sql[i + 1] == end_char:
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            else:
+                raise ValueError('SQL 引号未闭合')
+            if sql[i:].lstrip().startswith('(') and char != "'":
+                raise ValueError('禁止带引号的未知函数调用')
+            continue
+        if char == ';':
+            semicolon = True
+            i += 1
+            continue
+        match = re.match(r'[A-Za-z_][A-Za-z_0-9$]*', sql[i:])
+        if match:
+            token = match.group().upper()
+            if sql[i+len(match.group()):].lstrip().startswith('(') and token not in _READ_FUNCTIONS:
+                raise ValueError('未知函数须经只读审查后加入白名单')
+            tokens.append(token)
+            i += len(match.group())
+        else:
+            i += 1
+    if not tokens or tokens[0] not in {'SELECT', 'WITH', 'SHOW', 'DESC', 'DESCRIBE', 'EXPLAIN'}:
+        raise ValueError('巡检仅允许只读查询')
+    if any(t in _DENIED or t.startswith(('UTL_', 'DBMS_', 'XP_')) for t in tokens):
+        raise ValueError('巡检 SQL 包含写入、文件、外联或执行类操作')
+    if tokens[0] == 'EXPLAIN' and 'PLAN' in tokens:
+        raise ValueError('禁止写入执行计划表')
+
+
+def redact(value, *, mask_identity=False, key=''):
+    """Redact nested credentials and exported identities without mutating the input."""
+    if _SECRET.search(str(key)) and str(key) not in {'credential_reference','password_policy'}:
+        return '[REDACTED]'
+    if isinstance(value, Mapping):
+        output = {str(k): redact(v, mask_identity=mask_identity, key=str(k)) for k, v in value.items()}
+        label = str(value.get('name') or value.get('NAME') or value.get('variable_name') or value.get('VARIABLE_NAME') or '')
+        if _SECRET.search(label):
+            for field in ('value','VALUE','variable_value','VARIABLE_VALUE','setting'):
+                if field in output:
+                    output[field] = '[REDACTED]'
+        return output
+    if isinstance(value, (list, tuple)):
+        return [redact(v, mask_identity=mask_identity, key=key) for v in value]
+    if isinstance(value, str):
+        text = _ASSIGNMENT.sub(lambda m: m.group(1) + '=[REDACTED]', value)
+        text = re.sub(r'([A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@', r'\1[REDACTED]@', text)
+        text = re.sub(r'(?i)Bearer\s+[A-Za-z0-9._~+/-]+', 'Bearer [REDACTED]', text)
+        if 'sql' in key.lower() or key.lower() in {'query','statement','info','query_text','query_sample_text','statement_text'}:
+            text = re.sub(r"'(?:''|[^'])*'", "'?'", text)
+            text = re.sub(r'\b\d+(?:\.\d+)?\b', '?', text)
+        if mask_identity:
+            text = _IPV4.sub('[IP]', text)
+            public_authors = {'sdfiyon@gmail.com','xuzhongxin@sec.hn.cn'}
+            text = _EMAIL.sub(lambda m: m.group() if m.group() in public_authors else '[EMAIL]', text)
+            text = re.sub(r'(?<!\d)1[3-9]\d{9}(?!\d)', '[PHONE]', text)
+            text = re.sub(r'(?<!\w)\d{17}[0-9Xx](?!\w)', '[IDENTITY]', text)
+            if key.lower() in {'host', 'ip', 'hostname', 'user', 'username', 'db_user', 'ssh_user', 'owner', 'responsible_person'}:
+                text = '[MASKED]' if text else ''
+        return text
+    return value
+
+
+def ensure_egress_allowed(url):
+    """Customer data stays local unless the operator explicitly allowlists a TLS host."""
+    import ipaddress
+    import os
+    from urllib.parse import urlsplit
+    parsed = urlsplit(str(url))
+    if parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError('外联地址无效')
+    local = parsed.hostname.lower() == 'localhost'
+    try:
+        local = local or ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        pass
+    allowed = {host.strip().lower() for host in os.environ.get('DBPULSE_ALLOWED_EGRESS_HOSTS','').split(',') if host.strip()}
+    if not local and (parsed.scheme != 'https' or parsed.hostname.lower() not in allowed):
+        raise ValueError('数据安全策略阻断未批准的外部数据发送')
+
+
+def egress_urlopen(request, *, timeout=30, context=None, proxy=None):
+    """Send approved data without forwarding bodies or credentials across redirects."""
+    import ssl
+    import urllib.request
+    from urllib.error import HTTPError
+    ensure_egress_allowed(request.full_url)
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise HTTPError(req.full_url,code,'Data egress redirects are disabled',headers,fp)
+    tls=context or ssl.create_default_context()
+    if tls.verify_mode!=ssl.CERT_REQUIRED or not tls.check_hostname:
+        raise ValueError('数据外发须验证TLS证书与主机名')
+    handlers=[NoRedirect(),urllib.request.HTTPSHandler(context=tls)]
+    if proxy:handlers.append(urllib.request.ProxyHandler({'http':proxy,'https':proxy}))
+    opener=urllib.request.build_opener(*handlers)
+    return opener.open(request,timeout=timeout)

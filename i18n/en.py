@@ -5,6 +5,11 @@
 
 """RaccoonX English translation data"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 EN = {
     # CLI main menu
     "cli.main_banner_title": "Database Automation Inspector",
@@ -1771,6 +1776,9 @@ EN = {
     "webui.pg_report_filename": "PostgreSQLInspection_{ip}_{name}_{ts}",
     "webui.kingbase_report_filename": "KingbaseESInspection_{ip}_{name}_{ts}",
     "webui.gbase_report_filename": "GBase8sInspection_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.mongodb_report_filename": "MongoDB Inspection Report_{ip}_{name}_{ts}",
     "webui.log_mongodb_start": "Starting MongoDB inspection…",
     "webui.err_mongodb_module": "Failed to load MongoDB inspection module",
@@ -2795,7 +2803,7 @@ EN = {
     "webui.network_error": "Network error, please try again later",
     # ── About Page ──
     "webui.nav_about": "About RaccoonX",
-    "webui.about_desc": "RaccoonX is an open-source intelligent database inspection tool that supports health inspection and AI diagnostics for MySQL, PostgreSQL, Oracle, SQL Server, DM, TiDB, IvorySQL and other mainstream databases.",
+    "webui.about_desc": "DBPulse is an intelligent database inspection tool that supports health inspection and AI diagnostics for MySQL, PostgreSQL, Oracle, SQL Server, DM, TiDB, IvorySQL and other mainstream databases.",
     "webui.about_author": "Author: Jack Ge · Apache License 2.0 · Website: dbcheck.top",
     "webui.about_grayscale_note": "The anniversary grayscale mode is part of RaccoonX's original design and is stated in the open-source agreement above. Please do not modify or bypass it.",
 
@@ -3643,4 +3651,14 @@ EN.update({
     "webui.report_base_save_ok": "Saved",
     "webui.report_base_save_fail": "Save failed: ",
 
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+EN.update({
+    "webui.nav_system_info": "System Info",
+    "webui.system_info_version": "Version",
+    "webui.system_info_update": "Update Notices",
+    "webui.system_info_brand": "Brand Assets",
+    "webui.system_info_opensource": "Open Source",
+    "webui.system_info_check_update": "Check for Updates",
 })

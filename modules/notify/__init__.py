@@ -34,6 +34,11 @@ Webhook 代理与 SSL 配置说明：
     WEBHOOK_CA_CERT=/etc/ssl/certs/corp-ca.pem
     WEBHOOK_VERIFY_SSL=false
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from modules.core.paths import PROJECT_ROOT, DBC_CONFIG_PATH
 import os, ssl, smtplib, json, datetime, mimetypes, time, threading
 from email.mime.multipart import MIMEMultipart
@@ -124,12 +129,10 @@ def _encrypt_password(password):
     if not password:
         return ''
     if not HAS_CRYPTOGRAPHY:
-        import base64
-        return '_b64_' + base64.b64encode(password.encode('utf-8')).decode('utf-8')
+        raise ValueError('通知凭据加密不可用，拒绝Base64降级')
     fernet = _get_fernet()
     if fernet is None:
-        import base64
-        return '_b64_' + base64.b64encode(password.encode('utf-8')).decode('utf-8')
+        raise ValueError('通知凭据加密不可用，拒绝Base64降级')
     return '_enc_' + fernet.encrypt(password.encode('utf-8')).decode('utf-8')
 
 
@@ -479,6 +482,13 @@ class EmailNotifier:
         if not recipients:
             raise ValueError('没有指定收件人')
 
+        from modules.core.data_security import ensure_egress_allowed,redact
+        ensure_egress_allowed('https://'+self.host)
+        if self.port!=465 and not self.use_tls:
+            raise ValueError('邮件通知须启用验证证书的TLS')
+        label=redact(label,mask_identity=True)
+        custom_msg=redact(custom_msg,mask_identity=True) if custom_msg else custom_msg
+        report_url=None  # Reports remain authenticated; do not issue public shares.
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         if custom_msg:
@@ -510,16 +520,22 @@ class EmailNotifier:
         msg.attach(html_part)
 
         if report_file and os.path.exists(report_file):
-            with open(report_file, 'rb') as f:
-                part = MIMEBase('application', 'octet-stream')
-                part.set_payload(f.read())
-                encoders.encode_base64(part)
-                filename = os.path.basename(report_file)
-                from email.header import Header
-                filename_encoded = str(Header(filename, 'utf-8'))
-                part.add_header('Content-Disposition', 'attachment',
-                               filename=filename_encoded)
-                msg.attach(part)
+            if not report_file.lower().endswith('.docx'):
+                raise ValueError('邮件附件仅支持经过脱敏的Word报告')
+            import io
+            from docx import Document
+            from modules.service_management.report import sanitize_document
+            content=io.BytesIO()
+            sanitize_document(Document(report_file)).save(content)
+            part=MIMEBase('application','octet-stream')
+            part.set_payload(content.getvalue())
+            encoders.encode_base64(part)
+            filename = redact(os.path.basename(report_file),mask_identity=True)
+            from email.header import Header
+            filename_encoded = str(Header(filename, 'utf-8'))
+            part.add_header('Content-Disposition', 'attachment',
+                           filename=filename_encoded)
+            msg.attach(part)
 
         return self._send_smtp(msg, recipients)
 
@@ -573,12 +589,12 @@ class EmailNotifier:
     def _send_smtp_locked(self, msg, recipients):
         try:
             if self.port == 465:
-                server = smtplib.SMTP_SSL(self.host, self.port, timeout=30)
+                server = smtplib.SMTP_SSL(self.host, self.port, timeout=30,context=ssl.create_default_context())
             else:
                 server = smtplib.SMTP(self.host, self.port, timeout=30)
                 if self.use_tls:
                     server.ehlo()
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                     server.ehlo()
             server.login(self.user, self.password)
             server.sendmail(self.user, recipients, msg.as_string())
@@ -709,6 +725,11 @@ class WebhookNotifier:
         }
 
     def _send_webhook(self, payload):
+        from modules.core.data_security import ensure_egress_allowed,redact,egress_urlopen
+        ensure_egress_allowed(self.url)
+        if not self.verify_ssl:
+            raise ValueError('Webhook须验证TLS证书')
+        payload=redact(payload,mask_identity=True)
         try:
             data = json.dumps(payload).encode('utf-8')
             headers = {'Content-Type': 'application/json'}
@@ -722,10 +743,11 @@ class WebhookNotifier:
                     print('Webhook 使用自定义 CA 证书: %s' % self.ca_cert)
                 elif not self.verify_ssl:
                     print('Webhook 已跳过 SSL 证书校验（不安全）')
-                with opener.open(req, timeout=30) as resp:
+                from modules.core.data_security import egress_urlopen
+                with egress_urlopen(req,timeout=30,context=_build_ssl_context(True,self.ca_cert),proxy=_normalize_proxy(self.proxy)) as resp:
                     result = resp.read().decode('utf-8')
             else:
-                with urlopen(req, timeout=30) as resp:
+                with egress_urlopen(req,timeout=30) as resp:
                     result = resp.read().decode('utf-8')
             try:
                 result_json = json.loads(result)

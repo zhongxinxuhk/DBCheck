@@ -7,6 +7,11 @@
 RaccoonX Web UI - Flask 应用
 数据库巡检工具 Web 界面
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 # gevent monkey patch 必须放在所有 import 之前
 # import gevent.monkey
 # gevent.monkey.patch_all()
@@ -47,7 +52,7 @@ from modules.core import paths
 from modules.core.paths import INSPECTION_DB
 paths.ensure_migrated()
 
-from flask import Flask, request, jsonify, render_template, Response, send_file, make_response, session
+from flask import Flask, request, jsonify, render_template, Response, send_file, make_response, session, g
 from modules.config.version import __version__, EDITION
 from modules.core.brand import PRODUCT_NAME_EN, PRODUCT_NAME_ZH, PRODUCT_FULL_NAME, PRODUCT_TAGLINE_EN
 from modules.core.brand import PROJECT_URL, SYSTEM_UPDATE_URL
@@ -281,7 +286,7 @@ def _resolve_async_mode():
 
 
 _socketio_async_mode = _resolve_async_mode()
-socketio = SocketIO(cors_allowed_origins='*', async_mode=_socketio_async_mode)
+socketio = SocketIO(async_mode=_socketio_async_mode)
 
 # ── 强制退出机制（Ctrl+C / 关闭窗口 必杀，独立于 gevent/Python signal） ──
 import threading as _shutdown_threading
@@ -616,6 +621,8 @@ def product_context():
 # 会话密钥取自环境变量 DBCheck_SECRET_KEY（已在启动时为未设置的情况种入进程级随机值）。
 # 重启后旧会话 cookie 失效，需重新登录；生产可固定该环境变量保持登录态。
 app.config['SECRET_KEY'] = os.environ['DBCheck_SECRET_KEY']
+from modules.core.web_security import install_security
+install_security(app)
 # 模板自动重载：开发/迭代阶段避免 Flask 缓存旧版 index.html，修改前端后无需重启进程即可生效
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['EXPLAIN_TEMPLATE_LOADING'] = False
@@ -698,11 +705,18 @@ def api_pro_metrics_detail(instance_id):
     return jsonify({'ok': True, 'instance_id': instance_id, 'series': series})
 
 
+def _capture_task_owner():
+    from flask import has_request_context
+    principal = getattr(g, 'security_principal', None) if has_request_context() else None
+    return {'owner_user_id': principal.id if principal else None,
+            'owner_tenant_id': principal.tenant_id if principal else None}
+
+
 @app.before_request
 def _enforce_grayscale():
     import datetime as _dt
     now = _dt.datetime.now()
-    g = now.month == 5 and 19 <= now.day <= 21
+    g = now.month == 5 and 19 <= now.day <= 25
     from flask import g as _flask_g
     _flask_g._grayscale = g
 
@@ -827,7 +841,7 @@ def _verify_agreement_integrity():
         if not _arr_found:
             if not ('def _enforce_grayscale' in _self
                     and 'def _inject_grayscale' in _self
-                    and '19 <= now.day <= 21' in _self):
+                    and '19 <= now.day <= 25' in _self):
                 _ok = False
 
         # 3) 自身守卫标记必须存在
@@ -845,6 +859,8 @@ app.register_blueprint(api_v1)
 # ── 智能诊断中心（自专业版同步，社区常显）──
 from modules.intelligence.views import intelligence_bp
 app.register_blueprint(intelligence_bp)
+from modules.service_management.routes import bp as service_management_bp
+app.register_blueprint(service_management_bp)
 
 def get_admin_token():
     return _ADMIN_TOKEN
@@ -1284,7 +1300,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
         'sqlserver': dict(
             module_name='main_sqlserver',
             connect_test=test_sqlserver_connection,
-            connect_test_args=lambda info: [info['ip'], info['port'], info['user'], info['password'], info.get('database', 'master')],
+            connect_test_args=lambda info: [info['ip'], info['port'], info['user'], info['password'], info.get('database', 'master'), info],
             getdata_args=lambda info: ([info['ip'], info['port'], info['user'], info['password']],
                                        {'ssh_info': {}, 'template_id': template_id, 'database': info.get('database'), 'label': info.get('name')}),
             conn_attr='conn_db2',
@@ -1436,6 +1452,15 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
             label_default='YashanDB',
             db_name_default='YASHANDB',
         ),
+        'gbase8a': dict(
+            module_name='main_gbase8a',connect_test=test_gbase8a_connection,
+            connect_test_args=lambda info:[{**info,'host':info['ip']}],
+            getdata_args=lambda info:([info['ip'],info['port'],info['user'],info['password']],
+                                     {'database':info.get('database'),'template_id':template_id,'ssh_info':{'tls_ca_file':info.get('tls_ca_file','')}}),
+            conn_attr='conn_db2',smart_analyze='smart_analyze_gbase8a',
+            filename_key='webui.gbase8a_report_filename',history_db_type='gbase8a',instance_prefix='gbase8a',
+            error_task_name='GBase 8a MPP',log_start_key='webui.log_gbase8a_start',err_module_key='webui.err_gbase8a_module',
+            label_default='GBase 8a MPP',db_name_default='information_schema'),
         'gbase': dict(
             module_name='main_gbase',
             connect_test=test_gbase_connection,
@@ -1546,6 +1571,9 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
         if db_info.get('ssh_host'):
             ssh_info = {k: db_info[k] for k in ('ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_file', 'ssh_key_password', 'ssh_ebpf') if k in db_info}
 
+        if db_type=='gbase8a':
+            ssh_info['tls_ca_file']=db_info.get('tls_ca_file','')
+
         # MongoDB 专用参数透传到 ssh_info（供插件 getData → MongoConnectionConfig 使用）
         if db_type == 'mongodb':
             for _mk in ('database', 'connect_mode', 'auth_source', 'auth_mechanism',
@@ -1637,9 +1665,12 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
         file_name = ext_name + '.docx'
         ofile = os.path.join(reports_dir, file_name)
 
-        if db_info.get('desensitize'):
-            from modules.desensitize import apply_desensitization
-            context = apply_desensitization(context)
+        from modules.core.data_security import redact
+        context = redact(context, mask_identity=True)
+        if hasattr(data, 'context'):
+            data.context = context
+        if getattr(data, 'inspector', None) is not None:
+            data.inspector.context = context
 
         # ── 插件系统：在生成报告前执行，使插件发现并入统一问题清单 ────────
         # 这样 docx 报告、定时通知、巡检历史、Web UI 智能分析才能看到同一批问题。
@@ -1656,6 +1687,8 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
                 if cur is None:
                     return {"headers": [], "rows": [], "_error": "无可用数据库连接"}
                 try:
+                    from modules.core.data_security import assert_readonly_sql
+                    assert_readonly_sql(sql)
                     cur.execute(sql)
                     cols = [d[0] for d in cur.description] if cur.description else []
                     rows = [list(r) for r in cur.fetchall()]
@@ -1676,6 +1709,9 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
             _emit('log', {'msg': f"[插件] 执行跳过: {e}"})
 
         ofile_result = data.generate_report(ofile, inspector_nm)
+        if ofile_result:
+            from modules.service_management.report import append_to_existing
+            append_to_existing(ofile_result,tenant_id=(task or {}).get('owner_tenant_id'),user_id=(task or {}).get('owner_user_id'))
         print(f"[DEBUG] generate_report 返回: {ofile_result}")
         print(f"[DEBUG] ofile 路径: {ofile}")
         if ofile_result and os.path.exists(ofile_result):
@@ -2267,7 +2303,7 @@ def _build_sqlserver_conn_str(host, port, user, password, database=None, timeout
     conn_str = ("DRIVER={" + driver + "};"
                 "SERVER=" + str(host) + "," + str(port) +
                 uid_part + pwd_part +
-                ";TrustServerCertificate=yes;Connection Timeout=" + str(timeout))
+                ";Encrypt=yes;TrustServerCertificate=no;Connection Timeout=" + str(timeout))
     if database:
         conn_str += ";DATABASE=" + str(database)
     # 调试输出（密码打码）
@@ -2276,18 +2312,20 @@ def _build_sqlserver_conn_str(host, port, user, password, database=None, timeout
     return conn_str
 
 
-def test_sqlserver_connection(host, port, user, password, database='master'):
-    """测试 SQL Server 连接（调用 main_sqlserver 的 connect 方法，支持多驱动 fallback）"""
-    try:
-        from modules.entrypoints.main_sqlserver import SQLServerInspector
-        inspector = SQLServerInspector(host, int(port), user, password, database)
-        ok, ver = inspector.connect()
-        if ok:
-            return True, ver
-        else:
-            return False, ver
-    except Exception as e:
-        return False, str(e)
+def test_sqlserver_connection(host,port,user,password,database='master',options=None):
+    from modules.entrypoints.main_sqlserver import SQLServerInspector
+    inspector=SQLServerInspector(host,port,user,password,database,options or {})
+    ok,version=inspector.connect()
+    if inspector.conn:inspector.conn.close()
+    return ok,version
+
+
+def test_gbase8a_connection(data):
+    from modules.entrypoints.main_gbase8a import GBase8aInspector
+    inspector=GBase8aInspector(data.get('host') or data.get('ip'),data['port'],data['user'],data['password'],data.get('database'),data)
+    ok,version=inspector.connect()
+    if inspector.conn:inspector.conn.close()
+    return ok,version
 
 
 def test_sqlserver_jdbc_connection(host, port, user, password, database='master',
@@ -2667,15 +2705,13 @@ def _ct_dm(data, flavor):
 
 
 def _ct_sqlserver(data, flavor):
-    if flavor == 'regular':
-        ok, msg = test_sqlserver_connection(data['host'], data['port'], data['user'],
-                                            data['password'], data.get('database', 'master'))
-        return {'ok': ok, 'msg': msg}
-    import pyodbc
-    conn_str = _build_sqlserver_conn_str(data['host'], data['port'], data['user'],
-                                         data['password'], timeout=10)
-    pyodbc.connect(conn_str).close()
-    return _conn_ok('pro')
+    ok,msg=test_sqlserver_connection(data['host'],data['port'],data['user'],data['password'],data.get('database','master'),data)
+    return {'ok':ok,('message' if flavor=='pro' else 'msg'):msg}
+
+
+def _ct_gbase8a(data,flavor):
+    ok,msg=test_gbase8a_connection(data)
+    return {'ok':ok,('message' if flavor=='pro' else 'msg'):msg}
 
 
 def _ct_sqlserver_jdbc(data, flavor):
@@ -3408,6 +3444,7 @@ register_connection_tester('sqlserver', _ct_sqlserver)
 register_connection_tester('tidb', _ct_tidb)
 register_connection_tester('yashandb', _ct_yashandb)
 register_connection_tester('gbase', _ct_gbase)
+register_connection_tester('gbase8a',_ct_gbase8a)
 register_connection_tester('redis', _ct_redis)
 register_connection_tester('redis-cluster', _ct_redis)
 register_connection_tester('mongodb', _ct_mongodb)
@@ -3429,7 +3466,8 @@ def test_ssh_connection(host, port=22, username='root', password=None, key_file=
     try:
         import paramiko
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         if key_file and os.path.isfile(key_file):
             pkey = paramiko.RSAKey.from_private_key_file(key_file, key_password)
@@ -3489,7 +3527,22 @@ def index():
         if not user_id:
             return redirect('/um/login')
     
-    # 获取用户角色信息（直接从 session 读，登录时已写入）
+    # 获取用户角色信息
+    # 以后端 RBAC 的实际角色为准，session 里的快照只当缓存：快照可能来自更早的一次
+    # 登录（例如先走 /api/auth/login、或同一浏览器里换过账户），残留的 is_admin 会让
+    # 界面按管理员渲染、而所有接口按真实角色返回 403，最终表现为「系统管理弹窗空白」。
+    # 这里每次请求都按 user_id 重新解析角色并回写 session，界面与接口权限必然一致。
+    try:
+        from modules.access import get_principal
+        _principal = get_principal(session.get('user_id'))
+    except Exception:
+        _principal = None
+    if _principal is not None and not getattr(_principal, 'is_anonymous', True):
+        _roles = list(getattr(_principal, 'roles', None) or [])
+        session['user_roles'] = _roles
+        session['is_admin'] = 'admin' in _roles
+        if getattr(_principal, 'username', ''):
+            session['username'] = _principal.username
     is_admin = session.get('is_admin', False)
     user_role = 'admin' if is_admin else 'user'
     print(f'[DEBUG] index(): user_id={session.get("user_id")}, is_admin={is_admin}, user_role={user_role}', flush=True)
@@ -3521,6 +3574,7 @@ def index():
                            rules_available=rules_available,
                            admin_token=get_admin_token(),
                            user_role=user_role,
+                           username=session.get('username', ''),
                            product_name=PRODUCT_NAME_EN,
                            product_name_zh=PRODUCT_NAME_ZH,
                            product_full_name=PRODUCT_FULL_NAME,
@@ -3847,7 +3901,8 @@ def api_save_ai_config():
     return jsonify({'ok': True, 'msg': _t('webui.ai_config_saved')})
 
 # ─── 顶部公告条：内容源在官网，后台定时拉取缓存；断网/无缓存则隐藏 ───
-_ANNOUNCEMENT_REMOTE_URL = "https://dbcheck.top/announcement.json"
+# 预置的官网公告源统一取自 modules/core/brand.py，避免与前端展示的更新地址不一致。
+_ANNOUNCEMENT_REMOTE_URL = SYSTEM_UPDATE_URL
 _ANNOUNCEMENT_REFRESH_INTERVAL = 30 * 60   # 每 30 分钟检查一次官网（与前端重查频率对齐，最坏约 1 小时内感知官网更新）
 _ANNOUNCEMENT_FETCH_TIMEOUT = 8            # 单次拉取超时（秒）
 _announcement_refresher_started = False
@@ -4528,6 +4583,9 @@ def api_test_ollama():
 
     # 本机地址归一化为 127.0.0.1，并绕过系统代理直连
     api_url = _ollama_normalize_url(api_url)
+    from modules.core.data_security import ensure_egress_allowed,redact
+    ensure_egress_allowed(api_url)
+    prompt,system=redact(prompt,mask_identity=True),redact(system,mask_identity=True)
     opener = _ollama_no_proxy_opener()
 
     # 先测 /api/tags（列出模型）
@@ -4682,6 +4740,9 @@ def api_start_inspection():
         datasource_id = data.get('datasource_id')
         if datasource_id:
             from modules.pro import get_instance_manager
+            from modules.access import visible_to,get_owner
+            if not visible_to(g.security_principal,get_owner('instance',datasource_id)):
+                return jsonify(ok=False,msg='无权访问此数据源'),403
             im = get_instance_manager()
             instance = im.get_instance_decrypted(datasource_id)
             if not instance:
@@ -4783,7 +4844,11 @@ def api_start_inspection():
                 if db_type == 'oracle_jdbc':
                     db_info['use_sid'] = bool(data.get('use_sid', False))
 
-        if data.get('ssh_host'):
+        if datasource_id and instance.get('ssh_enabled'):
+            for field in ('ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password'):
+                if instance.get(field) is not None:db_info[field]=instance[field]
+
+        if not datasource_id and data.get('ssh_host'):
             db_info.update({
                 'ssh_host':     data.get('ssh_host', ''),
                 'ssh_port':     int(data.get('ssh_port', 22)),
@@ -4794,9 +4859,12 @@ def api_start_inspection():
                 'ssh_ebpf':     data.get('ssh_ebpf', True),
             })
 
+        if db_type=='gbase8a':
+            db_info['tls_ca_file']=(instance if datasource_id else data).get('tls_ca_file','')
         task_id = str(uuid.uuid4())
         template_id = data.get('template_id') or None
         tasks[task_id] = {
+            **_capture_task_owner(),
             'id':            task_id,
             'db_type':       db_type,
             'db_info':       db_info,
@@ -5351,6 +5419,7 @@ def api_start_config_baseline():
 
         task_id = str(uuid.uuid4())
         tasks[task_id] = {
+            **_capture_task_owner(),
             'id': task_id,
             'db_type': f'config_{db_type}',
             'db_info': db_info,
@@ -5395,6 +5464,7 @@ def api_start_server_inspect():
 
         task_id = str(uuid.uuid4())
         tasks[task_id] = {
+            **_capture_task_owner(),
             'id': task_id,
             'db_type': 'server',
             'status': 'running',
@@ -5703,6 +5773,7 @@ def api_start_index_health():
 
         task_id = str(uuid.uuid4())
         tasks[task_id] = {
+            **_capture_task_owner(),
             'id': task_id,
             'db_type': f'index_{db_type}',
             'db_info': db_info,
@@ -6660,6 +6731,7 @@ def api_awr_generate_report(awr_task_id):
         report_task_id = str(uuid.uuid4())
         steps = _awr_report_steps()
         tasks[report_task_id] = {
+            **_capture_task_owner(),
             'id': report_task_id,
             'type': 'awr_report',
             'status': 'running',
@@ -7105,8 +7177,8 @@ def api_pro_export_instances_json():
             user, im.get_all_instances(mask_password=True), 'instance')
         ids = [i.get('id') for i in visible]
         with_pwd = request.args.get('with_password') in ('1', 'true')
-        if with_pwd and not session.get('is_admin', False):
-            return jsonify({'ok': False, 'error': '含密码导出仅管理员可用'}), 403
+        if with_pwd:
+            return jsonify({'ok': False, 'error': '数据安全策略禁止导出明文凭据'}), 403
         payload = im.export_json(include_password=with_pwd, ids=ids)
         fname = 'dbcheck-datasources-%s.json' % datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
         resp = Response(
@@ -7348,7 +7420,7 @@ def api_db_types():
     # 原生驱动类型白名单（走非 JDBC 驱动）：其余一律视为 JDBC 驱动。
     # 由业务事实决定，不在 dbtype_registry 另加字段。新增 JDBC 类数据库无需改这里。
     _NATIVE_DB_TYPES = {
-        'tdsqlc_mysql', 'oracle', 'sqlserver',
+        'tdsqlc_mysql', 'oracle', 'sqlserver', 'gbase8a',
         'redis', 'redis-cluster', 'mongodb',
     }
     for meta in load_all_db_types():
@@ -9504,6 +9576,9 @@ def _call_llm_openai(cfg: dict, prompt: str, system: str, timeout: int, stream_c
         stream_callback: 流式回调函数，接收 chunk 字符串
     """
     api_url = cfg.get('online_api_url', 'https://api.openai.com/v1').rstrip('/')
+    from modules.core.data_security import ensure_egress_allowed,redact
+    ensure_egress_allowed(api_url)
+    prompt,system=redact(prompt,mask_identity=True),redact(system,mask_identity=True)
     model = cfg.get('online_model', 'gpt-4o-mini')
     api_key = cfg.get('api_key', '')
 
@@ -9539,7 +9614,7 @@ def _call_llm_openai(cfg: dict, prompt: str, system: str, timeout: int, stream_c
                 headers['Authorization'] = f'Bearer {api_key}'
             
             full_response = ''
-            with requests.post(url, json=payload, headers=headers, stream=True, timeout=timeout) as r:
+            with requests.post(url, json=payload, headers=headers, stream=True, timeout=timeout, allow_redirects=False) as r:
                 for line in r.iter_lines():
                     if line:
                         line = line.decode('utf-8')
@@ -9567,7 +9642,7 @@ def _call_llm_openai(cfg: dict, prompt: str, system: str, timeout: int, stream_c
                 headers['Authorization'] = f'Bearer {api_key}'
             req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'),
                                         headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with __import__('modules.core.data_security',fromlist=['egress_urlopen']).egress_urlopen(req,timeout=timeout) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 choices = result.get('choices', [])
                 if choices:
@@ -10826,6 +10901,7 @@ def _stream_inspection_response(data, message, session_id, chat_context):
 
     inspector_name = data.get('inspector_name', 'Jack')
     tasks[task_id] = {
+        **_capture_task_owner(),
         'id': task_id,
         'db_type': db_type,
         'db_info': db_info,
@@ -11262,6 +11338,7 @@ def api_chat():
             inspector_name = data.get('inspector_name', 'Jack')
 
             tasks[task_id] = {
+                **_capture_task_owner(),
                 'id': task_id,
                 'db_type': db_type,
                 'db_info': db_info,
@@ -11386,11 +11463,23 @@ def api_inspection_issues(task_id):
 
 @socketio.on('connect')
 def on_connect():
-    pass
+    from modules.core.web_security import current_principal
+    principal = current_principal()
+    if principal is None:
+        return False
+    # 强制改密闸门已移除：登录通过即可建立实时连接。
+    return True
 
 @socketio.on('join')
 def on_join(data):
     task_id = data.get('task_id')
+    from modules.core.web_security import current_principal
+    principal = current_principal()
+    task = tasks.get(task_id) or {}
+    if principal is None or task.get('owner_tenant_id') != principal.tenant_id:
+        return
+    if task.get('owner_user_id') != principal.id and not principal.is_admin:
+        return
     if task_id:
         join_room(task_id)
         socketio.emit('log', {'msg': _t('webui.ws_connected_waiting').format(ts=_ts())}, room=task_id)
@@ -11415,7 +11504,8 @@ def _remote_shell_worker(sid, instance_id, ssh_host, ssh_port, ssh_user, ssh_pas
     import time
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     try:
         if ssh_key_file and os.path.isfile(ssh_key_file):
@@ -12233,7 +12323,9 @@ def api_drivers_list():
         if not db_type:
             return jsonify({'ok': False, 'error': 'db_type 不能为空'})
         drivers = dr.list_drivers(db_type)
-        return jsonify({'ok': True, 'drivers': drivers, 'db_type': db_type})
+        from modules.db_types.compatibility import readiness
+        checks=[row for row in readiness()['drivers'] if row['db_type']==db_type]
+        return jsonify({'ok': True, 'drivers': drivers, 'db_type': db_type,'compatibility':checks})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)[:200]})
 
@@ -12434,6 +12526,8 @@ def main():
 
     _verify_agreement_integrity()
 
+    from modules.service_management.scheduler import start_scheduler
+    start_scheduler(app)
     port = 5003
     print(_t('webui.startup_msg').format(port=port))
     print("[提示] 按 Ctrl+C 停止服务\n")
@@ -12493,7 +12587,7 @@ def main():
     try:
         socketio.run(
             app,
-            host='0.0.0.0',
+            host=os.environ.get('DBPULSE_BIND_HOST', '127.0.0.1'),
             port=port,
             debug=debug_mode,
             use_reloader=_use_reloader,

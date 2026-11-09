@@ -13,6 +13,11 @@ DBCheck SQLite 历史记录管理器
   snapshots   - 每次巡检的快照（含提取的数值指标 + 完整 context JSON）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import json
 import sqlite3
@@ -38,6 +43,29 @@ def _get_conn(db_path: str):
         yield conn
     finally:
         conn.close()
+
+
+# ── 库族归并（与 modules/driver_registry.db_family 保持同一口径）──────────────
+# 这个文件是随 skill 分发的自包含副本，不能 import 主工程模块，所以在这里保留一份
+# 最小归并表。改口径时两处必须同步，否则又会出现「实例存 pg、判断只认 postgres」
+# 的静默跳过 —— 指标采不到、趋势图空白。
+_DB_FAMILY = {
+    'pg': 'postgresql', 'postgres': 'postgresql', 'postgresql': 'postgresql',
+    'highgo': 'postgresql', 'hgdb': 'postgresql', 'opengauss': 'postgresql',
+    'kingbase': 'postgresql', 'ivorysql': 'postgresql', 'vastbase': 'postgresql',
+    'greenplum': 'postgresql', 'uxdb': 'postgresql', 'halodb': 'postgresql',
+    'mysql': 'mysql', 'mariadb': 'mysql', 'tdsqlc_mysql': 'mysql',
+    'oracle': 'oracle', 'oracle_full': 'oracle',
+    'sqlserver': 'sqlserver', 'mssql': 'sqlserver',
+    'dm': 'dm', 'dameng': 'dm', 'dm8': 'dm',
+}
+
+
+def _db_family(db_type: str) -> str:
+    dt = (db_type or '').strip().lower()
+    if dt.endswith('_jdbc'):
+        dt = dt[:-len('_jdbc')]
+    return _DB_FAMILY.get(dt, dt)
 
 
 class SQLiteHistoryManager:
@@ -171,39 +199,48 @@ class SQLiteHistoryManager:
     def _extract_metrics(self, db_type: str, context: dict) -> dict:
         """从 context 提取可量化的核心指标"""
         def _safe_int(lst, field='Value'):
+            """列表为空或字段缺失时返回 None：没采到 ≠ 采到了 0。"""
+            if not lst or not isinstance(lst[0], dict) or field not in lst[0]:
+                return None
             try:
                 return int(str(lst[0].get(field, 0)).replace(',', ''))
             except Exception:
-                return 0
+                return None
 
-        def _safe_float(lst, field='Value'):
+        def _safe_float(value, field='Value'):
+            # Tablespace metrics pass a scalar; other metrics pass a row list.
+            if isinstance(value,list):
+                if not value or not isinstance(value[0],dict):return None
+                value=value[0].get(field)
+            if value is None or isinstance(value,bool):return None
             try:
-                return float(str(lst[0].get(field, 0)).replace(',', ''))
-            except Exception:
-                return 0.0
+                import math
+                number=float(str(value).replace(',','').rstrip('%'))
+                return number if math.isfinite(number) else None
+            except (ValueError,TypeError):
+                return None
 
         m = {}
-        sys_info = context.get('system_info', {})
-        cpu_val = sys_info.get('cpu', {})
-        if isinstance(cpu_val, dict):
-            m['cpu_usage'] = cpu_val.get('usage_percent', 0) or 0.0
-        else:
-            m['cpu_usage'] = float(cpu_val) if cpu_val else 0.0
-        m['mem_usage'] = sys_info.get('memory', {}).get('usage_percent', 0) or 0.0
+        sys_info = context.get('system_info', {}) or {}
+        # 主机侧指标缺失时写 None（未采集 ≠ 0%），否则趋势图会画出假的 0 基线
+        cpu_val=sys_info.get('cpu')
+        if isinstance(cpu_val,dict):cpu_val=cpu_val.get('usage_percent')
+        m['cpu_usage']=_safe_float(cpu_val)
+        memory=sys_info.get('memory') or {}
+        m['mem_usage']=_safe_float(memory.get('usage_percent')) if isinstance(memory,dict) else None
 
-        disks = sys_info.get('disk_list', [])
-        m['disk_usage_max'] = 0.0
+        disks = sys_info.get('disk_list', []) or []
+        m['disk_usage_max'] = None
         for d in disks:
             mp = d.get('mountpoint', '/')
             if mp in IGNORE_MOUNTS:
                 continue
-            pct = d.get('usage_percent', 0) or 0.0
-            if isinstance(pct, str):
-                pct = float(pct.rstrip('%'))
-            m['disk_usage_max'] = max(m['disk_usage_max'], pct)
+            pct = _safe_float(d.get('usage_percent'))
+            if pct is None:continue
+            m['disk_usage_max'] = max(m.get('disk_usage_max') or 0.0, pct)
 
         # disk_usage fallback（SSH 采集器格式）
-        if m['disk_usage_max'] == 0:
+        if not m.get('disk_usage_max'):
             raw = sys_info.get('disk_usage', '')
             if raw:
                 for line in raw.splitlines():
@@ -213,57 +250,72 @@ class SQLiteHistoryManager:
                             pct = int(parts[4].rstrip('%'))
                             mp = parts[-1]
                             if mp not in IGNORE_MOUNTS:
-                                m['disk_usage_max'] = max(m['disk_usage_max'], pct)
+                                m['disk_usage_max'] = max(m.get('disk_usage_max') or 0.0, pct)
                         except (ValueError, IndexError):
                             continue
 
-        if db_type == 'mysql':
+        fam = _db_family(db_type)
+        if fam == 'mysql':
             m['connections'] = _safe_int(context.get('threads_connected', []))
             m['max_connections'] = _safe_int(context.get('max_connections', []))
             m['max_used_connections'] = _safe_int(context.get('max_used_connections', []))
             queries_data = context.get('queries', [])
             m['queries_total'] = _safe_int(queries_data)
             m['version'] = (context.get('myversion', [{}]) or [{}])[0].get('version', '') if context.get('myversion') else ''
-        elif db_type in ('postgres', 'postgresql'):
-            pg_conn = context.get('pg_connections', [])
-            m['connections'] = _safe_int(pg_conn, 'used_connections') if pg_conn else 0
-            m['max_connections'] = _safe_int(pg_conn, 'max_connections') if pg_conn else 0
+        elif fam == 'postgresql':
+            pg_conn = context.get('pg_connections', []) or []
+            if pg_conn and isinstance(pg_conn[0], dict):
+                row = pg_conn[0]
+                used = row.get('used_connections', row.get('total_connections'))
+                if used is not None:
+                    m['connections'] = int(used)
+                if row.get('max_connections') is not None:
+                    m['max_connections'] = int(row.get('max_connections'))
+                usage = row.get('usage_percent', row.get('connection_usage_pct'))
+                if usage is not None:
+                    m['connection_usage_pct'] = float(usage)
             cache_hits = context.get('pg_cache_hit', [])
-            m['cache_hit_ratio'] = _safe_float(cache_hits, 'cache_hit_ratio') if cache_hits else 0.0
+            if cache_hits:
+                m['cache_hit_ratio'] = _safe_float(cache_hits, 'cache_hit_ratio')
             m['version'] = (context.get('pg_version', [{}]) or [{}])[0].get('version', '') if context.get('pg_version') else ''
-        elif db_type in ('oracle', 'oracle_full'):
+        elif fam == 'oracle':
             ora_sess = context.get('ora_sessions', [])
-            m['connections'] = _safe_int(ora_sess, 'TOTAL_SESSIONS') if ora_sess else 0
+            if ora_sess:
+                m['connections'] = _safe_int(ora_sess, 'TOTAL_SESSIONS')
             ora_limit = context.get('ora_session_limit', [])
             if ora_limit:
                 m['max_connections'] = _safe_int(ora_limit, 'SESSIONS_LIMIT')
-            else:
-                m['max_connections'] = m['connections'] + 100
             sga_total = context.get('ora_sga_total', [])
-            m['sga_total_mb'] = _safe_float(sga_total, 'SGA_TOTAL_MB') if sga_total else 0.0
+            if sga_total:
+                m['sga_total_mb'] = _safe_float(sga_total, 'SGA_TOTAL_MB')
             ts_list = context.get('ora_tablespace', [])
             if ts_list and isinstance(ts_list, list):
-                m['max_tablespace_pct'] = max((_safe_float(ts.get('USED_PCT_WITH_MAXEXT', ts.get('USED_PCT', 0))) for ts in ts_list), default=0.0)
+                m['max_tablespace_pct'] = max((value for row in ts_list if (value := _safe_float(row.get('USED_PCT_WITH_MAXEXT',row.get('USED_PCT')))) is not None),default=None)
             m['version'] = (context.get('ora_version', [{}]) or [{}])[0].get('BANNER', '') if context.get('ora_version') else ''
-        elif db_type == 'dm':
+        elif fam == 'dm':
             dm_sess = context.get('dm_sessions', [])
-            m['connections'] = _safe_int(dm_sess, 'TOTAL_SESSIONS') if dm_sess and isinstance(dm_sess, list) else 0
+            if dm_sess and isinstance(dm_sess, list):
+                m['connections'] = _safe_int(dm_sess, 'TOTAL_SESSIONS')
             dm_limit = context.get('dm_session_limit', [])
-            m['max_connections'] = _safe_int(dm_limit, 'SESSIONS_LIMIT') if dm_limit and isinstance(dm_limit, list) else m['connections'] + 100
+            if dm_limit and isinstance(dm_limit, list):
+                m['max_connections'] = _safe_int(dm_limit, 'SESSIONS_LIMIT')
             dm_sga = context.get('dm_sga_total', [])
-            m['sga_total_mb'] = _safe_float(dm_sga, 'SGA_TOTAL_MB') if dm_sga and isinstance(dm_sga, list) else 0.0
+            if dm_sga and isinstance(dm_sga, list):
+                m['sga_total_mb'] = _safe_float(dm_sga, 'SGA_TOTAL_MB')
             dm_ts = context.get('dm_tablespace', [])
             if dm_ts and isinstance(dm_ts, list):
-                m['max_tablespace_pct'] = max((_safe_float(ts.get('USED_PCT', 0)) for ts in dm_ts), default=0.0)
+                m['max_tablespace_pct'] = max((value for row in dm_ts if (value := _safe_float(row.get('USED_PCT'))) is not None),default=None)
             dm_ver = context.get('dm_version')
             m['version'] = (dm_ver or [{}])[0].get('BANNER', '') if dm_ver and isinstance(dm_ver, list) else ''
-        elif db_type == 'sqlserver':
+        elif fam == 'sqlserver':
             ss_conn = context.get('connections', [])
-            m['connections'] = ss_conn[0].get('connection_count', 0) if ss_conn and isinstance(ss_conn[0], dict) else 0
-            m['max_connections'] = ss_conn[0].get('max_connections', 0) if ss_conn and isinstance(ss_conn[0], dict) else 0
-            m['connection_usage_pct'] = ss_conn[0].get('connection_usage_pct', 0) if ss_conn and isinstance(ss_conn[0], dict) else 0.0
+            if ss_conn and isinstance(ss_conn[0], dict):
+                m['connections'] = ss_conn[0].get('connection_count', 0)
+                m['max_connections'] = ss_conn[0].get('max_connections', 0)
+                m['connection_usage_pct'] = ss_conn[0].get('connection_usage_pct', 0)
             host_info = context.get('host', {})
-            m['mem_usage'] = host_info.get('memory_percent', 0) or 0.0 if host_info else 0.0
+            if host_info:
+                m['mem_usage'] = host_info.get('memory_percent', 0) or 0.0
             m['version'] = ''
             ver_rows = context.get('version', [])
             if ver_rows and isinstance(ver_rows, list) and len(ver_rows) > 0:
@@ -271,7 +323,7 @@ class SQLiteHistoryManager:
                     if isinstance(row, (list, tuple)) and len(row) >= 2:
                         m['version'] = str(row[1])
                         break
-        elif db_type == 'tidb':
+        elif fam == 'tidb':
             m['connections'] = _safe_int(context.get('threads_connected', []))
             m['max_connections'] = _safe_int(context.get('max_connections', []))
             m['max_used_connections'] = _safe_int(context.get('max_used_connections', []))

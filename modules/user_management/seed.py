@@ -10,6 +10,11 @@
   python -m user_management.seed
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import sys
 import os
 
@@ -162,12 +167,14 @@ def init_seed_data():
 
     # 7. 默认管理员账户 admin / admin123（username 唯一，INSERT OR IGNORE 幂等：
     #    已存在则不覆盖 -> 用户改过的密码在容器重启后保留，不再被重置）
-    pw_hash = hash_password('admin123')
+    from modules.core.bootstrap_security import initial_admin_password
+    existing_admin = db.query_one("SELECT id FROM um_user WHERE username='admin'")
+    pw_hash = hash_password(initial_admin_password()) if not existing_admin else ''
     db.execute(
         "INSERT OR IGNORE INTO um_user(username, password, nickname) VALUES('admin', ?, '系统管理员')",
         (pw_hash,)
     )
-    print("  ✅ 默认管理员账户已就绪: admin / admin123（若已存在则保留既有密码）")
+    print("  ✅ 管理员账户已就绪，新安装口令使用受限本机初始化文件")
 
     # 8. 绑定 admin 用户 → admin 角色（UNIQUE(user_id,role_id) 幂等）
     admin_user = db.query_one("SELECT id FROM um_user WHERE username='admin'")

@@ -69,3 +69,5 @@ PyJWT>=2.7.0            # JWT token generation and validation
 
 # ── Testing（开发/CI 依赖，非运行期必需）─────────────────────────────────
 pytest>=7.0.0           # 单元测试 / 集成测试套件（tests/）
+# SQL Server 2005/2008/2014 isolated SSH collection (pure Python TDS)
+python-tds==1.17.1

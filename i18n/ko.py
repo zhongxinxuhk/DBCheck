@@ -5,6 +5,11 @@
 
 """한국어 번역 사전 (DBCheck: 기계번역 초안, 인력 교정 필요)"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from .zh import ZI
 
 KO = dict(ZI)
@@ -1969,7 +1974,7 @@ KO.update({
     "tidb_slow_query_ok": "느린 쿼리 심층 분석 완료, 수집 {count} 상위 SQL",
     "tidb_slow_query_unavailable": "느린 쿼리 데이터 없음, 심층 분석 건너뛰기",
     "webui.about_author": "저자: Jack Ge · Apache License 2.0 · 공식 사이트: dbcheck.top",
-    "webui.about_desc": "RaccoonX는 MySQL, PostgreSQL, Oracle, SQL Server, 다몽(DM), TiDB, IvorySQL, YashanDB 등 주요 데이터베이스의 건강 점검과 AI 진단을 지원하는 오픈소스 데이터베이스 스마트 점검 도구입니다.",
+    "webui.about_desc": "DBPulse는 MySQL, PostgreSQL, Oracle, SQL Server, 다몽(DM), TiDB, IvorySQL, YashanDB 등 주요 데이터베이스의 건강 점검과 AI 진단을 지원하는 지능형 데이터베이스 점검 도구입니다.",
     "webui.about_grayscale_note": "기념일 그레이스케일 모드는 RaccoonX의 독창적인 설계이며 위의 오픈 소스 계약에 명시되어 있습니다. 수정이나 우회를 시도하지 마세요.",
     "webui.action": "작업",
     "webui.add_group_btn": "＋ 그룹",
@@ -2275,6 +2280,9 @@ KO.update({
     "webui.fi_web_desc": "전 과정 GUI화, 명령행 작별, 실시간 로그 추적 지원.",
     "webui.fill_connection_info": "데이터베이스 연결 정보",
     "webui.gbase_report_filename": "GBase 8s점검보고서_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.group_all": "전체",
     "webui.group_color_label": "그룹 색상",
     "webui.group_create_title": "새 그룹",
@@ -3298,4 +3306,14 @@ KO.update({
     "webui.nav_autonomy": "자율 DBA 안전",
     "webui.nav_fleet": "스마트 기준선",
     "webui.nav_twin": "토폴로지 검사"
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+KO.update({
+    "webui.nav_system_info": "시스템 정보",
+    "webui.system_info_version": "버전",
+    "webui.system_info_update": "업데이트 알림",
+    "webui.system_info_brand": "브랜드 로고",
+    "webui.system_info_opensource": "오픈 소스 정보",
+    "webui.system_info_check_update": "업데이트 확인",
 })

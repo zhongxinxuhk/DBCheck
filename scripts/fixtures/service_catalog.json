@@ -1,0 +1,1003 @@
+{
+  "_license": "SPDX-License-Identifier: Apache-2.0",
+  "_copyright": [
+    "Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>",
+    "Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>"
+  ],
+  "_authors": [
+    "Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck",
+    "Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck"
+  ],
+  "schema_version": 1,
+  "source_file": "synthetic-regression-fixture.xlsx",
+  "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "tenant_id": 1,
+  "modules": [
+    {
+      "id": "M1",
+      "title": "Synthetic module M1",
+      "deliverables": [
+        "Synthetic report M1"
+      ],
+      "frequency": "monthly",
+      "sla": "synthetic policy",
+      "target": "synthetic target"
+    },
+    {
+      "id": "M2",
+      "title": "Synthetic module M2",
+      "deliverables": [
+        "Synthetic report M2"
+      ],
+      "frequency": "monthly",
+      "sla": "synthetic policy",
+      "target": "synthetic target"
+    },
+    {
+      "id": "M3",
+      "title": "Synthetic module M3",
+      "deliverables": [
+        "Synthetic report M3"
+      ],
+      "frequency": "monthly",
+      "sla": "synthetic policy",
+      "target": "synthetic target"
+    },
+    {
+      "id": "M4",
+      "title": "Synthetic module M4",
+      "deliverables": [
+        "Synthetic report M4"
+      ],
+      "frequency": "monthly",
+      "sla": "synthetic policy",
+      "target": "synthetic target"
+    },
+    {
+      "id": "M5",
+      "title": "Synthetic module M5",
+      "deliverables": [
+        "Synthetic report M5"
+      ],
+      "frequency": "monthly",
+      "sla": "synthetic policy",
+      "target": "synthetic target"
+    },
+    {
+      "id": "M6",
+      "title": "Synthetic module M6",
+      "deliverables": [
+        "Synthetic report M6"
+      ],
+      "frequency": "monthly",
+      "sla": "synthetic policy",
+      "target": "synthetic target"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R01",
+      "module_id": "M1",
+      "text": "Synthetic requirement R01",
+      "source": {
+        "sheet": "synthetic",
+        "row": 3,
+        "cell": "C3"
+      },
+      "items": [
+        {
+          "id": "R01.01",
+          "key": "asset_scope",
+          "kind": "asset",
+          "title": "Synthetic check asset_scope"
+        },
+        {
+          "id": "R01.02",
+          "key": "asset_register",
+          "kind": "asset",
+          "title": "Synthetic check asset_register"
+        }
+      ]
+    },
+    {
+      "id": "R02",
+      "module_id": "M1",
+      "text": "Synthetic requirement R02",
+      "source": {
+        "sheet": "synthetic",
+        "row": 4,
+        "cell": "C4"
+      },
+      "items": [
+        {
+          "id": "R02.01",
+          "key": "cluster_registry",
+          "kind": "asset",
+          "title": "Synthetic check cluster_registry"
+        },
+        {
+          "id": "R02.02",
+          "key": "configuration_history",
+          "kind": "asset",
+          "title": "Synthetic check configuration_history"
+        }
+      ]
+    },
+    {
+      "id": "R03",
+      "module_id": "M1",
+      "text": "Synthetic requirement R03",
+      "source": {
+        "sheet": "synthetic",
+        "row": 5,
+        "cell": "C5"
+      },
+      "items": [
+        {
+          "id": "R03.01",
+          "key": "asset_identity",
+          "kind": "asset",
+          "title": "Synthetic check asset_identity"
+        },
+        {
+          "id": "R03.02",
+          "key": "asset_lifecycle",
+          "kind": "asset",
+          "title": "Synthetic check asset_lifecycle"
+        },
+        {
+          "id": "R03.03",
+          "key": "host_registry",
+          "kind": "asset",
+          "title": "Synthetic check host_registry"
+        }
+      ]
+    },
+    {
+      "id": "R04",
+      "module_id": "M1",
+      "text": "Synthetic requirement R04",
+      "source": {
+        "sheet": "synthetic",
+        "row": 6,
+        "cell": "C6"
+      },
+      "items": [
+        {
+          "id": "R04.01",
+          "key": "parameters",
+          "kind": "asset",
+          "title": "Synthetic check parameters"
+        },
+        {
+          "id": "R04.02",
+          "key": "database_info",
+          "kind": "asset",
+          "title": "Synthetic check database_info"
+        },
+        {
+          "id": "R04.03",
+          "key": "database_layout",
+          "kind": "asset",
+          "title": "Synthetic check database_layout"
+        }
+      ]
+    },
+    {
+      "id": "R05",
+      "module_id": "M1",
+      "text": "Synthetic requirement R05",
+      "source": {
+        "sheet": "synthetic",
+        "row": 7,
+        "cell": "C7"
+      },
+      "items": [
+        {
+          "id": "R05.01",
+          "key": "tablespace_registry",
+          "kind": "asset",
+          "title": "Synthetic check tablespace_registry"
+        },
+        {
+          "id": "R05.02",
+          "key": "permission_registry",
+          "kind": "asset",
+          "title": "Synthetic check permission_registry"
+        }
+      ]
+    },
+    {
+      "id": "R06",
+      "module_id": "M1",
+      "text": "Synthetic requirement R06",
+      "source": {
+        "sheet": "synthetic",
+        "row": 8,
+        "cell": "C8"
+      },
+      "items": [
+        {
+          "id": "R06.01",
+          "key": "backup_policy",
+          "kind": "asset",
+          "title": "Synthetic check backup_policy"
+        },
+        {
+          "id": "R06.02",
+          "key": "backup_retention",
+          "kind": "asset",
+          "title": "Synthetic check backup_retention"
+        }
+      ]
+    },
+    {
+      "id": "R07",
+      "module_id": "M1",
+      "text": "Synthetic requirement R07",
+      "source": {
+        "sheet": "synthetic",
+        "row": 9,
+        "cell": "C9"
+      },
+      "items": [
+        {
+          "id": "R07.01",
+          "key": "asset_change",
+          "kind": "workflow",
+          "title": "Synthetic check asset_change"
+        },
+        {
+          "id": "R07.02",
+          "key": "asset_review",
+          "kind": "workflow",
+          "title": "Synthetic check asset_review"
+        }
+      ]
+    },
+    {
+      "id": "R08",
+      "module_id": "M2",
+      "text": "Synthetic requirement R08",
+      "source": {
+        "sheet": "synthetic",
+        "row": 10,
+        "cell": "C10"
+      },
+      "items": [
+        {
+          "id": "R08.01",
+          "key": "availability",
+          "kind": "inspection",
+          "title": "Synthetic check availability"
+        },
+        {
+          "id": "R08.02",
+          "key": "inspection_schedule",
+          "kind": "workflow",
+          "title": "Synthetic check inspection_schedule"
+        }
+      ]
+    },
+    {
+      "id": "R09",
+      "module_id": "M2",
+      "text": "Synthetic requirement R09",
+      "source": {
+        "sheet": "synthetic",
+        "row": 11,
+        "cell": "C11"
+      },
+      "items": [
+        {
+          "id": "R09.01",
+          "key": "instance_sessions",
+          "kind": "inspection",
+          "title": "Synthetic check instance_sessions"
+        },
+        {
+          "id": "R09.02",
+          "key": "alerts",
+          "kind": "inspection",
+          "title": "Synthetic check alerts"
+        },
+        {
+          "id": "R09.03",
+          "key": "backup_jobs",
+          "kind": "inspection",
+          "title": "Synthetic check backup_jobs"
+        },
+        {
+          "id": "R09.04",
+          "key": "capacity_cluster",
+          "kind": "inspection",
+          "title": "Synthetic check capacity_cluster"
+        }
+      ]
+    },
+    {
+      "id": "R10",
+      "module_id": "M2",
+      "text": "Synthetic requirement R10",
+      "source": {
+        "sheet": "synthetic",
+        "row": 12,
+        "cell": "C12"
+      },
+      "items": [
+        {
+          "id": "R10.01",
+          "key": "file_integrity",
+          "kind": "inspection",
+          "title": "Synthetic check file_integrity"
+        },
+        {
+          "id": "R10.02",
+          "key": "statistics",
+          "kind": "inspection",
+          "title": "Synthetic check statistics"
+        },
+        {
+          "id": "R10.03",
+          "key": "growth",
+          "kind": "inspection",
+          "title": "Synthetic check growth"
+        },
+        {
+          "id": "R10.04",
+          "key": "log_cleanup",
+          "kind": "workflow",
+          "title": "Synthetic check log_cleanup"
+        },
+        {
+          "id": "R10.05",
+          "key": "business_calendar",
+          "kind": "workflow",
+          "title": "Synthetic check business_calendar"
+        }
+      ]
+    },
+    {
+      "id": "R11",
+      "module_id": "M2",
+      "text": "Synthetic requirement R11",
+      "source": {
+        "sheet": "synthetic",
+        "row": 13,
+        "cell": "C13"
+      },
+      "items": [
+        {
+          "id": "R11.01",
+          "key": "remediation",
+          "kind": "workflow",
+          "title": "Synthetic check remediation"
+        }
+      ]
+    },
+    {
+      "id": "R12",
+      "module_id": "M3",
+      "text": "Synthetic requirement R12",
+      "source": {
+        "sheet": "synthetic",
+        "row": 14,
+        "cell": "C14"
+      },
+      "items": [
+        {
+          "id": "R12.01",
+          "key": "health_assessment",
+          "kind": "inspection",
+          "title": "Synthetic check health_assessment"
+        },
+        {
+          "id": "R12.02",
+          "key": "risk_register",
+          "kind": "workflow",
+          "title": "Synthetic check risk_register"
+        }
+      ]
+    },
+    {
+      "id": "R13",
+      "module_id": "M3",
+      "text": "Synthetic requirement R13",
+      "source": {
+        "sheet": "synthetic",
+        "row": 15,
+        "cell": "C15"
+      },
+      "items": [
+        {
+          "id": "R13.01",
+          "key": "process_health",
+          "kind": "inspection",
+          "title": "Synthetic check process_health"
+        }
+      ]
+    },
+    {
+      "id": "R14",
+      "module_id": "M3",
+      "text": "Synthetic requirement R14",
+      "source": {
+        "sheet": "synthetic",
+        "row": 16,
+        "cell": "C16"
+      },
+      "items": [
+        {
+          "id": "R14.01",
+          "key": "deep_logs",
+          "kind": "inspection",
+          "title": "Synthetic check deep_logs"
+        },
+        {
+          "id": "R14.02",
+          "key": "prevention",
+          "kind": "workflow",
+          "title": "Synthetic check prevention"
+        }
+      ]
+    },
+    {
+      "id": "R15",
+      "module_id": "M3",
+      "text": "Synthetic requirement R15",
+      "source": {
+        "sheet": "synthetic",
+        "row": 17,
+        "cell": "C17"
+      },
+      "items": [
+        {
+          "id": "R15.01",
+          "key": "file_status",
+          "kind": "inspection",
+          "title": "Synthetic check file_status"
+        },
+        {
+          "id": "R15.02",
+          "key": "objects",
+          "kind": "inspection",
+          "title": "Synthetic check objects"
+        },
+        {
+          "id": "R15.03",
+          "key": "object_repair",
+          "kind": "workflow",
+          "title": "Synthetic check object_repair"
+        }
+      ]
+    },
+    {
+      "id": "R16",
+      "module_id": "M3",
+      "text": "Synthetic requirement R16",
+      "source": {
+        "sheet": "synthetic",
+        "row": 18,
+        "cell": "C18"
+      },
+      "items": [
+        {
+          "id": "R16.01",
+          "key": "resource_parameters",
+          "kind": "inspection",
+          "title": "Synthetic check resource_parameters"
+        },
+        {
+          "id": "R16.02",
+          "key": "performance",
+          "kind": "inspection",
+          "title": "Synthetic check performance"
+        },
+        {
+          "id": "R16.03",
+          "key": "bottleneck",
+          "kind": "workflow",
+          "title": "Synthetic check bottleneck"
+        }
+      ]
+    },
+    {
+      "id": "R17",
+      "module_id": "M3",
+      "text": "Synthetic requirement R17",
+      "source": {
+        "sheet": "synthetic",
+        "row": 19,
+        "cell": "C19"
+      },
+      "items": [
+        {
+          "id": "R17.01",
+          "key": "backup_trend",
+          "kind": "inspection",
+          "title": "Synthetic check backup_trend"
+        },
+        {
+          "id": "R17.02",
+          "key": "restore_validation",
+          "kind": "workflow",
+          "title": "Synthetic check restore_validation"
+        }
+      ]
+    },
+    {
+      "id": "R18",
+      "module_id": "M3",
+      "text": "Synthetic requirement R18",
+      "source": {
+        "sheet": "synthetic",
+        "row": 20,
+        "cell": "C20"
+      },
+      "items": [
+        {
+          "id": "R18.01",
+          "key": "high_risk",
+          "kind": "workflow",
+          "title": "Synthetic check high_risk"
+        }
+      ]
+    },
+    {
+      "id": "R19",
+      "module_id": "M4",
+      "text": "Synthetic requirement R19",
+      "source": {
+        "sheet": "synthetic",
+        "row": 21,
+        "cell": "C21"
+      },
+      "items": [
+        {
+          "id": "R19.01",
+          "key": "maintenance_schedule",
+          "kind": "workflow",
+          "title": "Synthetic check maintenance_schedule"
+        }
+      ]
+    },
+    {
+      "id": "R20",
+      "module_id": "M4",
+      "text": "Synthetic requirement R20",
+      "source": {
+        "sheet": "synthetic",
+        "row": 22,
+        "cell": "C22"
+      },
+      "items": [
+        {
+          "id": "R20.01",
+          "key": "backup_integrity",
+          "kind": "inspection",
+          "title": "Synthetic check backup_integrity"
+        },
+        {
+          "id": "R20.02",
+          "key": "retention_cleanup",
+          "kind": "workflow",
+          "title": "Synthetic check retention_cleanup"
+        }
+      ]
+    },
+    {
+      "id": "R21",
+      "module_id": "M4",
+      "text": "Synthetic requirement R21",
+      "source": {
+        "sheet": "synthetic",
+        "row": 23,
+        "cell": "C23"
+      },
+      "items": [
+        {
+          "id": "R21.01",
+          "key": "recovery_drill",
+          "kind": "workflow",
+          "title": "Synthetic check recovery_drill"
+        }
+      ]
+    },
+    {
+      "id": "R22",
+      "module_id": "M4",
+      "text": "Synthetic requirement R22",
+      "source": {
+        "sheet": "synthetic",
+        "row": 24,
+        "cell": "C24"
+      },
+      "items": [
+        {
+          "id": "R22.01",
+          "key": "sql_change",
+          "kind": "workflow",
+          "title": "Synthetic check sql_change"
+        },
+        {
+          "id": "R22.02",
+          "key": "release_window",
+          "kind": "workflow",
+          "title": "Synthetic check release_window"
+        },
+        {
+          "id": "R22.03",
+          "key": "change_observation",
+          "kind": "workflow",
+          "title": "Synthetic check change_observation"
+        }
+      ]
+    },
+    {
+      "id": "R23",
+      "module_id": "M4",
+      "text": "Synthetic requirement R23",
+      "source": {
+        "sheet": "synthetic",
+        "row": 25,
+        "cell": "C25"
+      },
+      "items": [
+        {
+          "id": "R23.01",
+          "key": "platform_change",
+          "kind": "workflow",
+          "title": "Synthetic check platform_change"
+        }
+      ]
+    },
+    {
+      "id": "R24",
+      "module_id": "M4",
+      "text": "Synthetic requirement R24",
+      "source": {
+        "sheet": "synthetic",
+        "row": 26,
+        "cell": "C26"
+      },
+      "items": [
+        {
+          "id": "R24.01",
+          "key": "temporary_support",
+          "kind": "workflow",
+          "title": "Synthetic check temporary_support"
+        },
+        {
+          "id": "R24.02",
+          "key": "replication_support",
+          "kind": "workflow",
+          "title": "Synthetic check replication_support"
+        }
+      ]
+    },
+    {
+      "id": "R25",
+      "module_id": "M5",
+      "text": "Synthetic requirement R25",
+      "source": {
+        "sheet": "synthetic",
+        "row": 27,
+        "cell": "C27"
+      },
+      "items": [
+        {
+          "id": "R25.01",
+          "key": "incident_lifecycle",
+          "kind": "workflow",
+          "title": "Synthetic check incident_lifecycle"
+        }
+      ]
+    },
+    {
+      "id": "R26",
+      "module_id": "M5",
+      "text": "Synthetic requirement R26",
+      "source": {
+        "sheet": "synthetic",
+        "row": 28,
+        "cell": "C28"
+      },
+      "items": [
+        {
+          "id": "R26.01",
+          "key": "incident_intake",
+          "kind": "workflow",
+          "title": "Synthetic check incident_intake"
+        },
+        {
+          "id": "R26.02",
+          "key": "incident_classification",
+          "kind": "workflow",
+          "title": "Synthetic check incident_classification"
+        }
+      ]
+    },
+    {
+      "id": "R27",
+      "module_id": "M5",
+      "text": "Synthetic requirement R27",
+      "source": {
+        "sheet": "synthetic",
+        "row": 29,
+        "cell": "C29"
+      },
+      "items": [
+        {
+          "id": "R27.01",
+          "key": "incident_plan",
+          "kind": "workflow",
+          "title": "Synthetic check incident_plan"
+        },
+        {
+          "id": "R27.02",
+          "key": "incident_risk",
+          "kind": "workflow",
+          "title": "Synthetic check incident_risk"
+        }
+      ]
+    },
+    {
+      "id": "R28",
+      "module_id": "M5",
+      "text": "Synthetic requirement R28",
+      "source": {
+        "sheet": "synthetic",
+        "row": 30,
+        "cell": "C30"
+      },
+      "items": [
+        {
+          "id": "R28.01",
+          "key": "incident_verification",
+          "kind": "workflow",
+          "title": "Synthetic check incident_verification"
+        },
+        {
+          "id": "R28.02",
+          "key": "incident_review",
+          "kind": "workflow",
+          "title": "Synthetic check incident_review"
+        }
+      ]
+    },
+    {
+      "id": "R29",
+      "module_id": "M5",
+      "text": "Synthetic requirement R29",
+      "source": {
+        "sheet": "synthetic",
+        "row": 31,
+        "cell": "C31"
+      },
+      "items": [
+        {
+          "id": "R29.01",
+          "key": "tool_register",
+          "kind": "workflow",
+          "title": "Synthetic check tool_register"
+        },
+        {
+          "id": "R29.02",
+          "key": "tool_verification",
+          "kind": "workflow",
+          "title": "Synthetic check tool_verification"
+        }
+      ]
+    },
+    {
+      "id": "R30",
+      "module_id": "M5",
+      "text": "Synthetic requirement R30",
+      "source": {
+        "sheet": "synthetic",
+        "row": 32,
+        "cell": "C32"
+      },
+      "items": [
+        {
+          "id": "R30.01",
+          "key": "incident_sla",
+          "kind": "workflow",
+          "title": "Synthetic check incident_sla"
+        },
+        {
+          "id": "R30.02",
+          "key": "incident_escalation",
+          "kind": "workflow",
+          "title": "Synthetic check incident_escalation"
+        }
+      ]
+    },
+    {
+      "id": "R31",
+      "module_id": "M6",
+      "text": "Synthetic requirement R31",
+      "source": {
+        "sheet": "synthetic",
+        "row": 33,
+        "cell": "C33"
+      },
+      "items": [
+        {
+          "id": "R31.01",
+          "key": "performance_plan",
+          "kind": "workflow",
+          "title": "Synthetic check performance_plan"
+        }
+      ]
+    },
+    {
+      "id": "R32",
+      "module_id": "M6",
+      "text": "Synthetic requirement R32",
+      "source": {
+        "sheet": "synthetic",
+        "row": 34,
+        "cell": "C34"
+      },
+      "items": [
+        {
+          "id": "R32.01",
+          "key": "slow_sql",
+          "kind": "inspection",
+          "title": "Synthetic check slow_sql"
+        },
+        {
+          "id": "R32.02",
+          "key": "sql_optimization",
+          "kind": "workflow",
+          "title": "Synthetic check sql_optimization"
+        }
+      ]
+    },
+    {
+      "id": "R33",
+      "module_id": "M6",
+      "text": "Synthetic requirement R33",
+      "source": {
+        "sheet": "synthetic",
+        "row": 35,
+        "cell": "C35"
+      },
+      "items": [
+        {
+          "id": "R33.01",
+          "key": "indexes",
+          "kind": "inspection",
+          "title": "Synthetic check indexes"
+        },
+        {
+          "id": "R33.02",
+          "key": "index_change",
+          "kind": "workflow",
+          "title": "Synthetic check index_change"
+        }
+      ]
+    },
+    {
+      "id": "R34",
+      "module_id": "M6",
+      "text": "Synthetic requirement R34",
+      "source": {
+        "sheet": "synthetic",
+        "row": 36,
+        "cell": "C36"
+      },
+      "items": [
+        {
+          "id": "R34.01",
+          "key": "tuning_parameters",
+          "kind": "inspection",
+          "title": "Synthetic check tuning_parameters"
+        },
+        {
+          "id": "R34.02",
+          "key": "parameter_change",
+          "kind": "workflow",
+          "title": "Synthetic check parameter_change"
+        }
+      ]
+    },
+    {
+      "id": "R35",
+      "module_id": "M6",
+      "text": "Synthetic requirement R35",
+      "source": {
+        "sheet": "synthetic",
+        "row": 37,
+        "cell": "C37"
+      },
+      "items": [
+        {
+          "id": "R35.01",
+          "key": "architecture_change",
+          "kind": "workflow",
+          "title": "Synthetic check architecture_change"
+        }
+      ]
+    },
+    {
+      "id": "R36",
+      "module_id": "M6",
+      "text": "Synthetic requirement R36",
+      "source": {
+        "sheet": "synthetic",
+        "row": 38,
+        "cell": "C38"
+      },
+      "items": [
+        {
+          "id": "R36.01",
+          "key": "operations_analysis",
+          "kind": "inspection",
+          "title": "Synthetic check operations_analysis"
+        },
+        {
+          "id": "R36.02",
+          "key": "quarterly_review",
+          "kind": "workflow",
+          "title": "Synthetic check quarterly_review"
+        }
+      ]
+    },
+    {
+      "id": "R37",
+      "module_id": "M6",
+      "text": "Synthetic requirement R37",
+      "source": {
+        "sheet": "synthetic",
+        "row": 39,
+        "cell": "C39"
+      },
+      "items": [
+        {
+          "id": "R37.01",
+          "key": "period_review",
+          "kind": "workflow",
+          "title": "Synthetic check period_review"
+        },
+        {
+          "id": "R37.02",
+          "key": "improvement_plan",
+          "kind": "workflow",
+          "title": "Synthetic check improvement_plan"
+        }
+      ]
+    }
+  ],
+  "equipment": [
+    {
+      "family": "oracle",
+      "version": "synthetic",
+      "quantity": 1,
+      "unit": "fixture",
+      "purpose": "regression fixture"
+    },
+    {
+      "family": "dm",
+      "version": "synthetic",
+      "quantity": 1,
+      "unit": "fixture",
+      "purpose": "regression fixture"
+    },
+    {
+      "family": "sqlserver",
+      "version": "synthetic",
+      "quantity": 1,
+      "unit": "fixture",
+      "purpose": "regression fixture"
+    },
+    {
+      "family": "gbase8a",
+      "version": "synthetic",
+      "quantity": 1,
+      "unit": "fixture",
+      "purpose": "regression fixture"
+    }
+  ]
+}

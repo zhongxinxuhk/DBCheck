@@ -8,6 +8,9 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <title id="um-page-title">{{ product_name }} - 系统管理</title>
     <style>
 
@@ -256,6 +259,26 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
             padding: 40px;
             color: var(--text-muted);
         }
+        /* 权限不足 / 登录态失效的说明面板：独立访问 /um/admin 时替代白屏 */
+        .denied-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 48px 24px;
+            text-align: center;
+        }
+        .denied-panel .denied-icon { font-size: 28px; line-height: 1; }
+        .denied-panel h2 { font-size: 15px; font-weight: 600; margin: 0; }
+        .denied-panel p {
+            font-size: 12px;
+            line-height: 1.8;
+            color: var(--text-muted);
+            max-width: 460px;
+            margin: 0;
+        }
+        .denied-panel .btn { margin-top: 4px; }
 
         /* ═════ 深色主题覆盖（body.dark-theme 时生效） ═════ */
         body.dark-theme { background: #1a1a2e; color: #e0e0e0; }
@@ -378,7 +401,12 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
         // ========== 工具函数 ==========
         const API = (url, options = {}) => {
-            const token = localStorage.getItem('token');
+            // embed 模式下不再附加 Bearer：内嵌页与父页面共享同一个会话 Cookie，
+            // 如果 localStorage 里还留着另一个账户的旧 token，服务端会判定
+            // “请求身份与会话身份不一致” 并整体 401，内嵌页随之被踢去登录页——
+            // 而登录页的 X-Frame-Options 是 DENY，最终表现就是弹窗一片空白。
+            // 内嵌场景只依赖 Cookie，页面身份和接口身份必然一致。
+            const token = isEmbed ? null : localStorage.getItem('token');
             const headers = {
                 'Content-Type': 'application/json',
                 ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
@@ -386,12 +414,44 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
             };
             return fetch(url, { ...options, headers, credentials: 'include' }).then(r => {
                 if (r.status === 401) {
-                    localStorage.clear();
-                    window.location.href = '/um/login';
+                    denyAccess('登录状态已失效，或页面身份与当前会话不一致');
+                } else if (r.status === 428) {
+                    denyAccess('系统仍在使用默认口令，需先完成口令更新后才能进入系统管理。', '需要先更新默认口令');
                 }
                 return r.json();
             });
         };
+
+        /**
+         * 权限不足/登录态失效时的兜底呈现。
+         * 内嵌模式下交给父页面统一渲染（父页面样式完整、还能直接发起重新登录），
+         * 独立访问时在本页渲染一块可读的说明，绝不留白屏。
+         */
+        function denyAccess(detail, title) {
+            if (isEmbed && window.parent !== window) {
+                window.parent.postMessage({ type: 'um-access-denied', detail: detail || '', title: title || '' }, '*');
+                return;
+            }
+            const nav = document.querySelector('.tab-nav');
+            if (nav) nav.style.display = 'none';
+            const area = document.getElementById('contentArea');
+            if (!area) return;
+            area.innerHTML = `
+                <div class="denied-panel">
+                    <div class="denied-icon">🔒</div>
+                    <h2>${title || '需要管理员权限'}</h2>
+                    <p>${detail || '当前账户不具备系统管理权限。'}</p>
+                    <button class="btn btn-primary" onclick="switchAccount()">切换到管理员账户</button>
+                </div>`;
+        }
+
+        function switchAccount() {
+            if (isEmbed && window.parent !== window) {
+                window.parent.postMessage({ type: 'um-switch-account' }, '*');
+                return;
+            }
+            logout();
+        }
 
         function showToast(msg, type = 'success') {
             const el = document.createElement('div');
@@ -423,24 +483,50 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
         }
 
         function logout() {
-            localStorage.clear();
+            // 内嵌模式下不能自行跳转：登录页带 X-Frame-Options: DENY，
+            // iframe 会变成一片空白。交给顶层窗口发起登出。
+            if (isEmbed && window.parent !== window) {
+                window.parent.postMessage({ type: 'um-switch-account' }, '*');
+                return;
+            }
+            localStorage.removeItem('token');
             window.location.href = '/um/login';
         }
 
         // ========== 页面初始化 ==========
+        /** 读取当前会话身份。返回 {ok, user, status}，不抛异常。 */
+        async function fetchCurrentUser() {
+            try {
+                const res = await fetch('/api/um/auth/status', { credentials: 'include' });
+                if (!res.ok) return { ok: false, status: res.status };
+                const d = await res.json();
+                if (d.code !== 0 || !d.data || !d.data.user) return { ok: false, status: 200 };
+                const u = d.data.user;
+                const el = document.getElementById('currentUser');
+                if (el) {
+                    el.textContent = `${u.nickname || u.username} (${(u.roles || []).join(', ')})`;
+                }
+                return { ok: true, user: u };
+            } catch (e) {
+                return { ok: false, status: 0 };
+            }
+        }
+
         async function init() {
             await initI18N();
             applyStaticI18N();
-            if (!isEmbed) {
-                try {
-                    const res = await API('/api/um/auth/status');
-                    if (res.code === 0 && res.data.user) {
-                        document.getElementById('currentUser').textContent =
-                            `${res.data.user.nickname || res.data.user.username} (${res.data.user.roles.join(', ')})`;
-                    }
-                } catch (e) {
-                    window.location.href = '/um/login';
+            const me = await fetchCurrentUser();
+            if (!me.ok) {
+                if (me.status === 401) {
+                    denyAccess('登录状态已失效，或页面身份与当前会话不一致');
+                    return;
                 }
+                // 其它异常（服务端重启等）：继续尝试，让各接口自己报错
+            } else if ((me.user.roles || []).indexOf('admin') < 0) {
+                const who = me.user.nickname || me.user.username;
+                const roles = (me.user.roles || []).join(' / ') || '未知角色';
+                denyAccess(`当前登录账户 ${who}（${roles}）不具备系统管理权限。系统管理仅对 admin 角色开放。`);
+                return;
             }
             loadUsers();
         }

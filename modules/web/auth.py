@@ -12,6 +12,11 @@ DBCheck 用户认证模块 (v2.6.3)
 - 预留多租户扩展（role 字段）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from modules.core.paths import PROJECT_ROOT
 import os
 import secrets
@@ -109,7 +114,8 @@ def init_default_user():
         if not existing:
             # 创建默认管理员
             from modules.user_management.utils.password import hash_password
-            password_hash = hash_password('admin123')
+            from modules.core.bootstrap_security import initial_admin_password
+            password_hash = hash_password(initial_admin_password())
             now = datetime.now().isoformat()
             conn.execute(
                 """INSERT INTO um_user(username, password, nickname, email, status, created_at, updated_at)
@@ -117,7 +123,7 @@ def init_default_user():
                 ('admin', password_hash, '管理员', '', 1, now, now)
             )
             admin_user_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
-            print("  [OK] RBAC 默认管理员已创建: admin / admin123")
+            print("  [OK] RBAC 管理员已初始化，初始口令保存在受限本机文件 data/bootstrap_admin_password")
         else:
             admin_user_id = existing['id']
             print("  [OK] RBAC 用户已存在，检查角色分配...")
@@ -207,10 +213,17 @@ def register_auth_routes(app):
                     pass
 
                 # 设置 Flask session (保持原逻辑)
+                # 登录必须先抹掉上一次会话残留的鉴权字段，再按本次账户重新写入，
+                # 否则 is_admin / user_roles 会沿用上一个账户的值（换账户时界面与
+                # 真实权限脱钩，甚至让低权限账户按管理员界面展示）。
+                session.pop('is_admin', None)
+                session.pop('user_roles', None)
                 session['user_id'] = user['id']
                 session['username'] = user['username']
                 session['display_name'] = user['nickname'] or user['username']
                 session['role'] = roles[0] if roles else 'user'
+                session['user_roles'] = roles
+                session['is_admin'] = 'admin' in roles
                 session.permanent = True
 
                 # 生成 JWT token (供 RBAC 管理页使用)
@@ -383,8 +396,8 @@ def register_auth_routes(app):
 
         if not old_pw or not new_pw:
             return jsonify({'ok': False, 'error': '请输入旧密码和新密码'}), 400
-        if len(new_pw) < 6:
-            return jsonify({'ok': False, 'error': '新密码至少6位'}), 400
+        if len(new_pw) < 16:
+            return jsonify({'ok': False, 'error': '新密码至少16位'}), 400
         if old_pw == new_pw:
             return jsonify({'ok': False, 'error': '新密码不能与旧密码相同'}), 400
 

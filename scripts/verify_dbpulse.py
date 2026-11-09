@@ -5,6 +5,11 @@
 
 """Dependency-free checks for fork branding, update links and release paths."""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import ast
 import sys
 from pathlib import Path
@@ -19,7 +24,9 @@ from i18n import _LANGS, get_all_translations, t
 def main():
     assert PRODUCT_NAME_EN == 'DBPulse'
     assert PRODUCT_NAME_ZH == '数据库智能巡检系统'
-    assert SYSTEM_UPDATE_URL == 'https://github.com/zhongxinxuhk/DBCheck/releases'
+    # 更新/公告源改为预置的官网地址，避免 GitHub 直连不可用。
+    assert SYSTEM_UPDATE_URL == 'https://dbcheck.top/announcement.json'
+    assert '/releases' not in SYSTEM_UPDATE_URL
     for lang in _LANGS:
         data = get_all_translations(lang)
         assert data['login.title'] == 'DBPulse', lang
@@ -30,7 +37,9 @@ def main():
         assert data['webui.license_key_placeholder'] == _LANGS[lang]['webui.license_key_placeholder'], lang
     assert 'DBCheck/drivers/' in t('webui.yashandb_driver_desc', 'en')
     template = (ROOT / 'web_templates/index.html').read_text(encoding='utf-8-sig')
-    assert 'id="system-update-link" href="{{ system_update_url }}"' in template
+    # 更新入口不再是 GitHub 跳转链接，而是直接请求后端缓存的预置公告源。
+    assert 'id="system-update-link"' in template and '/api/announcement' in template
+    assert 'GitHub Releases →' not in template
     assert 'RaccoonX / DBCheck' in template and 'sdfiyon@gmail.com' in template
     assert 'https://github.com/fiyo/DBCheck' in template
     # Verify all packaging producers and consumers agree on the renamed paths.

@@ -35,6 +35,10 @@ def login():
     result = auth_service.login(username, password)
     if result:
         # 设置Flask session
+        # 先清掉上一次会话遗留的鉴权字段，避免换账户后 is_admin / user_roles
+        # 仍沿用上一个账户的值（会让界面权限与后端真实角色不一致）。
+        for _k in ('is_admin', 'user_roles', 'role', 'display_name'):
+            session.pop(_k, None)
         session['user_id'] = result['user']['id']
         session['username'] = result['user']['username']
         # 存角色（用于首页菜单权限判断，roles 已是字符串列表如 ['admin']）

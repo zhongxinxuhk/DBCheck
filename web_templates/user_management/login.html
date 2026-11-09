@@ -2,829 +2,581 @@
 SPDX-License-Identifier: Apache-2.0
 Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ product_full_name }} - Login</title>
+    <meta name="description" content="{{ product_full_name }} · {{ product_tagline }}">
+    <title>{{ product_full_name }} · 登录</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <script>
+        /* 主题需在首屏前确定，避免深/浅色闪跳 */
+        try {
+            if (localStorage.getItem('dbcheck-theme') === 'light') {
+                document.documentElement.dataset.theme = 'light';
+            }
+        } catch (error) {}
+    </script>
     <style>
-        /* ─── 基础重置 ─── */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
+        /* ─── 设计令牌：与系统内页（服务台账 / 口令设置）保持一致 ─── */
         :root {
-            --c-navy: #0A2A6E;
-            --c-blue: #4A9FD8;
-            --c-dark-bg: #0D1426;
-            --c-light-bg: #F8F9FA;
-            --c-green: #00C8A0;
+            color-scheme: dark;
+            --page: #0d1426;
+            --card: #141f35;
+            --text: #eef3fb;
+            --muted: #9eacc3;
+            --line: rgba(171, 195, 232, .14);
+            --field: rgba(255, 255, 255, .035);
+            --accent: #4a9fd8;
+            --accent-soft: rgba(74, 159, 216, .13);
+            --focus: rgba(74, 159, 216, .2);
+            --shadow: rgba(2, 10, 28, .34);
+            --danger: #ffaaa1;
+        }
+        html[data-theme="light"] {
+            color-scheme: light;
+            --page: #f8f9fa;
+            --card: #ffffff;
+            --text: #182c48;
+            --muted: #65758b;
+            --line: rgba(10, 42, 110, .12);
+            --field: #f8fafd;
+            --accent: #0a2a6e;
+            --accent-soft: rgba(10, 42, 110, .07);
+            --focus: rgba(74, 159, 216, .14);
+            --shadow: rgba(10, 42, 110, .09);
+            --danger: #b3261e;
         }
 
+        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
-            min-height: 100vh;
-            background: var(--c-dark-bg);
-            color: #fff;
-            overflow-x: hidden;
-        }
-        html[data-theme="light"] body {
-            background: var(--c-light-bg);
-            color: #1e293b;
-        }
-
-        /* ─── 整体布局：左右分栏 ─── */
-        .login-container {
-            display: flex;
-            min-height: 100vh;
-        }
-
-        /* ─── 左侧品牌展示区 ─── */
-        .brand-panel {
-            flex: 0 0 50%;
-            position: relative;
-            background: linear-gradient(160deg, #0A2A6E 0%, #15388A 40%, #4A9FD8 100%);
+            margin: 0;
+            min-height: 100dvh;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 60px 50px;
-            overflow: hidden;
+            background: var(--page);
+            color: var(--text);
+            font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+            -webkit-font-smoothing: antialiased;
         }
-
-        /* 品牌区装饰光晕 */
-        .brand-panel::before {
-            content: '';
-            position: absolute;
-            width: 500px;
-            height: 500px;
-            border-radius: 50%;
-            background: rgba(74, 159, 216, 0.25);
-            filter: blur(80px);
-            top: 10%;
-            left: 30%;
-            animation: brandGlow 14s ease-in-out infinite alternate;
-        }
-        .brand-panel::after {
-            content: '';
-            position: absolute;
-            width: 400px;
-            height: 400px;
-            border-radius: 50%;
-            background: rgba(0, 200, 160, 0.15);
-            filter: blur(90px);
-            bottom: 5%;
-            right: 10%;
-            animation: brandGlow 18s ease-in-out infinite alternate-reverse;
-        }
-        @keyframes brandGlow {
-            0%   { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(30px, -20px) scale(1.15); }
-        }
-
-        /* 网格纹理 */
-        .brand-grid {
-            position: absolute;
+        /* 极淡的品牌光晕，取代原先的大面积渐变与网格 */
+        body::before {
+            content: "";
+            position: fixed;
             inset: 0;
-            background-image:
-                linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-            background-size: 50px 50px;
-            mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 100%);
-            -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 100%);
+            z-index: -1;
             pointer-events: none;
+            background: radial-gradient(ellipse at 14% 32%, rgba(37, 90, 171, .16), transparent 58%);
+        }
+        html[data-theme="light"] body::before {
+            background: radial-gradient(ellipse at 14% 32%, rgba(10, 42, 110, .055), transparent 58%);
         }
 
-        .brand-content {
-            position: relative;
-            z-index: 2;
-            text-align: center;
-            max-width: 420px;
-            width: 100%;
-            animation: brandEntry 0.8s cubic-bezier(0.16,1,0.3,1) both;
+        button, input, select { font: inherit; }
+        button { cursor: pointer; }
+        button:disabled { cursor: wait; opacity: .65; }
+        button, input, select { transition: border-color .18s, background .18s, box-shadow .18s, color .18s; }
+        button:focus-visible, input:focus-visible, select:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
         }
-        @keyframes brandEntry {
-            from { opacity: 0; transform: translateY(24px); }
+        svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+        .sr-only {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+        }
+
+        /* ─── 顶栏 ─── */
+        .page-header {
+            width: 100%;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 22px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+        .brand-lockup { display: flex; align-items: center; gap: 20px; min-width: 0; }
+        .brand-lockup img { display: block; width: 174px; height: auto; object-fit: contain; }
+        .brand-lockup .logo-light { display: none; }
+        html[data-theme="light"] .brand-lockup .logo-dark { display: none; }
+        html[data-theme="light"] .brand-lockup .logo-light { display: block; }
+        .brand-lockup > span {
+            font-size: 12.5px;
+            color: var(--muted);
+            padding-left: 20px;
+            border-left: 1px solid var(--line);
+            letter-spacing: .04em;
+            white-space: nowrap;
+        }
+        .header-actions { display: flex; align-items: center; gap: 14px; }
+        .icon-button {
+            width: 34px; height: 34px;
+            display: grid; place-items: center;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            color: var(--muted);
+        }
+        .icon-button:hover { background: var(--accent-soft); color: var(--text); border-color: var(--line); }
+        .icon-button svg { width: 19px; height: 19px; }
+        .theme-sun { display: none; }
+        html[data-theme="light"] .theme-sun { display: block; }
+        html[data-theme="light"] .theme-moon { display: none; }
+        .lang-select {
+            height: 34px;
+            padding: 0 28px 0 12px;
+            background: transparent;
+            color: var(--muted);
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            font-size: 12px;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239eacc3' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 9px center;
+        }
+        .lang-select:hover { color: var(--text); border-color: var(--accent); }
+        .lang-select option { background: var(--card); color: var(--text); }
+
+        /* ─── 主区：左叙述 / 右登录卡 ─── */
+        .login-layout {
+            flex: 1;
+            width: 100%;
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 10px 40px 46px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 416px);
+            gap: clamp(40px, 6vw, 88px);
+            align-items: center;
+        }
+        .intro { min-width: 0; animation: rise .5s cubic-bezier(.16, 1, .3, 1) both; }
+        .eyebrow {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2.2px;
+            color: var(--accent);
+            opacity: .82;
+        }
+        .intro h1 {
+            margin: 16px 0 18px;
+            font-size: clamp(28px, 2.7vw, 37px);
+            font-weight: 600;
+            line-height: 1.38;
+            letter-spacing: -.03em;
+            max-width: 15em;
+            text-wrap: balance;   /* 中文标题按行均衡折行，避免末行孤字 */
+        }
+        /* 标题按「·」分句成不可断片，避免出现单字孤行或词内断行 */
+        .intro h1 span { display: inline; }
+        .intro-copy {
+            margin: 0;
+            max-width: 26em;
+            color: var(--muted);
+            font-size: 14.5px;
+            line-height: 1.9;
+        }
+        .feature-list {
+            list-style: none;
+            margin: 32px 0 0;
+            padding: 0;
+            border-bottom: 1px solid var(--line);
+            max-width: 30em;
+        }
+        .feature-list li {
+            display: grid;
+            grid-template-columns: 34px minmax(0, 1fr);
+            gap: 16px;
+            padding: 14px 0;
+            border-top: 1px solid var(--line);
+        }
+        .feature-index {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--muted);
+            opacity: .72;
+            letter-spacing: .1em;
+            font-variant-numeric: tabular-nums;
+            padding-top: 4px;
+        }
+        .feature-title { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; }
+        .feature-desc { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+        .intro-note {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 26px 0 0;
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: .03em;
+            opacity: .85;
+        }
+        .note-line { width: 22px; height: 1px; flex-shrink: 0; background: var(--accent); opacity: .7; }
+
+        /* ─── 登录卡 ─── */
+        .login-card {
+            padding: 28px 30px 24px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            box-shadow: 0 16px 55px var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .035);
+            animation: rise .5s cubic-bezier(.16, 1, .3, 1) .06s both;
+        }
+        html[data-theme="light"] .login-card { box-shadow: 0 16px 55px var(--shadow); }
+        .login-card h2 {
+            margin: 10px 0 6px;
+            font-size: 23px;
+            font-weight: 600;
+            letter-spacing: -.02em;
+        }
+        .card-sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+        form { margin: 22px 0 0; }
+        .field-group + .field-group { margin-top: 14px; }
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: .02em;
+        }
+        input {
+            width: 100%;
+            min-height: 46px;
+            padding: 11px 13px;
+            background: var(--field);
+            color: var(--text);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+        }
+        input::placeholder { color: var(--muted); opacity: .62; font-size: 12.5px; }
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--focus);
+        }
+        .password-field { position: relative; }
+        .password-field input { padding-right: 44px; }
+        .reveal-button {
+            position: absolute;
+            right: 6px; top: 6px;
+            width: 34px; height: 34px;
+            display: grid; place-items: center;
+            padding: 6px;
+            background: transparent;
+            border: 0;
+            border-radius: 7px;
+            color: var(--muted);
+        }
+        .reveal-button:hover { color: var(--text); background: var(--accent-soft); }
+        .reveal-button svg { width: 18px; height: 18px; }
+        .eye-slash { display: none; }
+        .reveal-button[aria-pressed="true"] .eye-slash { display: block; }
+
+        .feedback { margin: 12px 0 0; min-height: 0; color: var(--danger); font-size: 12px; line-height: 1.6; }
+        .feedback:empty { display: none; }
+
+        .primary-button {
+            position: relative;
+            width: 100%;
+            min-height: 46px;
+            margin-top: 18px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #0a2a6e, #4a9fd8);
+            color: #fff;
+            border: 0;
+            border-radius: 11px;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: .04em;
+            box-shadow: 0 5px 16px rgba(10, 42, 110, .19);
+        }
+        .primary-button:hover { box-shadow: 0 8px 24px rgba(74, 159, 216, .26); }
+        .primary-button:active { transform: translateY(1px); }
+        .primary-button.loading { pointer-events: none; opacity: .9; }
+        .primary-button.loading .btn-label { opacity: 0; }
+        .primary-button.loading::after {
+            content: "";
+            position: absolute;
+            width: 18px; height: 18px;
+            border: 2px solid rgba(255, 255, 255, .35);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .65s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ─── 演示账户 ─── */
+        .demo-block {
+            margin-top: 22px;
+            padding-top: 17px;
+            border-top: 1px solid var(--line);
+        }
+        .demo-title { font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .06em; }
+        .demo-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+        .demo-list li { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+        .demo-tag {
+            min-width: 44px;
+            padding: 2px 7px;
+            text-align: center;
+            border-radius: 5px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: .02em;
+        }
+        .demo-list code {
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+            font-size: 11.5px;
+            color: var(--text);
+            opacity: .78;
+            letter-spacing: .01em;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 20px 0 0;
+            font-size: 10.5px;
+            color: var(--muted);
+            opacity: .72;
+        }
+
+        /* ─── 页脚署名 ─── */
+        .page-footer {
+            width: 100%;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 40px 22px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 24px;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--muted);
+            opacity: .7;
+        }
+
+        @keyframes rise {
+            from { opacity: 0; transform: translateY(14px); }
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* 吉祥物 */
-        .mascot-wrap {
-            position: relative;
-            width: 280px;
-            height: 280px;
-            margin: 0 auto 20px;
-        }
-        .mascot-wrap::before {
-            content: '';
-            position: absolute;
-            inset: -20px;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(0,200,160,0.2) 0%, transparent 70%);
-            animation: mascotBreath 3s ease-in-out infinite;
-        }
-        @keyframes mascotBreath {
-            0%, 100% { transform: scale(1); opacity: 0.6; }
-            50%      { transform: scale(1.1); opacity: 1; }
-        }
-        .mascot-img {
-            position: relative;
-            z-index: 1;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            filter: drop-shadow(0 12px 40px rgba(0,0,0,0.4));
-            animation: mascotFloat 5s ease-in-out infinite;
-        }
-        @keyframes mascotFloat {
-            0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(-12px); }
-        }
-
-        /* 吉祥物徽章 */
-        .mascot-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 16px;
-            background: rgba(255,255,255,0.12);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 20px;
-            font-size: 12px;
-            color: rgba(255,255,255,0.9);
-            margin-bottom: 18px;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-        }
-        .mascot-badge .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: var(--c-green);
-            animation: dotPulse 2s ease-in-out infinite;
-        }
-        @keyframes dotPulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(0,200,160,0.6); }
-            50%      { box-shadow: 0 0 0 6px rgba(0,200,160,0); }
-        }
-
-        /* Logo + 产品名 */
-        .brand-logo-row {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            margin-bottom: 10px;
-        }
-        .brand-logo {
-            width: 52px;
-            height: 52px;
-            border-radius: 14px;
-            object-fit: contain;
-        }
-        .brand-name {
-            font-size: 34px;
-            font-weight: 800;
-            letter-spacing: -1px;
-            color: #fff;
-        }
-
-        /* Slogan */
-        .brand-slogan {
-            font-size: 14px;
-            color: rgba(255,255,255,0.75);
-            letter-spacing: 1px;
-            margin-bottom: 36px;
-        }
-
-        /* 特性亮点 */
-        .features {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            text-align: left;
-        }
-        .feature-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 14px;
-            padding: 14px 18px;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 14px;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            transition: transform 0.3s, background 0.3s;
-        }
-        .feature-item:hover {
-            transform: translateX(6px);
-            background: rgba(255,255,255,0.14);
-        }
-        .feature-icon {
-            flex-shrink: 0;
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            background: rgba(0,200,160,0.15);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--c-green);
-        }
-        .feature-icon svg { width: 22px; height: 22px; }
-        .feature-text { flex: 1; }
-        .feature-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: #fff;
-            margin-bottom: 2px;
-        }
-        .feature-desc {
-            font-size: 12px;
-            color: rgba(255,255,255,0.6);
-        }
-
-        /* ─── 右侧登录表单区 ─── */
-        .form-panel {
-            flex: 0 0 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px 30px;
-            position: relative;
-        }
-
-        /* 右侧装饰光晕 */
-        .form-panel::before {
-            content: '';
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            border-radius: 50%;
-            background: rgba(74, 159, 216, 0.08);
-            filter: blur(80px);
-            top: 15%;
-            right: -10%;
-            pointer-events: none;
-        }
-        html[data-theme="light"] .form-panel::before {
-            background: rgba(10, 42, 110, 0.06);
-        }
-
-        /* 登录卡片 */
-        .login-card {
-            position: relative;
-            width: 100%;
-            max-width: 400px;
-            padding: 40px 36px 32px;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 22px;
-            backdrop-filter: blur(24px) saturate(1.4);
-            -webkit-backdrop-filter: blur(24px) saturate(1.4);
-            box-shadow:
-                0 8px 32px rgba(0,0,0,0.25),
-                0 2px 8px rgba(0,0,0,0.15),
-                inset 0 1px 0 rgba(255,255,255,0.06);
-            animation: cardEntry 0.7s cubic-bezier(0.16,1,0.3,1) both;
-        }
-        @keyframes cardEntry {
-            from { opacity: 0; transform: translateY(28px) scale(0.96); }
-            to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        html[data-theme="light"] .login-card {
-            background: rgba(255,255,255,0.92);
-            border: 1px solid rgba(10,42,110,0.1);
-            box-shadow:
-                0 20px 60px rgba(10,42,110,0.1),
-                0 4px 16px rgba(0,0,0,0.06);
-        }
-
-        .login-card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--c-navy), var(--c-blue), transparent);
-            opacity: 0.7;
-            border-radius: 22px 22px 0 0;
-        }
-
-        /* 欢迎标题 */
-        .welcome-title {
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-            margin-bottom: 6px;
-            color: #fff;
-        }
-        html[data-theme="light"] .welcome-title {
-            color: #0A2A6E;
-        }
-        .welcome-desc {
-            font-size: 13px;
-            margin-bottom: 30px;
-            color: rgba(255,255,255,0.45);
-        }
-        html[data-theme="light"] .welcome-desc {
-            color: #94a3b8;
-        }
-
-        /* ─── 表单 ─── */
-        .form-group {
-            margin-bottom: 18px;
-            position: relative;
-        }
-        .form-label {
-            display: block;
-            font-size: 11px;
-            font-weight: 600;
-            color: rgba(255,255,255,0.45);
-            margin-bottom: 7px;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-        html[data-theme="light"] .form-label { color: #64748b; }
-
-        .form-input {
-            width: 100%;
-            padding: 13px 16px 13px 44px;
-            background: rgba(255,255,255,0.05);
-            border: 1.5px solid rgba(255,255,255,0.12);
-            border-radius: 14px;
-            color: #e2e8f0;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
-            box-sizing: border-box;
-        }
-        html[data-theme="light"] .form-input {
-            background: #f8fafc;
-            border-color: #e2e8f0;
-            color: #1e293b;
-        }
-        .form-input:focus {
-            border-color: var(--c-blue);
-            background: rgba(74,159,216,0.06);
-            box-shadow: 0 0 0 3px rgba(74,159,216,0.12), inset 0 1px 4px rgba(74,159,216,0.05);
-        }
-        html[data-theme="light"] .form-input:focus {
-            border-color: var(--c-navy);
-            background: rgba(10,42,110,0.04);
-            box-shadow: 0 0 0 3px rgba(10,42,110,0.08);
-        }
-        .form-input::placeholder { color: rgba(255,255,255,0.25); }
-        html[data-theme="light"] .form-input::placeholder { color: #94a3b8; }
-
-        .input-icon {
-            position: absolute;
-            left: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 18px;
-            height: 18px;
-            color: rgba(255,255,255,0.3);
-            pointer-events: none;
-            transition: color 0.25s;
-            margin-top: 10px;
-        }
-        .form-group:focus-within .input-icon { color: var(--c-blue); }
-        html[data-theme="light"] .form-group:focus-within .input-icon { color: var(--c-navy); }
-
-        .pwd-toggle {
-            position: absolute;
-            right: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: rgba(255,255,255,0.3);
-            cursor: pointer;
-            padding: 4px;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: color 0.25s, background 0.25s;
-            margin-top: 10px;
-        }
-        html[data-theme="light"] .pwd-toggle { color: #94a3b8; }
-        .pwd-toggle:hover {
-            color: var(--c-blue);
-            background: rgba(74,159,216,0.08);
-        }
-        html[data-theme="light"] .pwd-toggle:hover {
-            color: var(--c-navy);
-            background: rgba(10,42,110,0.06);
-        }
-
-        /* ─── 登录按钮 ─── */
-        .login-btn {
-            width: 100%;
-            padding: 14px;
-            margin-top: 6px;
-            background: linear-gradient(135deg, #0A2A6E 0%, #4A9FD8 100%);
-            background-size: 200% 200%;
-            border: none;
-            border-radius: 14px;
-            color: #fff;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: transform 0.25s, box-shadow 0.25s;
-            letter-spacing: 0.5px;
-            position: relative;
-            overflow: hidden;
-            animation: btnBgShift 4s ease-in-out infinite;
-        }
-        @keyframes btnBgShift {
-            0%, 100% { background-position: 0% 50%; }
-            50%      { background-position: 100% 50%; }
-        }
-        .login-btn::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
-            opacity: 0;
-            transition: opacity 0.25s;
-        }
-        .login-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(10,42,110,0.4), 0 2px 8px rgba(74,159,216,0.2);
-        }
-        .login-btn:hover::before { opacity: 1; }
-        .login-btn:active { transform: translateY(0) scale(0.98); }
-
-        .login-btn.loading { pointer-events: none; opacity: 0.85; }
-        .login-btn.loading .btn-text { opacity: 0; }
-        .login-btn.loading::after {
-            content: '';
-            position: absolute;
-            width: 20px; height: 20px;
-            top: 50%; left: 50%;
-            margin: -10px 0 0 -10px;
-            border: 2.5px solid rgba(255,255,255,0.3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: loginSpin 0.6s linear infinite;
-        }
-        @keyframes loginSpin { to { transform: rotate(360deg); } }
-
-        /* 涟漪效果 */
-        .ripple {
-            position: absolute;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.35);
-            transform: scale(0);
-            animation: rippleAnim 0.6s ease-out;
-            pointer-events: none;
-        }
-        @keyframes rippleAnim {
-            to { transform: scale(4); opacity: 0; }
-        }
-
-        /* ─── 错误提示 ─── */
-        .login-error {
-            color: #ff6b6b;
-            font-size: 12.5px;
-            margin-top: 14px;
-            text-align: center;
-            min-height: 20px;
-            opacity: 0;
-            transform: translateY(-4px);
-            transition: opacity 0.2s, transform 0.2s;
-        }
-        .login-error.show {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        /* ─── 卡片抖动 ─── */
-        .login-card.shake {
-            animation: cardShake 0.4s ease;
-        }
-        @keyframes cardShake {
-            0%,100% { transform: translateX(0); }
-            20%     { transform: translateX(-8px); }
-            40%     { transform: translateX(8px); }
-            60%     { transform: translateX(-5px); }
-            80%     { transform: translateX(5px); }
-        }
-
-        /* ─── 演示账户信息 ─── */
-        .demo-info {
-            margin-top: 20px;
-            padding: 14px 16px;
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 12px;
-            font-size: 12px;
-            color: rgba(255,255,255,0.4);
-        }
-        html[data-theme="light"] .demo-info {
-            background: rgba(10,42,110,0.04);
-            border-color: rgba(10,42,110,0.08);
-            color: #64748b;
-        }
-        .demo-info strong {
-            color: rgba(255,255,255,0.6);
-            display: block;
-            margin-bottom: 8px;
-        }
-        html[data-theme="light"] .demo-info strong { color: #1e293b; }
-        .demo-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 4px;
-        }
-        .demo-row:last-child { margin-bottom: 0; }
-        .demo-tag {
-            display: inline-block;
-            padding: 1px 8px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 600;
-            background: rgba(74,159,216,0.15);
-            color: var(--c-blue);
-            min-width: 48px;
-            text-align: center;
-        }
-        html[data-theme="light"] .demo-tag {
-            background: rgba(10,42,110,0.08);
-            color: var(--c-navy);
-        }
-
-        /* ─── 底部版本信息 ─── */
-        .login-footer {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 11px;
-            color: rgba(255,255,255,0.4);
-        }
-        html[data-theme="light"] .login-footer {
-            color: #94a3b8;
-        }
-
-        /* ─── 右上角控制栏 ─── */
-        .top-controls {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000000;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .theme-toggle {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            color: rgba(255,255,255,0.5);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: color 0.25s, border-color 0.25s, transform 0.25s, background 0.25s;
-        }
-        html[data-theme="light"] .theme-toggle {
-            background: rgba(255,255,255,0.8);
-            border-color: rgba(10,42,110,0.12);
-            color: #64748b;
-        }
-        .theme-toggle:hover {
-            color: var(--c-blue);
-            border-color: var(--c-blue);
-            transform: rotate(15deg);
-        }
-        html[data-theme="light"] .theme-toggle:hover {
-            color: var(--c-navy);
-            border-color: var(--c-navy);
-        }
-        .theme-toggle svg { width: 20px; height: 20px; }
-
-        .lang-select {
-            height: 40px;
-            padding: 0 30px 0 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            color: rgba(255,255,255,0.7);
-            font-size: 13px;
-            cursor: pointer;
-            outline: none;
-            appearance: none;
-            -webkit-appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 10px center;
-            transition: border-color 0.25s, color 0.25s;
-        }
-        html[data-theme="light"] .lang-select {
-            background-color: rgba(255,255,255,0.8);
-            border-color: rgba(10,42,110,0.12);
-            color: #475569;
-        }
-        .lang-select:hover { border-color: var(--c-blue); }
-        html[data-theme="light"] .lang-select:hover { border-color: var(--c-navy); }
-        .lang-select option {
-            background: #0D1426;
-            color: #fff;
-        }
-        html[data-theme="light"] .lang-select option {
-            background: #fff;
-            color: #1e293b;
-        }
-
         /* ─── 响应式 ─── */
-        @media (max-width: 768px) {
-            .login-container {
-                flex-direction: column;
-            }
-            .brand-panel {
-                flex: 0 0 auto;
-                min-height: 38vh;
-                padding: 30px 24px;
-            }
-            .mascot-wrap {
-                width: 160px;
-                height: 160px;
-                margin-bottom: 12px;
-            }
-            .brand-logo { width: 40px; height: 40px; }
-            .brand-name { font-size: 26px; }
-            .brand-slogan { font-size: 12px; margin-bottom: 20px; }
-            .features { display: none; }
-            .mascot-badge { margin-bottom: 12px; }
-            .form-panel {
-                flex: 1;
-                padding: 30px 20px;
-            }
-            .login-card {
-                padding: 32px 24px 28px;
-            }
-            .top-controls {
-                top: 12px;
-                right: 12px;
-            }
+        /* 中等宽度：仍保持左右分栏，只收紧间距，避免过早堆叠把登录按钮挤出首屏 */
+        @media (max-width: 1060px) {
+            .login-layout { gap: 40px; padding: 10px 32px 40px; }
+            .login-card { padding: 26px 24px 22px; }
+            .intro h1 { font-size: clamp(26px, 2.9vw, 32px); }
+            .feature-list { margin-top: 26px; }
+            .feature-list li { padding: 12px 0; }
         }
-
-        @media (max-width: 380px) {
-            .lang-select { font-size: 12px; padding: 0 26px 0 10px; }
+        @media (max-width: 860px) {
+            .login-layout {
+                grid-template-columns: minmax(0, 1fr);
+                max-width: 520px;
+                gap: 26px;
+                padding: 4px 24px 34px;
+                align-items: start;
+            }
+            .intro h1 { font-size: 26px; margin: 12px 0 12px; }
+            .intro-copy { font-size: 13px; line-height: 1.85; }
+            /* 窄屏以「快速登录」为先：收起特性列表，保证登录按钮在首屏内 */
+            .feature-list, .intro-note { display: none; }
+        }
+        @media (max-width: 560px) {
+            .page-header { padding: 16px 20px; gap: 12px; }
+            .brand-lockup img { width: 140px; }
+            .brand-lockup > span { display: none; }
+            .header-actions { gap: 8px; }
+            .login-card { padding: 24px 20px 22px; border-radius: 18px; }
+            .login-card h2 { font-size: 21px; }
+            .page-footer { padding: 0 20px 20px; flex-direction: column; gap: 5px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .intro, .login-card { animation: none; }
+            .primary-button.loading::after { animation-duration: 1.6s; }
         }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <!-- ═══ 左侧品牌展示区 ═══ -->
-        <div class="brand-panel">
-            <div class="brand-grid"></div>
-            <div class="brand-content">
-                <!-- 吉祥物 -->
-                <div class="mascot-wrap">
-                    <img src="/mascot.png" class="mascot-img" alt="{{ product_name }} Mascot"
-                         onerror="this.style.display='none'">
-                </div>
-
-                <!-- 徽章 -->
-                <div class="mascot-badge">
-                    <span class="dot"></span>
-                    <span data-i18n="login.mascot_badge">{{ product_name }} 智能巡检官</span>
-                </div>
-
-                <!-- Logo + 产品名 -->
-                <div class="brand-logo-row">
-                    <img src="/dbcheck_logo_icon.png" class="brand-logo" alt="{{ product_name }} Logo"
-                         onerror="this.style.display='none'">
-                    <span class="brand-name" data-i18n="login.title">{{ product_name }}</span>
-                </div>
-
-                <div class="brand-slogan">{{ product_name_zh }}</div>
-
-                <!-- Slogan -->
-                <div class="brand-slogan" data-i18n="login.slogan">让数据库运维 可知 · 可控 · 可防</div>
-
-                <!-- 特性亮点 -->
-                <div class="features">
-                    <div class="feature-item">
-                        <div class="feature-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3z"/><path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3z"/><path d="M13 5a3 3 0 0 1-2 0"/><path d="M12 21v-7"/></svg>
-                        </div>
-                        <div class="feature-text">
-                            <div class="feature-title" data-i18n="login.feature_1">智能巡检</div>
-                            <div class="feature-desc" data-i18n="login.feature_1_desc">一键体检数据库健康状态</div>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6m11-11h-6M7 12H1m17.07-7.07l-4.24 4.24M9.17 14.83l-4.24 4.24m0-14.14l4.24 4.24m5.66 5.66l4.24 4.24"/></svg>
-                        </div>
-                        <div class="feature-text">
-                            <div class="feature-title" data-i18n="login.feature_2">AI 诊断</div>
-                            <div class="feature-desc" data-i18n="login.feature_2_desc">大模型驱动的智能分析</div>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                        </div>
-                        <div class="feature-text">
-                            <div class="feature-title" data-i18n="login.feature_3">实时监控</div>
-                            <div class="feature-desc" data-i18n="login.feature_3_desc">慢查询与连接实时追踪</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- ═══ 顶栏：品牌锁合 + 语言 / 主题 ═══ -->
+    <header class="page-header">
+        <div class="brand-lockup">
+            <img class="logo-dark" src="/dbpulse_logo_horizontal.png" alt="{{ product_name }}" width="174" height="54">
+            <img class="logo-light" src="/dbpulse_logo_horizontal_light.png" alt="{{ product_name }}" width="174" height="54">
+            <span>{{ product_name_zh }}</span>
         </div>
+        <div class="header-actions">
+            <label class="sr-only" for="lang-select">Language</label>
+            <select class="lang-select" id="lang-select" onchange="changeLang()" title="Language">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+                <option value="zh_tw">繁體中文</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="de">Deutsch</option>
+                <option value="ru">Русский</option>
+            </select>
+            <button class="icon-button" type="button" onclick="toggleTheme()"
+                    data-i18n-title="login.theme_toggle" title="切换主题" aria-label="切换主题">
+                <svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4"/>
+                    <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>
+                </svg>
+                <svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M21 13.2A9 9 0 0 1 10.8 3 9 9 0 1 0 21 13.2Z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
 
-        <!-- ═══ 右侧登录表单区 ═══ -->
-        <div class="form-panel">
-            <div class="login-card">
-                <!-- 欢迎标题 -->
-                <div class="welcome-title" data-i18n="login.welcome">欢迎回来</div>
-                <div class="welcome-desc" data-i18n="login.welcome_desc">登录以开始您的数据库巡检之旅</div>
+    <!-- ═══ 主区 ═══ -->
+    <main class="login-layout">
+        <!-- 左：价值叙述 -->
+        <section class="intro">
+            <span class="eyebrow">{{ product_tagline }}</span>
+            <h1 id="headline" data-i18n-headline="login.slogan">让数据库运维 可知 · 可控 · 可防</h1>
+            <p class="intro-copy" data-i18n="login.subtitle">智能数据库巡检与性能分析平台</p>
 
-                <!-- 表单 -->
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label class="form-label" for="username" data-i18n="login.username">用户名</label>
-                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <input id="username" type="text" class="form-input" data-i18n="login.username_placeholder" placeholder="请输入用户名" required autofocus>
+            <ul class="feature-list">
+                <li>
+                    <span class="feature-index">01</span>
+                    <div>
+                        <p class="feature-title" data-i18n="login.feature_1">智能巡检</p>
+                        <p class="feature-desc" data-i18n="login.feature_1_desc">一键体检数据库健康状态</p>
                     </div>
+                </li>
+                <li>
+                    <span class="feature-index">02</span>
+                    <div>
+                        <p class="feature-title" data-i18n="login.feature_2">AI 诊断</p>
+                        <p class="feature-desc" data-i18n="login.feature_2_desc">大模型驱动的智能分析</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="feature-index">03</span>
+                    <div>
+                        <p class="feature-title" data-i18n="login.feature_3">实时监控</p>
+                        <p class="feature-desc" data-i18n="login.feature_3_desc">慢查询与连接实时追踪</p>
+                    </div>
+                </li>
+            </ul>
 
-                    <div class="form-group">
-                        <label class="form-label" for="password" data-i18n="login.password">密码</label>
-                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <input id="password" type="password" class="form-input" data-i18n="login.password_placeholder" placeholder="请输入密码" required>
-                        <button type="button" class="pwd-toggle" id="pwd-toggle" data-i18n-title="login.show_password" title="显示密码">
-                            <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <p class="intro-note">
+                <span class="note-line"></span>
+                <span>MySQL · PostgreSQL · Oracle · SQL Server · DM8 · TiDB</span>
+            </p>
+        </section>
+
+        <!-- 右：登录卡 -->
+        <section class="login-card" aria-labelledby="card-title">
+            <span class="eyebrow">Sign in</span>
+            <h2 id="card-title" data-i18n="login.welcome">欢迎回来</h2>
+            <p class="card-sub" data-i18n="login.welcome_desc">登录以开始您的数据库巡检之旅</p>
+
+            <form id="loginForm" novalidate>
+                <div class="field-group">
+                    <label for="username" data-i18n="login.username">用户名</label>
+                    <input id="username" name="username" type="text" autocomplete="username"
+                           data-i18n="login.username_placeholder" placeholder="请输入用户名" required autofocus>
+                </div>
+
+                <div class="field-group">
+                    <label for="password" data-i18n="login.password">密码</label>
+                    <div class="password-field">
+                        <input id="password" name="password" type="password" autocomplete="current-password"
+                               data-i18n="login.password_placeholder" placeholder="请输入密码" required>
+                        <button class="reveal-button" type="button" id="pwd-toggle" aria-pressed="false"
+                                data-i18n-title="login.show_password" title="显示密码" aria-label="显示密码">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                                <path class="eye-slash" d="m3 3 18 18"/>
+                            </svg>
                         </button>
                     </div>
+                </div>
 
-                    <div id="errorMsg" class="login-error"></div>
+                <p class="feedback" id="errorMsg" role="status" aria-live="polite"></p>
 
-                    <button type="submit" class="login-btn" id="btn-login">
-                        <span class="btn-text" id="btn-text" data-i18n="login.button">登 录</span>
-                    </button>
-                </form>
+                <button type="submit" class="primary-button" id="btn-login">
+                    <span class="btn-label" id="btn-text" data-i18n="login.button">登 录</span>
+                </button>
+            </form>
 
-                <!-- 演示账户 -->
-                <div class="demo-info">
-                    <strong data-i18n="login.demo_title">演示账户</strong>
-                    <div class="demo-row">
+            <div class="demo-block">
+                <span class="demo-title" data-i18n="login.demo_title">演示账户</span>
+                <ul class="demo-list">
+                    <li>
                         <span class="demo-tag" data-i18n="login.demo_admin">管理员</span>
-                        <span>admin / admin123</span>
-                    </div>
-                    <div class="demo-row">
+                        <code>admin / admin123</code>
+                    </li>
+                    <li>
                         <span class="demo-tag" data-i18n="login.demo_viewer">只读</span>
-                        <span>viewer / viewer123</span>
-                    </div>
-                    <div class="demo-row">
+                        <code>viewer / viewer123</code>
+                    </li>
+                    <li>
                         <span class="demo-tag" data-i18n="login.demo_operator">运维</span>
-                        <span>operator / operator123</span>
-                    </div>
-                </div>
-
-                <!-- 底部版本 -->
-                <div class="login-footer">
-                    <span id="login-version">v26.11.5.1</span> · <span data-i18n="login.copyright">{{ product_name }} · RaccoonX © 2026 · fiyo (Jack Ge)</span>
-                </div>
+                        <code>operator / operator123</code>
+                    </li>
+                </ul>
             </div>
-        </div>
-    </div>
 
-    <!-- 右上角控制栏 -->
-    <div class="top-controls">
-        <select class="lang-select" id="lang-select" onchange="changeLang()" title="Language">
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-            <option value="zh_tw">繁體中文</option>
-            <option value="ja">日本語</option>
-            <option value="ko">한국어</option>
-            <option value="es">Español</option>
-            <option value="fr">Français</option>
-            <option value="de">Deutsch</option>
-            <option value="ru">Русский</option>
-        </select>
-        <button class="theme-toggle" onclick="toggleTheme()" data-i18n-title="login.theme_toggle" title="切换主题">
-            <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
-    </div>
+            <p class="card-footer">
+                <span id="login-version">v26.11.5.1</span>
+                <span>Apache-2.0</span>
+            </p>
+        </section>
+    </main>
+
+    <footer class="page-footer">
+        <span>{{ product_full_name }}</span>
+        <span>fiyo (Jack Ge) &lt;sdfiyon@gmail.com&gt; · sec.hn.cn (X.U zx) &lt;xuzhongxin@sec.hn.cn&gt;</span>
+    </footer>
 
     <script>
-        /* ═══════════════════════════════════════════════
-           i18n 国际化模块
-           ═══════════════════════════════════════════════ */
+        /* ═══ i18n ═══ */
         let I18N = {};
         let CURRENT_LANG = 'zh';
+
+        function i18n(key) {
+            return I18N[key] !== undefined ? I18N[key] : undefined;
+        }
+
+        function escapeHtml(text) {
+            return String(text).replace(/[&<>"']/g, ch => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+            ));
+        }
+
+        /* 标题按「·」拆成不可断句块：折行只发生在分隔符之后，
+           既不会出现单字孤行，也不会把「可知」拆成两行。 */
+        function buildHeadline(text) {
+            const parts = text.split('·').map(s => s.trim()).filter(Boolean);
+            if (parts.length < 2) return escapeHtml(text);
+            return parts.map((part, i) => {
+                const tail = i < parts.length - 1 ? ' ·' : '';
+                const nowrap = !/\s/.test(part) && part.length <= 16 ? ' style="white-space:nowrap"' : '';
+                return '<span' + nowrap + '>' + escapeHtml(part) + tail + '</span>';
+            }).join(' ');
+        }
 
         async function initI18N() {
             try {
@@ -835,38 +587,36 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
                     CURRENT_LANG = data.lang;
                     applyI18N();
                 }
-            } catch(e) {
+            } catch (e) {
                 console.error('i18n load failed', e);
             }
         }
 
-        function i18n(key) {
-            return I18N[key] !== undefined ? I18N[key] : undefined;
-        }
-
         function applyI18N() {
-            // 语言下拉框
             const langSel = document.getElementById('lang-select');
             if (langSel) langSel.value = CURRENT_LANG;
 
-            // data-i18n → INPUT 设 placeholder，其余设 textContent
             document.querySelectorAll('[data-i18n]').forEach(el => {
-                const key = el.getAttribute('data-i18n');
+                const value = i18n(el.getAttribute('data-i18n'));
+                if (value === undefined) return;   // 缺失键不覆盖原文
                 if (el.tagName === 'INPUT' && el.hasAttribute('placeholder')) {
-                    el.placeholder = i18n(key);
+                    el.placeholder = value;
                 } else {
-                    el.textContent = i18n(key);
+                    el.textContent = value;
                 }
             });
 
-            // data-i18n-title → title 属性
             document.querySelectorAll('[data-i18n-title]').forEach(el => {
-                const k = el.getAttribute('data-i18n-title');
-                if (k) el.title = i18n(k);
+                const value = i18n(el.getAttribute('data-i18n-title'));
+                if (value !== undefined) el.title = value;
             });
 
-            // 更新页面标题
-            document.title = '{{ product_full_name }} - Login';
+            document.querySelectorAll('[data-i18n-headline]').forEach(el => {
+                const value = i18n(el.getAttribute('data-i18n-headline'));
+                if (value) el.innerHTML = buildHeadline(value);
+            });
+
+            document.title = '{{ product_full_name }} · ' + (i18n('login.welcome') || '登录');
         }
 
         async function changeLang() {
@@ -876,174 +626,103 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
             try {
                 await fetch('/api/set_lang', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({lang: newLang})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lang: newLang })
                 });
                 location.reload();
-            } catch(e) {
+            } catch (e) {
                 console.error('lang switch failed', e);
             }
         }
 
-        /* ═══════════════════════════════════════════════
-           主题切换
-           ═══════════════════════════════════════════════ */
+        /* ═══ 主题（图标由 CSS 按 data-theme 切换）═══ */
         function toggleTheme() {
             const html = document.documentElement;
-            const current = html.getAttribute('data-theme');
-            if (current === 'light') {
+            const isLight = html.getAttribute('data-theme') === 'light';
+            if (isLight) {
                 html.removeAttribute('data-theme');
                 localStorage.setItem('dbcheck-theme', 'dark');
-                updateThemeIcon('dark');
             } else {
                 html.setAttribute('data-theme', 'light');
                 localStorage.setItem('dbcheck-theme', 'light');
-                updateThemeIcon('light');
             }
         }
 
-        function updateThemeIcon(theme) {
-            const icon = document.getElementById('theme-icon');
-            if (!icon) return;
-            if (theme === 'light') {
-                // 太阳图标
-                icon.innerHTML = '<circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>';
-            } else {
-                // 月亮图标
-                icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
-            }
-        }
-
-        // 初始化主题
-        (function() {
-            const saved = localStorage.getItem('dbcheck-theme');
-            if (saved === 'light') {
-                document.documentElement.setAttribute('data-theme', 'light');
-                updateThemeIcon('light');
-            } else {
-                updateThemeIcon('dark');
-            }
+        /* ═══ 密码显隐 ═══ */
+        (function initPwdToggle() {
+            const btn = document.getElementById('pwd-toggle');
+            const pwd = document.getElementById('password');
+            if (!btn || !pwd) return;
+            btn.addEventListener('click', () => {
+                const show = pwd.type === 'password';
+                pwd.type = show ? 'text' : 'password';
+                btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+                const key = show ? 'login.hide_password' : 'login.show_password';
+                btn.setAttribute('data-i18n-title', key);
+                btn.title = i18n(key) || (show ? '隐藏密码' : '显示密码');
+            });
         })();
 
-        /* ═══════════════════════════════════════════════
-           密码显隐
-           ═══════════════════════════════════════════════ */
-        function togglePwd() {
-            const pwd = document.getElementById('password');
-            const icon = document.getElementById('eye-icon');
-            const btn = document.getElementById('pwd-toggle');
-            if (pwd.type === 'password') {
-                pwd.type = 'text';
-                icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.45 18.45 0 0 1-5.06 5.94M1 1l22 22"/>';
-                btn.title = i18n('login.hide_password') || '隐藏密码';
-                btn.setAttribute('data-i18n-title', 'login.hide_password');
-            } else {
-                pwd.type = 'password';
-                icon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8z"/><circle cx="12" cy="12" r="3"/>';
-                btn.title = i18n('login.show_password') || '显示密码';
-                btn.setAttribute('data-i18n-title', 'login.show_password');
-            }
-        }
-        document.getElementById('pwd-toggle').addEventListener('click', togglePwd);
-
-        /* ═══════════════════════════════════════════════
-           按钮涟漪效果
-           ═══════════════════════════════════════════════ */
-        document.getElementById('btn-login').addEventListener('click', function(e) {
-            if (this.classList.contains('loading')) return;
-            const rect = this.getBoundingClientRect();
-            const ripple = document.createElement('span');
-            ripple.className = 'ripple';
-            const size = Math.max(rect.width, rect.height);
-            ripple.style.width = ripple.style.height = size + 'px';
-            ripple.style.left = (e.clientX - rect.left - size / 2) + 'px';
-            ripple.style.top = (e.clientY - rect.top - size / 2) + 'px';
-            this.appendChild(ripple);
-            setTimeout(() => ripple.remove(), 600);
-        });
-
-        /* ═══════════════════════════════════════════════
-           登录表单提交
-           ═══════════════════════════════════════════════ */
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        /* ═══ 登录提交 ═══ */
+        (function initLogin() {
+            const form = document.getElementById('loginForm');
             const errorEl = document.getElementById('errorMsg');
             const btnLogin = document.getElementById('btn-login');
-            const btnText = document.getElementById('btn-text');
 
-            errorEl.classList.remove('show');
-            btnLogin.classList.add('loading');
-
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-
-            if (!username || !password) {
-                errorEl.textContent = i18n('login.error_empty') || '请输入用户名和密码';
-                errorEl.classList.add('show');
-                btnLogin.classList.remove('loading');
-                shakeCard();
-                return;
+            function showError(message) {
+                errorEl.textContent = message;
             }
 
-            try {
-                const res = await fetch('/api/um/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password }),
-                    credentials: 'include'
-                });
-                const data = await res.json();
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (btnLogin.classList.contains('loading')) return;
 
-                if (data.code === 0) {
-                    localStorage.setItem('token', data.data.token);
-                    localStorage.setItem('user', JSON.stringify(data.data.user));
-                    // 携带 JWT 跳转，服务端 index() 一次性建立会话（兼容 Cookie 未发送的场景）
-                    window.location.href = '/?token=' + encodeURIComponent(data.data.token);
-                } else {
-                    errorEl.textContent = data.msg || (i18n('login.error_failed') || '登录失败');
-                    errorEl.classList.add('show');
-                    shakeCard();
+                showError('');
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
+
+                if (!username || !password) {
+                    showError(i18n('login.error_empty') || '请输入用户名和密码');
+                    return;
                 }
-            } catch (err) {
-                errorEl.textContent = i18n('login.error_network') || '网络错误，请稍后重试';
-                errorEl.classList.add('show');
-            } finally {
-                btnLogin.classList.remove('loading');
-            }
-        });
 
-        function shakeCard() {
-            const card = document.querySelector('.login-card');
-            card.classList.add('shake');
-            setTimeout(() => card.classList.remove('shake'), 400);
-        }
+                btnLogin.classList.add('loading');
+                try {
+                    const res = await fetch('/api/um/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password }),
+                        credentials: 'include'
+                    });
+                    const data = await res.json();
 
-        /* ═══════════════════════════════════════════════
-           回车键提交
-           ═══════════════════════════════════════════════ */
-        document.getElementById('password').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('loginForm').dispatchEvent(new Event('submit'));
-            }
-        });
-
-        /* ═══════════════════════════════════════════════
-           版本号加载
-           ═══════════════════════════════════════════════ */
-        (function() {
-            fetch('/version.json')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.version) {
-                        document.getElementById('login-version').textContent = data.version;
+                    if (data.code === 0) {
+                        localStorage.setItem('token', data.data.token);
+                        localStorage.setItem('user', JSON.stringify(data.data.user));
+                        // 携带 JWT 跳转，服务端一次性建立会话（兼容 Cookie 未发送的场景）
+                        window.location.href = '/?token=' + encodeURIComponent(data.data.token);
+                    } else {
+                        showError(data.msg || i18n('login.error_failed') || '登录失败');
+                        document.getElementById('password').select();
                     }
-                })
-                .catch(() => {});
+                } catch (err) {
+                    showError(i18n('login.error_network') || '网络错误，请稍后重试');
+                } finally {
+                    btnLogin.classList.remove('loading');
+                }
+            });
         })();
 
-        /* ═══════════════════════════════════════════════
-           初始化
-           ═══════════════════════════════════════════════ */
+        /* ═══ 版本号 ═══ */
+        fetch('/version.json')
+            .then(r => r.json())
+            .then(data => {
+                if (data.version) {
+                    document.getElementById('login-version').textContent = data.version;
+                }
+            })
+            .catch(() => {});
+
         initI18N();
     </script>
 </body>

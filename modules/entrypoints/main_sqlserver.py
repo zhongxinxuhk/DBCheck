@@ -16,6 +16,11 @@ SQL Server 数据库巡检模块 - 基于 BaseInspectionEngine 重构版本
         inspector.generate_report(output_file, inspector_name)
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 from modules.inspection.engine import BaseInspectionEngine
 from modules.core import entry
@@ -43,50 +48,45 @@ class SQLServerInspector(BaseInspectionEngine):
         super().__init__(host, port, user, password, database, ssh_info, template_id)
         self.db_type = 'sqlserver'
     
-    def connect(self):
-        """
-        连接 SQL Server 数据库
+    def collect_data(self,sql_templates=''):
+        if self._template_id is None:
+            ok,version=self.connect()
+            if not ok:raise ValueError(version)
+            self._template_id=self.get_template_id()
+            if self._template_id is None:
+                raise ValueError('巡检模板尚未初始化，请刷新巡检指标配置')
+        return super().collect_data(sql_templates)
 
-        返回:
-            (ok, version) - ok 为 True 时 version 是版本号，否则是错误信息
-        """
-        import pyodbc
-        # 模块级缓存驱动列表，避免每次连接都调用 pyodbc.drivers()
-        if not hasattr(SQLServerInspector, '_cached_drivers'):
-            installed = [d for d in pyodbc.drivers() if d.strip()]
-            SQLServerInspector._cached_drivers = installed
-        installed_drivers = SQLServerInspector._cached_drivers
-        # 优先匹配包含 "SQL Server" 的驱动名（不区分大小写）
-        sqlserver_drivers = [d for d in installed_drivers if 'sql server' in d.lower()]
-        if not sqlserver_drivers:
-            # 兜底：尝试常见预设名
-            fallback = ['ODBC Driver 18 for SQL Server', 'ODBC Driver 17 for SQL Server',
-                        'ODBC Driver 13 for SQL Server', 'SQL Server']
-            sqlserver_drivers = [d for d in fallback if d in installed_drivers] or fallback
-        last_err = ''
-        for driver_name in sqlserver_drivers:
-            try:
-                conn_str = (
-                    f"DRIVER={{{driver_name}}};"
-                    f"SERVER={self.host},{self.port};"
-                    f"UID={self.user};"
-                    f"PWD={self.password};"
-                    f"TrustServerCertificate=yes;"
-                    f"Connection Timeout=5;"
-                )
-                if self.database:
-                    conn_str += f"Database={self.database};"
-                self.conn = pyodbc.connect(conn_str)
-                # NTEXT 类型(-16) pyodbc 默认不支持，注册 converter
-                self.conn.add_output_converter(-16, lambda data: data.decode('utf-16-le') if data else '')
-                self.cursor = self.conn.cursor()
-                self.cursor.execute("SELECT @@VERSION")
-                ver = self.cursor.fetchone()[0]
-                return True, ver
-            except Exception as e:
-                last_err = str(e)
-                continue
-        return False, f"无法连接 SQL Server：已尝试的驱动均失败。系统已安装 ODBC 驱动：{', '.join(installed_drivers) if installed_drivers else '无'}。最后错误：{last_err}。请确认驱动已正确安装（下载：https://learn.microsoft.com/zh-cn/sql/connect/odbc/download-odbc-driver-for-sql-server）"
+    def connect(self):
+        if self.conn is not None:
+            return True,getattr(self,'_server_version','SQL Server')
+        try:
+            from modules.db_types.compatibility import connect_sqlserver
+            self.conn=connect_sqlserver({**self.ssh_info,'host':self.host,'port':self.port,
+                                        'user':self.user,'password':self.password,'database':self.database})
+            self.cursor=self.conn.cursor()
+            self.cursor.execute("SELECT SERVERPROPERTY('ProductVersion'), @@VERSION")
+            row=self.cursor.fetchone()
+            self._db_version_major=int(str(row[0]).split('.')[0])
+            self._server_version=str(row[1])
+            return True,self._server_version
+        except Exception as error:
+            if self.conn:
+                self.conn.close();self.conn=None
+            from modules.core.data_security import redact
+            return False,str(redact(str(error).replace(self.password,'[REDACTED]') if self.password else str(error)))
+
+    def get_template_id(self):
+        if self._template_id is not None:
+            return self._template_id
+        version={9:'2005',10:'2008',12:'2014'}.get(getattr(self,'_db_version_major',None))
+        if version:
+            import sqlite3
+            from modules.core.paths import INSPECTION_DB
+            with sqlite3.connect(str(INSPECTION_DB)) as database:
+                row=database.execute("SELECT id FROM inspection_template WHERE db_type='sqlserver' AND version=? ORDER BY id LIMIT 1",(version,)).fetchone()
+            if row:return row[0]
+        return super().get_template_id()
 
 
 # ── 保留原有 API 兼容性（供 web_ui.py 旧代码调用）────────────────────

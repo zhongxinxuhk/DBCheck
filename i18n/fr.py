@@ -5,6 +5,11 @@
 
 """Dictionnaire de traduction français (DBCheck : brouillon MT, à réviser)"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from .zh import ZI
 
 FR = dict(ZI)
@@ -1969,7 +1974,7 @@ FR.update({
     "tidb_slow_query_ok": "Analyse approfondie de la requête lente terminée, collectée {count} Top SQL",
     "tidb_slow_query_unavailable": "Aucune donnée de requête lente, ignorer l'analyse approfondie",
     "webui.about_author": "Auteur : Jack Ge · Apache License 2.0 · Site officiel : dbcheck.top",
-    "webui.about_desc": "RaccoonX est un outil open source d'inspection intelligente des bases de données qui prend en charge l'inspection de santé et le diagnostic IA des principales bases de données telles que MySQL, PostgreSQL, Oracle, SQL Server, Dameng (DM), TiDB, IvorySQL et YashanDB.",
+    "webui.about_desc": "DBPulse est un outil d'inspection intelligente des bases de données qui prend en charge l'inspection de santé et le diagnostic IA des principales bases de données telles que MySQL, PostgreSQL, Oracle, SQL Server, Dameng (DM), TiDB, IvorySQL et YashanDB.",
     "webui.about_grayscale_note": "Le mode niveaux de gris commémoratif fait partie de la conception originale de RaccoonX et est indiqué dans l'accord open source ci-dessus. Ne le modifiez ni ne le contournez.",
     "webui.action": "Action",
     "webui.add_group_btn": "＋ Groupe",
@@ -2277,6 +2282,9 @@ FR.update({
     "webui.fi_web_desc": "Tout le processus en GUI, fin de la ligne de commande, avec suivi des journaux en temps réel.",
     "webui.fill_connection_info": "Informations de connexion à la base de données",
     "webui.gbase_report_filename": "RapportInspectionGBase 8s_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.group_all": "Toutes",
     "webui.group_color_label": "Couleur du groupe",
     "webui.group_create_title": "Nouveau groupe",
@@ -3300,4 +3308,14 @@ FR.update({
     "webui.nav_autonomy": "Autonomie DBA sécurisée",
     "webui.nav_fleet": "Ligne de base intelligente",
     "webui.nav_twin": "Inspection de topologie"
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+FR.update({
+    "webui.nav_system_info": "Infos système",
+    "webui.system_info_version": "Version",
+    "webui.system_info_update": "Notifications de mise à jour",
+    "webui.system_info_brand": "Identité visuelle",
+    "webui.system_info_opensource": "Open Source",
+    "webui.system_info_check_update": "Voir les mises à jour",
 })

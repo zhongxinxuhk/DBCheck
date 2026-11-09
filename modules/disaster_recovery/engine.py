@@ -10,6 +10,11 @@
 - 健康度 = 0.4 * 新鲜度 + 0.6 * 成功率；恢复验证维度暂无（占位「未验证」）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import threading
 from datetime import datetime
@@ -77,9 +82,40 @@ def _get_logger():
     return setup_logging(str(LOG_DIR))
 
 
+class _SafeNotifier(Notifier):
+    """Apply first-party disclosure controls without modifying vendored code."""
+    def _send_all(self,subject,message,force):
+        from modules.core.data_security import redact
+        return super()._send_all(redact(subject,mask_identity=True),redact(message,mask_identity=True),force)
+
+    def _send_email(self,subject,message,cfg):
+        from modules.notify import EmailNotifier
+        from modules.disaster_recovery.vendor.autobackup import resolve_secret
+        from html import escape
+        notifier=EmailNotifier({'host':cfg['smtp_host'],'port':int(cfg.get('smtp_port',587)),
+                                'user':cfg.get('username') or cfg['from_addr'],
+                                'password':resolve_secret(cfg.get('password','')),
+                                'use_tls':cfg.get('use_tls',True),'recipients':cfg['to_addrs']})
+        return notifier.send_report(subject,'backup',None,custom_msg=escape(message))
+
+    def _post(self,subject,message,cfg,kind):
+        import json,urllib.request
+        from modules.core.data_security import redact,egress_urlopen
+        content=redact(subject+'\n'+message,mask_identity=True)
+        payload={'msg_type':'text','content':{'text':content}} if kind=='feishu' else {'msgtype':'text','text':{'content':content}}
+        request=urllib.request.Request(cfg['webhook'],data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+        with egress_urlopen(request,timeout=30) as response:
+            result=json.loads(response.read(65537))
+        if result.get('errcode',result.get('code',0))!=0:
+            raise ValueError('备份通知返回失败状态')
+    def _send_dingtalk(self,subject,message,cfg):return self._post(subject,message,cfg,'dingtalk')
+    def _send_wecom(self,subject,message,cfg):return self._post(subject,message,cfg,'wecom')
+    def _send_feishu(self,subject,message,cfg):return self._post(subject,message,cfg,'feishu')
+
+
 def _get_notifier(cfg: Optional[Dict[str, Any]] = None):
     cfg = cfg or _load_config()
-    return Notifier(cfg, _get_logger())
+    return _SafeNotifier(cfg, _get_logger())
 
 
 def _get_history() -> HistoryStore:

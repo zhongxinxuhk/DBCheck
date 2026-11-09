@@ -1,0 +1,345 @@
+<!-- SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+-->
+<!DOCTYPE html>
+<html lang="zh">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <title>
+   运维服务与需求验收 · {{ product_name }}
+  </title>
+  <link href="/static/css/service_management.css" rel="stylesheet"/>
+  <script defer="" src="/static/js/service_management.js">
+  </script>
+ </head>
+ <body>
+  <main>
+   <header>
+    <div>
+     <a href="/">
+      {{ product_full_name }}
+     </a>
+     <h1>
+      运维服务与需求验收
+     </h1>
+     <p>
+      资产台账、巡检证据、审批闭环与服务交付
+     </p>
+    </div>
+    <button id="refresh">
+     刷新数据
+    </button>
+   </header>
+   <section class="toolbar">
+    <label>
+     统计周期
+     <select id="period">
+      <option value="month">
+       月度
+      </option>
+      <option value="week">
+       周度
+      </option>
+      <option value="quarter">
+       季度
+      </option>
+      <option value="year">
+       年度
+      </option>
+     </select>
+    </label>
+    <label>
+     基准日期
+     <input id="date" type="date"/>
+    </label>
+    <label>
+     交付物
+     <select id="deliverable">
+     </select>
+    </label>
+    <button id="export-docx">
+     导出 Word
+    </button>
+    <button id="export-html">
+     查看报告
+    </button>
+   </section>
+   <div id="message" role="status">
+   </div>
+   <section class="metrics" id="metrics">
+   </section>
+   <nav aria-label="服务工作区">
+    <button class="selected" data-tab="coverage">
+     需求覆盖
+    </button>
+    <button data-tab="assets">
+     资产台账
+    </button>
+    <button data-tab="workflow">
+     审批与闭环
+    </button>
+    <button data-tab="evidence">
+     验收证据
+    </button>
+   </nav>
+   <section class="pane" id="coverage">
+    <h2>
+     需求逐项覆盖
+    </h2>
+    <p id="scope">
+    </p>
+    <label>
+     服务模块
+     <select id="module-filter">
+      <option value="">
+       全部模块
+      </option>
+     </select>
+    </label>
+    <div class="table-wrap">
+     <table>
+      <thead>
+       <tr>
+        <th>
+         需求项
+        </th>
+        <th>
+         资产
+        </th>
+        <th>
+         巡检及验收内容
+        </th>
+        <th>
+         状态
+        </th>
+        <th>
+         证据与待补项
+        </th>
+       </tr>
+      </thead>
+      <tbody id="coverage-rows">
+      </tbody>
+     </table>
+    </div>
+   </section>
+   <section class="pane" hidden="" id="assets">
+    <h2>
+     资产台账
+    </h2>
+    <div class="split">
+     <div>
+      <div id="asset-list">
+      </div>
+      <button id="new-asset">
+       新增资产
+      </button>
+      <button id="inspect">
+       执行只读巡检
+      </button>
+     </div>
+     <form id="asset-form">
+      <label>
+       当前资产
+       <select id="asset-id">
+        <option value="">
+         新增资产
+        </option>
+       </select>
+      </label>
+      <label>
+       资产明细 JSON
+       <textarea id="asset-data" rows="18" spellcheck="false"></textarea>
+      </label>
+      <p>
+       凭据引用填写现有数据源 instance_id。证书、主机文件和日志使用明确配置，核心文件仅采集哈希与属性。
+      </p>
+      <button type="submit">
+       保存台账
+      </button>
+     </form>
+    </div>
+   </section>
+   <section class="pane" hidden="" id="workflow">
+    <h2>
+     审批与闭环
+    </h2>
+    <div class="split">
+     <div id="workflow-list">
+     </div>
+     <div>
+      <form id="workflow-form">
+       <label>
+        资产
+        <select class="asset-choice" id="workflow-asset">
+        </select>
+       </label>
+       <label>
+        需求项
+        <select id="workflow-item">
+        </select>
+       </label>
+       <label>
+        复核人员用户 ID，多个用逗号分隔
+        <input autocomplete="off" id="reviewers"/>
+       </label>
+       <label>
+        服务记录与方案 JSON
+        <textarea id="workflow-data" rows="12" spellcheck="false"></textarea>
+       </label>
+       <button id="new-workflow" type="button">
+        新建工作流
+       </button>
+       <button type="submit">
+        保存草稿
+       </button>
+      </form>
+      <hr/>
+      <label>
+       当前工作流
+       <select id="workflow-id">
+       </select>
+      </label>
+      <button id="load-draft">
+       载入草稿进行编辑
+      </button>
+      <label>
+       执行或验证证据 JSON
+       <textarea id="transition-data" rows="7" spellcheck="false">{}</textarea>
+      </label>
+      <label>
+       服务事件
+       <select id="event-type">
+        <option value="responded">
+         已响应
+        </option>
+        <option value="plan_ready">
+         方案已形成
+        </option>
+        <option value="intervened">
+         已介入
+        </option>
+        <option value="resolved">
+         恢复待复核
+        </option>
+        <option value="escalated">
+         已升级专家
+        </option>
+        <option value="onsite">
+         已现场支撑
+        </option>
+       </select>
+      </label>
+      <label>
+       事件证据引用
+       <input id="event-reference"/>
+      </label>
+      <button id="record-event">
+       登记服务事件
+      </button>
+      <div class="actions">
+       <button data-state="submitted">
+        提交审批
+       </button>
+       <button data-state="approved">
+        复核批准
+       </button>
+       <button data-state="rejected">
+        驳回
+       </button>
+       <button data-state="executing">
+        登记执行
+       </button>
+       <button data-state="verified">
+        登记验证
+       </button>
+       <button data-state="closed">
+        独立复核闭环
+       </button>
+      </div>
+     </div>
+    </div>
+   </section>
+   <section class="pane" hidden="" id="evidence">
+    <h2>
+     验收证据
+    </h2>
+    <h3>
+     巡检独立复核
+    </h3>
+    <label>
+     待复核检查
+     <select id="review-record">
+     </select>
+    </label>
+    <button id="show-source">
+     查看原始采集证据
+    </button>
+    <pre id="source-data"></pre>
+    <label>
+     批准基线引用
+     <input id="review-baseline"/>
+    </label>
+    <label>
+     复核理由
+     <input id="review-reason"/>
+    </label>
+    <label>
+     复核结论
+     <select id="review-verdict">
+      <option value="pass">
+       通过
+      </option>
+      <option value="fail">
+       不符合
+      </option>
+     </select>
+    </label>
+    <button id="submit-review">
+     提交独立复核
+    </button>
+    <hr/>
+    <h3>
+     服务履约验收
+    </h3>
+    <form id="evidence-form">
+     <label>
+      资产
+      <select class="asset-choice" id="evidence-asset">
+      </select>
+     </label>
+     <label>
+      需求项
+      <select id="evidence-item">
+      </select>
+     </label>
+     <label>
+      已闭环工作流
+      <select id="evidence-workflow">
+      </select>
+     </label>
+     <label>
+      台账补充证据 JSON
+      <textarea id="evidence-data" rows="12" spellcheck="false">{}</textarea>
+     </label>
+     <p>
+      自动采集项由巡检生成结果。服务类项目使用对应资产和需求的闭环工作流作为证据。
+     </p>
+     <button type="submit">
+      登记验收证据
+     </button>
+    </form>
+   </section>
+   <footer>
+    基于 RaccoonX / DBCheck · fiyo (Jack Ge) &lt;sdfiyon@gmail.com&gt; · Apache-2.0
+   </footer>
+  </main>
+ </body>
+</html>

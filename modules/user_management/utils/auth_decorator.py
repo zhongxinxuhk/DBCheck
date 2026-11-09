@@ -7,6 +7,11 @@
 权限校验装饰器 - JWT 认证 + RBAC 权限校验
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from functools import wraps
 from flask import request, g, jsonify, session
 from modules.user_management.utils.jwt_util import decode_token
@@ -18,6 +23,10 @@ def login_required(f):
     """验证用户是否登录（JWT Token 或 Flask session）"""
     @wraps(f)
     def decorated(*args, **kwargs):
+        principal = getattr(g,'security_principal',None)
+        if principal is not None:
+            g.current_user = {'user_id':principal.id,'username':principal.username,'roles':principal.roles}
+            return f(*args, **kwargs)
         # 1. 先尝试 JWT Token
         token = request.headers.get(
             'Authorization', ''

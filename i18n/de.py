@@ -5,6 +5,11 @@
 
 """Deutsches Übersetzungswörterbuch (DBCheck: MT-Entwurf, muss korrekturgelesen werden)"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from .zh import ZI
 
 DE = dict(ZI)
@@ -1969,7 +1974,7 @@ DE.update({
     "tidb_slow_query_ok": "Langsame Abfrage-Tiefenanalyse abgeschlossen, gesammelt {count} Top SQL",
     "tidb_slow_query_unavailable": "Keine langsamen Abfragedaten, Tiefenanalyse überspringen",
     "webui.about_author": "Autor: Jack Ge · Apache License 2.0 · Offizielle Website: dbcheck.top",
-    "webui.about_desc": "RaccoonX ist ein Open-Source-Smart-Datenbank-Inspektionswerkzeug, das die Gesundheitsinspektion und KI-Diagnose führender Datenbanken wie MySQL, PostgreSQL, Oracle, SQL Server, Dameng (DM), TiDB, IvorySQL und YashanDB unterstützt.",
+    "webui.about_desc": "DBPulse ist ein intelligentes Datenbank-Inspektionswerkzeug, das die Gesundheitsinspektion und KI-Diagnose führender Datenbanken wie MySQL, PostgreSQL, Oracle, SQL Server, Dameng (DM), TiDB, IvorySQL und YashanDB unterstützt.",
     "webui.about_grayscale_note": "Der Jubiläums-Graustufenmodus ist Teil des Originaldesigns von RaccoonX und im obigen Open-Source-Vertrag angegeben. Bitte ändern oder umgehen Sie ihn nicht.",
     "webui.action": "Aktion",
     "webui.add_group_btn": "＋ Gruppe",
@@ -2277,6 +2282,9 @@ DE.update({
     "webui.fi_web_desc": "Der gesamte Prozess wird per GUI ausgeführt, Schluss mit der Befehlszeile, mit Echtzeit-Protokollverfolgung.",
     "webui.fill_connection_info": "Datenbankverbindungsinformationen",
     "webui.gbase_report_filename": "GBase 8sInspektionsbericht_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.group_all": "Alle",
     "webui.group_color_label": "Gruppenfarbe",
     "webui.group_create_title": "Neue Gruppe",
@@ -3300,4 +3308,14 @@ DE.update({
     "webui.nav_autonomy": "Autonome DBA-Sicherheit",
     "webui.nav_fleet": "Intelligente Baseline",
     "webui.nav_twin": "Topologie-Inspektion"
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+DE.update({
+    "webui.nav_system_info": "Systeminfo",
+    "webui.system_info_version": "Version",
+    "webui.system_info_update": "Update-Hinweise",
+    "webui.system_info_brand": "Markenzeichen",
+    "webui.system_info_opensource": "Open Source",
+    "webui.system_info_check_update": "Updates prüfen",
 })

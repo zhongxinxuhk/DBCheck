@@ -2,6 +2,12 @@
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
+"""Desktop and packaged web entry point with bounded collection workers."""
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 # ── 单实例守卫（必须在 import modules.web.app 之前）──
 # 避免双击 / 重复启动 / 旧进程残留时多个 dbcheck.exe 同时运行，
 # 互相抢占端口、并重复打印整段启动 banner（表现为『反复重启』）。
@@ -29,6 +35,11 @@ del _blas_var
 #
 # 该分支必须跑在单实例守卫**之前**：子进程与主进程是同一个 exe，若先走守卫，
 # 会因为「已有实例在运行」而直接 os._exit(0)，测试永远拿不到结果。
+if '--service-collect-cli' in sys.argv[1:]:
+    from modules.service_management.driver_worker import main as _service_collect_main
+    sys.exit(_service_collect_main())
+
+
 if '--jdbc-test-cli' in sys.argv[1:]:
     from modules.jdbc_test_cli import main as _jdbc_test_main
 

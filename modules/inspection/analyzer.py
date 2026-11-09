@@ -16,6 +16,11 @@ DBCheck 增强智能分析模块
 - 所有数据在本地处理，不会发送到第三方服务器
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from modules.core.paths import PROJECT_ROOT, DBC_CONFIG_PATH
 import os
 import json
@@ -1854,6 +1859,9 @@ class AIAdvisor:
         response_format: 可选，Ollama 的 `format` 约束（JSON Schema / "json"），
         用于强制模型只输出合法 JSON，解决小模型不遵守 JSON 输出指令的问题。
         """
+        from modules.core.data_security import ensure_egress_allowed, redact
+        ensure_egress_allowed(self.api_url or 'http://127.0.0.1:11434')
+        prompt = redact(prompt, mask_identity=True)
         if self.backend == 'ollama':
             return self._call_ollama(prompt, timeout, response_format=response_format)
         elif self.backend == 'openai':
@@ -1985,7 +1993,7 @@ class AIAdvisor:
 
         import urllib.error
         try:
-            with urllib.request.urlopen(req, timeout=max(timeout, 300)) as resp:
+            with __import__('modules.core.data_security',fromlist=['egress_urlopen']).egress_urlopen(req,timeout=max(timeout,300)) as resp:
                 data = _json.loads(resp.read().decode('utf-8'))
         except urllib.error.HTTPError as e:
             # 服务端返回 4xx/5xx：默认 urllib 只抛 "HTTP Error 500:"（reason 为空、响应体被丢弃），

@@ -8,6 +8,9 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <title>{{ product_name }} · 数据库监控大屏</title>
 <!-- ECharts 本地离线包（与主界面同源），无网环境可用 -->
 <script src="/static/js/echarts.min.js"></script>
@@ -16,6 +19,7 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
     --bg: #0B1220; --panel: #0E1626; --panel2: #111C30; --border: #1C2A44;
     --tx: #D7E1F0; --tx2: #8FA3C0; --accent: #00C8A0; --blue: #38BDF8;
     --ok: #22C55E; --warn: #F59E0B; --crit: #EF4444; --down: #6B7280;
+    --logo-h: 34px;           /* 顶栏标志高度：跟 56px 顶栏留出上下呼吸位，改这一个值即可整体缩放 */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -24,14 +28,82 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
     font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
     display: flex; flex-direction: column;
   }
+
+  /* ── 背景：两团缓慢漂移的光晕 + 一层极淡网格 ──
+     全部固定定位、不参与布局，透明度压得很低，只做「屏幕在呼吸」的观感，
+     不影响任何数字的可读性；系统开启「减少动效」时自动静止。 */
+  body::before, body::after {
+    content: ''; position: fixed; z-index: 0; border-radius: 50%;
+    pointer-events: none; filter: blur(90px); will-change: transform;
+  }
+  body::before {
+    width: 46vw; height: 46vw; left: -14vw; top: -20vw;
+    background: radial-gradient(circle, rgba(0,200,160,.30), rgba(0,200,160,0) 68%);
+    animation: bgDriftA 48s ease-in-out infinite alternate;
+  }
+  body::after {
+    width: 52vw; height: 52vw; right: -16vw; bottom: -24vw;
+    background: radial-gradient(circle, rgba(56,189,248,.24), rgba(56,189,248,0) 70%);
+    animation: bgDriftB 62s ease-in-out infinite alternate;
+  }
+  html::before {
+    content: ''; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(143,163,192,.10) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(143,163,192,.10) 1px, transparent 1px);
+    background-size: 52px 52px;
+    -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 78%);
+    animation: gridDrift 90s linear infinite;
+  }
+  @keyframes bgDriftA {
+    from { transform: translate3d(0,0,0) scale(1); }
+    to   { transform: translate3d(7vw,5vw,0) scale(1.14); }
+  }
+  @keyframes bgDriftB {
+    from { transform: translate3d(0,0,0) scale(1.06); }
+    to   { transform: translate3d(-6vw,-5vw,0) scale(.94); }
+  }
+  @keyframes gridDrift {
+    from { background-position: 0 0, 0 0; }
+    to   { background-position: 52px 52px, 52px 52px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body::before, body::after, html::before, header::after { animation: none; }
+  }
+  /* 内容统一抬到背景之上 */
+  header, #loading-bar, #error-bar, #guide-bar, #hist-bar, main, footer {
+    position: relative; z-index: 1;
+  }
+
   /* ── 顶栏 ── */
   header {
     height: 56px; flex: none; display: flex; align-items: center; gap: 18px;
-    padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--panel);
+    padding: 0 18px; border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--panel) 86%, transparent);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+    backdrop-filter: blur(8px) saturate(120%);
   }
-  .logo { display: flex; align-items: baseline; gap: 8px; }
-  .logo b { font-size: 19px; color: var(--accent); letter-spacing: .5px; }
-  .logo span { font-size: 13px; color: var(--tx2); }
+  /* 顶栏下沿一道极缓的流光：静止画面里唯一会动的「呼吸」提示，不占用数据区 */
+  header::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,200,160,.55), rgba(56,189,248,.35), transparent);
+    background-size: 45% 100%; background-repeat: no-repeat;
+    opacity: .5; pointer-events: none;
+    animation: headSweep 16s linear infinite;
+  }
+  @keyframes headSweep {
+    from { background-position: -50% 0; }
+    to   { background-position: 150% 0; }
+  }
+  /* 标志：横版 logo 等比缩到与顶栏相称的高度，替代原先的文字标题 */
+  .logo { display: flex; align-items: center; gap: 10px; flex: none; min-width: 0; }
+  .logo-img { height: var(--logo-h); width: auto; display: block; flex: none; }
+  .logo-ver {
+    font-size: 11px; color: var(--tx2); letter-spacing: .3px; white-space: nowrap;
+    padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel2);
+  }
   .kpis { display: flex; gap: 10px; margin-left: 12px; flex: 1; min-width: 0; flex-wrap: nowrap; }
   .kpi {
     background: var(--panel2); border: 1px solid var(--border); border-radius: 9px;
@@ -56,7 +128,10 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
   main { flex: 1; display: grid; grid-template-columns: 23% 1fr 23%; gap: 10px; padding: 10px; min-height: 0; }
   aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
   .panel {
-    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    /* 面板留 6% 透光：背景光晕漂过时面板会有一层极淡的色温变化，
+       又因为文字是 12~17px 高对比色，实际可读性不受影响。 */
+    flex: 1; background: color-mix(in srgb, var(--panel) 94%, transparent);
+    border: 1px solid var(--border);
     border-radius: 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
     position: relative;
   }
@@ -389,7 +464,11 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 <body>
 
 <header>
-  <div class="logo"><b>{{ product_name }}</b><span>{{ S.subtitle }} · {{ version }}</span></div>
+  <div class="logo">
+    <img class="logo-img" src="/dbpulse_logo_horizontal.png"
+         alt="{{ product_name }} · {{ S.subtitle }}" title="{{ product_name }} · {{ S.subtitle }}">
+    <span class="logo-ver" title="{{ S.subtitle }}">{{ version }}</span>
+  </div>
   <div class="kpis">
     <div class="kpi ok"><div class="v" id="k-online">–</div><div class="l">{{ S.k_online }}</div></div>
     <div class="kpi warn"><div class="v" id="k-warn">–</div><div class="l">{{ S.k_warn }}</div></div>

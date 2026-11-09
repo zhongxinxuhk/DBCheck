@@ -21,6 +21,11 @@ pro/metrics_collector.py — 实时监控采集器（v2.10）
   - 每个指标的采集都包在 try/except 中，单点失败不影响整体循环。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import re
 import json
@@ -386,6 +391,9 @@ class MetricsCollector:
         user = inst.get('user')
         password = inst.get('password')
         t = self._query_timeout()  # 查询/语句硬超时（秒）
+        if db_type=='gbase8a':
+            from modules.db_types.compatibility import connect_gbase8a
+            return connect_gbase8a(inst)
         if db_type in ('mysql', 'tidb', 'oceanbase'):
             import pymysql
             db_name = inst.get('database')
@@ -435,8 +443,8 @@ class MetricsCollector:
                 try:
                     import ssl
                     ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
+                    ctx.check_hostname = True
+                    ctx.verify_mode = ssl.CERT_REQUIRED
                     kw['ssl_context'] = ctx
                 except Exception:
                     pass
@@ -451,24 +459,9 @@ class MetricsCollector:
         if db_type == 'dm':
             import dmPython
             return dmPython.connect(user=user, password=password, server='%s:%d' % (host, port))
-        if db_type in ('sqlserver', 'mssql', 'sqlserver_jdbc'):
-            # sqlserver_jdbc（插件标识）与 sqlserver 同为 TDS 线协议，pyodbc 直连
-            # （与监控大屏 _create_connection 同口径：绝不走 JDBC 插件起 JVM）。
-            import pyodbc
-            # 支持 DSN 或 host/port 直连
-            conn_str = inst.get('connection_string') or ''
-            if not conn_str:
-                database = inst.get('database') or 'master'
-                driver = '{ODBC Driver 17 for SQL Server}'
-                try:
-                    import pyodbc as _pyodbc
-                    drivers = [d for d in _pyodbc.drivers() if 'sql server' in d.lower()]
-                    if drivers:
-                        driver = '{%s}' % drivers[0]
-                except Exception:
-                    pass
-                conn_str = f'DRIVER={driver};SERVER={host},{port};DATABASE={database};UID={user};PWD={password}'
-            return pyodbc.connect(conn_str, timeout=t)
+        if db_type in ('sqlserver','mssql','sqlserver_jdbc'):
+            from modules.db_types.compatibility import connect_sqlserver
+            return connect_sqlserver(inst)
         if db_type == 'mongodb':
             # MongoDB 返回 MongoClient（非 DBAPI 连接）。
             # 为避免 pro/ 与 plugins/available/mongodb/ 的跨目录硬依赖，
@@ -736,6 +729,8 @@ class MetricsCollector:
     # ── 深采分派 ──
     def _collect_deep(self, db_type: str, conn) -> dict:
         try:
+            if db_type=='gbase8a':
+                return self._collect_gbase8a(conn)
             if db_type in ('mysql', 'tidb'):
                 return self._collect_mysql(conn)
             if db_type == 'oceanbase':
@@ -755,6 +750,18 @@ class MetricsCollector:
         except Exception as e:
             return {'deep_error': str(e)[:200]}
         return {}
+
+    def _collect_gbase8a(self,conn):
+        metrics={}
+        cursor=conn.cursor()
+        try:
+            cursor.execute('SHOW GLOBAL STATUS')
+            status={str(row[0]).lower():_to_num(row[1]) for row in cursor.fetchmany(1001)}
+            for key in ('queries','threads_connected','threads_running','slow_queries','bytes_received','bytes_sent','connections'):
+                if key in status:metrics[key]=status[key]
+            return metrics
+        finally:
+            cursor.close()
 
     def _collect_mysql(self, conn) -> dict:
         m = {}

@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 name: Tests
 
 on:
@@ -15,17 +23,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pymysql PyYAML flask flask-socketio Werkzeug gevent
+          pip install -r scripts/requirements-validation.txt
 
       - name: Run test suite
         run: |
           python scripts/verify_dbpulse.py
           python scripts/verify_upstream_sync.py
+          python scripts/verify_service_management.py
           if [ -d tests ] && ls tests/test_*.py >/dev/null 2>&1; then
             pytest -q
           else

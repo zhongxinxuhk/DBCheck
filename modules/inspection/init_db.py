@@ -20,6 +20,11 @@
     --force: 强制重新初始化（会删除现有数据！）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import argparse
@@ -4445,6 +4450,120 @@ YASHANDB_DEFAULT_CHAPTERS = [
 
 # ==================== 初始化函数 ====================
 
+
+# Version-specific metadata stays in the existing inspection metric catalog.
+COMPATIBILITY_QUERIES = {'oracle': {'version': "SELECT BANNER FROM V$VERSION WHERE BANNER LIKE 'Oracle%'",
+            'instance': 'SELECT INSTANCE_NAME, STATUS, DATABASE_STATUS, STARTUP_TIME FROM V$INSTANCE',
+            'sessions': 'SELECT STATUS, COUNT(*) AS CONNECTION_COUNT FROM V$SESSION GROUP BY STATUS',
+            'parameters': 'SELECT NAME, VALUE, ISDEFAULT FROM V$PARAMETER',
+            'objects': 'SELECT OWNER, OBJECT_TYPE, STATUS, COUNT(*) AS OBJECT_COUNT FROM DBA_OBJECTS WHERE '
+                       "OWNER NOT IN ('SYS','SYSTEM') GROUP BY OWNER,OBJECT_TYPE,STATUS",
+            'storage': 'SELECT TABLESPACE_NAME, USED_SPACE, TABLESPACE_SIZE, USED_PERCENT FROM '
+                       'DBA_TABLESPACE_USAGE_METRICS',
+            'files': 'SELECT TABLESPACE_NAME, FILE_NAME, BYTES, AUTOEXTENSIBLE, STATUS FROM DBA_DATA_FILES',
+            'archive': 'SELECT NAME, LOG_MODE, DATABASE_ROLE, OPEN_MODE FROM V$DATABASE',
+            'backups': 'SELECT SESSION_KEY, INPUT_TYPE, STATUS, START_TIME, END_TIME, INPUT_BYTES, '
+                       'OUTPUT_BYTES FROM V$RMAN_BACKUP_JOB_DETAILS ORDER BY START_TIME DESC',
+            'waits': 'SELECT EVENT, TOTAL_WAITS, TIME_WAITED FROM V$SYSTEM_EVENT ORDER BY TIME_WAITED DESC',
+            'cache': "SELECT NAME, VALUE FROM V$SYSSTAT WHERE NAME IN ('physical reads','consistent "
+                     "gets','db block gets')",
+            'statistics': 'SELECT OWNER,TABLE_NAME,LAST_ANALYZED,STALE_STATS FROM DBA_TAB_STATISTICS WHERE '
+                          "OWNER NOT IN ('SYS','SYSTEM')",
+            'indexes': 'SELECT OWNER,INDEX_NAME,TABLE_NAME,STATUS,UNIQUENESS FROM DBA_INDEXES WHERE OWNER '
+                       "NOT IN ('SYS','SYSTEM')",
+            'slow_sql': 'SELECT SQL_ID, EXECUTIONS, ELAPSED_TIME, BUFFER_GETS, DISK_READS FROM V$SQLAREA '
+                        'ORDER BY ELAPSED_TIME DESC',
+            'cluster_nodes': 'SELECT INST_ID,INSTANCE_NAME,STATUS FROM GV$INSTANCE',
+            'shared_pool': 'SELECT NAMESPACE,GETHITRATIO,PINHITRATIO FROM V$LIBRARYCACHE',
+            'privileges': 'SELECT ROLE FROM SESSION_ROLES'},
+ 'sqlserver': {'version': "SELECT SERVERPROPERTY('ProductVersion') AS PRODUCT_VERSION, "
+                          "SERVERPROPERTY('ProductLevel') AS PATCH_LEVEL",
+               'instance': "SELECT @@SERVERNAME AS INSTANCE_NAME, SERVERPROPERTY('IsClustered') AS "
+                           'IS_CLUSTERED, GETDATE() AS SERVER_TIME',
+               'sessions': 'SELECT STATUS, COUNT(*) AS CONNECTION_COUNT FROM SYS.DM_EXEC_SESSIONS GROUP BY '
+                           'STATUS',
+               'parameters': 'SELECT NAME,VALUE,VALUE_IN_USE,IS_DYNAMIC FROM SYS.CONFIGURATIONS',
+               'objects': 'SELECT TYPE_DESC,COUNT(*) AS OBJECT_COUNT FROM SYS.OBJECTS WHERE IS_MS_SHIPPED=0 '
+                          'GROUP BY TYPE_DESC',
+               'storage': 'SELECT NAME,TYPE_DESC,SIZE,MAX_SIZE,GROWTH,IS_PERCENT_GROWTH FROM '
+                          'SYS.DATABASE_FILES',
+               'files': 'SELECT NAME,PHYSICAL_NAME,STATE_DESC,SIZE FROM SYS.DATABASE_FILES',
+               'archive': 'SELECT NAME,STATE_DESC,RECOVERY_MODEL_DESC,IS_READ_ONLY FROM SYS.DATABASES',
+               'backups': 'SELECT TOP 100 '
+                          'DATABASE_NAME,TYPE,BACKUP_START_DATE,BACKUP_FINISH_DATE,BACKUP_SIZE,IS_DAMAGED '
+                          'FROM MSDB.DBO.BACKUPSET ORDER BY BACKUP_FINISH_DATE DESC',
+               'waits': 'SELECT TOP 30 WAIT_TYPE,WAITING_TASKS_COUNT,WAIT_TIME_MS FROM SYS.DM_OS_WAIT_STATS '
+                        'ORDER BY WAIT_TIME_MS DESC',
+               'cache': 'SELECT OBJECT_NAME,COUNTER_NAME,CNTR_VALUE,CNTR_TYPE FROM '
+                        "SYS.DM_OS_PERFORMANCE_COUNTERS WHERE COUNTER_NAME LIKE '%cache hit ratio%'",
+               'statistics': 'SELECT OBJECT_ID,NAME,STATS_DATE(OBJECT_ID,STATS_ID) AS LAST_ANALYZED FROM '
+                             'SYS.STATS',
+               'indexes': 'SELECT OBJECT_ID,NAME,TYPE_DESC,IS_UNIQUE,IS_DISABLED FROM SYS.INDEXES WHERE '
+                          'INDEX_ID>0',
+               'slow_sql': 'SELECT TOP 30 '
+                           'PLAN_HANDLE,EXECUTION_COUNT,TOTAL_ELAPSED_TIME,TOTAL_LOGICAL_READS,TOTAL_WORKER_TIME '
+                           'FROM SYS.DM_EXEC_QUERY_STATS ORDER BY TOTAL_ELAPSED_TIME DESC',
+               'cluster_nodes': 'SELECT NODE_NAME FROM SYS.DM_OS_CLUSTER_NODES',
+               'shared_pool': 'SELECT TOP 100 TYPE,SINGLE_PAGES_KB,MULTI_PAGES_KB FROM '
+                              'SYS.DM_OS_MEMORY_CLERKS',
+               'privileges': "SELECT IS_SRVROLEMEMBER('sysadmin') AS IS_SYSADMIN, "
+                             "IS_SRVROLEMEMBER('securityadmin') AS IS_SECURITYADMIN, "
+                             "IS_SRVROLEMEMBER('serveradmin') AS IS_SERVERADMIN, "
+                             "IS_SRVROLEMEMBER('dbcreator') AS IS_DBCREATOR, IS_MEMBER('db_owner') AS "
+                             "IS_DBOWNER, IS_MEMBER('db_datawriter') AS IS_DATAWRITER, "
+                             "IS_MEMBER('db_ddladmin') AS IS_DDLADMIN"},
+ 'dm': {'version': 'SELECT * FROM V$VERSION',
+        'instance': 'SELECT * FROM V$INSTANCE',
+        'sessions': 'SELECT STATE,COUNT(*) AS CONNECTION_COUNT FROM V$SESSIONS GROUP BY STATE',
+        'parameters': 'SELECT NAME,VALUE FROM V$PARAMETER',
+        'objects': 'SELECT OWNER,OBJECT_TYPE,STATUS,COUNT(*) AS OBJECT_COUNT FROM DBA_OBJECTS WHERE OWNER '
+                   "NOT IN ('SYS','SYSDBA') GROUP BY OWNER,OBJECT_TYPE,STATUS",
+        'storage': 'SELECT * FROM V$TABLESPACE',
+        'files': 'SELECT * FROM V$DATAFILE',
+        'archive': 'SELECT * FROM V$ARCH_STATUS',
+        'backups': 'SELECT * FROM V$BACKUPSET',
+        'waits': 'SELECT * FROM V$SYSTEM_EVENT',
+        'cache': 'SELECT * FROM V$BUFFERPOOL',
+        'statistics': 'SELECT OWNER,TABLE_NAME,LAST_ANALYZED FROM DBA_TABLES',
+        'indexes': 'SELECT OWNER,INDEX_NAME,TABLE_NAME,STATUS FROM DBA_INDEXES',
+        'slow_sql': 'SELECT * FROM V$LONG_EXEC_SQLS',
+        'privileges': 'SELECT GRANTED_ROLE FROM USER_ROLE_PRIVS'},
+ 'gbase8a': {'version': 'SELECT VERSION() AS PRODUCT_VERSION, @@VERSION_COMMENT AS PRODUCT_NAME',
+             'instance': 'SELECT CURRENT_TIMESTAMP AS SERVER_TIME, @@HOSTNAME AS INSTANCE_NAME',
+             'sessions': 'SELECT COMMAND,COUNT(*) AS CONNECTION_COUNT FROM INFORMATION_SCHEMA.PROCESSLIST '
+                         'GROUP BY COMMAND',
+             'parameters': 'SHOW GLOBAL VARIABLES',
+             'objects': 'SELECT TABLE_SCHEMA,TABLE_TYPE,COUNT(*) AS OBJECT_COUNT FROM '
+                        'INFORMATION_SCHEMA.TABLES GROUP BY TABLE_SCHEMA,TABLE_TYPE',
+             'storage': 'SELECT * FROM PERFORMANCE_SCHEMA.CLUSTER_DISK_USAGE_INFO',
+             'files': 'SELECT * FROM PERFORMANCE_SCHEMA.DISK_USAGE_INFO',
+             'archive': "SHOW GLOBAL VARIABLES LIKE '%log%'",
+             'waits': 'SELECT * FROM INFORMATION_SCHEMA.COORDINATORS_TASK_INFORMATION LIMIT 100',
+             'cache': 'SHOW GLOBAL STATUS',
+             'statistics': 'SELECT TABLE_SCHEMA,TABLE_NAME,UPDATE_TIME FROM INFORMATION_SCHEMA.TABLES LIMIT '
+                           '100',
+             'indexes': 'SELECT TABLE_SCHEMA,TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX,COLUMN_NAME FROM '
+                        'INFORMATION_SCHEMA.STATISTICS LIMIT 100',
+             'slow_sql': 'SELECT COORDINATOR_NAME,ID,COMMAND,TIME,STATE FROM '
+                         'INFORMATION_SCHEMA.COORDINATORS_TASK_INFORMATION ORDER BY TIME DESC LIMIT 30',
+             'privileges': 'SHOW GRANTS FOR CURRENT_USER'}}
+
+def compatibility_chapters(family, version=None):
+    """Fixed metadata indicators for native template selection and report chapters."""
+    names={'version':'数据库版本与补丁','instance':'实例运行状态','sessions':'会话与连接',
+           'parameters':'实例参数','objects':'对象有效性','storage':'逻辑存储空间',
+           'files':'数据文件与容量','archive':'归档与恢复模式','backups':'备份任务',
+           'waits':'等待事件','cache':'缓存命中指标','statistics':'统计信息新鲜度',
+           'indexes':'索引状态','slow_sql':'慢SQL与执行资源','cluster_nodes':'集群节点',
+           'shared_pool':'共享内存与库缓存','privileges':'巡检账号授权'}
+    statements=dict(COMPATIBILITY_QUERIES[family])
+    if family=='sqlserver' and version=='2014':
+        statements['shared_pool']='SELECT TOP 100 TYPE,PAGES_KB FROM SYS.DM_OS_MEMORY_CLERKS'
+    return [dict(chapter_number=str(number),chapter_title_zh=names[key],chapter_title_en=key,
+                 description=names[key],queries=[dict(key=family+'_'+key,sql=sql,desc_zh=names[key],desc_en=key)])
+            for number,(key,sql) in enumerate(statements.items(),1)]
+
+
 def init_default_templates(db_path: str = None, force: bool = False):
     """
     为每种数据库类型创建默认模板和章节。
@@ -4471,6 +4590,10 @@ def init_default_templates(db_path: str = None, force: bool = False):
         ('kingbase',   'KingbaseES 默认巡检模板', 'KingbaseES Default Inspection Template',  KINGBASE_DEFAULT_CHAPTERS, 'v1', 1, 1),
         ('yashandb',  'YashanDB 默认巡检模板',    'YashanDB Default Inspection Template',    YASHANDB_DEFAULT_CHAPTERS,    'v1', 1, 1),
         ('gbase',     'GBase 8s 默认巡检模板',     'GBase 8s Default Inspection Template',     GBASE_DEFAULT_CHAPTERS,     'v1', 1, 1),
+        ('gbase8a', 'GBase 8a MPP集群巡检模板', 'GBase 8a MPP Cluster Inspection', compatibility_chapters('gbase8a'), '8a', 1, 1),
+        ('sqlserver', 'SQL Server 2005 巡检模板', 'SQL Server 2005 Inspection', compatibility_chapters('sqlserver','2005'), '2005', 0, 1),
+        ('sqlserver', 'SQL Server 2008 巡检模板', 'SQL Server 2008 Inspection', compatibility_chapters('sqlserver','2008'), '2008', 0, 1),
+        ('sqlserver', 'SQL Server 2014 巡检模板', 'SQL Server 2014 Inspection', compatibility_chapters('sqlserver','2014'), '2014', 0, 1),
     ]
 
     for db_type, template_name, template_name_en, chapters, version, is_default, is_preset in db_types:

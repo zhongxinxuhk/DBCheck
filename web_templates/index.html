@@ -2,6 +2,11 @@
 SPDX-License-Identifier: Apache-2.0
 Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+
+Derivative Work Attribution / 衍生创作署名（追加，不替代上方 fiyo 原始署名）:
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 -->
 <!DOCTYPE html>
 <html lang="{{ lang }}" data-page-node-id="fcM7dG4gfO1ELPNtEYszv4">
@@ -9,7 +14,43 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 <meta charset="UTF-8" data-page-node-id="tggsINVg1tM7kmqJ9V2uB2" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="CADWKKkq5gXsagOuVXgTwb" />
 <title>{{ product_full_name }}</title>
-<link rel="icon" type="image/x-icon" href="/favicon.ico" data-page-node-id="bFYbzHs6oDCIIMrtvvGXAD">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<!-- ─── 系统信息页样式（沿用全局设计变量，浅色主题自动适配）─── -->
+<style>
+.sysinfo-wrap { max-width: 1080px; width: 100%; margin: 0 auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
+.sysinfo-wrap .card { padding: 20px 24px; margin-bottom: 0; }
+.sysinfo-wrap .card-title { margin-bottom: 16px; padding-bottom: 12px; }
+.sysinfo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .sysinfo-grid { grid-template-columns: 1fr; } }
+.sysinfo-hero { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+.sysinfo-logo-plate { flex: 0 0 240px; max-width: 100%; background: #fff; border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.sysinfo-logo-plate img { display: block; width: 100%; height: auto; }
+.sysinfo-hero-text { flex: 1; min-width: 220px; }
+.sysinfo-hero-text h2 { font-size: 26px; font-weight: 800; letter-spacing: -.5px; margin: 0 0 4px; color: var(--text); }
+.sysinfo-hero-sub { font-size: 12.5px; color: var(--text-muted); line-height: 1.7; }
+.sysinfo-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.sysinfo-pill { display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 20px; font-size: 11px; font-weight: 600; background: rgba(0,200,160,.14); color: var(--accent); border: 1px solid rgba(0,200,160,.32); }
+.sysinfo-pill--ghost { background: var(--surface2); color: var(--text-muted); border-color: var(--border); }
+.sysinfo-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 9px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.sysinfo-row:last-child { border-bottom: none; }
+.sysinfo-row .k { color: var(--text-muted); flex: 0 0 auto; }
+.sysinfo-row .v { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
+.sysinfo-row a, .sysinfo-note a { color: var(--accent); text-decoration: none; }
+.sysinfo-row a:hover, .sysinfo-note a:hover { text-decoration: underline; }
+.sysinfo-note { font-size: 12px; color: var(--text-muted); line-height: 1.75; }
+.sysinfo-note strong { color: var(--text); font-weight: 600; }
+.sysinfo-announce-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.sysinfo-announce-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); font-size: 12.5px; color: var(--text); }
+.sysinfo-brand-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+.sysinfo-brand-box { background: #fff; border-radius: 12px; padding: 12px; text-align: center; }
+.sysinfo-brand-box img { display: block; width: 220px; max-width: 100%; height: auto; }
+.sysinfo-brand-box--icon img { width: 96px; height: 96px; object-fit: contain; }
+.sysinfo-brand-box span { display: block; margin-top: 8px; font-size: 11px; color: #64748B; }
+.sysinfo-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.sysinfo-btn-row .btn { padding: 7px 16px; font-size: 12.5px; text-decoration: none; }
+</style>
 <style>
 /* ─── Reset & Base ─── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -265,7 +306,7 @@ async function executeFixSql(taskId, sql) {
 
 /* ─── Sidebar ─── */
 .sidebar {
-  width: 260px;
+  width: 228px;
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex;
@@ -274,104 +315,121 @@ async function executeFixSql(taskId, sql) {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 100;
+  box-shadow: 2px 0 16px rgba(0,0,0,.10);
 }
+[data-theme="light"] .sidebar { box-shadow: 2px 0 12px rgba(15,23,42,.05); }
 
 .sidebar-logo {
-  padding: 20px 22px 14px;
+  padding: 14px 16px 12px;
   border-bottom: 1px solid var(--border);
 }
-.sidebar-logo .logo-icon {
-  width: 32px; height: 32px;
-  background: linear-gradient(135deg, #0A2A6E, #00C8A0);
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-.sidebar-logo h1 {
-  font-size: 16px; font-weight: 600; letter-spacing: .5px;
-}
-.sidebar-logo h1 .edition-badge {
-  font-size: 9px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
-  vertical-align: middle;
-  margin-left: 6px;
-  letter-spacing: 0.5px;
-  transition: all 0.3s ease;
-}
-.sidebar-logo h1 .edition-badge.community {
-  background: rgba(0, 200, 160, 0.18);
-  color: var(--accent);
-  border: 1px solid rgba(0, 200, 160, 0.35);
-}
-.sidebar-logo h1 .edition-badge.pro {
-  background: linear-gradient(135deg, #f97316, #ea580c);
-  color: #fff;
-  font-weight: 600;
-  box-shadow: 0 0 6px rgba(249, 115, 22, 0.4);
-}
-.sidebar-logo p {
-  font-size: 11px; color: var(--text-muted); margin-top: 2px;
-}
 
-/* Sidebar brand logo: transparent icon that blends with the dark sidebar.
-   No white/light square behind it (object-fit keeps it undistorted). */
+/* Sidebar brand logo: 横版透明 lockup，直接浮在侧栏上，无白色底板。
+   图片自带两端透明留白；深色主题用反白字标，浅色主题用品牌深蓝字标。 */
 .sidebar-brand-logo {
-  width: 50px;
-  height: 50px;
-  margin-bottom: 10px;
   display: block;
-  object-fit: contain;
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+  margin: 0 auto;
   background: transparent;
+  border: 0;
+  box-shadow: none;
 }
+.sidebar-brand-logo--light,
+.sidebar-brand-logo-collapsed { display: none; }
+[data-theme="light"] .sidebar-brand-logo--dark { display: none; }
+[data-theme="light"] .sidebar-brand-logo--light { display: block; }
 
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 8px;
+  padding: 6px 0 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
-.sidebar-nav::-webkit-scrollbar { width: 4px; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 3px;
+  border: 1px solid transparent; background-clip: padding-box;
+  transition: background .18s ease;
+}
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
 
+/* 分组标题：更明确的层次 + 组间极淡分隔线 */
 .nav-section {
-  padding: 12px 14px 5px;
-  font-size: 10.5px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .8px;
-  color: var(--text-muted);
+  position: relative;
+  padding: 16px 16px 7px;
+  font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-muted); opacity: .82;
+}
+.nav-section::before {
+  content: ''; position: absolute;
+  top: 8px; left: 16px; right: 16px;
+  height: 1px; background: var(--border); opacity: .6;
 }
 
+/* 导航项：字号与行高放大，点击区更舒适；补 active 强调条、图标微交互 */
 .nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 3px 14px;
-  margin: 0.5px 8px;
-  border-radius: 7px;
+  position: relative;
+  display: flex; align-items: center; gap: 11px;
+  padding: 6px 12px;
+  margin: 1px 8px;
+  border-radius: 9px;
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1.3;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--text-muted);
-  transition: all var(--trans);
+  transition: background .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
   user-select: none;
 }
+/* 左侧强调条：hover 短、active 长，形成清晰的位置锚点 */
+.nav-item::before {
+  content: ''; position: absolute;
+  left: 0; top: 50%;
+  width: 3px; height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: height .2s cubic-bezier(.4,0,.2,1), opacity .2s ease;
+}
+.nav-item:hover::before { height: 14px; opacity: .45; }
+.nav-item.active::before { height: 20px; opacity: 1; }
+
 .nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item:active { transform: scale(.985); }
+.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nav-item.active {
-  background: rgba(46,160,67,.15);
+  background: rgba(0,200,160,.11);
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(0,200,160,.10);
 }
 .nav-item .icon {
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
   flex-shrink: 0;
+  border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center;
+  transition: background .18s ease, color .18s ease, transform .18s ease;
+}
+.nav-item:hover .icon { background: rgba(0,200,160,.10); transform: scale(1.06); }
+.nav-item.active .icon { background: rgba(0,200,160,.14); color: var(--accent); }
+/* 长语言标签在收窄后的侧栏里优雅省略，完整名称由 title 提供 */
+.nav-item > span:not(.icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .nav-item .icon svg {
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
   display: block;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.8;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -406,21 +464,7 @@ async function executeFixSql(taskId, sql) {
   width: 56px;
 }
 
-/* Logo 折叠态 */
-.sidebar.collapsed .sidebar-logo {
-  padding: 16px 8px 12px;
-  text-align: center;
-}
-.sidebar.collapsed .sidebar-logo h1,
-.sidebar.collapsed .sidebar-logo p {
-  display: none;
-}
-.sidebar.collapsed .sidebar-logo img {
-  width: 36px;
-  height: 36px;
-  margin-bottom: 0;
-}
-/* 折叠态在 logo 下竖排显示产品名 - 通过 HTML 实现 */
+/* Logo 折叠态：横版放不下，退回透明盾形图标 */
 .sidebar.collapsed .sidebar-logo {
   padding: 16px 8px 12px;
   text-align: center;
@@ -428,18 +472,15 @@ async function executeFixSql(taskId, sql) {
   flex-direction: column;
   align-items: center;
 }
-.sidebar .sidebar-vertical-text {
-  display: none;
-}
-.sidebar.collapsed .sidebar-vertical-text {
+.sidebar.collapsed .sidebar-brand-logo--dark,
+.sidebar.collapsed .sidebar-brand-logo--light { display: none; }
+.sidebar.collapsed .sidebar-brand-logo-collapsed {
   display: block;
-  margin-top: 6px;
-  writing-mode: vertical-rl;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--accent);
-  line-height: 1;
+  width: 40px;
+  height: 40px;
+  max-width: none;
+  margin: 0 auto;
+  object-fit: contain;
 }
 
 /* 导航项折叠态 */
@@ -449,14 +490,16 @@ async function executeFixSql(taskId, sql) {
 /* 折叠态 tooltip - 用原生 title 属性 */
 .sidebar.collapsed .nav-item {
   justify-content: center;
-  padding: 8px 0;
-  margin: 1px 4px;
+  padding: 9px 0;
+  margin: 2px 6px;
 }
+.sidebar.collapsed .nav-item::before { left: -3px; width: 2px; }
+.sidebar.collapsed .nav-item:hover .icon { transform: scale(1.12); }
 .sidebar.collapsed .nav-item .icon {
   margin-right: 0;
 }
 .sidebar.collapsed .nav-item .icon svg {
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
 }
 .sidebar.collapsed .nav-item span:not(.icon) {
   display: none;
@@ -490,6 +533,8 @@ async function executeFixSql(taskId, sql) {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,200,160,.28);
+  transform: translateY(-1px);
 }
 
 /* 主内容区响应 */
@@ -502,7 +547,7 @@ async function executeFixSql(taskId, sql) {
 
 /* ─── Main ─── */
 .main {
-  margin-left: 260px;
+  margin-left: 228px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -986,14 +1031,90 @@ select option { background: var(--surface2); }
   border: 1px solid var(--border);
 }
 .btn-ghost:hover { border-color: var(--text-muted); color: var(--text); }
-.theme-toggle {
-  background: transparent; color: var(--text-muted);
-  border: 1px solid var(--border);
-  padding: 4px 8px; border-radius: 6px;
-  font-size: 14px; cursor: pointer;
-  transition: all var(--trans);
+/* ─── 深浅主题：Apple 式滑动胶囊 + 柔和跑马灯光带 ─── */
+.theme-switch {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52px; height: 28px; padding: 0; margin-left: 6px;
+  border: none; background: transparent; border-radius: 14px;
+  cursor: pointer; flex-shrink: 0;
 }
-.theme-toggle:hover { border-color: var(--text-muted); color: var(--text); }
+.theme-switch__track {
+  position: relative; display: block; width: 52px; height: 28px;
+  border-radius: 14px; background: var(--surface2);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.10);
+  transition: background-color .45s ease, border-color .45s ease;
+}
+.theme-switch:hover .theme-switch__track { border-color: var(--accent); }
+.theme-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-switch__thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: linear-gradient(145deg, #ffffff, #e6edf6);
+  box-shadow: 0 2px 6px rgba(0,0,0,.22);
+  display: flex; align-items: center; justify-content: center;
+  color: #0A2A6E;
+  transition: transform .6s cubic-bezier(.34,1.35,.5,1), background .45s ease, color .45s ease;
+}
+.theme-switch[data-mode="light"] .theme-switch__thumb {
+  transform: translateX(24px);
+  background: linear-gradient(145deg, #223052, #101a30);
+  color: #ffd479;
+}
+.theme-switch__icon {
+  position: absolute; width: 13px; height: 13px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: opacity .35s ease, transform .55s ease;
+}
+.theme-switch__icon--moon { opacity: 0; transform: rotate(-60deg) scale(.6); }
+.theme-switch[data-mode="light"] .theme-switch__icon--sun  { opacity: 0; transform: rotate(60deg) scale(.6); }
+.theme-switch[data-mode="light"] .theme-switch__icon--moon { opacity: 1; transform: rotate(0) scale(1); }
+
+/* 跑马灯光带：低透明度多色渐变 + 大模糊，全程无白色闪光 */
+#theme-sweep {
+  position: fixed; inset: 0; z-index: 9000;
+  pointer-events: none; opacity: 0; overflow: hidden;
+}
+#theme-sweep.active { opacity: 1; }
+#theme-sweep .sweep-band {
+  position: absolute; top: -30%; bottom: -30%; left: -70vw; width: 70vw;
+  background: linear-gradient(90deg,
+    rgba(0,200,160,0) 0%, rgba(0,200,160,.10) 24%,
+    rgba(90,150,255,.14) 48%, rgba(172,128,255,.11) 70%,
+    rgba(0,200,160,0) 100%);
+  filter: blur(30px);
+  animation: themeSweepRun 950ms cubic-bezier(.4,0,.2,1) both;
+}
+@keyframes themeSweepRun {
+  0%   { transform: translateX(0) skewX(-12deg); opacity: 0; }
+  14%  { opacity: 1; }
+  86%  { opacity: 1; }
+  100% { transform: translateX(270vw) skewX(-12deg); opacity: 0; }
+}
+#theme-sweep .sweep-veil {
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 90% at 50% 50%, rgba(110,160,255,.07), transparent 72%);
+  animation: themeSweepVeil 950ms ease both;
+}
+@keyframes themeSweepVeil {
+  0%, 100% { opacity: 0; }
+  45%      { opacity: 1; }
+}
+/* 切换窗口内让配色渐变而非瞬变，消除硬切刺眼感 */
+body.theme-transitioning .sidebar,
+body.theme-transitioning .main,
+body.theme-transitioning .topbar,
+body.theme-transitioning .status-bar,
+body.theme-transitioning .card,
+body.theme-transitioning .home-hero,
+body.theme-transitioning .hero-stat-card {
+  transition: background-color .5s ease, color .5s ease, border-color .5s ease, box-shadow .5s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch__thumb, .theme-switch__icon { transition-duration: .2s; }
+  #theme-sweep .sweep-band, #theme-sweep .sweep-veil { animation-duration: 200ms; }
+}
 .btn-primary {
   background: var(--accent2); color: #fff;
 }
@@ -1480,6 +1601,48 @@ select option { background: var(--surface2); }
 .status-bar .sb-val { color: var(--text); font-weight: 600; }
 .status-bar .sb-item.sb-brand { gap: 8px; }
 .status-bar .version-badge { margin-top: 0; }
+
+/* 顶栏登录身份标记：一眼看清“我是谁、什么角色”，避免权限问题和身份问题混淆 */
+.tb-role-chip {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.tb-role-admin {
+  color: var(--accent, #4c7dff);
+  background: color-mix(in srgb, var(--accent, #4c7dff) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #4c7dff) 32%, transparent);
+}
+.tb-role-user {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border-color: color-mix(in srgb, var(--text-muted) 26%, transparent);
+}
+#topbar-user:hover .tb-role-chip { filter: brightness(1.08); }
+
+/* 系统管理弹窗内嵌页的权限占位面板 */
+.um-denied-icon { font-size: 26px; line-height: 1; }
+.um-denied-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.um-denied-desc { font-size: 12px; line-height: 1.8; color: var(--text-muted); max-width: 430px; }
+.um-denied-desc strong { color: var(--text); font-weight: 600; }
+.um-denied-btn {
+  margin-top: 4px;
+  font-size: 12px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.um-denied-btn:hover { border-color: var(--accent, #4c7dff); background: color-mix(in srgb, var(--accent, #4c7dff) 10%, var(--surface)); }
+.um-denied-btn:focus-visible { outline: 2px solid var(--accent, #4c7dff); outline-offset: 2px; }
 body { padding-bottom: 32px !important; }
 .overview-card .card-count {
   font-size: 32px; font-weight: 700;
@@ -1883,14 +2046,36 @@ async function executeFixSql(taskId, sql) {
 // ══════════════════════════════════════════════════════════════
 
 @media (max-width: 760px) {
-  .sidebar { width: 200px; }
-  .main { margin-left: 200px; }
+  .sidebar { width: 190px; }
+  .main { margin-left: 190px; }
   .form-grid { grid-template-columns: 1fr; }
   .type-grid { grid-template-columns: 1fr; }
   .feature-grid { grid-template-columns: 1fr; }
   /* 确认面板 / 趋势图 / 报告列表 */
   #confirm-panel > div,
   #trend-charts-grid { grid-template-columns: 1fr; }
+
+/* 趋势图缺测提示条：如实说明哪些指标本次没有采集到 */
+#trend-missing-note {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #f59e0b 32%, transparent);
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--text-muted);
+}
+#trend-missing-note .tmn-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+#trend-missing-note .tmn-row { margin-top: 2px; }
+#trend-missing-note .tmn-key { color: var(--text); font-weight: 500; }
   .report-list { grid-template-columns: 1fr; }
 }
 
@@ -3301,7 +3486,7 @@ async function executeFixSql(taskId, sql) {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px 130px 22px 28px; /* 右侧预留吉祥物空间 */
+  padding: 22px 28px;
   margin-bottom: 20px;
   border-radius: 16px;
   background: var(--surface2);
@@ -3323,16 +3508,29 @@ async function executeFixSql(taskId, sql) {
   position: relative;
   z-index: 2;
 }
-.hero-welcome { display: flex; flex-direction: column; gap: 3px; }
-.hero-heading {
+/* 品牌锁：logo 在左、双语标语在右，横向排布，不额外占垂直高度 */
+.hero-welcome { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.hero-brand-logo {
+  display: block;
+  width: 208px; max-width: 100%; height: auto;
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--text);
+  filter: drop-shadow(0 4px 14px rgba(0,0,0,.10));
+  flex-shrink: 0;
 }
-.hero-heading .brand-x { color: #00b093; }
-.hero-lead { margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 500; }
+.hero-brand-logo--light { display: none; }
+[data-theme="light"] .hero-brand-logo--dark { display: none; }
+[data-theme="light"] .hero-brand-logo--light { display: block; }
+.hero-tagline {
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0; padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+.hero-lead { margin: 0; font-size: 14px; color: var(--text); font-weight: 600; letter-spacing: .5px; }
+.hero-lead-en {
+  margin: 0; font-size: 9.5px; font-weight: 600;
+  letter-spacing: 2.2px; text-transform: uppercase;
+  color: var(--accent); opacity: .78;
+}
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .hero-btn {
   cursor: pointer;
@@ -3374,21 +3572,8 @@ async function executeFixSql(taskId, sql) {
   70%  { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
   100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
 }
-.hero-mascot {
-  position: absolute;
-  right: 18px;
-  bottom: -8px;
-  width: 88px;
-  height: auto;
-  pointer-events: none;
-  opacity: .92;
-  filter: drop-shadow(0 6px 14px rgba(0,0,0,.18));
-  animation: breathe 3.6s ease-in-out infinite;
-  z-index: 1;
-}
-@keyframes breathe {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .screen-live-dot { animation: none; }
 }
 
 /* 首屏 6 统计 */
@@ -3471,14 +3656,13 @@ async function executeFixSql(taskId, sql) {
 
 /* 响应式 */
 @media (max-width: 1100px) {
-  .home-hero { padding-right: 110px; }
   .hero-stats { grid-template-columns: repeat(3, 1fr); }
-  .hero-mascot { width: 76px; right: 14px; }
 }
 @media (max-width: 640px) {
-  .home-hero { padding-right: 22px; } /* 移动端取消吉祥物预留空间 */
   .hero-stats { grid-template-columns: repeat(2, 1fr); }
-  .hero-mascot { display: none; }
+  .hero-welcome { gap: 12px; }
+  .hero-brand-logo { width: 168px; }
+  .hero-tagline { padding-left: 12px; }
 }
 </style>
 
@@ -6599,6 +6783,7 @@ function formatBytes(bytes) {
   '<div id="ds-database-wrap" style="grid-column:1/-1;display:none"><label id="ds-database-label" style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_database') + '</label><input id="ds-database" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px"></div>' +
   '<div id="ds-service-wrap" style="grid-column:1/-1;display:none"><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.label_service_sid') + '</label><input id="ds-service-name" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="' + i18n('webui.pro_ds_placeholder_service') + '"></div>' +
   '<div id="ds-tenant-wrap" style="grid-column:1/-1;display:none"><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_tenant') + '</label><input id="ds-tenant" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="例如 sys / test"></div>' +
+  '<div id="ds-gbase8a-ca-wrap" style="grid-column:1/-1;display:none"><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">GBase 8a TLS CA 证书路径</label><input id="ds-gbase8a-ca" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="直连时必填；SSH加密隧道连接可留空"></div>' +
   '<div id="ds-gbase-server-wrap" style="grid-column:1/-1;display:none"><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_gbase_server') + '</label><input id="ds-gbase-server" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="' + i18n('webui.pro_ds_placeholder_gbase_server') + '"></div>' +
   '<div id="ds-sysdba-wrap" style="grid-column:1/-1;display:none"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ds-sysdba" style="width:16px;height:16px;accent-color:var(--accent)" /><span style="font-size:13px;color:var(--text-muted)">' + i18n('webui.checkbox_sysdba') + '</span></label></div>' +
   '<div id="ds-use-sid-wrap" style="grid-column:1/-1;display:none"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0"><input type="checkbox" id="ds-use-sid" style="width:16px;height:16px;accent-color:var(--accent)" /><span style="font-size:13px;color:var(--text-muted)">使用 SID 连接（jdbc:oracle:thin:@host:port:SID，区别于默认的服务名格式）</span></label></div>' +
@@ -6759,6 +6944,7 @@ function formatBytes(bytes) {
           _dvWrap.style.display = _isJdbc ? 'block' : 'none';
           if (_isJdbc) _loadDriverVersions(dbType, undefined, 'ds-driver-version');
         }
+        document.getElementById('ds-gbase8a-ca-wrap').style.display = dbType === 'gbase8a' ? '' : 'none';
         var gbaseWrap = document.getElementById('ds-gbase-server-wrap');
         if (gbaseWrap) gbaseWrap.style.display = dbType === 'gbase' ? '' : 'none';
         var mongoWrap = document.getElementById('ds-mongo-wrap');
@@ -6888,7 +7074,7 @@ function formatBytes(bytes) {
         const mongoAuthMechanism = document.getElementById('ds-auth-mechanism')?.value.trim() || '';
         const mongoReplicaSet = document.getElementById('ds-replica-set')?.value.trim() || '';
         const mongoTls = document.getElementById('ds-tls')?.checked || false;
-        const mongoTlsCaFile = document.getElementById('ds-tls-ca-file')?.value.trim() || '';
+        const mongoTlsCaFile = document.getElementById(dbType === 'gbase8a' ? 'ds-gbase8a-ca' : 'ds-tls-ca-file')?.value.trim() || '';
         const mongoTlsCertKeyFile = document.getElementById('ds-tls-cert-key-file')?.value.trim() || '';
         const mongoTlsAllowInvalid = document.getElementById('ds-tls-allow-invalid')?.checked || false;
         const redisSeedNodes = document.getElementById('ds-redis-seed-nodes')?.value.trim() || '';
@@ -6981,8 +7167,15 @@ function formatBytes(bytes) {
           payload.replica_set = document.getElementById('ds-replica-set')?.value.trim() || '';
           payload.tls = document.getElementById('ds-tls')?.checked ? 1 : 0;
           payload.tls_ca_file = document.getElementById('ds-tls-ca-file')?.value.trim() || '';
+        }
+        if (payload.db_type === 'mongodb') {
           payload.tls_cert_key_file = document.getElementById('ds-tls-cert-key-file')?.value.trim() || '';
           payload.tls_allow_invalid_certs = document.getElementById('ds-tls-allow-invalid')?.checked ? 1 : 0;
+        }
+        if (payload.db_type === 'gbase8a') {
+          payload.tls_ca_file = document.getElementById('ds-gbase8a-ca')?.value.trim() || '';
+          payload.tls = true;
+          payload.tls_allow_invalid_certs = false;
         }
         if (payload.db_type === 'redis-cluster') {
           payload.seed_nodes = document.getElementById('ds-redis-seed-nodes')?.value.trim() || '';
@@ -7029,6 +7222,7 @@ function formatBytes(bytes) {
           const data = await res.json();
           if (data.ok && data.datasource) {
             const ds = data.datasource;
+
             // 缓存解密后的密码供测试连接使用
             _editDsPassword = ds.password || '';
             _editDsPort = ds.port;
@@ -7044,6 +7238,7 @@ function formatBytes(bytes) {
               onDsDbTypeChange();
               document.getElementById('ds-label').value = ds.name || '';
               document.getElementById('ds-host').value = ds.host || '';
+              document.getElementById('ds-gbase8a-ca').value=ds.tls_ca_file || '';
               document.getElementById('ds-user').value = ds.user || '';
               // 密码留空，不回显
               document.getElementById('ds-password').placeholder = '（不修改请留空）';
@@ -7083,6 +7278,7 @@ function formatBytes(bytes) {
                 document.getElementById('ds-auth-source').value = ds.auth_source || 'admin';
                 document.getElementById('ds-auth-mechanism').value = ds.auth_mechanism || '';
                 document.getElementById('ds-replica-set').value = ds.replica_set || '';
+                document.getElementById('ds-gbase8a-ca').value = ds.tls_ca_file || '';
                 document.getElementById('ds-tls-ca-file').value = ds.tls_ca_file || '';
                 document.getElementById('ds-tls-cert-key-file').value = ds.tls_cert_key_file || '';
                 document.getElementById('ds-tls').checked = !!ds.tls;
@@ -7172,11 +7368,11 @@ function formatBytes(bytes) {
         const ok = await showConfirmDialog(
           '导出数据源',
           '将导出当前可见的数据源为 JSON 文件（含 SSH/MongoDB/TLS 等全部连接参数与分组）。\n\n' +
-          '• 管理员导出将包含明文密码，便于升级后免重录——导出文件务必妥善保管，不要外传；\n' +
-          '• 非管理员导出不含密码，导入后需重新录入。');
+          '• 导出仅包含数据源配置，所有口令字段均排除；\n' +
+          '• 导入后需要重新录入口令。完整迁移使用受控加密备份。');
         if (!ok) return;
         try {
-          let resp = await fetch('/api/pro/instances/export-json?with_password=1');
+          let resp = await fetch('/api/pro/instances/export-json?with_password=0');
           if (resp.status === 403) {
             resp = await fetch('/api/pro/instances/export-json?with_password=0');
           }
@@ -7559,10 +7755,9 @@ function wfCloseRunDrawer() {
   <!-- ─── Sidebar ─── -->
   <aside class="sidebar" data-page-node-id="uuLrKMIisIyYATntMTxcLF">
     <div class="sidebar-logo" data-page-node-id="1qrZCFLOyuaAIumAvCEGEV">
-      <img src="/dbcheck_logo_icon.png" alt="{{ product_name }}" class="sidebar-brand-logo" data-page-node-id="NuTCxjWiNNB912zNicyCY5">
-      <span class="sidebar-vertical-text" data-page-node-id="2478ZjHvstYNiLC3KNn4Wd">{{ product_name }}</span>
-      <h1 data-page-node-id="0nW0lSY8S8Dw6UKDVUtHqY">{{ product_name[:-1] }}<span style="color:#00b093;" data-page-node-id="g6HYADhSaisMy2zpxXZULE">{{ product_name[-1] }}</span> {% if edition == 'professional' %}<span class="edition-badge pro" id="sidebar-edition-badge" data-i18n="webui.edition_badge" data-page-node-id="QBmUu2lEpmY1Fu793Ap2G0">专业版</span>{% else %}<span class="edition-badge community" id="sidebar-edition-badge" data-i18n="webui.edition_community" data-page-node-id="mYD0eEeHoo54CDanuamuUQ">社区版</span>{% endif %}</h1>
-      <p data-i18n="webui.logo_subtitle" data-page-node-id="rXcyAJPft47RyZRBLoun2r">基于 AI 的智能数据库巡检平台</p>
+      <img src="/dbpulse_logo_horizontal.png" alt="{{ product_name }}" class="sidebar-brand-logo sidebar-brand-logo--dark" data-page-node-id="NuTCxjWiNNB912zNicyCY5">
+      <img src="/dbpulse_logo_horizontal_light.png" alt="" aria-hidden="true" class="sidebar-brand-logo sidebar-brand-logo--light" data-page-node-id="sysBrandLightX1">
+      <img src="/dbcheck_logo_icon.png" alt="" aria-hidden="true" class="sidebar-brand-logo-collapsed" data-page-node-id="sysBrandCollapsedX1">
     </div>
 
     <div class="sidebar-nav" data-page-node-id="nJfdiOGgREz2KCCFAOfG5M">
@@ -7718,8 +7913,13 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('shares')" id="nav-shares" data-page-node-id="Px3726GOxyVCfjBfWAfsvk">
       <span class="icon" data-page-node-id="MclWyqKqLGuxXU1N6295yu"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="xIwT1ykqxwgkPYxPkDNfEO"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" data-page-node-id="yn71KpZYGY2EC4Acc8BZPF"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" data-page-node-id="LqnylOxn1E8flMUZypbDSz"/></svg></span> <span data-i18n="webui.nav_shares" data-page-node-id="7OrFgQlS6iEjA2rol5hwJX">分享管理</span>
     </div>
+    <a class="nav-item" href="/services" id="nav-services">运维服务与需求验收</a>
     <div class="nav-item" onclick="showPage('license')" id="nav-license" style="display:none;" data-page-node-id="O0GnruyLVpTBbtmKVZGO5l">
       <span class="icon" data-page-node-id="LT1VAIiQcgMtIEkePOTPU3"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="QnafWCKfjK66Qj3iSzygLe"><circle cx="12" cy="8" r="7" data-page-node-id="JEm0Q9k3zKbihz3PkPvd9J"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" data-page-node-id="bWmd6C2dOgnLFW3ASb9Yps"/></svg></span> <span data-i18n="webui.nav_license" data-page-node-id="aS1CJku9U6WosKyQVcni1P">许可证</span>
+    </div>
+    <!-- ── 系统信息：版本 / 更新提醒 / 系统 Logo / 开源署名 ── -->
+    <div class="nav-item" onclick="showPage('system-info')" id="nav-system-info" data-page-node-id="sysInfoNavX1">
+      <span class="icon" data-page-node-id="sysInfoNavIconX1"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="sysInfoNavSvgX1"><circle cx="12" cy="12" r="9" data-page-node-id="sysInfoNavCircleX1"/><line x1="12" y1="11" x2="12" y2="16" data-page-node-id="sysInfoNavLineX1"/><path d="M12 8h.01" data-page-node-id="sysInfoNavDotX1"/></svg></span> <span data-i18n="webui.nav_system_info" data-page-node-id="sysInfoNavTxtX1">系统信息</span>
     </div>
     </div><!-- /sidebar-nav -->
 
@@ -7748,17 +7948,25 @@ function wfCloseRunDrawer() {
           <option value="ru" data-page-node-id="c4vojBeu0cHN37Akm0AMup">Русский</option>
         </select>
       </span>
-      <button class="btn btn-ghost" id="theme-toggle" onclick="toggleTheme()" title="切换主题" style="font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer;" data-page-node-id="q8QUD8l6qW3BYYvozmDH0G">
-        ☀️
+      <button class="theme-switch" id="theme-toggle" data-mode="dark" onclick="toggleTheme()" title="切换深浅主题" aria-label="切换深浅主题" data-page-node-id="q8QUD8l6qW3BYYvozmDH0G">
+        <span class="theme-switch__track">
+          <span class="theme-switch__thumb">
+            <svg class="theme-switch__icon theme-switch__icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            <svg class="theme-switch__icon theme-switch__icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </span>
+        </span>
       </button>
-      <span id="topbar-user" style="font-size:12px;color:var(--text-muted);margin-left:8px;cursor:pointer;display:none;" onclick="toggleUserMenu()" data-page-node-id="8j647NT8a4eDoTL1fTzSj7">
-        👤 <span id="topbar-user-name" data-page-node-id="HiS5xz1sery4p9P9ViJ77a"></span> ▾
+      <span id="topbar-user" style="font-size:12px;color:var(--text-muted);margin-left:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;" onclick="toggleUserMenu()" title="当前登录账户 / Signed-in account" data-page-node-id="8j647NT8a4eDoTL1fTzSj7">
+        <span aria-hidden="true" data-page-node-id="tbUserIcon">👤</span>
+        <span id="topbar-user-name" data-page-node-id="HiS5xz1sery4p9P9ViJ77a">{{ username|default('已登录', true) }}</span>
+        <span id="topbar-user-role" class="tb-role-chip {% if user_role == 'admin' %}tb-role-admin{% else %}tb-role-user{% endif %}" {% if user_role == 'admin' %}data-i18n="webui.account_role_admin"{% else %}data-i18n="webui.account_role_user"{% endif %} data-page-node-id="tbUserRole">{% if user_role == 'admin' %}管理员{% else %}普通用户{% endif %}</span>
+        <span aria-hidden="true" data-page-node-id="tbUserCaret">▾</span>
       </span>
       <div id="user-dropdown" style="display:none;position:absolute;top:100%;right:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 0;z-index:999;min-width:140px;box-shadow:0 4px 12px rgba(0,0,0,0.3);" data-page-node-id="7U2HS1ZxYa2d7XWZl4lOVs">
         <div style="padding:6px 14px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);margin-bottom:4px;" data-i18n="webui.user_menu_logged_in" data-page-node-id="dEQFym1RmxtxIOBLWkVJ2D">已登录</div>
         <div class="dropdown-item" onclick="showPage('account');toggleUserMenu()" style="padding:6px 14px;font-size:12px;cursor:pointer;" data-i18n="webui.user_menu_account" data-page-node-id="U7bt9hgl1qXHUi6vDup8kK">👤 用户中心</div>
         {% if user_role == 'admin' %}
-        <div class="dropdown-item" onclick="showUserManagement();toggleUserMenu()" style="padding:6px 14px;font-size:12px;cursor:pointer;" data-i18n="webui.user_menu_admin" data-page-node-id="UTv6Spd1wDmdybPeg17lha">⚙️ 系统管理</div>
+        <div class="dropdown-item" id="user-menu-admin" onclick="showUserManagement();toggleUserMenu()" style="padding:6px 14px;font-size:12px;cursor:pointer;" data-i18n="webui.user_menu_admin" data-page-node-id="UTv6Spd1wDmdybPeg17lha">⚙️ 系统管理</div>
         {% endif %}
         <div class="dropdown-item" onclick="showAboutModal();toggleUserMenu()" style="padding:6px 14px;font-size:12px;cursor:pointer;" data-i18n="webui.user_menu_about" data-page-node-id="bicqaAboutX1">ℹ️ 关于</div>
         <script>window.__userRole = "{{ user_role }}";</script>
@@ -7775,8 +7983,12 @@ function wfCloseRunDrawer() {
         <section class="home-hero" id="home-hero" data-page-node-id="SK5kmaF4QjfWggv2veBzyF">
           <div class="hero-inner" data-page-node-id="WUY8FNQW8oOutmZyHFrH8W">
             <div class="hero-welcome" data-page-node-id="PNWuH9pk3ufROc0tX6BPKE">
-              <h1 class="hero-heading" data-i18n-html="webui.home_welcome" data-page-node-id="PVIiHHuGxWPQI28sSSpbUf">欢迎使用 Raccoon<span class=brand-x data-page-node-id="z3S1Pn9vZrniy9wQntpCkA">X</span></h1>
-              <p class="hero-lead" data-i18n="webui.home_hero_subtitle" data-page-node-id="T0LZpvi8HxGKLKBp68fB5n">像浣熊一样夜行探索，让隐藏的数据库问题无所遁形</p>
+              <img class="hero-brand-logo hero-brand-logo--dark" src="/dbpulse_logo_horizontal.png" alt="{{ product_name }}" data-page-node-id="heroBrandDarkX1">
+              <img class="hero-brand-logo hero-brand-logo--light" src="/dbpulse_logo_horizontal_light.png" alt="{{ product_name }}" data-page-node-id="heroBrandLightX1">
+              <div class="hero-tagline" data-page-node-id="heroTaglineX1">
+                <p class="hero-lead" data-page-node-id="T0LZpvi8HxGKLKBp68fB5n">洞见数据脉搏，预见系统风险</p>
+                <p class="hero-lead-en" data-page-node-id="heroLeadEnX1">SEE THE PULSE. STAY AHEAD.</p>
+              </div>
             </div>
             <div class="hero-actions" data-page-node-id="IRMtJnJvJKe0luBUI3YITG">
               <button class="hero-btn hero-btn--primary" onclick="showPage('wizard')" data-i18n="webui.home_quick_inspect" data-page-node-id="DJXlpyYVGBWwqfV44AD4tb">立即巡检</button>
@@ -7788,7 +8000,6 @@ function wfCloseRunDrawer() {
               </button>
             </div>
           </div>
-          <img class="hero-mascot" id="hero-mascot-img" src="/mascot.png" alt="{{ product_name }} Mascot" data-page-node-id="zkQuXxe4J7Tpd3UTdxQJvd">
         </section>
 
         <!-- ══ 首屏 6 统计 ══ -->
@@ -8245,6 +8456,10 @@ function wfCloseRunDrawer() {
               </div>
               <div style="font-size:11px;color:var(--text-muted);margin-top:6px" data-page-node-id="CZuuZbHRQWLWhjruyEj0Y6">关闭 encrypt 可兼容无证书内网环境；开启 encrypt 后建议取消勾选「信任服务器证书」并配置 CA</div>
             </div>
+            <div class="field full" id="f-gbase8a-ca-wrap" style="display:none">
+              <label for="f-gbase8a-ca">GBase 8a TLS CA 证书路径 <span class="opt">直连必填；SSH加密隧道可留空</span></label>
+              <input id="f-gbase8a-ca" type="text" placeholder="可信CA证书文件路径" />
+            </div>
             <div class="field full" id="f-mongo-wrap" style="display:none" data-page-node-id="3WOKvis754CqxrhGROUSRh">
               <label data-page-node-id="C6w2DaWzaZi8VIHFC5OUbg"><span data-page-node-id="GT3rBB1h2wkwTOfPWGswlm">MongoDB 连接参数</span> <span class="opt" data-page-node-id="Dd48jp0m3hADUJWpEMgEtP">NoSQL</span></label>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px" data-page-node-id="y3zvWQlWylRnbYhwAvqhG8">
@@ -8635,6 +8850,8 @@ function wfCloseRunDrawer() {
           <div class="card-title" data-page-node-id="w8nnGI1HJT5GQ4pRp9cLuu"><span data-page-node-id="rqgvyTsK55TrYjxAMBFoy8">📊</span> <span data-i18n="webui.chart_title" data-page-node-id="ABKq3i7UnMKB1sUhcsf6nu">关键指标趋势图</span></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="trend-charts-grid" data-page-node-id="137yvZj9jVmtOb2M7TUx55">
           </div>
+          <!-- 缺测指标如实告知：哪几项没采到、为什么没采到，不用假的 0 糊过去 -->
+          <div id="trend-missing-note" style="display:none" data-page-node-id="trendMissingNote"></div>
         </div>
 
         <div id="trend-empty" class="card" style="text-align:center;padding:48px;color:var(--text-muted)" data-page-node-id="PXOZIhmuy7L24Rrr0xGz5F">
@@ -9113,6 +9330,130 @@ function wfCloseRunDrawer() {
           <div id="pro-license-msg" style="margin-top:10px;font-size:13px;" data-page-node-id="HmgsIMfvVBwv1rHBOCeK8C"></div>
         </div>
       </div>
+
+      <!-- ══ Page: 系统信息（版本 / 更新提醒 / 系统 Logo / 开源署名）══ -->
+      <div class="page" id="page-system-info" data-page-node-id="sysInfoPageX1">
+        <div class="sysinfo-wrap" data-page-node-id="sysInfoWrapX1">
+
+          <!-- 系统 Logo Hero -->
+          <div class="card sysinfo-hero" data-page-node-id="sysInfoHeroX1">
+            <div class="sysinfo-logo-plate" data-page-node-id="sysInfoLogoPlateX1">
+              <img src="/dbpulse_logo.png" alt="{{ product_name }} Logo" data-page-node-id="sysInfoLogoX1">
+            </div>
+            <div class="sysinfo-hero-text" data-page-node-id="sysInfoHeroTextX1">
+              <h2 data-page-node-id="sysInfoHeroTitleX1">{{ product_name }}</h2>
+              <div class="sysinfo-hero-sub" data-page-node-id="sysInfoHeroSubX1">{{ product_full_name }} · {{ product_tagline }}</div>
+              <div class="sysinfo-pills" data-page-node-id="sysInfoHeroPillsX1">
+                <span class="sysinfo-pill" data-page-node-id="sysInfoPillVerX1">{{ version }}</span>
+                <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillEditionX1">{% if edition == 'professional' %}专业版 / Professional{% else %}社区版 / Community{% endif %}</span>
+                <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillLicenseX1">Apache-2.0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sysinfo-grid" data-page-node-id="sysInfoGridX1">
+
+            <!-- 系统版本 -->
+            <div class="card" data-page-node-id="sysInfoVerCardX1">
+              <div class="card-title" data-page-node-id="sysInfoVerTitleX1"><span data-page-node-id="sysInfoVerIconX1">🧩</span> <span data-i18n="webui.system_info_version" data-page-node-id="sysInfoVerTitleTxtX1">系统版本</span> / Version</div>
+              <div class="sysinfo-row"><span class="k">版本号 / Version</span><span class="v">{{ version }}</span></div>
+              <div class="sysinfo-row"><span class="k">产品名 / Product</span><span class="v">{{ product_name }}</span></div>
+              <div class="sysinfo-row"><span class="k">完整名称 / Full Name</span><span class="v">{{ product_full_name }}</span></div>
+              <div class="sysinfo-row"><span class="k">中文名称</span><span class="v">{{ product_name_zh }}</span></div>
+              <div class="sysinfo-row"><span class="k">发行版本 / Edition</span><span class="v">{% if edition == 'professional' %}专业版 · Professional{% else %}社区版 · Community{% endif %}</span></div>
+              <div class="sysinfo-row"><span class="k">界面语言 / UI Language</span><span class="v" id="sysinfo-lang">--</span></div>
+              <div class="sysinfo-row"><span class="k">访问地址 / Host</span><span class="v" id="sysinfo-host">--</span></div>
+              <div class="sysinfo-row"><span class="k">开源协议 / License</span><span class="v">Apache License 2.0</span></div>
+            </div>
+
+            <!-- 更新提醒 -->
+            <div class="card" data-page-node-id="sysInfoUpdCardX1">
+              <div class="card-title" data-page-node-id="sysInfoUpdTitleX1"><span data-page-node-id="sysInfoUpdIconX1">🔔</span> <span data-i18n="webui.system_info_update" data-page-node-id="sysInfoUpdTitleTxtX1">更新提醒</span> / Updates</div>
+              <p class="sysinfo-note" data-page-node-id="sysInfoUpdNoteX1">公告由后端定时从预置地址 <strong>https://dbcheck.top/announcement.json</strong> 拉取并缓存；本页直接请求本地 <strong>/api/announcement</strong>，不依赖 GitHub 直连，断网时展示最近一次缓存。版本发布信息以官方公告为准。</p>
+              <div class="sysinfo-row"><span class="k">当前版本 / Running</span><span class="v">{{ version }}</span></div>
+              <div class="sysinfo-row"><span class="k">预置公告源 / Source</span><span class="v"><button class="btn btn-ghost" id="system-update-link" onclick="refreshSystemInfo()" style="padding:3px 10px;font-size:12px;text-decoration:none;" title="直接请求预置 URL（经后端缓存）" data-page-node-id="sysInfoUpdSourceX1">dbcheck.top/announcement.json ↻</button></span></div>
+              <div class="sysinfo-row"><span class="k">最近检查 / Last Check</span><span class="v" id="sysinfo-last-check">--</span></div>
+              <div class="sysinfo-announce-list" id="sysinfo-announce-list" data-page-node-id="sysInfoUpdListX1">
+                <div class="sysinfo-note">正在读取官方公告…</div>
+              </div>
+              <div class="sysinfo-btn-row" data-page-node-id="sysInfoUpdBtnsX1">
+                <button class="btn btn-primary" onclick="refreshSystemInfo()" data-page-node-id="sysInfoUpdRefreshX1">🔄 直接请求预置 URL</button>
+              </div>
+            </div>
+
+            <!-- 系统 Logo -->
+            <div class="card" data-page-node-id="sysInfoLogoCardX1">
+              <div class="card-title" data-page-node-id="sysInfoLogoTitleX1"><span data-page-node-id="sysInfoLogoIconX1">🎨</span> <span data-i18n="webui.system_info_brand" data-page-node-id="sysInfoLogoTitleTxtX1">系统标志</span> / Brand Assets</div>
+              <div class="sysinfo-brand-row" data-page-node-id="sysInfoBrandRowX1">
+                <div class="sysinfo-brand-box" data-page-node-id="sysInfoBrandMainX1">
+                  <img src="/dbpulse_logo.png" alt="{{ product_name }} Logo">
+                  <span>系统主标志 · /dbpulse_logo.png</span>
+                </div>
+                <div class="sysinfo-brand-box sysinfo-brand-box--icon" data-page-node-id="sysInfoBrandIconX1">
+                  <img src="/dbcheck_logo_icon.png" alt="{{ product_name }} Icon">
+                  <span>应用图标 · /dbcheck_logo_icon.png</span>
+                </div>
+                <div class="sysinfo-brand-box sysinfo-brand-box--icon" data-page-node-id="sysInfoBrandFavX1">
+                  <img src="/favicon.png" alt="{{ product_name }} Favicon">
+                  <span>标签图标 · /favicon.png</span>
+                </div>
+              </div>
+              <p class="sysinfo-note" style="margin-top:12px;" data-page-node-id="sysInfoBrandNoteX1">主标志用于关于页、巡检报告与系统信息页；应用图标用于侧栏与登录页；标签图标用于浏览器标签页。</p>
+            </div>
+
+            <!-- 开源与署名 -->
+            <div class="card" data-page-node-id="sysInfoOssCardX1">
+              <div class="card-title" data-page-node-id="sysInfoOssTitleX1"><span data-page-node-id="sysInfoOssIconX1">📜</span> <span data-i18n="webui.system_info_opensource" data-page-node-id="sysInfoOssTitleTxtX1">开源信息</span> / Open Source</div>
+              <div class="sysinfo-row"><span class="k">上游开源项目 / Upstream</span><span class="v">RaccoonX / DBCheck</span></div>
+              <div class="sysinfo-row"><span class="k">作者 / Author</span><span class="v">fiyo (Jack Ge)</span></div>
+              <div class="sysinfo-row"><span class="k">联系邮箱 / Contact</span><span class="v"><a href="mailto:sdfiyon@gmail.com">sdfiyon@gmail.com</a></span></div>
+              <div class="sysinfo-row"><span class="k">项目仓库 / Repository</span><span class="v"><a href="{{ project_url }}" target="_blank" rel="noopener noreferrer">github.com/fiyo/DBCheck →</a></span></div>
+              <div class="sysinfo-row"><span class="k">官网 / Website</span><span class="v"><a href="https://dbcheck.top" target="_blank" rel="noopener noreferrer">dbcheck.top →</a></span></div>
+              <div class="sysinfo-row"><span class="k">开源协议 / License</span><span class="v">Apache License 2.0</span></div>
+              <div class="sysinfo-row"><span class="k">版权 / Copyright</span><span class="v">© 2025-2026 fiyo (Jack Ge)</span></div>
+              <div class="sysinfo-row"><span class="k">品牌署名 / Credit</span><span class="v">{{ product_name }} · RaccoonX / DBCheck · fiyo</span></div>
+              <p class="sysinfo-note" style="margin-top:12px;" data-page-node-id="sysInfoOssNoteX1">以上署名、品牌与许可证信息依据 Apache License 2.0 及项目 NOTICE 保留，请勿移除、改写或隐藏。<a href="#" onclick="showAboutModal();return false;">查看关于本系统 →</a></p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <script>
+      // 系统信息页：读取运行态信息与官方公告（只读取公开接口，不改服务端状态）
+      function _sysInfoEsc(s) {
+        return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      }
+      async function loadSystemInfo() {
+        var langEl = document.getElementById('sysinfo-lang');
+        if (langEl) langEl.textContent = document.documentElement.lang || '--';
+        var hostEl = document.getElementById('sysinfo-host');
+        if (hostEl) hostEl.textContent = location.host;
+        var listEl = document.getElementById('sysinfo-announce-list');
+        if (!listEl) return;
+        try {
+          var r = await fetch('/api/announcement', { cache: 'no-store' });
+          var d = await r.json();
+          var items = (d && d.enabled && d.items) || [];
+          if (!items.length) {
+            listEl.innerHTML = '<div class="sysinfo-note">暂无官方公告 / No announcements.</div>';
+          } else {
+            listEl.innerHTML = items.map(function (it) {
+              var link = it.link ? ' <a href="' + _sysInfoEsc(it.link) + '" target="_blank" rel="noopener noreferrer">' +
+                _sysInfoEsc(it.link_text || '了解详情') + ' →</a>' : '';
+              return '<div class="sysinfo-announce-item">' + (it.icon ? _sysInfoEsc(it.icon) + ' ' : '') +
+                _sysInfoEsc(it.text) + link + '</div>';
+            }).join('');
+          }
+        } catch (e) {
+          listEl.innerHTML = '<div class="sysinfo-note">预置公告源暂不可达，请稍后点击「直接请求预置 URL」重试（不依赖 GitHub）。</div>';
+        }
+        var tEl = document.getElementById('sysinfo-last-check');
+        if (tEl) tEl.textContent = new Date().toLocaleString();
+      }
+      function refreshSystemInfo() { loadSystemInfo(); }
+      </script>
 
       <!-- ══ Page: Account ══ -->
       <div class="page" id="page-account" data-page-node-id="0yv6fbbw8t5Ycp7Dt22gkK">
@@ -12403,6 +12744,11 @@ function applyI18N() {
     const _tv = i18n(k);
     if (_tv !== undefined && _tv !== '') el.title = _tv;
   });
+  // 侧栏折叠 / 文字被省略时，用原生 tooltip 保留完整菜单名；随语言刷新自动更新
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => {
+    const label = el.querySelector('span:not(.icon)');
+    if (label) el.title = label.textContent.trim();
+  });
 }
 
 async function changeLang() {
@@ -12830,6 +13176,7 @@ function showPage(name) {
     'fleet': ['智能基线 · Smart Baseline', '无监督基线学习 + 漂移检测 + 容量预测：从单点巡检到全库智能（P1）'],
     'xinchuang': [i18n('menu.xinchuang') || '信创合规', i18n('webui.xinchuang_subtitle') || '对纳管实例做信创化程度盘点：国产（信创）占比、国外数据库待替换清单、库型分布。'],
     'run-log': [i18n('menu.run-log') || '运行日志', i18n('webui.run_log_subtitle') || '统一汇聚巡检 / 定时巡检 / 智能诊断 / 监控 的运行日志，可按分类过滤。'],
+    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本 / 更新提醒 / 系统标志 / 开源与署名信息'],
   };
   const t = titles[name] || [name, ''];
   document.getElementById('topbar-title').textContent = t[0];
@@ -12858,6 +13205,7 @@ function showPage(name) {
   if (name === 'oracle-client') loadDrivers();
   if (name === 'plugin-market') loadMarketPlugins();
   if (name === 'run-log') loadRunLog();
+  if (name === 'system-info') loadSystemInfo();
     if (name === 'remote-shell') {
         initRemoteShellPage();
         switchRemoteTab('connection');
@@ -13481,7 +13829,7 @@ async function selectDbType(type, skipReload) {
       if (fUserReqSpan) fUserReqSpan.style.display = '';
     }
   }
-  document.getElementById('f-database-wrap').style.display = (type === 'pg' || type === 'ivorysql' || type === 'kingbase' || type === 'gbase' || type === 'oceanbase' || type === 'mongodb' || type === 'mysql' || type === 'mariadb' || type === 'tidb' || type === 'clickhouse') ? '' : 'none';
+  document.getElementById('f-database-wrap').style.display = (type === 'pg' || type === 'ivorysql' || type === 'kingbase' || type === 'gbase' || type === 'gbase8a' || type === 'oceanbase' || type === 'mongodb' || type === 'mysql' || type === 'mariadb' || type === 'tidb' || type === 'clickhouse') ? '' : 'none';
   document.getElementById('f-tenant-wrap').style.display = (type === 'oceanbase') ? '' : 'none';
   // Oracle全面巡检：显示服务名输入框
   var svcWrap = document.getElementById('f-service-wrap');
@@ -13514,6 +13862,7 @@ async function selectDbType(type, skipReload) {
     else fJdbcInput.placeholder = '(DESCRIPTION=(HOST=host)(PORT=1521)(CONNECT_DATA=(SERVICE_NAME=ORCLCDB))) 或 //host:1521/ORCLCDB';
   }
   // MongoDB：显示专用连接参数
+  document.getElementById('f-gbase8a-ca-wrap').style.display = type === 'gbase8a' ? '' : 'none';
   var mongoWrap = document.getElementById('f-mongo-wrap');
   if (mongoWrap) mongoWrap.style.display = (type === 'mongodb') ? '' : 'none';
   // SQL Server (JDBC)：显示专用连接参数
@@ -13652,7 +14001,7 @@ async function testDb() {
         auth_mechanism: document.getElementById('f-auth-mechanism')?.value.trim() || '',
         replica_set: document.getElementById('f-replica-set')?.value.trim() || '',
         tls: document.getElementById('f-tls')?.checked || false,
-        tls_ca_file: document.getElementById('f-tls-ca-file')?.value.trim() || '',
+        tls_ca_file: document.getElementById(dbType === 'gbase8a' ? 'f-gbase8a-ca' : 'f-tls-ca-file')?.value.trim() || '',
         tls_cert_key_file: document.getElementById('f-tls-cert-key-file')?.value.trim() || '',
         tls_allow_invalid_certs: document.getElementById('f-tls-allow-invalid')?.checked || false,
         connection_mode: document.getElementById('f-connection-mode')?.value || 'jdbc',
@@ -13777,6 +14126,10 @@ async function testJobDb() {
       body.tls_ca_file = '';
       body.tls_cert_key_file = '';
       body.tls_allow_invalid_certs = false;
+    }
+    if (dbType === 'gbase8a') {
+      body.tls_ca_file = document.getElementById('f-gbase8a-ca')?.value.trim() || '';
+      body.tls = true;
     }
     const res = await fetch('/api/test_db', {
       method: 'POST',
@@ -14235,7 +14588,7 @@ async function startInspection() {
         auth_mechanism: document.getElementById('f-auth-mechanism')?.value.trim() || '',
         replica_set: document.getElementById('f-replica-set')?.value.trim() || '',
         tls: document.getElementById('f-tls')?.checked || false,
-        tls_ca_file: document.getElementById('f-tls-ca-file')?.value.trim() || '',
+        tls_ca_file: document.getElementById(dbType === 'gbase8a' ? 'f-gbase8a-ca' : 'f-tls-ca-file')?.value.trim() || '',
         tls_cert_key_file: document.getElementById('f-tls-cert-key-file')?.value.trim() || '',
         tls_allow_invalid_certs: document.getElementById('f-tls-allow-invalid')?.checked || false,
         connection_mode: document.getElementById('f-connection-mode')?.value || 'jdbc',
@@ -14283,7 +14636,7 @@ async function startInspection() {
       body: JSON.stringify(payload)
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(data.msg || '启动失败');
+    if (!data.ok) throw new Error(data.msg || data.error || data.message || '启动失败');
 
     currentTaskId = data.task_id;
     logOffset = 0;
@@ -17419,7 +17772,11 @@ async function loadTrendInstances() {
     trendInstances = data.instances || [];
     if (trendInstances.length === 0) {
       sel.innerHTML = '<option value="">' + i18n('webui.trend_no_history') + '</option>';
-      document.getElementById('trend-empty').style.display = 'block';
+      const emptyEl = document.getElementById('trend-empty');
+      if (emptyEl) {
+        emptyEl.innerHTML = _trendEmptyDefault();
+        emptyEl.style.display = 'block';
+      }
       document.getElementById('trend-chart-card').style.display = 'none';
       return;
     }
@@ -17498,6 +17855,9 @@ async function executeFixSql(taskId, sql) {
 function onTrendInstanceChange() {
   document.getElementById('trend-chart-card').style.display = 'none';
   document.getElementById('trend-comparison').style.display = 'none';
+  // 换实例时清掉上一个实例的缺测提示，避免串台
+  var note = document.getElementById('trend-missing-note');
+  if (note) { note.style.display = 'none'; note.innerHTML = ''; }
 }
 
 async function loadTrendData() {
@@ -17510,7 +17870,9 @@ async function loadTrendData() {
     const res = await fetch(`/api/trend?db_type=${inst.db_type}&host=${encodeURIComponent(inst.host)}&port=${inst.port}`);
     const data = await res.json();
     if (!data.ok || !data.trend || !data.trend.labels) {
-      document.getElementById('trend-empty').style.display = 'block';
+      const emptyEl = document.getElementById('trend-empty');
+      if (emptyEl) emptyEl.innerHTML = _trendEmptyDefault();
+      emptyEl.style.display = 'block';
       document.getElementById('trend-chart-card').style.display = 'none';
       return;
     }
@@ -17518,15 +17880,38 @@ async function loadTrendData() {
     // 渲染对比
     renderComparison(data.comparison, inst);
 
-    // 渲染趋势图
-    renderTrendCharts(data.trend, inst);
-
+    // 渲染趋势图（一张都画不出来时不隐瞒，卡片里只留缺测说明）
+    const chartCount = renderTrendCharts(data.trend, inst);
+    renderTrendMissingNote(data.trend, chartCount);
     document.getElementById('trend-empty').style.display = 'none';
     document.getElementById('trend-chart-card').style.display = 'block';
   } catch(e) {
     console.error(e);
   }
 }
+
+// #trend-empty 的原始文案（用于在「有快照但无指标」和「完全没有历史」两种空态间切换）
+// 用 var + 惰性快照：首次写入前先读一次原始 DOM，之后可安全还原。
+// 这样即使更早的脚本块里就调到了 showPage('trend')，也不会踩 let 的 TDZ。
+var _trendEmptyDefaultHTML = null;
+function _trendEmptyDefault() {
+  if (_trendEmptyDefaultHTML === null) {
+    const el = document.getElementById('trend-empty');
+    _trendEmptyDefaultHTML = el ? el.innerHTML : '';
+  }
+  return _trendEmptyDefaultHTML;
+}
+
+/**
+ * 「有快照、但没有可用指标」的空态。
+ * PG / MySQL 的主机侧指标（CPU/内存/磁盘）依赖数据源上的 SSH 采集，
+ * 连接数类指标依赖账号权限；采集不到时宁可说清楚，也不要显示一块空图表。
+ */
+/**
+ * 「有快照、但没有可用指标」的场景不再单独做空态：
+ * 图表面板会保留，由 renderTrendMissingNote() 逐项说明缺了哪些指标、
+ * 分别依赖哪一路采集，比一块「暂无数据」的插画更有用。
+ */
 
 // ─── 一键修复建议功能 ───────────────────────────────────────
 
@@ -17639,63 +18024,144 @@ function renderComparison(cmp, inst) {
   el.style.display = 'block';
 }
 
+const TREND_METRIC_CONFIGS = [
+  { key: 'mem_usage',            label: 'webui.ind_mem_usage',           color: '#0A2A6E', warn: 80,   unit: '%' },
+  { key: 'cpu_usage',            label: 'webui.ind_cpu_usage',           color: '#F59E0B', warn: 80,   unit: '%' },
+  { key: 'disk_usage_max',       label: 'webui.ind_disk_usage_max',      color: '#EF4444', warn: 80,   unit: '%' },
+  { key: 'connections',          label: 'webui.ind_connections',         color: '#00C8A0', warn: null, unit: '' },
+  { key: 'cache_hit_ratio',      label: 'webui.ind_cache_hit_ratio',     color: '#0A2A6E', warn: 95,   unit: '%' },
+  { key: 'risk_count',           label: 'webui.ind_risk_count',          color: '#F59E0B', warn: 3,    unit: '' },
+  { key: 'max_used_connections', label: 'webui.ind_max_used_connections', color: '#79c0ff', warn: null, unit: '' },
+];
+
+/**
+ * 挑出真正能画的指标序列。
+ * 后端只返回「至少采集到一次」的指标，值可能是 null（该次巡检未采集），
+ * 所以这里按 is not None 判定，而不是把 null 当 0。
+ */
+function collectTrendSeries(trend) {
+  const metrics = (trend && trend.metrics) || {};
+  const riskCounts = (trend && trend.risk_counts) || null;
+  const out = [];
+  TREND_METRIC_CONFIGS.forEach(cfg => {
+    let vals = metrics[cfg.key];
+    if (!Array.isArray(vals) && cfg.key === 'risk_count') vals = riskCounts;
+    if (!Array.isArray(vals)) return;
+    if (!vals.some(v => v !== null && v !== undefined && !isNaN(v))) return;
+    out.push({ cfg, vals });
+  });
+  return out;
+}
+
+/** 返回成功渲染的图表数量（0 表示这块面板没有可画的内容） */
 function renderTrendCharts(trend, inst) {
   const grid = document.getElementById('trend-charts-grid');
-  const metricConfigs = [
-    { key: 'mem_usage',            label: i18n('webui.ind_mem_usage'),           color: '#0A2A6E', warn: 80 },
-    { key: 'cpu_usage',            label: i18n('webui.ind_cpu_usage'),           color: '#F59E0B', warn: 80 },
-    { key: 'disk_usage_max',       label: i18n('webui.ind_disk_usage_max'),      color: '#EF4444', warn: 80 },
-    { key: 'connections',          label: i18n('webui.ind_connections'),         color: '#00C8A0', warn: null },
-    { key: 'cache_hit_ratio',      label: i18n('webui.ind_cache_hit_ratio'),     color: '#0A2A6E', warn: 95 },
-    { key: 'risk_count',           label: i18n('webui.ind_risk_count'),          color: '#F59E0B', warn: 3 },
-    { key: 'max_used_connections', label: i18n('webui.ind_max_used_connections'), color: '#79c0ff', warn: null },
-  ];
-
-  const labels = trend.labels || [];
-  const shortLabels = labels.map(l => l.slice(5)); // MM-DD HH:mm
+  const series = collectTrendSeries(trend);
+  const labels = (trend && trend.labels) || [];
 
   grid.innerHTML = '';
-  metricConfigs.forEach(cfg => {
-    const vals = (trend.metrics || {})[cfg.key];
-    if (!vals || vals.every(v => v === 0)) return;
-
+  series.forEach(({ cfg, vals }) => {
     const canvasId = 'chart-' + cfg.key;
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'background:var(--surface2);border-radius:10px;padding:16px';
     wrapper.classList.add('chart-card-body');
-    wrapper.innerHTML = `<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">${cfg.label}</div><canvas id="${canvasId}"></canvas>`;
+    wrapper.innerHTML = `<div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">${i18n(cfg.label) || cfg.key}</div><canvas id="${canvasId}"></canvas>`;
     grid.appendChild(wrapper);
 
-    // 用纯 SVG/Canvas 自绘折线图（不依赖 Chart.js）
-    requestAnimationFrame(() => drawLineChart(canvasId, shortLabels, vals, cfg));
+    // 用纯 Canvas 自绘折线图（不依赖 Chart.js）
+    const conf = { ...cfg, label: i18n(cfg.label) || cfg.key };
+    requestAnimationFrame(() => drawLineChart(canvasId, labels, vals, conf));
   });
+  return series.length;
+}
+
+// 每个指标依赖哪一路采集：host = SSH 主机采集，db = 数据库统计视图（需账号权限）
+const TREND_METRIC_SOURCE = {
+  cpu_usage: 'host', mem_usage: 'host', disk_usage_max: 'host',
+  connections: 'db', max_used_connections: 'db', cache_hit_ratio: 'db',
+  risk_count: 'scan',
+};
+
+/**
+ * 如实告知「本次哪些指标没采到、为什么」。
+ * 采集失败就是没数据，绝不写 0 冒充；用户看到的是原因和补齐办法，而不是一条贴底的假折线。
+ */
+function renderTrendMissingNote(trend, renderedCount) {
+  const el = document.getElementById('trend-missing-note');
+  if (!el) return;
+  const metrics = (trend && trend.metrics) || {};
+  const riskCounts = (trend && trend.risk_counts) || null;
+  const labels = (trend && trend.labels) || [];
+  const hasValue = v => v !== null && v !== undefined && !isNaN(v);
+
+  const missingHost = [], missingDb = [];
+  TREND_METRIC_CONFIGS.forEach(cfg => {
+    let vals = metrics[cfg.key];
+    if (!Array.isArray(vals) && cfg.key === 'risk_count') vals = riskCounts;
+    if (Array.isArray(vals) && vals.some(hasValue)) return;
+    const label = i18n(cfg.label) || cfg.key;
+    if (TREND_METRIC_SOURCE[cfg.key] === 'host') missingHost.push(label);
+    else missingDb.push(label);
+  });
+
+  const noneAtAll = renderedCount === 0;
+  if (!missingHost.length && !missingDb.length && !noneAtAll) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const rows = [];
+  if (noneAtAll) {
+    rows.push(`<div class="tmn-row">该实例已有 <strong>${labels.length}</strong> 条巡检快照，`
+      + `但其中没有采集到任何可用于趋势的指标。</div>`);
+  }
+  if (missingHost.length) {
+    rows.push(`<div class="tmn-row"><span class="tmn-key">${missingHost.join('、')}</span> —— `
+      + `需要为该数据源配置 <strong>SSH 主机采集</strong>（CPU/内存/磁盘来自操作系统，数据库自己报不出来）</div>`);
+  }
+  if (missingDb.length) {
+    rows.push(`<div class="tmn-row"><span class="tmn-key">${missingDb.join('、')}</span> —— `
+      + `需要数据库账号具备查询 <strong>统计视图</strong> 的权限（如 pg_stat_activity / v$session / performance_schema），或该库本身不提供对应指标</div>`);
+  }
+  el.innerHTML = `<div class="tmn-title"><span aria-hidden="true">ℹ️</span> 本次未采集到以下指标</div>${rows.join('')}
+    <div class="tmn-row" style="opacity:.8">补齐配置后重新巡检，这些指标就会出现在上方图表中。</div>`;
+  el.style.display = 'block';
 }
 
 function drawLineChart(canvasId, labels, values, cfg) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const W = canvas.offsetWidth || 300;
+  const W = canvas.offsetWidth || 320;
   const H = canvas.offsetHeight || 160;
   canvas.width = W;
   canvas.height = H;
-  const pad = { top: 10, right: 10, bottom: 30, left: 40 };
+  const pad = { top: 14, right: 12, bottom: 30, left: 44 };
   const chartW = W - pad.left - pad.right;
   const chartH = H - pad.top - pad.bottom;
 
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
+  const nums = values.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number);
+  if (!nums.length) return;
+
+  let minV = Math.min(...nums);
+  let maxV = Math.max(...nums);
+  if (minV === maxV) {
+    // 只有一次巡检、或数值恒定：上下留出余量，否则折线会贴在底边完全看不见
+    const padV = Math.max(Math.abs(minV) * 0.15, 1);
+    minV -= padV;
+    maxV += padV;
+  }
   const range = maxV - minV || 1;
 
-  const xStep = values.length > 1 ? chartW / (values.length - 1) : chartW;
-
-  function toX(i) { return pad.left + i * xStep; }
+  const n = values.length;
+  function toX(i) { return n === 1 ? pad.left + chartW / 2 : pad.left + i * (chartW / (n - 1)); }
   function toY(v) { return pad.top + chartH - ((v - minV) / range) * chartH; }
 
   ctx.clearRect(0, 0, W, H);
 
-  // 网格线
-  ctx.strokeStyle = '#2A3650';
+  // 网格线 + Y 轴刻度
+  ctx.strokeStyle = 'rgba(148,163,184,0.18)';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = pad.top + (chartH / 4) * i;
@@ -17704,59 +18170,92 @@ function drawLineChart(canvasId, labels, values, cfg) {
     ctx.fillStyle = '#94A3B8';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(val.toFixed(val < 10 ? 1 : 0), pad.left - 4, y + 3);
+    ctx.fillText(val.toFixed(val < 10 ? 1 : 0), pad.left - 6, y + 3);
   }
 
   // 警戒线
-  if (cfg.warn !== null) {
+  if (cfg.warn !== null && cfg.warn !== undefined) {
     const warnY = toY(cfg.warn);
     if (warnY >= pad.top && warnY <= pad.top + chartH) {
-      ctx.strokeStyle = 'rgba(227,179,65,0.4)';
+      ctx.strokeStyle = 'rgba(227,179,65,0.45)';
       ctx.setLineDash([4, 4]);
       ctx.beginPath(); ctx.moveTo(pad.left, warnY); ctx.lineTo(pad.left + chartW, warnY); ctx.stroke();
       ctx.setLineDash([]);
     }
   }
 
-  // 渐变填充
+  // 缺测点不画成 0：把序列拆成若干连续有效段
+  const segments = [];
+  let curSeg = [];
+  values.forEach((v, i) => {
+    const ok = v !== null && v !== undefined && !isNaN(v);
+    if (!ok) {
+      if (curSeg.length) { segments.push(curSeg); curSeg = []; }
+      return;
+    }
+    curSeg.push({ i, v: Number(v) });
+  });
+  if (curSeg.length) segments.push(curSeg);
+
   const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
   grad.addColorStop(0, cfg.color + '40');
   grad.addColorStop(1, cfg.color + '05');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(toX(0), toY(values[0]));
-  values.forEach((v, i) => { if (i > 0) ctx.lineTo(toX(i), toY(v)); });
-  ctx.lineTo(toX(values.length - 1), pad.top + chartH);
-  ctx.lineTo(toX(0), pad.top + chartH);
-  ctx.closePath();
-  ctx.fill();
 
-  // 折线
+  // 面积填充（逐段，单点段没有面积可填）
+  ctx.fillStyle = grad;
+  segments.forEach(seg => {
+    if (seg.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(toX(seg[0].i), toY(seg[0].v));
+    seg.forEach(p => ctx.lineTo(toX(p.i), toY(p.v)));
+    ctx.lineTo(toX(seg[seg.length - 1].i), pad.top + chartH);
+    ctx.lineTo(toX(seg[0].i), pad.top + chartH);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // 折线（逐段）
   ctx.strokeStyle = cfg.color;
   ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
-  ctx.beginPath();
-  values.forEach((v, i) => {
-    if (i === 0) ctx.moveTo(toX(i), toY(v)); else ctx.lineTo(toX(i), toY(v));
+  ctx.lineCap = 'round';
+  segments.forEach(seg => {
+    if (seg.length < 2) return;
+    ctx.beginPath();
+    seg.forEach((p, k) => {
+      if (k === 0) ctx.moveTo(toX(p.i), toY(p.v)); else ctx.lineTo(toX(p.i), toY(p.v));
+    });
+    ctx.stroke();
   });
-  ctx.stroke();
 
   // 数据点
-  values.forEach((v, i) => {
+  segments.forEach(seg => seg.forEach(p => {
     ctx.fillStyle = cfg.color;
-    ctx.beginPath(); ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2); ctx.fill();
-  });
+    ctx.beginPath(); ctx.arc(toX(p.i), toY(p.v), 3.5, 0, Math.PI * 2); ctx.fill();
+  }));
 
-  // X 轴标签（每隔几个显示一个）
-  const step = Math.max(1, Math.floor(labels.length / 4));
-  ctx.fillStyle = '#94A3B8';
-  ctx.font = '10px sans-serif';
-  ctx.textAlign = 'center';
-  labels.forEach((l, i) => {
-    if (i % step === 0 || i === labels.length - 1) {
-      ctx.fillText(l.slice(-5), toX(i), H - 6);
-    }
-  });
+  // 只有一个有效点：标出数值，否则一个孤零零的圆点读不出含义
+  if (nums.length === 1 && segments.length === 1 && segments[0].length === 1) {
+    const p = segments[0][0];
+    const text = p.v + (cfg.unit || '');
+    ctx.fillStyle = cfg.color;
+    ctx.font = '600 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, Math.max(pad.left + 20, Math.min(toX(p.i), W - 20)), toY(p.v) - 10);
+  }
+
+  // X 轴时间标签（每隔几个显示一个）
+  if (labels && labels.length) {
+    const step = Math.max(1, Math.floor(labels.length / 4));
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    labels.forEach((l, i) => {
+      if (i % step === 0 || i === labels.length - 1) {
+        ctx.fillText(String(l).slice(-5), toX(i), H - 8);
+      }
+    });
+  }
 }
 
 // ─── 首页四个统计大数字 ───
@@ -20575,7 +21074,7 @@ async function executeFixSql(taskId, sql) {
     display:flex;align-items:center;gap:16px;position:relative;z-index:1;
   }
   .about-logo {
-    width:56px;height:56px;border-radius:14px;
+    width:56px;height:56px;border-radius:14px;object-fit:contain;
     box-shadow:0 4px 16px rgba(0,0,0,0.2);flex-shrink:0;
   }
   .about-hero-text h2 {
@@ -20605,6 +21104,16 @@ async function executeFixSql(taskId, sql) {
   .about-meta-item { display:flex;align-items:center;gap:4px; }
   .about-meta-item a { color:var(--accent2);text-decoration:none; }
   .about-meta-item a:hover { text-decoration:underline; }
+  /* 作者署名胶囊：名称本身即是各自仓库入口，深浅主题都保持可读 */
+  .about-credit-row { gap: 10px; }
+  .about-credit-link {
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 12px;border-radius:8px;
+    background:var(--surface2);border:1px solid var(--border);
+    color:var(--accent);font-size:12.5px;font-weight:600;text-decoration:none;
+    transition:border-color .2s,transform .2s;
+  }
+  .about-credit-link:hover { border-color:var(--accent);text-decoration:none;transform:translateY(-1px); }
   .about-dbs {
     display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;
   }
@@ -20620,16 +21129,13 @@ async function executeFixSql(taskId, sql) {
     color:var(--primary);transform:translateY(-1px);
   }
   .about-db-chip .db-emoji { font-size:14px; }
+  /* 全国哀悼日说明：一行克制的低调小字，不用警示卡片，避免打断关于页的视觉节奏 */
   .about-agreement {
-    background:var(--surface2);border:1px solid var(--border);
-    border-radius:12px;padding:14px 16px;margin-bottom:0;
-  }
-  .about-agreement-title {
-    font-size:13px;font-weight:600;color:var(--warn);margin-bottom:8px;
-    display:flex;align-items:center;gap:6px;
+    text-align:center;padding:0 32px 6px;margin-bottom:0;
   }
   .about-agreement-text {
-    margin:0;font-size:12.5px;line-height:1.8;color:var(--text-muted);
+    margin:0;font-size:11px;line-height:1.5;
+    color:var(--text-muted);opacity:.72;letter-spacing:.2px;
   }
   .about-footer {
     text-align:center;padding:0 32px 20px;
@@ -20983,7 +21489,7 @@ function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme || 'dark');
   localStorage.setItem('dbcheck-theme', theme || 'dark');
   var btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = (theme === 'light') ? '🌙' : '☀️';
+  if (btn) btn.setAttribute('data-mode', theme || 'dark');
   // 主题切换后 ECharts 文字颜色需随 CSS 变量刷新
   setTimeout(function() {
     if (window._lastHealthDash && document.getElementById('health-screen-section')) {
@@ -21000,13 +21506,40 @@ function initTheme() {
   setTheme(saved);
 }
 
+var _themeSweepBusy = false;
 function toggleTheme() {
-  setTheme(getTheme() === 'dark' ? 'light' : 'dark');
+  if (_themeSweepBusy) return;
+  var next = getTheme() === 'dark' ? 'light' : 'dark';
+  var sweep = document.getElementById('theme-sweep');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // 降级：不跑光带，但保留 0.5s 配色渐变（颜色渐变不属于位移类动效）
+  if (!sweep || reduce) {
+    document.body.classList.add('theme-transitioning');
+    setTheme(next);
+    setTimeout(function () { document.body.classList.remove('theme-transitioning'); }, 540);
+    return;
+  }
+  _themeSweepBusy = true;
+  sweep.classList.remove('active');
+  document.body.classList.add('theme-transitioning');
+  void sweep.offsetWidth;                       // 强制重排，重启 CSS 动画
+  sweep.classList.add('active');
+  // 光带掠过屏幕中部时换主题：视觉上是光带「带走」旧配色，而非硬切
+  setTimeout(function () { setTheme(next); }, 440);
+  setTimeout(function () {
+    sweep.classList.remove('active');
+    document.body.classList.remove('theme-transitioning');
+    _themeSweepBusy = false;
+  }, 980);
 }
 
 // ─── 顶部公告条：读 /api/announcement（官网远端源，后端定时缓存）；
 // ─── 前端每 30 分钟重查一次，官网内容更新后自动重新弹出（即使旧内容已被关闭）；
 // ─── 内容签名未变化时不动 DOM（定时重查对用户零感知）；多条轮播；可关闭 ───
+// 顶部公告条已按产品要求停用：不再向 .main 注入 DOM，🦝 / 版本播报条不再出现。
+// 公告数据仍由「系统配置 → 系统信息 → 更新提醒」读取 /api/announcement 展示。
+// 需要恢复顶部公告条时，把该开关置 true 即可（渲染逻辑原样保留）。
+var ANNOUNCEMENT_BAR_ENABLED = false;
 var _announceTimer = null;      // 轮播定时器
 var _announceRetryDone = false; // 无内容时的一次性 60s 快速重试标记
 var _announceSig = null;        // 当前已处理内容的签名（渲染中或已关闭）
@@ -21025,6 +21558,7 @@ function _teardownAnnouncement() {
   if (_announceTimer) { clearInterval(_announceTimer); _announceTimer = null; }
 }
 async function renderAnnouncement() {
+  if (!ANNOUNCEMENT_BAR_ENABLED) return;   // 顶部公告条已停用，保留函数供系统信息页之外的复用
   var data;
   try {
     var r = await fetch('/api/announcement');
@@ -21696,13 +22230,6 @@ async function loadMonitorSummary() {
   try {
     const data = await _fetchMonitorInstances();
     monitorSummary = data.instances || [];
-    // 吉祥物健康态：任一实例不可用或报错（非冷却期）→ 告警
-    try {
-      var _anyBad = monitorSummary.some(function(i) {
-        return i.available === false || (i.error && i.status !== 'cooldown');
-      });
-      mascotSetHealth(!_anyBad);
-    } catch(e) {}
     const pill = document.getElementById('monitor-running-pill');
     if (pill && data.running !== undefined) {
       pill.textContent = i18n('webui.home_monitor_running_prefix') + (data.running ? i18n('webui.home_monitor_running_on') : i18n('webui.home_monitor_running_off'));
@@ -22417,6 +22944,32 @@ function doPromptResolve(id) {
 
 // ─── Auth (Login / User Center) ─────────────────
 
+/**
+ * 顶栏身份标记同步。
+ * 把「当前账户 + 角色」始终显示出来：一旦服务端会话与界面显示不一致，
+ * 用户能立刻看出自己其实是以哪个账户在操作，而不是对着空白弹窗猜。
+ */
+function applyIdentityChip(user) {
+  var ue = document.getElementById('topbar-user');
+  if (ue) ue.style.display = 'inline-flex';
+  if (!user) return;
+  var un = document.getElementById('topbar-user-name');
+  if (un) un.textContent = user.nickname || user.username || '';
+  var roles = user.roles || [];
+  var isAdmin = roles.indexOf('admin') >= 0;
+  // 服务端渲染时用的是登录瞬间的会话角色；这里以接口返回的实际角色为准修正。
+  window.__userRole = isAdmin ? 'admin' : 'user';
+  var chip = document.getElementById('topbar-user-role');
+  if (chip) {
+    chip.className = 'tb-role-chip ' + (isAdmin ? 'tb-role-admin' : 'tb-role-user');
+    chip.setAttribute('data-i18n', isAdmin ? 'webui.account_role_admin' : 'webui.account_role_user');
+    chip.textContent = i18n(isAdmin ? 'webui.account_role_admin' : 'webui.account_role_user')
+      || (isAdmin ? '管理员' : '普通用户');
+  }
+  var adminItem = document.getElementById('user-menu-admin');
+  if (adminItem) adminItem.style.display = isAdmin ? '' : 'none';
+}
+
 async function checkLogin() {
   // 统一使用 RBAC 系统管理登录页（/um/login）
   // 已在登录页时不二次重定向，避免自 bounce
@@ -22433,6 +22986,15 @@ async function checkLogin() {
     // credentials:'include' 让服务端 login_required 的 Flask session 回落生效：
     // 当 localStorage.token 过期但服务端 session 仍有效时，status 仍返回 200，避免首页闪现。
     var r = await fetch('/api/um/auth/status', { headers: headers, credentials: 'include' });
+    // 服务端发现 Bearer 与 Cookie 会话属于不同账户（典型：另一个标签页登录了别人，
+    // 或本地残留旧 token），已按会话身份应答。此时清掉残留 token，让后续请求不再重复降级。
+    if (r.headers.get('X-Auth-Identity-Adjusted') === '1' && token && !urlToken) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      if (typeof toast === 'function') {
+        toast('检测到其它账户的残留登录凭据，已按当前会话账户继续', 'info', 6000);
+      }
+    }
     // HTTP 非 2xx（如服务端重启中 5xx）：不清 token、不 bounce，等服务器就绪后刷新即可。
     if (!r.ok) { console.warn('[Auth] status HTTP', r.status, '— 暂不跳转登录页'); return; }
     var d = await r.json();
@@ -22446,10 +23008,7 @@ async function checkLogin() {
         try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
       }
       window._currentUser = d.data.user;
-      var ue = document.getElementById('topbar-user');
-      if (ue) ue.style.display = '';
-      var un = document.getElementById('topbar-user-name');
-      if (un) un.textContent = d.data.user.nickname || d.data.user.username;
+      applyIdentityChip(d.data.user);
       // 已登录，加载菜单权限
       loadVisibleMenus();
       return;
@@ -23922,43 +24481,22 @@ if (typeof socket !== 'undefined') {
     }
   });
 
-  // ═══ 首页吉祥物三态切换（正常 / 任务中 / 健康告警）═══
-  // mascot.png=默认 · mascot_02.png=巡检任务进行中 · mascot_01.png=数据源健康告警
-  // 映射可随时调整：改 _setMascotImg 的 src 即可。
-  var _mascotTaskCount = 0;
-  var _mascotAlert = false;
-  function _mascotImg(src) {
-    var el = document.getElementById('hero-mascot-img');
-    if (el) el.src = src;
-  }
-  function updateMascot() {
-    if (_mascotTaskCount > 0) { _mascotImg('/mascot_02.png'); return; }  // 任务优先
-    if (_mascotAlert)         { _mascotImg('/mascot_01.png'); return; }  // 健康告警
-    _mascotImg('/mascot.png');
-  }
-  function mascotTaskStart() { _mascotTaskCount++; updateMascot(); }
-  function mascotTaskEnd()   { if (_mascotTaskCount > 0) _mascotTaskCount--; updateMascot(); }
-  function mascotSetHealth(ok) { _mascotAlert = !ok; updateMascot(); }
-
   // 实时日志（后端 emit('log', ...) 的实时消息）
   socket.on('log', function(data) {
     if (data && data.msg && data.msg.trim()) {
       addChatMessage(data.msg, 'system', false);
-      if (data.msg.indexOf('开始巡检') > -1) mascotTaskStart();
     }
   });
   // 巡检失败/错误（❌ 高亮；此前前端未监听 error 事件，巡检失败时错误信息被丢弃）
   socket.on('error', function(data) {
     if (data && data.msg && data.msg.trim()) {
       addChatMessage('❌ ' + data.msg, 'system', false);
-      mascotTaskEnd();
     }
   });
   // 巡检结束消息（成功完成或失败原因）
   socket.on('done', function(data) {
     if (data && data.msg && data.msg.trim()) {
       addChatMessage(data.msg, 'system', false);
-      mascotTaskEnd();
     }
   });
   // 巡检进度步骤
@@ -24797,7 +25335,7 @@ async function deleteBackupHistory(recordId) {
       });
       const data = await res.json();
       if (!data.ok) {
-        toastError(data.msg || '启动失败');
+        toastError(data.msg || data.error || data.message || '启动失败');
         return;
       }
       _si_task_id = data.task_id;
@@ -26104,8 +26642,18 @@ async function loadDriverList(key) {
       tbody.innerHTML = '<tr><td colspan="4" class="drivers-empty">加载失败: ' + (d.error || '') + '</td></tr>';
       return;
     }
+    let runtimeStatus = document.getElementById('drivers-runtime-status');
+    if (!runtimeStatus) {
+      runtimeStatus = document.createElement('div');
+      runtimeStatus.id = 'drivers-runtime-status';
+      runtimeStatus.style.cssText = 'padding:12px 0;color:var(--text-muted);white-space:pre-line';
+      const table = tbody.closest('table');
+      table.parentNode.insertBefore(runtimeStatus,table);
+    }
+    runtimeStatus.textContent = (d.compatibility || []).map(row => row.version + ' · ' + row.backend + ' · ' + (row.available ? '组件就绪，待连接验证' : '待补运行依赖') + '\n' + row.requirement + (row.notes.length ? '\n' + row.notes.join('；') : '')).join('\n\n');
     if (!d.drivers || d.drivers.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="drivers-empty">该类型暂无已上传驱动，点击右上角「新增」上传</td></tr>';
+      const nativeReady = (d.compatibility || []).some(row => row.available && (row.db_type === 'gbase8a' || row.db_type === 'sqlserver'));
+      tbody.innerHTML = '<tr><td colspan="4" class="drivers-empty">' + (nativeReady ? '原生驱动组件已就绪，按上方连接要求配置；此方式无需上传JAR' : '该类型暂无已上传驱动，点击右上角「新增」上传') + '</td></tr>';
       return;
     }
     tbody.innerHTML = d.drivers.map(x => {
@@ -27202,10 +27750,7 @@ function mkdirRemote() {
   <script src="/static/js/inspection_config.js"></script>
 <!-- 底部状态栏 -->
 <div class="status-bar" id="status-bar" data-page-node-id="E0jlA1UaqTA24TltOH3TVC">
-  <div class="sb-item sb-brand" data-page-node-id="upIEHjuNpzMJN8eZoS2MXe">
-    <span class="version-badge" id="version-badge" data-page-node-id="bGB3An2d8pdFqskUcT6fsN">{{ version }}{% if edition == 'professional' %} · <span data-i18n="webui.edition_badge" data-page-node-id="lzLhBmNoQ1d47M0VyVj4vf">专业版</span>{% endif %}</span>
-    <span style="font-size:10px;color:var(--text-muted,#8a8f98);white-space:nowrap;" data-page-node-id="8iUoCmEFznhrqRfivaJ05u">{{ product_name }} · RaccoonX / DBCheck · <a href="https://github.com/fiyo/DBCheck" target="_blank" style="color:inherit;" data-page-node-id="HFjWyzcc2OxZB8UR8bhGxM">fiyo</a></span>
-  </div>
+  <!-- 版本号与品牌署名已迁移至「系统配置 → 系统信息」页详细展示（署名仍保留在 UI 中，未移除） -->
   <div class="sb-item" id="sb-inspection" data-page-node-id="4V3Wgln47ZFyXPpVVKdqNA">
     <span data-page-node-id="ls4d7SvDabVRWdg8kt7DIF">⏱️</span>
     <span data-page-node-id="jpNvhZ7f0iAFSDnLBUyAa6">累计巡检</span>
@@ -27762,7 +28307,19 @@ function mkdirRemote() {
 
   // ═══ 用户管理内嵌模态框 ═══
   function showUserManagement() {
+      var roles = (window._currentUser && window._currentUser.roles) || [];
+      var isAdmin = window.__userRole === 'admin' && (roles.length === 0 || roles.indexOf('admin') >= 0);
+      if (!isAdmin) {
+        // 非管理员不再把空 iframe 推给用户看：直接说清楚当前账户和所需权限。
+        showUserManagementDenied();
+        return;
+      }
+      var panel = document.getElementById('userManagementDenied');
+      if (panel) panel.style.display = 'none';
       var iframe = document.getElementById('userManagementIframe');
+      iframe.style.display = '';
+      // 每次都重置，避免上次因权限/登录态失败留下的空白页被浏览器缓存复用
+      iframe.removeAttribute('srcdoc');
       iframe.src = '/um/admin?embed=1';
       // iframe 加载完成后同步主题
       iframe.onload = function() {
@@ -27771,19 +28328,58 @@ function mkdirRemote() {
       };
       document.getElementById('userManagementModal').classList.add('active');
   }
+
+  // 权限不足时的占位面板（复用主界面的设计变量，深浅主题自动跟随）
+  function showUserManagementDenied(reasonText, titleText) {
+      var iframe = document.getElementById('userManagementIframe');
+      iframe.removeAttribute('src');
+      iframe.style.display = 'none';
+      var u = window._currentUser || {};
+      var name = u.nickname || u.username || '当前账户';
+      var roleText = (u.roles || []).join(' / ') || '未知角色';
+      var panel = document.getElementById('userManagementDenied');
+      if (!panel) return;
+      panel.innerHTML = ''
+        + '<div class="um-denied-icon" aria-hidden="true">🔒</div>'
+        + '<div class="um-denied-title">' + (titleText || '需要管理员权限') + '</div>'
+        + '<div class="um-denied-desc">'
+        + '  ' + (reasonText || ('当前登录账户 <strong>' + name + '</strong>（' + roleText + '）不具备系统管理权限。')) + '<br>'
+        + '  系统管理仅对 admin 角色开放。若你刚用管理员账户登录过，请重新登录以刷新会话。'
+        + '</div>'
+        + '<button class="um-denied-btn" onclick="closeUserManagement();doLogout();">切换到管理员账户</button>';
+      panel.style.display = 'flex';
+      document.getElementById('userManagementModal').classList.add('active');
+  }
   function closeUserManagement() {
       document.getElementById('userManagementModal').classList.remove('active');
-      document.getElementById('userManagementIframe').src = '';
+      var iframe = document.getElementById('userManagementIframe');
+      iframe.src = '';
+      iframe.style.display = '';
+      var panel = document.getElementById('userManagementDenied');
+      if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
   }
 
-  // 响应 iframe 的主题请求
+  // 响应 iframe 的主题请求与权限/身份事件
   window.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'request-theme') {
+    if (!event.data) return;
+    if (event.data.type === 'request-theme') {
       var iframe = document.getElementById('userManagementIframe');
       if (iframe && iframe.contentWindow) {
         var theme = document.documentElement.getAttribute('data-theme') || 'light';
         iframe.contentWindow.postMessage({ type: 'theme-sync', theme: theme }, '*');
       }
+      return;
+    }
+    // 内嵌页发现自己无权访问（或会话身份与页面不一致）：由主界面用统一的样式接管提示，
+    // 避免 iframe 直接跳转 /um/login 后被 X-Frame-Options 拦成一片空白。
+    if (event.data.type === 'um-access-denied') {
+      showUserManagementDenied(event.data.detail || '', event.data.title || '');
+      return;
+    }
+    // 内嵌页请求切换账户：必须由顶层窗口发起登出，否则跳转会被 iframe 安全策略拦下。
+    if (event.data.type === 'um-switch-account') {
+      closeUserManagement();
+      doLogout();
     }
   });
 
@@ -27839,6 +28435,7 @@ function mkdirRemote() {
           <button onclick="closeUserManagement()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--text);" data-page-node-id="nE7iB5rKqFqhxvIlMpfs2V">×</button>
         </div>
         <iframe id="userManagementIframe" style="flex:1;border:none;" data-page-node-id="xlH5hDjnu8EnBlINSMTZgi"></iframe>
+        <div id="userManagementDenied" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;text-align:center;" data-page-node-id="umDeniedPanel"></div>
       </div>
     </div>
 
@@ -28148,7 +28745,7 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
     <div class="about-hero" data-page-node-id="dGeSdJGi7jEGyypJegMg4n">
       <button class="about-close-btn" onclick="closeAboutModal()" data-page-node-id="repCJmkF1GtSPVaKtem6fc">✕</button>
       <div class="about-hero-inner" data-page-node-id="V6iWv6NYnHRjx87bcdEmje">
-        <img class="about-logo" src="/dbcheck_logo.png" alt="{{ product_name }}" data-page-node-id="5G2XyW9tfip4UqF3fFKXEn">
+        <img class="about-logo" src="/dbcheck_logo_icon.png" alt="{{ product_name }}" data-page-node-id="5G2XyW9tfip4UqF3fFKXEn">
         <div class="about-hero-text" data-page-node-id="8DoyOFj5TgZNyCVpp0SOLZ">
           <h2 data-page-node-id="hewj0XchilOg4BVkpLUeHd">{{ product_name }}</h2>
           <div class="about-sub" data-page-node-id="fdLZ7UyShDproi8DdcuLRz">{{ product_name_zh }} <span id="about-version" data-page-node-id="ypTawxsHG1TDMFk8n1cNt2">{{ version }}</span></div>
@@ -28158,17 +28755,13 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
     <!-- Body -->
     <div class="about-body" data-page-node-id="kfcsjPHsYqKL6A5XCpPIaO">
       <p class="about-desc" data-i18n="webui.about_desc" data-page-node-id="Ym310YDxMAHbSpDLYRZPzp">
-        {{ product_full_name }}是一款数据库智能巡检平台，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。
+        {{ product_name }} 是一款数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。
       </p>
-      <div class="about-meta" data-page-node-id="WjGu6XczLVpELccU1OSAvw">
-        <span class="about-meta-item" data-page-node-id="jp5XueqftWFaXv6PlbLC25">作者：Jack Ge (fiyo)</span>
-        <span class="about-meta-item" data-page-node-id="AI28f7YFfM6TBQ0w7ttzin">协议：Apache License 2.0</span>
-        <span class="about-meta-item" data-page-node-id="yrykYb11r31Hdo30e3hmwd">官网：<a href="https://dbcheck.top" target="_blank" data-page-node-id="PIaCNyBpUpyTdLHsSsjlY6">dbcheck.top</a></span>
-      </div>
-
-      <div class="about-meta">
-        <span class="about-meta-item">项目仓库：<a href="{{ project_url }}" target="_blank" rel="noopener noreferrer">{{ product_name }}</a></span>
-        <span class="about-meta-item">系统更新：<a id="system-update-link" href="{{ system_update_url }}" target="_blank" rel="noopener noreferrer">Releases</a></span>
+      <!-- 作者署名：名称即是各自仓库的入口，不再单独罗列协议 / 官网 / 仓库 / 更新链接。
+           完整许可与版权信息见「系统配置 → 系统信息」及本弹窗页脚。 -->
+      <div class="about-meta about-credit-row" data-page-node-id="WjGu6XczLVpELccU1OSAvw">
+        <a class="about-credit-link" href="https://github.com/fiyo/DBCheck" target="_blank" rel="noopener noreferrer" title="原作者仓库 · Upstream repository" data-page-node-id="aboutCreditUpstreamX1">Jack Ge (fiyo)</a>
+        <a class="about-credit-link" href="https://github.com/zhongxinxuhk/DBCheck" target="_blank" rel="noopener noreferrer" title="衍生开发仓库 · Derivative repository" data-page-node-id="aboutCreditDerivativeX1">sec.hn.cn (X.U zx)</a>
       </div>
 
       <!-- 支持的数据库 -->
@@ -28197,11 +28790,11 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
         <span class="about-db-chip" data-page-node-id="db2-about-chip"><img src="/db2.png" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'" style="width:16px;height:16px;object-fit:contain" data-page-node-id="db2-about-img"><span class="db-emoji" style="display:none;" data-page-node-id="db2-about-emoji">🔵</span> DB2</span>
       </div>
 
-      <!-- 君子协定（Base64 encoded to prevent static search） -->
+      <!-- 全国哀悼日：界面仅保留一行用途说明。强制灰度设计由后端
+           modules/web/app.py 的 _enforce_grayscale / _inject_grayscale 实现，勿改动。 -->
       <div class="about-agreement" id="agreement-container" data-page-node-id="ifRW8Uw0gqBgZv8rBFAPOU">
-        <div class="about-agreement-title" id="agreement-title" data-page-node-id="DXoCrcGXd7RjB7d4JWHD5j">⚠️ 君子协定（Gentleman's Agreement）</div>
-        <div class="about-agreement-text" id="agreement-zh" lang="zh" data-page-node-id="BPgwuqvQuTdPvOaDafjq6P">每年 <strong data-page-node-id="IoWCyC9iJJxZfO0Z8NJikl">5月19日至5月25日</strong>，本软件界面将强制以<strong data-page-node-id="P6MJSsj8B969nk0Vh2U8LU">灰度模式</strong>显示，且用户无法切换主题。请尊重原作者的设计保留，勿尝试修改或绕过该灰度模式。</div>
-        <div class="about-agreement-text" id="agreement-en" lang="en" style="display:none;" data-page-node-id="zipYClO029rMb63ARjb86P">Every year from <strong data-page-node-id="1OZkuEhpnzKgufXuGFrOFq">May 19 to May 25</strong>, the interface will be forced to <strong data-page-node-id="NWdZgRHpmG4iLF6XEpqZrF">grayscale mode</strong> and users cannot switch themes. Please respect the original design and do not attempt to modify or bypass this grayscale mode.</div>
+        <div class="about-agreement-text" id="agreement-zh" lang="zh" data-page-node-id="BPgwuqvQuTdPvOaDafjq6P">5月19日至5月25日 · 全国哀悼日，以灰度缅怀汶川地震遇难同胞</div>
+        <div class="about-agreement-text" id="agreement-en" lang="en" style="display:none;" data-page-node-id="zipYClO029rMb63ARjb86P">May 19–25 · National Mourning Day, in memory of the Wenchuan earthquake victims</div>
       </div>
     </div>
     <!-- Footer -->
@@ -28237,6 +28830,12 @@ document.addEventListener('keydown', function(e) {
 
 
 </script>
+
+<!-- 深浅主题切换：柔和跑马灯光带层（pointer-events:none，不拦截任何交互） -->
+<div id="theme-sweep" aria-hidden="true">
+  <div class="sweep-band"></div>
+  <div class="sweep-veil"></div>
+</div>
 
 </body>
 </html>

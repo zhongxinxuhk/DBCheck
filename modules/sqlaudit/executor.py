@@ -15,6 +15,11 @@
 
 所有执行/回滚动作均落库（sql_audit_executions / sql_audit_rollbacks），append-only 留痕。
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import re
 import time
 from datetime import datetime, timezone

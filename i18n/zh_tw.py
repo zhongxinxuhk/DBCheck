@@ -5,6 +5,11 @@
 
 """繁體中文翻譯字典（由簡體 zh.py 經 hanziconv 繁化生成，待人工校對）"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 ZH_TW = { 'baseline.add': '添加基綫配置',
   'baseline.all_db_types': '所有數據庫類型',
   'baseline.current_value': '當前值',
@@ -1971,8 +1976,7 @@ ZH_TW = { 'baseline.add': '添加基綫配置',
   'tidb_slow_query_ok': '慢查詢深度分析完成，采集到 {count} 條 Top SQL',
   'tidb_slow_query_unavailable': '無慢查詢數據，跳過深度分析',
   'webui.about_author': '作者：Jack Ge · Apache License 2.0 · 官網：dbcheck.top',
-  'webui.about_desc': 'DBCheck 是一款開源數據庫智能巡檢工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、達夢（DM）、TiDB、IvorySQL、YashanDB '
-                      '等主流數據庫的健康巡檢與 AI 診斷。',
+  'webui.about_desc': 'DBPulse 是一款數據庫智能巡檢工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、達夢（DM）、TiDB、IvorySQL、YashanDB 等主流數據庫的健康巡檢與 AI 診斷。',
   'webui.about_grayscale_note': '紀念日灰度模式是 DBCheck 的原創設計，已寫入上方開源協議。請勿修改或繞過該模式。',
   'webui.action': '操作',
   'webui.add_group_btn': '＋分組',
@@ -3728,4 +3732,14 @@ ZH_TW.update({
     "webui.inspector_name_label": "巡檢人員姓名",
     "webui.placeholder_inspector": "Jack",
     "webui.inspector_name_hint": "將顯示於報告封面"
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+ZH_TW.update({
+    "webui.nav_system_info": "系統資訊",
+    "webui.system_info_version": "系統版本",
+    "webui.system_info_update": "更新提醒",
+    "webui.system_info_brand": "系統標誌",
+    "webui.system_info_opensource": "開源資訊",
+    "webui.system_info_check_update": "查看更新",
 })

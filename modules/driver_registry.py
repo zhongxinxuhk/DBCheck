@@ -22,6 +22,11 @@ Stage A 范围：
   - drivers/ 目录现有文件保持不动，新上传的 jar 落 drivers/<db_type>/<version>/<jar>
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import re
 import json
@@ -100,6 +105,41 @@ def normalize_db_type(db_type: str) -> str:
     if low == 'hgdb':
         dt = 'highgo'
     return dt
+
+
+# 库族归并表（唯一口径）。同族 = 可复用同一套系统视图/指标提取逻辑。
+# 只收录「共享系统视图」确凿的类型：拿不准的（如 tidb / starrocks / doris）
+# 宁可留在自己的族里，也不要硬塞进 mysql 族去凑指标——那只会产出假的 0。
+DB_FAMILY_ALIASES = {
+    # PostgreSQL 协议族（驱动均为 org.postgresql / org.opengauss）
+    'pg': 'postgresql', 'postgres': 'postgresql', 'postgresql': 'postgresql',
+    'highgo': 'postgresql', 'opengauss': 'postgresql', 'kingbase': 'postgresql',
+    'ivorysql': 'postgresql', 'vastbase': 'postgresql', 'greenplum': 'postgresql',
+    'uxdb': 'postgresql', 'halodb': 'postgresql',
+    # MySQL 协议族
+    'mysql': 'mysql', 'mariadb': 'mysql', 'tdsqlc_mysql': 'mysql',
+    # 其余一族一名
+    'oracle': 'oracle', 'oracle_full': 'oracle',
+    'sqlserver': 'sqlserver', 'mssql': 'sqlserver',
+    'dm': 'dm', 'dameng': 'dm', 'dm8': 'dm',
+}
+
+
+def db_family(db_type: str) -> str:
+    """把各种库种别名归并到「同一族」——同族的库共享系统视图与指标口径。
+
+    为什么需要它：``normalize_db_type`` 只处理 ``_jdbc`` 后缀与 highgo 别名，
+    它服务的是信创判定与驱动选择（必须保留库种原貌）。但采集指标时关心的是
+    「这套 SQL 能不能跑」：pg / kingbase / ivorySQL / openGauss 都走 PostgreSQL
+    协议，``pg_stat_activity`` 一类视图通用。若各处各自写死字符串白名单，就会出现
+    「实例里存的是 pg、判断里只认 postgres」这种静默跳过 —— 指标采集不到，
+    趋势图整块空白。
+
+    返回值：``postgresql`` / ``mysql`` / ``oracle`` / ``sqlserver`` / ``dm``
+    为归并后的族名；无法归并时原样返回（调用方应按「未知族」处理，不要伪造数据）。
+    """
+    dt = normalize_db_type(db_type).lower()
+    return DB_FAMILY_ALIASES.get(dt, dt)
 
 
 def xinchuang_default(db_type: str) -> bool:
@@ -522,7 +562,7 @@ JDBC_PLUGIN_TO_CATALOG = {
     'clickhouse': 'clickhouse',
     'uxdb': 'uxdb',
     'dm': 'dm',
-    'gbase': 'gbase8s',   # 核心内置 GBase 走 JDBC（com.gbasedbt.jdbc.Driver；同源也覆盖 gbase8a）
+    'gbase': 'gbase8s',   # 核心内置 GBase 走 JDBC（com.gbasedbt.jdbc.Driver；不适用于 GBase 8a）
     'ivorysql': 'postgresql',  # IvorySQL 兼容 PG 协议，复用 PostgreSQL JDBC 驱动
     'pg': 'postgresql',        # PostgreSQL 标准 JDBC 驱动
     'kingbase': 'kingbase',    # KingbaseES 官方驱动（com.kingbase8.Driver，jar 内实测）

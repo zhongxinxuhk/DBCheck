@@ -67,6 +67,10 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
+        *collect_submodules('modules.service_management'),
+        'modules.entrypoints.main_gbase8a',
+        'modules.db_types.compatibility',
+        *collect_submodules('pytds'),
         'flask',
         'pymysql', 'pymysql.constants', 'pymysql.constants.CLIENT',
         'psycopg2', 'psycopg2._psycopg',
@@ -155,3 +159,8 @@ coll = COLLECT(
     strip=False,
     debug=False,
 )
+
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck

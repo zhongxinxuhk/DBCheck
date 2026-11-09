@@ -53,3 +53,18 @@ Redistribution / Derivative Works Notice
 Any redistribution or derivative work (including works modified using AI tools)
 must retain this NOTICE file and all copyright headers and attribution notices
 (including the author email sdfiyon@gmail.com) present in the source files.
+
+
+==============================================================================
+Derivative Work Attribution / 衍生创作署名
+==============================================================================
+
+DBPulse derivative-work portions contributed by sec.hn.cn (X.U zx):
+  SPDX-License-Identifier: Apache-2.0
+  Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+  Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+This section is ADDITIVE. It does not replace, alter or weaken the original
+copyright, branding and attribution of fiyo (Jack Ge) <sdfiyon@gmail.com>
+stated above, nor the Apache License 2.0 terms. All original headers and
+notices must remain intact.

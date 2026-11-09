@@ -5,6 +5,11 @@
 
 """Русский словарь перевода (DBCheck: черновик машинного перевода, требует вычитки)"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from .zh import ZI
 
 RU = dict(ZI)
@@ -1969,7 +1974,7 @@ RU.update({
     "tidb_slow_query_ok": "Углубленный анализ медленного запроса выполнен, собран {count} Верхний SQL",
     "tidb_slow_query_unavailable": "Никаких медленных данных запроса, пропустите углубленный анализ",
     "webui.about_author": "Автор: Jack Ge · Apache License 2.0 · сайт: dbcheck.top",
-    "webui.about_desc": "RaccoonX — это открытый инструмент интеллектуальной проверки баз данных, поддерживающий проверку здоровья и ИИ-диагностику основных СУБД: MySQL, PostgreSQL, Oracle, SQL Server, DM (Dameng), TiDB, IvorySQL, YashanDB.",
+    "webui.about_desc": "DBPulse — это инструмент интеллектуальной проверки баз данных, поддерживающий проверку состояния и ИИ-диагностику основных СУБД: MySQL, PostgreSQL, Oracle, SQL Server, DM (Dameng), TiDB, IvorySQL, YashanDB.",
     "webui.about_grayscale_note": "Юбилейный режим оттенков серого является частью оригинального дизайна RaccoonX и указан в приведенном выше соглашении об открытом исходном коде. Пожалуйста, не изменяйте и не обходите его.",
     "webui.action": "Действие",
     "webui.add_group_btn": "＋ Группа",
@@ -2277,6 +2282,9 @@ RU.update({
     "webui.fi_web_desc": "Полностью графический интерфейс вместо командной строки, отслеживание логов в реальном времени.",
     "webui.fill_connection_info": "Параметры подключения к базе данных",
     "webui.gbase_report_filename": "GBase 8s отчёт_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.group_all": "Все",
     "webui.group_color_label": "Цвет группы",
     "webui.group_create_title": "Создание группы",
@@ -3300,4 +3308,14 @@ RU.update({
     "webui.nav_autonomy": "Автономная DBA-безопасность",
     "webui.nav_fleet": "Умная базовая линия",
     "webui.nav_twin": "Проверка топологии"
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+RU.update({
+    "webui.nav_system_info": "Информация о системе",
+    "webui.system_info_version": "Версия",
+    "webui.system_info_update": "Уведомления об обновлениях",
+    "webui.system_info_brand": "Бренд-атрибутика",
+    "webui.system_info_opensource": "Открытый исходный код",
+    "webui.system_info_check_update": "Проверить обновления",
 })

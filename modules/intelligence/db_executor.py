@@ -14,6 +14,11 @@ get_connection），从而覆盖社区版常见的所有数据源。
 MERGE/GRANT/REVOKE 等写与 DDL，避免 AI 生成的 SQL 误伤生产库。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import re
@@ -22,39 +27,7 @@ from typing import Any, Dict, List, Tuple
 
 
 # ── 只读 SQL 校验 ───────────────────────────────────────────────────────────
-_DML_DDL_RE = re.compile(
-    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|REPLACE|MERGE|"
-    r"GRANT|REVOKE|COMMENT\s+ON|RENAME|SET\s+SESSION|SET\s+GLOBAL|"
-    r"EXEC|EXECUTE\s+IMMEDIATE|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|"
-    r"CALL|LOCK\s+TABLE|UNLOCK\s+TABLES|FLUSH|PURGE|ANALYZE|VACUUM)\b",
-    re.IGNORECASE,
-)
-
-
-def assert_readonly_sql(sql: str) -> None:
-    """校验 SQL 是否为只读查询，非只读则抛 ValueError。
-
-    允许 SELECT / WITH(CTE) / SHOW / DESC[RIBE] / EXPLAIN(部分) 等读操作。
-    """
-    s = (sql or "").strip()
-    if not s:
-        raise ValueError("SQL 不能为空")
-    # 去掉行内注释 /* */ 与 -- 到行尾，避免注释里藏写语句绕过
-    stripped = re.sub(r"/\*.*?\*/", " ", s, flags=re.DOTALL)
-    stripped = re.sub(r"--[^\n]*", " ", stripped)
-    stripped = re.sub(r"#[^\n]*", " ", stripped)  # mysql 行注释
-    upper = stripped.upper()
-    # 允许的首指令白名单（前缀匹配）
-    first = upper.lstrip()
-    if first.startswith(("SELECT", "WITH", "SHOW", "DESC", "DESCRIBE",
-                         "EXPLAIN", "VALUES", "PRAGMA", "USE ")):
-        # EXPLAIN ANALYZE 会真正执行，禁止
-        if first.startswith("EXPLAIN") and "ANALYZE" in upper:
-            raise ValueError("禁止 EXPLAIN ANALYZE（会真实执行写）")
-        if _DML_DDL_RE.search(stripped):
-            raise ValueError("仅允许只读查询，SQL 中包含写/DDL 关键字")
-        return
-    raise ValueError("仅允许 SELECT / WITH / SHOW / DESC / EXPLAIN 等只读语句")
+from modules.core.data_security import assert_readonly_sql
 
 
 # ── SQL 执行计划验证 ─────────────────────────────────────────────────────────
@@ -134,7 +107,7 @@ def _exec_oracledb(db_info: Dict[str, Any], sql: str, limit: int):
     except Exception:
         # 部分环境需要 thick 客户端，尝试初始化后重试
         try:
-            oracledb.init_client()
+            oracledb.init_oracle_client()
             conn = oracledb.connect(
                 user=db_info.get("user", ""),
                 password=db_info.get("password") or "",
@@ -191,24 +164,12 @@ def _exec_psycopg(db_info, sql, limit, db_default="postgres"):
         conn.close()
 
 
-def _exec_pyodbc(db_info, sql, limit, database=""):
-    conn_str = (
-        "DRIVER={{ODBC Driver 17 for SQL Server}};"
-        "SERVER={host},{port};UID={user};PWD={pwd};"
-    ).format(
-        host=db_info.get("host", ""), port=int(db_info.get("port", 1433)),
-        user=db_info.get("user", ""), pwd=db_info.get("password", ""),
-    )
-    if database:
-        conn_str += f"DATABASE={database};"
-    import pyodbc
-    conn = pyodbc.connect(conn_str, timeout=10)
+def _exec_pyodbc(db_info,sql,limit,database=""):
+    conn=_connect_pyodbc(db_info,database)
     try:
-        cur = conn.cursor()
-        cur.execute(sql)
-        cols = [col[0] for col in cur.description] if cur.description else []
-        rows = cur.fetchmany(limit) if limit and limit > 0 else cur.fetchall()
-        return cols, [list(r) for r in rows]
+        cursor=conn.cursor()
+        cursor.execute(sql)
+        return _fetch(cursor,limit)
     finally:
         conn.close()
 
@@ -364,7 +325,7 @@ def _connect_oracledb(db_info):
         )
     except Exception:
         try:
-            oracledb.init_client()
+            oracledb.init_oracle_client()
             return oracledb.connect(
                 user=db_info.get("user", ""),
                 password=db_info.get("password") or "",
@@ -398,17 +359,8 @@ def _connect_psycopg(db_info, db_default="postgres"):
 
 
 def _connect_pyodbc(db_info, database=""):
-    conn_str = (
-        "DRIVER={{ODBC Driver 17 for SQL Server}};"
-        "SERVER={host},{port};UID={user};PWD={pwd};"
-    ).format(
-        host=db_info.get("host", ""), port=int(db_info.get("port", 1433)),
-        user=db_info.get("user", ""), pwd=db_info.get("password", ""),
-    )
-    if database:
-        conn_str += f"DATABASE={database};"
-    import pyodbc
-    return pyodbc.connect(conn_str, timeout=10)
+    from modules.db_types.compatibility import connect_sqlserver
+    return connect_sqlserver({**db_info,'database':database or db_info.get('database') or 'master'})
 
 
 def _connect_dm(db_info):

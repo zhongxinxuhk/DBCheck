@@ -34,6 +34,11 @@ BIC-QA 是第三方 SaaS 知识问答服务（注册 https://www.bic-qa.com 得 
 依赖：纯标准库（urllib + json），不引入任何第三方 HTTP 包，避免污染运行环境。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import json
@@ -143,12 +148,15 @@ class BICQABridge:
                    timeout: int = DEFAULT_TIMEOUT) -> Tuple[int, bytes]:
         """普通 JSON POST，返回 (status, body_bytes)。"""
         url = self._api_base + path
+        from modules.core.data_security import ensure_egress_allowed,redact
+        ensure_egress_allowed(url)
+        payload=redact(payload,mask_identity=True)
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             url, data=data, headers=self._auth_headers(), method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with __import__('modules.core.data_security',fromlist=['egress_urlopen']).egress_urlopen(req,timeout=timeout) as resp:
                 return resp.getcode(), resp.read()
         except urllib.error.HTTPError as e:  # 4xx/5xx：先读错误体再抛出
             body = b""
@@ -185,6 +193,9 @@ class BICQABridge:
                      timeout: int = STREAM_TIMEOUT) -> str:
         url = self._api_base + CHAT_PATH
         payload = {"question": question, "conversationId": conversation_id}
+        from modules.core.data_security import ensure_egress_allowed,redact
+        ensure_egress_allowed(url)
+        payload=redact(payload,mask_identity=True)
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             url, data=data,
@@ -196,7 +207,7 @@ class BICQABridge:
         )
         parts: List[str] = []  # 累积的回答文本
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with __import__('modules.core.data_security',fromlist=['egress_urlopen']).egress_urlopen(req,timeout=timeout) as resp:
                 ctype = resp.headers.get("Content-Type", "")
                 if "text/event-stream" not in ctype:
                     # 非 SSE：可能是建流前的 JSON 错误信封

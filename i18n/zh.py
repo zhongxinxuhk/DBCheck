@@ -5,6 +5,11 @@
 
 """DBCheck 中文翻译数据"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 ZI = {
     # CLI 主菜单
     "cli.main_banner_title": "数据库自动化巡检工具",
@@ -1798,6 +1803,9 @@ ZI = {
     "webui.pg_report_filename": "PostgreSQL巡检报告_{ip}_{name}_{ts}",
     "webui.kingbase_report_filename": "KingbaseES巡检报告_{ip}_{name}_{ts}",
     "webui.gbase_report_filename": "GBase 8s巡检报告_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.mongodb_report_filename": "MongoDB巡检报告_{ip}_{name}_{ts}",
     "webui.log_mongodb_start": "正在启动 MongoDB 巡检…",
     "webui.err_mongodb_module": "MongoDB 巡检模块加载失败",
@@ -2823,7 +2831,7 @@ ZI = {
     "webui.network_error": "网络错误，请稍后重试",
     # ── 关于页面 ──
     "webui.nav_about": "关于 RaccoonX",
-    "webui.about_desc": "RaccoonX 是一款开源数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。",
+    "webui.about_desc": "DBPulse 是一款数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。",
     "webui.about_author": "作者：Jack Ge · Apache License 2.0 · 官网：dbcheck.top",
     "webui.about_grayscale_note": "纪念日灰度模式是 RaccoonX 的原创设计，已写入上方开源协议。请勿修改或绕过该模式。",
 
@@ -3644,4 +3652,14 @@ ZI.update({
     "webui.report_base_save_ok": "已保存",
     "webui.report_base_save_fail": "保存失败：",
 
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+ZI.update({
+    "webui.nav_system_info": "系统信息",
+    "webui.system_info_version": "系统版本",
+    "webui.system_info_update": "更新提醒",
+    "webui.system_info_brand": "系统标志",
+    "webui.system_info_opensource": "开源信息",
+    "webui.system_info_check_update": "查看更新",
 })

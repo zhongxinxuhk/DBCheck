@@ -10,6 +10,11 @@ Embedding 接口 — 支持本地 Ollama 和 OpenAI 协议兼容的远程服务
 - 远程 OpenAI 协议需在 dbc_config.json 的 ai 字段中启用 online_enabled
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import json
 import urllib.request
 import urllib.error
@@ -39,6 +44,9 @@ class OllamaEmbedding:
             RuntimeError: Ollama 连接失败或返回格式异常
         """
         url = f"{self.api_url}/api/embeddings"
+        from modules.core.data_security import ensure_egress_allowed,redact
+        ensure_egress_allowed(url)
+        text=redact(text,mask_identity=True)
         payload = json.dumps({
             "model": self.model,
             "prompt": text
@@ -48,7 +56,7 @@ class OllamaEmbedding:
         req.add_header('Content-Type', 'application/json')
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with __import__('modules.core.data_security',fromlist=['egress_urlopen']).egress_urlopen(req,timeout=self.timeout) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 # Ollama 成功时返回 {"embedding": [...]}
                 # 失败时可能返回 {"error": "..."} 或非 200 状态码
@@ -130,6 +138,9 @@ class OpenAIEmbedding:
             RuntimeError: API 连接失败或返回格式异常
         """
         url = f"{self.api_url}/embeddings"
+        from modules.core.data_security import ensure_egress_allowed,redact
+        ensure_egress_allowed(url)
+        text=redact(text,mask_identity=True)
         payload = json.dumps({
             "model": self.model,
             "input": text
@@ -141,7 +152,7 @@ class OpenAIEmbedding:
             req.add_header('Authorization', f'Bearer {self.api_key}')
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with __import__('modules.core.data_security',fromlist=['egress_urlopen']).egress_urlopen(req,timeout=self.timeout) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 if 'data' in result and len(result['data']) > 0:
                     return result['data'][0].get('embedding', [])

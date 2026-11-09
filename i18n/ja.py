@@ -5,6 +5,11 @@
 
 """日本語翻訳辞書（DBCheck：機械翻訳ドラフト・要人手修正）"""
 
+# ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from .zh import ZI
 
 JA = dict(ZI)
@@ -1969,7 +1974,7 @@ JA.update({
     "tidb_slow_query_ok": "スロー クエリの詳細分析が完了し、{count} 項目が収集されました。上位 SQL",
     "tidb_slow_query_unavailable": "遅いクエリ データはありません、詳細な分析はスキップします",
     "webui.about_author": "著者: Jack Ge · Apache License 2.0 · 公式ウェブサイト: dbcheck.top",
-    "webui.about_desc": "RaccoonX は、MySQL、PostgreSQL、Oracle、SQL Server、DM、TiDB、IvorySQL、YashanDB などの主流データベースの健全性検査と AI 診断をサポートするオープンソース データベース インテリジェント検査ツールです。",
+    "webui.about_desc": "DBPulse は、MySQL、PostgreSQL、Oracle、SQL Server、DM、TiDB、IvorySQL、YashanDB などの主流データベースの健全性検査と AI 診断をサポートするインテリジェントなデータベース検査ツールです。",
     "webui.about_grayscale_note": "記念日グレースケール モードは RaccoonX のオリジナル設計であり、上記のオープンソース協議に記載されています。変更やバイパスは行わないでください。",
     "webui.action": "操作",
     "webui.add_group_btn": "＋ グループ",
@@ -2275,6 +2280,9 @@ JA.update({
     "webui.fi_web_desc": "は完全にインターフェイス ベースであり、コマンド ラインに別れを告げ、リアルタイムのログ追跡をサポートします。",
     "webui.fill_connection_info": "データベース接続情報",
     "webui.gbase_report_filename": "GBase 8s 検査レポート_{ip}_{name}_{ts}",
+    "webui.gbase8a_report_filename": "GBase 8a MPP巡检报告_{ip}_{name}_{ts}",
+    "webui.log_gbase8a_start": "[{ts}] [GBase 8a MPP] 开始巡检...",
+    "webui.err_gbase8a_module": "GBase 8a 巡检模块未安装",
     "webui.group_all": "すべて",
     "webui.group_color_label": "グループの色",
     "webui.group_create_title": "新しいグループ",
@@ -3350,4 +3358,14 @@ JA.update({
     "webui.nav_autonomy": "自律 DBA 安全",
     "webui.nav_fleet": "スマートベースライン",
     "webui.nav_twin": "トポロジー検査"
+})
+
+# ── 系统信息页（System Info page）─────────────────────────────
+JA.update({
+    "webui.nav_system_info": "システム情報",
+    "webui.system_info_version": "バージョン",
+    "webui.system_info_update": "更新通知",
+    "webui.system_info_brand": "ブランドロゴ",
+    "webui.system_info_opensource": "オープンソース情報",
+    "webui.system_info_check_update": "更新を確認",
 })

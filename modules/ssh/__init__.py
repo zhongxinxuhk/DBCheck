@@ -8,6 +8,11 @@ SSH 隧道工具模块 v2
 提供本地端口转发功能，修复 Paramiko request_port_forward() API 使用错误
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import socket
 import threading
 import time
@@ -138,7 +143,8 @@ class SSHTunnel:
         import paramiko
 
         self._client = paramiko.SSHClient()
-        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self._client.load_system_host_keys()
+        self._client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         connect_kwargs = {
             'hostname': self.ssh_host,

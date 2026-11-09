@@ -185,3 +185,23 @@ docs/release/*.png
 /.idea
 # CI 构建期产物：核心模块缺失清单（仅失败时生成）
 build/core-missing.txt
+
+# Private initial administrator credential
+/data/bootstrap_admin_password
+
+/data/bootstrap_activation_token
+
+/data/password_rotation_ack
+
+# Private service source material and runtime SQLite sidecars
+/data/service_management/
+/notes/private/
+/notes/数据库运维需求适配清单.md
+/data/_disabled/
+/data/*-shm
+/data/*-wal
+/data/*.bak-*
+/history.db
+
+# Generic integration guidance; contains no customer requirements or records
+!/docs/database-compatibility.md

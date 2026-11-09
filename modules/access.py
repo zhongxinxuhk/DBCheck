@@ -37,6 +37,11 @@ specific      仅 shared_with 白名单内可见
    所有创建路径都会显式登记归属，正常情况不会走到这条分支。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import json
 import os
 import sqlite3
@@ -49,7 +54,7 @@ from modules.user_management.models.db_manager import DBManager
 
 # ── 环境变量开关 ────────────────────────────────────────────────
 # 置 1 表示 fail-closed：匿名身份 / 未登记归属的资源一律不可见。
-STRICT = os.environ.get('DBCHECK_ACCESS_STRICT', '0') == '1'
+STRICT = True
 
 # ── scope 常量 ─────────────────────────────────────────────────
 SCOPE_PRIVATE = 'private'

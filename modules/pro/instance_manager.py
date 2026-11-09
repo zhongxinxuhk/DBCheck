@@ -9,6 +9,11 @@ DBCheck Pro Instance Manager
 支持实例分组、标签管理、批量巡检、汇总报告
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import json
 import os
 import platform
@@ -34,7 +39,7 @@ except ImportError:
 
 def _get_fernet():
     if not _FERNET_AVAILABLE:
-        return None
+        raise RuntimeError('凭据加密组件不可用，已拒绝明文降级')
     import sys
     # .db_key 一律以 modules.core.paths.DB_KEY_PATH 为准，禁止用 __file__ 上溯推算：
     # pro/ 迁入 modules/pro/ 后，__file__ 上溯两级会错指 D:/DBCheck/modules，
@@ -66,6 +71,18 @@ def _get_fernet():
             )
 
     if not os.path.exists(key_file):
+        credential_store = paths.PRO_DATA_DIR / 'instances.db'
+        if credential_store.exists():
+            with sqlite3.connect(str(credential_store)) as existing:
+                has_table = existing.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='instances'").fetchone()
+                if has_table and existing.execute("SELECT 1 FROM instances WHERE COALESCE(password, '') <> '' OR COALESCE(ssh_password, '') <> '' LIMIT 1").fetchone():
+                    raise RuntimeError('已有凭据但加密密钥缺失，请恢复原密钥后重试')
+        service_store = paths.DATA_DIR / 'service_management' / 'services.db'
+        if service_store.exists():
+            with sqlite3.connect(str(service_store)) as existing:
+                has_table = existing.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='service_records'").fetchone()
+                if has_table and existing.execute('SELECT 1 FROM service_records LIMIT 1').fetchone():
+                    raise RuntimeError('已有加密服务记录但密钥缺失，请恢复原密钥后重试')
         # 密钥缺失时自动生成。若此时已存在实例库，说明密钥与数据"走散"了
         # （典型场景：打包产物携带了 data/pro_data/instances.db 却没有携带
         # .db_key，首次启动便生成全新密钥），历史密码将全部无法解密。
@@ -85,11 +102,21 @@ def _get_fernet():
         # data/ 为运行时目录，打包首启时可能尚未创建，写入前必须先建目录，
         # 否则 open() 会抛 FileNotFoundError 导致整个 Pro 模块不可用。
         os.makedirs(os.path.dirname(key_file), exist_ok=True)
-        with open(key_file, 'wb') as f:
-            f.write(key)
+        try:
+            fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            with open(key_file, 'rb') as f:
+                key = f.read()
+        else:
+            with os.fdopen(fd, 'wb') as f:
+                f.write(key)
+                f.flush()
+                os.fsync(f.fileno())
     else:
         with open(key_file, 'rb') as f:
             key = f.read()
+    if os.name != 'nt':
+        os.chmod(key_file, 0o600)
     return Fernet(key)
 
 def _encrypt_pwd(password: str) -> str:
@@ -97,7 +124,7 @@ def _encrypt_pwd(password: str) -> str:
         return password
     f = _get_fernet()
     if f is None:
-        return password
+        raise RuntimeError('凭据加密不可用，拒绝明文存储')
     return base64.b64encode(f.encrypt(password.encode())).decode()
 
 
@@ -180,10 +207,9 @@ def _decrypt_pwd(encrypted: str) -> str:
         return encrypted
     f = _get_fernet()
     if f is None:
-        return encrypted
+        raise RuntimeError('凭据解密不可用')
     if not _looks_like_encrypted_pwd(encrypted):
-        # 明文（或非 DBCheck 密文格式）直接返回，兼容历史明文数据
-        return encrypted
+        raise ValueError('检测到历史明文凭据，请通过受控迁移重新加密录入')
     try:
         if encrypted.startswith(_FERNET_B64_PREFIX):
             token = base64.b64decode(encrypted.encode())
@@ -720,7 +746,7 @@ class InstanceManager:
     # 密码类字段：导出时解密/剥离，导入时由 add/update 自动重新加密
     _SECRET_FIELDS = ('password', 'ssh_password', 'ssh_key_password')
 
-    def export_json(self, include_password: bool = True,
+    def export_json(self, include_password: bool = False,
                     ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """导出全部实例为可迁移 JSON。
 
@@ -736,6 +762,8 @@ class InstanceManager:
         Returns:
             dict: {schema, app, exported_at, with_password, groups, instances}
         """
+        if include_password:
+            raise ValueError('数据安全策略禁止导出明文凭据，请使用加密数据备份')
         self._ensure_instances_fresh()
         out = []
         for iid, inst in self._instances.items():
@@ -947,13 +975,12 @@ class InstanceManager:
                 return {'ok': True, 'message': '连接成功 (Oracle%s %s)' % (sysdba_msg, dsn)}
 
             elif db_type == 'sqlserver':
-                import pyodbc
-                driver = '{ODBC Driver 17 for SQL Server}'
-                dsn = 'DRIVER=%s;SERVER=%s,%d;DATABASE=master;UID=%s;PWD=%s' % (
-                    driver, inst.host, inst.port, inst.user, password)
-                conn = pyodbc.connect(dsn, timeout=10)
+                from modules.db_types.compatibility import connect_sqlserver
+                options={**inst.to_dict(),'password':password}
+                options['ssh_password']=_decrypt_pwd(inst.ssh_password) if inst.ssh_password else ''
+                conn=connect_sqlserver(options)
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (SQL Server %s:%d)' % (inst.host, inst.port)}
+                return {'ok':True,'message':'SQL Server连接成功'}
 
             elif db_type == 'dm':
                 try:
@@ -994,6 +1021,14 @@ class InstanceManager:
                 conn.close()
                 return {'ok': True, 'message': '连接成功 (KingbaseES %s:%d)' % (inst.host, inst.port)}
 
+            elif db_type == 'gbase8a':
+                from modules.entrypoints.main_gbase8a import GBase8aInspector
+                options=inst.to_dict()
+                options['ssh_password']=_decrypt_pwd(inst.ssh_password) if inst.ssh_password else ''
+                checker=GBase8aInspector(inst.host,inst.port,inst.user,password,inst.database,options)
+                ok,version=checker.connect()
+                if checker.conn:checker.conn.close()
+                return {'ok':ok,'message':version}
             elif db_type == 'gbase':
                 try:
                     import pymysql

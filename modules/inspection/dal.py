@@ -15,6 +15,11 @@
 - 历史记录功能
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from modules.core.paths import INSPECTION_DB
 import sqlite3
 import json
@@ -185,10 +190,11 @@ def _ensure_tables(conn):
         # 延迟导入，避免循环依赖
         try:
             from modules.inspection.init_db import init_default_templates, init_server_thresholds
-            init_default_templates(db_path=DEFAULT_DB_PATH)
-            init_server_thresholds(db_path=DEFAULT_DB_PATH)
+            target_path = conn.execute("PRAGMA database_list").fetchone()[2]
+            init_default_templates(db_path=target_path)
+            init_server_thresholds(db_path=target_path)
             # 初始化默认基线配置（同文件内的函数，可直接调用）
-            init_default_baselines(db_path=DEFAULT_DB_PATH)
+            init_default_baselines(db_path=target_path)
             print("[巡检] 预设模板、阈值和基线初始化完成")
         except Exception as e:
             print(f"[巡检] 预设数据初始化失败: {e}")
@@ -2109,16 +2115,10 @@ def init_default_baselines(db_path: str = None):
     
     try:
         for db_type, baselines in default_baselines.items():
-            # GBase 8s：强制重置（去掉幂等判断），确保新数据能写入
-            if db_type == 'gbase':
-                cursor.execute("DELETE FROM inspection_baseline WHERE db_type = ?", (db_type,))
-                print(f"[INFO] 强制重置 GBase 基线数据（删除 {cursor.rowcount} 条旧数据）")
-            else:
-                # 仅在该 db_type 没有任何基线时（首次使用）才插入
-                cursor.execute("SELECT COUNT(*) FROM inspection_baseline WHERE db_type = ?", (db_type,))
-                if cursor.fetchone()[0] > 0:
-                    continue
-            
+            # Existing thresholds and user changes survive every initialization.
+            cursor.execute("SELECT COUNT(*) FROM inspection_baseline WHERE db_type = ?", (db_type,))
+            if cursor.fetchone()[0] > 0:
+                continue
             for bl in baselines:
                 cursor.execute("""
                     INSERT INTO inspection_baseline (

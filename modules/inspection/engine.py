@@ -18,6 +18,11 @@
 - 调用 collect_data() 采集数据
 - 调用 generate_report() 生成报告
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from modules.core.paths import PROJECT_ROOT
 import os
 import sys
@@ -84,7 +89,8 @@ class RemoteSystemInfoCollector:
             return False
         try:
             self.ssh_client = paramiko.SSHClient()
-            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh_client.load_system_host_keys()
+            self.ssh_client.set_missing_host_key_policy(paramiko.RejectPolicy())
             self.ssh_client.connect(
                 hostname=self.host, port=self.port,
                 username=self.username, password=self.password,
@@ -1104,6 +1110,8 @@ class BaseInspectionEngine:
     
     def generate_report(self, output_file, inspector_name="Jack"):
         """生成报告 - 通用逻辑！"""
+        from modules.core.data_security import redact
+        self.context = redact(self.context, mask_identity=True)
         # ── 内存监控（防止 Docker OOM）────────────────────
         if psutil:
             try:
@@ -1145,6 +1153,9 @@ class BaseInspectionEngine:
                     f"[generate_report] 报告文件未生成: {output_file} "
                     f"(success={success}, template={getattr(self, 'template_file', 'N/A')})"
                 )
+            from docx import Document
+            from modules.service_management.report import sanitize_document
+            sanitize_document(Document(output_file)).save(output_file)
             return output_file
         except MemoryError as e:
             print(f"[ERROR] 内存不足，报告生成失败: {e}")
@@ -1225,12 +1236,17 @@ class BaseInspectionEngine:
         _error 键仅在有错误时存在，渲染时用于区分"查询失败"和"无数据"
         """
         try:
+            from modules.core.data_security import assert_readonly_sql
+            assert_readonly_sql(sql)
             cursor.execute(sql)
             columns = [col[0] for col in cursor.description]
             data = []
-            for row in cursor.fetchall():
+            rows = cursor.fetchmany(1001)
+            for row in rows[:1000]:
                 data.append(dict(zip(columns, row)))
-            return {"columns": columns, "data": data}
+            if len(rows) > 1000:
+                self._safe_errors.append('查询结果超过1000行，需要缩小范围后复核')
+            return {"columns": columns, "data": data, "_truncated": len(rows) > 1000}
         except Exception as e:
             # 分类错误，生成友好描述
             err_str = str(e)
@@ -1666,11 +1682,9 @@ class BaseInspectionEngine:
                     else:
                         self.context[key] = [{'placeholder': self._t("report.data_missing")}]
 
-            if 'disk_list' not in self.context.get('system_info', {}) or not self.context['system_info'].get('disk_list'):
-                self.context.setdefault('system_info', {})['disk_list'] = [{
-                    'device': 'C:', 'mountpoint': 'C:\\', 'fstype': 'NTFS',
-                    'total_gb': 50.0, 'used_gb': 25.0, 'free_gb': 25.0, 'usage_percent': 50.0
-                }]
+            if not self.context.get('system_info', {}).get('disk_list'):
+                self.context.setdefault('system_info', {})['disk_list'] = []
+                self.context['system_info']['disk_collection_status'] = 'not_collected'
 
             self.context.update({"report_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
             self.context.update({"inspector_name": inspector_name})
@@ -1682,6 +1696,9 @@ class BaseInspectionEngine:
             elif problem_count <= 3: health_status = self._t("report.health_good")
             elif problem_count <= 6: health_status = self._t("report.health_fair")
             else: health_status = self._t("report.health_attention")
+            if self._safe_errors or self._query_errors:
+                health_status = '数据采集不完整，待复核'
+                self.context['collection_status'] = 'incomplete'
             self.context.update({"health_status": health_status})
 
             # 4. 执行基线配置检查
@@ -1749,6 +1766,8 @@ class BaseInspectionEngine:
                     _cur = self.conn.cursor() if self.conn else None
                     if not _cur:
                         raise Exception("数据库连接已关闭")
+                    from modules.core.data_security import assert_readonly_sql
+                    assert_readonly_sql(query_sql)
                     _cur.execute(query_sql)
                     rows = _cur.fetchall()
                     _cur.close()
