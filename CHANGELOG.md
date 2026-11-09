@@ -1,6 +1,47 @@
 # Changelog
 
-## v26.11.5.1 (2026-11-05)
+## v26.11.5.1 (2026-11-09)
+
+### 新增：运维服务管理模块（资产 · 计划 · SLA · 审批 · 证据）
+
+- 新增 `modules/service_management`：服务资产与标识、周期采集计划、SLA 判定、make-checker 审批流、不可篡改证据链、隔离采集子进程与报表输出。
+- 采集走受控入口：客户数据模式下禁用历史直连巡检入口，改为受控采集 + 审批。
+- 独立子进程执行 JDBC 采集，超时与异常一律 fail-closed，凭据不落日志。
+- 页面：`web_templates/service_management.html` + 配套样式/脚本；`scripts/verify_service_management.py` 覆盖审批、SLA、证据、加密、越权等场景。
+
+### 新增：客户数据安全边界（共用鉴权 · CSRF · 身份一致性）
+
+- 新增 `modules/core/web_security.py` 作为统一边界：会话/JWT/API Key 三种身份、浏览器 CSRF、历史报告租户隔离、公开分享关闭。
+- **身份不一致不再静默降级**：当 `Authorization: Bearer` 指向与签名 Cookie 会话不同的账户（另一个标签页登录了别人、或 localStorage 残留旧 token），以 Cookie 会话为准并回 `X-Auth-Identity-Adjusted`，前端清理残留 token。此前该场景会让整站 API 401、弹窗空白。
+- 前端角色不再只信 session 快照：首页按 `user_id` 实时解析角色，界面权限与后端判定强制一致。
+
+### 移除：强制默认口令轮换
+
+- 删除 `/security/rotate-password` 页面、`/api/auth/skip-password-rotation` 跳过接口、`needs_rotation` 闸门（页面 302 / 接口 428）与「本机激活码」校验。
+- 该机制拦住的只有自己人，没有实际安全收益；口令是否更改交由用户中心自助处理。安装期随机初始口令（16 位下限）保留。
+
+### 修复：PostgreSQL 实例趋势图整块空白
+
+- 现象：历史趋势分析选实例后「关键指标趋势图」一片空白。
+- 根因（三处叠加）：① 指标提取的 PG 分支只认 `postgres`/`postgresql`，而实例表与历史表记录的是 **`pg`**，整段提取被静默跳过；② 连接数按 `used_connections` 取，采集器实际给的是 `total_connections`（7 个连接被记成 0）；③ 前端读 `metrics.risk_count`，后端只把风险数放在顶层 `risk_counts`。
+- 修复：新增 `driver_registry.db_family()` 作为**唯一库族口径**（pg / highgo / hgdb / opengauss / kingbase / ivorysql / vastbase / greenplum / uxdb / halodb → `postgresql`；mysql / mariadb / tdsqlc_mysql → `mysql`），指标提取、skill 自包含副本均改为按库族分派，避免同类问题在其它国产库上重复出现。
+
+### 改进：趋势数据「缺什么就说缺什么」
+
+- 未采集一律写 `NULL` 而非 `0`——0 会被当成「真的 0%」，是误导。
+- `get_trend` 不再把 NULL 折成 0，过滤条件改为「是否真的采到」；补齐 `risk_count` 指标。
+- 绘图支持单点、零方差（Y 轴留白 + 数值标注）与缺测断线；缺测指标在页面逐项说明依赖（主机侧需 SSH 采集 / 连接类需统计视图权限）与补齐方式，不再用一块空白卡片糊过去。
+
+### 改进：品牌与界面
+
+- 统一 DBPulse 商标（横版 / 方形 / 浅色版）与 9 语言文案。
+- **标签页图标重绘**：原图标是「圆角砖 + 大 D + 数据库圆柱 + 心跳线 + 盾牌」的精细插画，16×16 下糊成一团。改为小尺寸专用标记（品牌蓝圆角砖 + 白色心跳线），`favicon.ico` 含 16/32/48/64/128 五档，新增 256 PNG 与 180 apple-touch-icon；8 个页面统一 icon 声明。
+- 监控大屏顶栏改用横版 logo 并对齐顶栏高度，背景加入克制的光晕/网格/流光动效（遵守 `prefers-reduced-motion`）。
+
+### 其它
+
+- i18n 9 语言同步；新增 `docs/database-compatibility.md`、`modules/db_types/compatibility.py`、GBase 8A 入口。
+- 构建 spec、依赖清单与校验脚本同步更新；`.gitignore` 收敛运行期产物（`*-shm` / `*-wal` / `*.bak-*` / `history.db` / 私有素材）。
 
 ### 修复：模板章节号与报告不一致（OceanBase 独有）
 
