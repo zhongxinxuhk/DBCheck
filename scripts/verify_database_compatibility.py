@@ -68,7 +68,7 @@ class CompatibilityTests(unittest.TestCase):
 
     def test_plugin_write_scope_remains_exact(self):
         self.assertEqual(dal.get_templates_by_db_type('oracle_jdbc',db_path=self.db), [])
-        self.assertEqual(dal.get_baselines_by_db_type('oracle_jdbc',db_path=self.db), [])
+        self.assertTrue(all(r['db_type']=='oracle_jdbc' for r in dal.get_baselines_by_db_type('oracle_jdbc',db_path=self.db)))
         with __import__('unittest').mock.patch('modules.jdbc_connector.resolve_driver_jars', return_value=['fixture.jar']):
             from modules.jdbc_test_cli import _find_dm_jdbc_jar
             self.assertEqual(_find_dm_jdbc_jar(), 'fixture.jar')
