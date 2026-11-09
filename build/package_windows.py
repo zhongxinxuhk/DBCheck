@@ -40,7 +40,7 @@ def main():
     start_bat = (
         "@echo off\r\n"
         "title DBPulse Web UI\r\n"
-        'cd /d "%%~dp0"\r\n'
+        'cd /d "%~dp0"\r\n'
         "echo ==========================================\r\n"
         "echo   DBPulse Database Inspection Tool\r\n"
         "echo ==========================================\r\n"

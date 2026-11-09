@@ -47,6 +47,8 @@ def main():
         assert 'ghcr.io/zhongxinxuhk/dbpulse' in text
         assert 'ghcr.io/fiyo/dbcheck' not in text
         assert 'jackge12345/dbcheck' not in text
+    package_script = (ROOT / 'build/package_windows.py').read_text()
+    assert '"%~dp0"' in package_script and '"%%~dp0"' not in package_script
     print(f'OK: DBPulse branding in {len(_LANGS)} languages, update URL, attribution and release paths')
 
 

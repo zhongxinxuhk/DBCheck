@@ -32,7 +32,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          # Match the Docker runtime. Existing maintenance scripts use 3.12 f-strings.
+          python-version: '3.12'
 
       - name: Fetch upstream without importing tags
         run: git fetch --no-tags https://github.com/fiyo/DBCheck.git main:refs/remotes/upstream/main
