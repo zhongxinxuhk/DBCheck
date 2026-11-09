@@ -56,7 +56,8 @@ def getData(ip,port,user,password,ssh_info=None,template_id=None,database=None,*
             self.inspector=inspector
             self.conn_db2=inspector.conn
         def checkdb(self,sqlfile=''):
-            return inspector.collect_data()
+            inspector.collect_data()
+            return inspector.context
         def generate_report(self,output_file,inspector_name='Jack'):
             return inspector.generate_report(output_file,inspector_name)
     return CompatWrapper()

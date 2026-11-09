@@ -73,6 +73,15 @@ class CompatibilityTests(unittest.TestCase):
             from modules.jdbc_test_cli import _find_dm_jdbc_jar
             self.assertEqual(_find_dm_jdbc_jar(), 'fixture.jar')
 
+    def test_native_gbase_adapter_returns_context(self):
+        from modules.entrypoints.main_gbase8a import getData
+        with __import__('unittest').mock.patch('modules.entrypoints.main_gbase8a.GBase8aInspector') as factory:
+            factory.return_value.connect.return_value=(True,'GBase')
+            factory.return_value.collect_data.return_value=(True,'GBase')
+            factory.return_value.context={'observed_nodes': [{'status':'online'}]}
+            adapter=getData('localhost',5258,'test','test',database='vc1')
+            self.assertEqual(adapter.checkdb(), {'observed_nodes':[{'status':'online'}]})
+
     def test_catalog_readonly_guard(self):
         for product,items in ITEM_SQL.items():
             for key,_,sql in items.values():
