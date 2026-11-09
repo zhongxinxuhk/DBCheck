@@ -1,0 +1,29 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+-->
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ run.payload.cluster.name }} · 集群巡检汇总 · DBPulse</title>
+<style>body{font:14px/1.7 -apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif;color:#24344a;background:#f4f6fa;margin:0}main{max-width:1100px;padding:32px;margin:24px auto;background:white;border:1px solid #d8e1ed}h1{font-size:26px}h2{font-size:19px;border-bottom:2px solid #dbe5f3;padding-bottom:8px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #d5dfeb;text-align:left;vertical-align:top;padding:10px;overflow-wrap:anywhere}th{background:#edf3fa}.muted{color:#62758c}.actions{display:flex;gap:18px}a{color:#175ac5}li{margin:5px 0}.warning{background:#fff5dd;padding:12px}pre{white-space:pre-wrap}footer{margin-top:35px;font-size:12px;color:#6d7d91}@media print{body{background:white}main{border:0;margin:0;padding:10px}.actions{display:none}a{color:inherit}tr{break-inside:avoid}}</style></head>
+<body><main><div class="actions"><a href="/clusters">返回集群管理</a><a href="?download=1">下载 HTML 汇总报告</a><button onclick="window.print()">打印 / 保存 PDF</button></div>
+<h1>{{ run.payload.cluster.name }} 集群巡检汇总</h1><p class="muted">{{ kinds[run.payload.cluster.spec.kind].label }} · {{ created_at }} · 任务 {{ run.id }}</p>
+{% set status_labels={'dispatching':'准备中','running':'执行中','done':'执行完成','partial_failed':'部分失败','failed':'失败','interrupted':'执行中断','unconfirmed':'待复核','pending':'待执行','error':'失败'} %}
+<p>执行状态 <strong>{{ status_labels.get(run.status,run.status) }}</strong> · 配置版本 {{ run.payload.cluster.version }} · 预期 {{ run.payload.cluster.spec.expected_nodes }} 个节点 · 本次启用成员 {{ run.payload.members|length }} 个</p>
+{% if run.status not in ['done','failed','partial_failed','interrupted'] %}<p class="warning">部分节点结果仍在等待或需要复核，请刷新查看最新结果。</p>{% endif %}
+{% if run.payload.error %}<p class="warning">{{ run.payload.error }}</p>{% endif %}
+<h2>节点执行与报告</h2><table><thead><tr><th>节点</th><th>预期角色</th><th>执行状态</th><th>风险项</th><th>节点报告与采集缺口</th></tr></thead><tbody>
+{% for member in run.payload.members %}<tr><td>{{ member.name or member.instance_id }}</td><td>{{ member.expected_role }}</td><td>{{ status_labels.get(member.status,member.status) }}</td><td>{{ member.result.risk_count if member.result and member.result.risk_count is not none else '—' }}</td><td>
+{% if member.report_name %}<a href="/api/cluster-inspections/{{ run.id }}/members/{{ member.instance_id }}/report">{{ member.report_name }}</a>{% endif %}
+{% if member.error %}<p>{{ member.error }}</p>{% endif %}
+{% if member.collection_warnings %}<ul>{% for warning in member.collection_warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}</td></tr>{% endfor %}</tbody></table>
+<h2>集群监控与覆盖核对</h2>{% set monitor=run.payload.monitor %}
+{% if monitor %}<p>监控状态 {{ {'healthy':'正常','critical':'异常','warning':'关注','incomplete':'采集不完整','stale':'样本过期'}.get(monitor.status,monitor.status) }} · 独立实例覆盖率 {{ monitor.coverage_pct }}% · 在线 {{ monitor.online_nodes }} / 预期 {{ monitor.expected_nodes }}</p>
+{% if monitor.issues %}<ul>{% for issue in monitor.issues %}<li>{{ issue.message }}{% if issue.instance_id %} · {{ issue.instance_id }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+<table><thead><tr><th>节点</th><th>实际角色</th><th>实例身份</th><th>版本</th><th>复制延迟（秒）</th><th>采集视图错误</th></tr></thead><tbody>{% for iid,node in monitor.nodes.items() %}<tr><td>{{ node.name or iid }}</td><td>{{ node.role }}</td><td>{{ node.identity or '未取得' }}</td><td>{{ node.version or '未取得' }}</td><td>{{ node.repl_lag_s if node.repl_lag_s is not none else '未知' }}</td><td>{% for key,error in node.errors.items() %}<div>{{ key }} · {{ error }}</div>{% endfor %}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="warning">本次汇总缺少集群监控样本，角色、复制延迟和节点覆盖率需要补采。</p>{% endif %}
+<p class="muted">本报告按登记的启用成员汇总。节点执行结果、数据库风险和集群证据覆盖分别列示。未登记节点、缺失视图及服务重启导致的状态缺口均需复核。</p>
+<footer>DBCheck / RaccoonX © 2025–2026 fiyo (Jack Ge) · sdfiyon@gmail.com<br>DBPulse 衍生创作 © 2025–2026 sec.hn.cn (X.U zx) · xuzhongxin@sec.hn.cn</footer></main></body></html>

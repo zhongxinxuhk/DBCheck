@@ -861,6 +861,8 @@ from modules.intelligence.views import intelligence_bp
 app.register_blueprint(intelligence_bp)
 from modules.service_management.routes import bp as service_management_bp
 app.register_blueprint(service_management_bp)
+from modules.clusters.routes import bp as clusters_bp
+app.register_blueprint(clusters_bp)
 
 def get_admin_token():
     return _ADMIN_TOKEN
@@ -12528,6 +12530,8 @@ def main():
 
     from modules.service_management.scheduler import start_scheduler
     start_scheduler(app)
+    from modules.clusters.service import start_cluster_monitor
+    start_cluster_monitor(app)
     port = 5003
     print(_t('webui.startup_msg').format(port=port))
     print("[提示] 按 Ctrl+C 停止服务\n")
