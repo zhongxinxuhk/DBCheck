@@ -220,7 +220,7 @@
       "label": "GBase 8a MPP Cluster",
       "port": 5258,
       "user": "reader",
-      "default_database": "information_schema",
+      "default_database": "",
       "icon": "/gbase.png",
       "emoji": "🟤",
       "description": "GBase 8a MPP集群；MySQL协议，独立8a巡检指标，不使用8s驱动",

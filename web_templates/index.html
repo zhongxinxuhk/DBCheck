@@ -6891,7 +6891,7 @@ function formatBytes(bytes) {
           if (_dsUserLabel2) _dsUserLabel2.style.display = '';
         }
         _currentDbType = dbType;
-        const showDsDbField = window.SHOW_DB_FIELD[dbType];
+        const showDsDbField = window.SHOW_DB_FIELD[dbType] || ['gbase8a','sqlserver','sqlserver_jdbc'].includes(dbType);
         document.getElementById('ds-database-wrap').style.display = showDsDbField ? '' : 'none';
         document.getElementById('ds-tenant-wrap').style.display = (dbType === 'oceanbase') ? '' : 'none';
         document.getElementById('ds-service-wrap').style.display = (dbType === 'oracle' || dbType === 'oracle_jdbc') ? '' : 'none';
@@ -7124,7 +7124,7 @@ function formatBytes(bytes) {
         payload.ssh_password = sshOn ? (document.getElementById('ds-ssh-password').value || undefined) : '';
         payload.ssh_key_file = sshOn ? document.getElementById('ds-ssh-key').value.trim() : '';
         payload.ssh_key_password = sshOn ? document.getElementById('ds-ssh-key-password').value.trim() : '';
-        if (payload.db_type === 'pg' || payload.db_type === 'ivorysql' || payload.db_type === 'kingbase' || payload.db_type === 'mysql' || payload.db_type === 'mariadb' || payload.db_type === 'tidb' || payload.db_type === 'tdsqlc_mysql') payload.database = document.getElementById('ds-database').value.trim();
+        if (window.SHOW_DB_FIELD[payload.db_type] || ['gbase8a','sqlserver','sqlserver_jdbc'].includes(payload.db_type)) payload.database = document.getElementById('ds-database').value.trim();
         if (payload.db_type === 'oracle' || payload.db_type === 'oracle_jdbc') {
           payload.service_name = document.getElementById('ds-service-name').value.trim();
           payload.sysdba = document.getElementById('ds-sysdba').checked;
@@ -13829,7 +13829,7 @@ async function selectDbType(type, skipReload) {
       if (fUserReqSpan) fUserReqSpan.style.display = '';
     }
   }
-  document.getElementById('f-database-wrap').style.display = (type === 'pg' || type === 'ivorysql' || type === 'kingbase' || type === 'gbase' || type === 'gbase8a' || type === 'oceanbase' || type === 'mongodb' || type === 'mysql' || type === 'mariadb' || type === 'tidb' || type === 'clickhouse') ? '' : 'none';
+  document.getElementById('f-database-wrap').style.display = (type === 'pg' || type === 'ivorysql' || type === 'kingbase' || type === 'gbase' || type === 'gbase8a' || type === 'sqlserver' || type === 'sqlserver_jdbc' || type === 'oceanbase' || type === 'mongodb' || type === 'mysql' || type === 'mariadb' || type === 'tidb' || type === 'clickhouse') ? '' : 'none';
   document.getElementById('f-tenant-wrap').style.display = (type === 'oceanbase') ? '' : 'none';
   // Oracle全面巡检：显示服务名输入框
   var svcWrap = document.getElementById('f-service-wrap');
@@ -28449,7 +28449,7 @@ function mkdirRemote() {
 const STATIC_DB_ICONS = {mysql:'🐬', tdsqlc_mysql:'🐬', mariadb:'🐬', oceanbase:'🐋', pg:'🐘', oracle:'🔴', oracle_jdbc:'🔴', dm:'🟡', sqlserver:'🟠', tidb:'🟢', ivorysql:'🐘', kingbase:'🐘', gbase:'🟢', clickhouse:'🧊', halodb:'🌀', vastbase:'🌊'};
 const STATIC_PORT_MAP = {mysql:3306, tdsqlc_mysql:3306, mariadb:3306, oceanbase:2881, pg:5432, dm:5236, oracle:1521, oracle_jdbc:1521, sqlserver:1433, tidb:4000, ivorysql:5432, yashandb:1688, kingbase:54321, gbase:9088, db2:50000, redis:6379, 'redis-cluster':6379, clickhouse:8123};
 const STATIC_USER_MAP = {mysql:'root', tdsqlc_mysql:'root', mariadb:'root', oceanbase:'root@test', pg:'postgres', dm:'SYSDBA', oracle:'system', oracle_jdbc:'system', sqlserver:'sa', tidb:'root', ivorysql:'ivorysql', yashandb:'sys', kingbase:'kingbase', gbase:'gbasedbt', db2:'db2inst1', redis:'', 'redis-cluster':'', clickhouse:'default'};
-  const STATIC_SHOW_DB_FIELD = {'pg':true,'ivorysql':true,'kingbase':true,'gbase':true,'oceanbase':true,'db2':true,'mysql':true,'tdsqlc_mysql':true,'mariadb':true,'tidb':true,'clickhouse':true};
+  const STATIC_SHOW_DB_FIELD = {'pg':true,'ivorysql':true,'kingbase':true,'gbase':true,'gbase8a':true,'sqlserver':true,'sqlserver_jdbc':true,'oceanbase':true,'db2':true,'mysql':true,'tdsqlc_mysql':true,'mariadb':true,'tidb':true,'clickhouse':true};
 const STATIC_DEFAULT_DB_MAP = { pg: 'postgres', ivorysql: 'ivorysql', kingbase: 'kingbase', gbase: 'sysmaster', mongodb: 'admin', mysql: 'mysql', tdsqlc_mysql: 'mysql', mariadb: 'mysql', tidb: 'mysql', clickhouse: 'default' };
 const STATIC_LABEL_MAP = { pg: 'PostgreSQL', ivorysql: 'PostgreSQL', kingbase: 'KingbaseES', gbase: 'GBase 8s', mysql: 'MySQL', tdsqlc_mysql: 'TDSQL-C MySQL', mariadb: 'MariaDB', tidb: 'TiDB', clickhouse: 'ClickHouse' };
 const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'kingbase','gbase':'sysmaster','oceanbase':'oceanbase','mongodb':'admin','db2':'testdb','mysql':'mysql','mariadb':'mysql','tidb':'mysql','clickhouse':'default','uxdb':'uxdb','vastbase':'vastbase'};
