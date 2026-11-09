@@ -13,6 +13,10 @@ DBCheck Pro 插件规则引擎
 - ast 预检查：拒绝import、getattr、setattr 等危险操作
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import ast
 import re
@@ -29,6 +33,27 @@ _SAFE_METHODS = {
     'title', 'capitalize', 'count', 'find', 'index',
     'isdigit', 'isalpha', 'isnumeric', 'isalnum', 'isspace',
 }
+
+
+# ── 库型归一化 ─────────────────────────────────────────────────────────────
+# 规则文件的 db_types 用规范短名（pg/dm/gbase...），而巡检引擎/入口可能传
+# postgresql/dm8/gbase8a/sqlserver_jdbc 等别名。历史上 pg.yaml 声明 ['pg'] 而
+# 调用方传 'postgresql'，导致 12 条规则从未执行——统一在此归一化，两边都映射到
+# 同一个规范名后再比较。
+_RULE_DB_ALIASES = {
+    'postgresql': 'pg',
+    'postgres': 'pg',
+    'dm8': 'dm',
+    'oracle_jdbc': 'oracle',
+    'sqlserver_jdbc': 'sqlserver',
+    'yasdb': 'yashandb',   # 崖山：入口常传 yasdb，规则文件声明 yashandb
+}
+
+
+def normalize_db_type(db_type):
+    """把各入口的库型别名归一化为规则库使用的规范短名。"""
+    t = str(db_type or '').strip().lower()
+    return _RULE_DB_ALIASES.get(t, t)
 
 
 def _int(v, default: int = 0) -> int:
@@ -371,10 +396,13 @@ class RuleEngine:
 
         disabled_ids = set(self.overrides.get('disabled_ids', []))
 
+        canonical = normalize_db_type(db_type) if db_type else None
         for rule in all_rules:
-            # 检查 db_type 过滤
-            if db_type and rule.get('db_types'):
-                if db_type not in rule['db_types']:
+            # 检查 db_type 过滤（两侧都归一化：pg/postgresql、dm/dm8、
+            # oracle/oracle_jdbc、sqlserver/sqlserver_jdbc 视为同一库型）
+            if canonical and rule.get('db_types'):
+                rule_types = {normalize_db_type(t) for t in rule['db_types']}
+                if canonical not in rule_types:
                     continue
 
             # 检查是否禁用
@@ -392,7 +420,18 @@ class RuleEngine:
         priority_order = {'high': 0, 'medium': 1, 'low': 2, 'info': 3}
         result.sort(key=lambda r: priority_order.get(r.get('priority', 'medium'), 1))
 
-        return result
+        # 同 id 去重：oracle/oracle_jdbc、mysql/mariadb 等文件间存在按库型复制的
+        # 同名规则，归一化后会同时命中，只保留先出现的一条（避免重复告警）
+        seen_ids = set()
+        deduped = []
+        for rule in result:
+            rid = rule.get('id') or ''
+            if rid and rid in seen_ids:
+                continue
+            if rid:
+                seen_ids.add(rid)
+            deduped.append(rule)
+        return deduped
 
     def analyze(self, db_type: str, context: Dict) -> List[Dict]:
         """
@@ -439,8 +478,18 @@ class RuleEngine:
         except Exception:
             pass
 
-        # 执行条件表达式
-        ok, err = _safe_eval(condition, context, {**resolved_params, **extra})
+        # 执行条件表达式。
+        # 命名空间优先级：阈值基线 < 规则 params < 自动派生量（extra）。
+        # 这样规则可以写 `tbs_usage_pct > db_tbs_usage_alert_pct`，
+        # 而规则自身的 params 若显式给了同名变量，仍以规则为准。
+        #
+        # 实例级基线的入口：调用方把实例标识放进 context['_instance_id']，
+        # 这里透传给 load_thresholds，让「自己跟自己比」的阈值覆盖全局值。
+        # 取不到（CLI 裸跑、未注册端点）就退回全局阈值，行为与改前一致。
+        _iid = context.get('_instance_id')
+        _thresholds = load_thresholds(instance_id=_iid)
+        ok, err = _safe_eval(condition, context,
+                             {**_thresholds, **resolved_params, **extra})
 
         if not ok:
             return None
@@ -590,6 +639,344 @@ class RuleEngine:
 # ── 便捷函数（供 analyzer.py 调用）─────────────────────────
 
 _cache: Optional[RuleEngine] = None
+
+# ── 规则取数层（metrics）──────────────────────────────────────────────────
+# 规则 params 引用的 context 键与巡检模板 query_key 是两套命名，历史上大量规则
+# 因取不到数而静默跳过（详见 scripts/gen_rule_metrics.py 头注）。metrics 层在
+# 巡检采集后补齐缺失的键：模板已提供（非空）的键不重复采集，因此与任何模板兼容。
+
+_METRICS_CACHE = {}
+
+
+def load_metrics(db_type):
+    """加载某产品的取数清单（modules/pro/rules/metrics/<规范库名>.yaml）。"""
+    canonical = normalize_db_type(db_type)
+    if canonical in _METRICS_CACHE:
+        return _METRICS_CACHE[canonical]
+    mdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rules', 'metrics')
+    path = os.path.join(mdir, canonical + '.yaml')
+    # 兜底：metrics 文件名可能按「规则文件名」而非「规范库名」命名
+    # （例：规则文件 yasdb.yaml 声明 db_types ['yashandb']，metrics 却叫 yasdb.yaml）。
+    # 此时按文件内 db_type 字段反查，避免取数层静默取不到任何指标。
+    if not os.path.isfile(path) and os.path.isdir(mdir):
+        for fn in os.listdir(mdir):
+            if not fn.endswith('.yaml'):
+                continue
+            try:
+                with open(os.path.join(mdir, fn), 'r', encoding='utf-8') as fh:
+                    head = yaml.safe_load(fh) or {}
+                # 两侧都归一化：文件可能写 yasdb，而 canonical 是 yashandb
+                if normalize_db_type(head.get('db_type')) == canonical:
+                    path = os.path.join(mdir, fn)
+                    break
+            except Exception:
+                continue
+    data = []
+    if os.path.isfile(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                loaded = yaml.safe_load(fh) or {}
+            data = loaded.get('metrics') or []
+        except Exception as e:
+            print('[RuleEngine] 加载 metrics 失败 %s: %s' % (path, e))
+    _METRICS_CACHE[canonical] = data
+    return data
+
+
+# ── 指标阈值（§4.6 基线）注入条件表达式 ────────────────────────────────
+# 规则 condition 里不再硬编码 80 / 90 / 95 这类魔法数字，而是直接引用
+# server_thresholds 的键名，例如：
+#     condition: "tbs_usage_pct > db_tbs_usage_alert_pct"
+# 用户在 Web UI 改阈值后，规则判定立即跟着变，无需改 YAML。
+#
+# 两级查找：先取全局 server_thresholds，再用 instance_thresholds 覆盖。
+# 实例级阈值由 scripts/build_self_baselines.py 按月按实例算出
+# （实例阈值 = max(全局值, 自身 P95 × 倍数)），只覆盖它算得出的那几个键，
+# 其余键仍走全局值——所以必须「叠加」而不是「替换」。
+_THRESHOLD_CACHE = {'mtime': None, 'global': None, 'instances': {}}
+
+
+def _safe_float(value):
+    """阈值只接受可转 float 的值，其余（None / 空串 / 中文）一律丢弃。
+
+    丢弃而非置 0：0 会参与比较并制造误报（`x > 0` 恒真）。
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_global_thresholds(conn):
+    """读全局阈值（server_thresholds）。"""
+    data = {}
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT key, value FROM server_thresholds')
+        for key, value in cur.fetchall():
+            if not isinstance(key, str) or not key.isidentifier():
+                continue
+            fv = _safe_float(value)
+            if fv is not None:
+                data[key] = fv
+    except Exception:
+        # 表不存在 / 被锁：退回空字典，规则因变量未定义而跳过，不误报
+        return {}
+    return data
+
+
+def _load_instance_thresholds(conn, instance_id):
+    """读某实例的自身基线覆盖值（instance_thresholds）。
+
+    表缺失（老库、还没跑过 build_self_baselines.py）按「无覆盖」处理，
+    返回空字典而不是抛错——否则升级瞬间全库规则都会被跳过。
+    """
+    data = {}
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT key, value FROM instance_thresholds WHERE instance_id = ?',
+            (str(instance_id),))
+        for key, value in cur.fetchall():
+            if not isinstance(key, str) or not key.isidentifier():
+                continue
+            fv = _safe_float(value)
+            if fv is not None:
+                data[key] = fv
+    except Exception:
+        return {}
+    return data
+
+
+def load_thresholds(db_path=None, instance_id=None):
+    """加载业务指标阈值，带 mtime 缓存。
+
+    优先级：``instance_thresholds``（实例自身基线）> ``server_thresholds``
+    （全局基线）。全局键永远保留，实例键只做定向覆盖。
+
+    只暴露「合法 Python 标识符 + 数值」的键，避免把含空格/百分号的键
+    注入 eval 命名空间。加载失败返回空字典——规则会因变量未定义而跳过，
+    不会误报。
+    """
+    default_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'data', 'inspection.db')
+    path = db_path or default_path
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}
+
+    # 缓存按库文件 mtime 失效；实例覆盖值存在 instances 子字典里，
+    # 同一份库文件可服务多个实例，不必每次重查。
+    if _THRESHOLD_CACHE['mtime'] != mtime:
+        _THRESHOLD_CACHE['mtime'] = mtime
+        _THRESHOLD_CACHE['global'] = None
+        _THRESHOLD_CACHE['instances'] = {}
+
+    iid = str(instance_id).strip() if instance_id else ''
+    if not iid:
+        if _THRESHOLD_CACHE['global'] is None:
+            try:
+                import sqlite3
+                conn = sqlite3.connect(path)
+                try:
+                    _THRESHOLD_CACHE['global'] = _load_global_thresholds(conn)
+                finally:
+                    conn.close()
+            except Exception as e:
+                print('[RuleEngine] 加载阈值失败 %s: %s' % (path, e))
+                _THRESHOLD_CACHE['global'] = {}
+        return _THRESHOLD_CACHE['global']
+
+    if iid in _THRESHOLD_CACHE['instances']:
+        return _THRESHOLD_CACHE['instances'][iid]
+
+    # 复用上面的全局加载与缓存，再叠加实例覆盖值。
+    # dict(...) 拷贝一份再 update，避免把实例值写进被共享的全局缓存。
+    merged = dict(load_thresholds(path))
+    try:
+        import sqlite3
+        conn = sqlite3.connect(path)
+        try:
+            overrides = _load_instance_thresholds(conn, iid)
+        finally:
+            conn.close()
+    except Exception as e:
+        print('[RuleEngine] 加载实例阈值失败 %s(%s): %s' % (path, iid, e))
+        overrides = {}
+    merged.update(overrides)
+    _THRESHOLD_CACHE['instances'][iid] = merged
+    return merged
+
+
+def _rows_to_dicts(cursor, limit=200):
+    """把游标结果统一为 list[dict]（兼容 tuple 行与具名行）。"""
+    cols = None
+    if cursor.description:
+        cols = [c[0] if isinstance(c, (tuple, list)) else c.name
+                for c in cursor.description]
+    data = []
+    for row in cursor.fetchall()[:limit]:
+        if hasattr(row, 'keys'):
+            data.append({k: row[k] for k in row.keys()})
+        else:
+            data.append(dict(zip(cols or [], row)))
+    return data, cols
+
+
+def _derive_system_metrics(context, derived):
+    """从 system_info 派生「与库型无关」的系统资源指标（零 SQL）。
+
+    §4.6 的 CPU 平均利用率对任何产品都是同一个物理量，没必要为 22 个产品
+    各写一条 SQL——它本来就在 system_info 里（见 modules/server/inspect.py）：
+
+        cpu.usage_percent / memory.usage_percent / memory.swap_usage_percent
+
+    采集不到（未启用 SSH 查询、连不上目标主机）就**不生成**对应键，
+    规则会因变量未定义而跳过——不写 0，避免把「没采到」判成「零负载」。
+    """
+    si = context.get('system_info')
+    if not isinstance(si, dict) or not si:
+        return
+
+    def _num(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return None if f != f else f  # 挡掉 NaN
+
+    cpu = si.get('cpu') or {}
+    mem = si.get('memory') or {}
+
+    pairs = (
+        ('cpu_avg_pct', cpu.get('usage_percent')),
+        ('mem_usage_pct', mem.get('usage_percent')),
+        ('swap_usage_pct', mem.get('swap_usage_percent')),
+    )
+    for key, raw in pairs:
+        if key in context or key in derived:
+            continue
+        val = _num(raw)
+        if val is not None:
+            derived[key] = round(val, 2)
+
+
+def _derive_metrics(canonical, context):
+    """少量无法用单条 SQL 表达的派生键（形状由多个采集项计算得出）。"""
+    derived = {}
+    # 系统资源（CPU / 内存 / swap）：所有库型通用，来源 system_info
+    _derive_system_metrics(context, derived)
+    # Redis：连接使用率 = connected_clients / maxclients * 100
+    if canonical in ('redis', 'redis-cluster') and 'redis_conn_pct' not in context:
+        try:
+            stats = context.get('redis_stats') or []
+            cfg = context.get('redis_config') or []
+            cur = int(stats[0].get('CONNECTED_CLIENTS') or 0) if stats else 0
+            mc = 0
+            for c in cfg:
+                if str(c.get('PARAM_NAME', '')).lower() == 'maxclients':
+                    mc = int(float(c.get('PARA_VALUE') or c.get('VALUE') or 0))
+                    break
+            if mc > 0:
+                derived['redis_conn_pct'] = round(cur / mc * 100, 2)
+        except Exception:
+            pass
+    # GBase 8a：连接使用率 = 会话总数 / max_connections * 100
+    if canonical == 'gbase8a' and 'gbase8a_conn_pct' not in context:
+        try:
+            used = int(float(context.get('gbase8a_conn_used') or 0))
+            limit = int(float(context.get('gbase8a_max_conn') or 0))
+            if limit > 0:
+                derived['gbase8a_conn_pct'] = round(used / limit * 100, 2)
+        except Exception:
+            pass
+    return derived
+
+
+def fill_missing_metrics(db_type, context, conn):
+    """在巡检采集后补齐规则所需的 context 键。
+
+    语义：
+    - 只补缺失/为空的键（模板已采到的不动）；
+    - 每条 SQL 过 ``data_security.assert_readonly_sql`` 只读校验；
+    - 单条失败静默跳过（对应规则不触发），绝不影响巡检主流程。
+    """
+    # 注意：必须用 is None 判断——空 dict 是合法的 context（首次采集时可能确实为空），
+    # 写成 `if not context` 会让取数层对空 context 直接短路，规则永远取不到数。
+    if context is None or conn is None:
+        return 0
+    canonical = normalize_db_type(db_type)
+    metrics = load_metrics(canonical)
+    filled = 0
+    try:
+        from modules.core.data_security import assert_readonly_sql
+    except Exception:
+        assert_readonly_sql = None
+
+    cur = None
+    try:
+        cur = conn.cursor()
+    except Exception:
+        return 0
+
+    try:
+        for m in metrics:
+            key = m.get('key')
+            if not key:
+                continue
+            existing = context.get(key)
+            if existing not in (None, [], {}, ''):
+                continue  # 模板已提供
+            sql = (m.get('sql') or '').strip()
+            if not sql:
+                continue
+            if assert_readonly_sql is not None:
+                try:
+                    assert_readonly_sql(sql)
+                except Exception:
+                    continue
+            try:
+                cur.execute(sql.strip().rstrip(';').strip())
+                data, cols = _rows_to_dicts(cur)
+                shape = m.get('shape', 'rows')
+                if shape == 'scalar':
+                    context[key] = (data[0][cols[0]]
+                                    if data and cols else None)
+                elif shape == 'map':
+                    kc = m.get('map_key', 'name')
+                    vc = m.get('map_value', 'value')
+                    mapping = {}
+                    for row in data:
+                        mk = str(row.get(kc, '')).strip()
+                        if not mk:
+                            continue
+                        if m.get('map_case', 'asis') == 'upper':
+                            mk = mk.upper()
+                        elif m.get('map_case', 'asis') == 'lower':
+                            mk = mk.lower()
+                        mapping[mk] = row.get(vc)
+                    context[key] = mapping
+                else:
+                    context[key] = data
+                context.setdefault('_metric_status', {})[key] = {'status': 'collected' if context.get(key) is not None else 'unavailable', 'rows': len(data)}
+                filled += 1
+            except Exception as error:
+                context.setdefault('_metric_status', {})[key] = {'status': 'error', 'reason': str(error)[:300]}
+                continue
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+    # 派生键（依赖上面刚补齐/模板已有的采集项）
+    for k, v in _derive_metrics(canonical, context).items():
+        context[k] = v
+        filled += 1
+    return filled
+
 
 def get_rule_engine() -> RuleEngine:
     """获取全局 RuleEngine 实例（单例）"""

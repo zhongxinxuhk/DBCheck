@@ -12,7 +12,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 90%
     description_zh: 系统内存使用率超过 90%
-    condition: "mem_usage > 90"
+    condition: "mem_usage > mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，超过 90% 可能触发 OOM"
@@ -30,7 +30,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 80%
     description_zh: 系统内存使用率超过 80%
-    condition: "mem_usage > 80 and mem_usage <= 90"
+    condition: "mem_usage > mem_warning_pct and mem_usage <= mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，建议关注"
@@ -48,7 +48,7 @@ rules:
     enabled: true
     description: 磁盘使用率超过 90%
     description_zh: 磁盘使用率超过 90%
-    condition: "any(disk.get('usage_percent', 0) > 90 for disk in disk_list)"
+    condition: "any(disk.get('usage_percent', 0) > db_fs_usage_crit_pct for disk in disk_list)"
     params:
       disk_list: "${context.system_info.disk_list}"
     message: "磁盘 {mountpoint} 使用率 {usage:.1f}%，可能导致数据库写入失败"
@@ -108,7 +108,7 @@ rules:
     enabled: true
     description: 索引碎片率超过 30%
     description_zh: 索引碎片率超过 30%
-    condition: "frag_ratio > 30"
+    condition: "frag_ratio > db_index_frag_warn_pct"
     params:
       frag_ratio: "${context.avg_fragmentation_percent}"
     message: "索引碎片率达 {ratio:.1f}%，建议重建或重组索引"
@@ -210,3 +210,76 @@ rules:
     message_zh: "数据库登录账户存在空密码，存在严重安全风险"
     fix_sql: "ALTER LOGIN login_name WITH PASSWORD = '强密码';"
     enabled: true
+
+  # ── §4.6 关键性能指标（阈值均可在 Web UI「指标阈值」调整，无需改本文件） ──
+  - id: sqlserver_cpu_avg_high
+    name: CPU 平均利用率过高
+    name_zh: CPU 平均利用率过高
+    category: system
+    db_types: [sqlserver, sqlserver_jdbc]
+    severity: medium
+    priority: medium
+    owner: 系统管理员
+    enabled: true
+    description: 主机 CPU 平均利用率超过 db_cpu_avg_warn_pct（默认 70%）
+    description_zh: 主机 CPU 平均利用率超过 db_cpu_avg_warn_pct（默认 70%）
+    condition: "cpu_pct is not None and cpu_pct > db_cpu_avg_warn_pct"
+    params:
+      cpu_pct: "${context.cpu_avg_pct}"
+    message: "主机 CPU 平均利用率 {cpu_pct:.1f}%，超过预警阈值，建议排查 TOP 等待类型与并行度设置"
+    message_zh: "主机 CPU 平均利用率 {cpu_pct:.1f}%，超过预警阈值，建议排查 TOP 等待类型与并行度设置"
+    fix_sql: "-- 定位 TOP CPU 等待：\nSELECT TOP 10 wait_type, wait_time_ms, waiting_tasks_count FROM sys.dm_os_wait_stats ORDER BY wait_time_ms DESC;"
+
+  - id: sqlserver_ple_low
+    name: 页生命周期（PLE）偏低
+    name_zh: 页生命周期（PLE）偏低
+    category: performance
+    db_types: [sqlserver, sqlserver_jdbc]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: Page Life Expectancy 低于 db_mssql_ple_warn_min_s（默认 300 秒）
+    description_zh: Page Life Expectancy 低于 db_mssql_ple_warn_min_s（默认 300 秒）
+    condition: "ple_s is not None and ple_s > 0 and ple_s < db_mssql_ple_warn_min_s"
+    params:
+      ple_s: "${context.mssql_ple_s}"
+    message: "页生命周期(PLE)仅 {ple_s:.0f} 秒，缓冲池正被频繁刷出，通常意味着内存不足或存在大表全表扫描"
+    message_zh: "页生命周期(PLE)仅 {ple_s:.0f} 秒，缓冲池正被频繁刷出，通常意味着内存不足或存在大表全表扫描"
+    fix_sql: "-- 排查内存压力与缺失索引：\nSELECT TOP 20 * FROM sys.dm_db_missing_index_details;\n-- 检查 max server memory 是否留足给 OS"
+
+  - id: sqlserver_lazy_writes_high
+    name: 惰性写入（Lazy writes）偏多
+    name_zh: 惰性写入（Lazy writes）偏多
+    category: performance
+    db_types: [sqlserver, sqlserver_jdbc]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: Lazy writes 累计值超过 db_mssql_lazy_writes_warn_per_s（默认 20）
+    description_zh: Lazy writes 累计值超过 db_mssql_lazy_writes_warn_per_s（默认 20）
+    condition: "lazy_writes is not None and lazy_writes > db_mssql_lazy_writes_warn_per_s"
+    params:
+      lazy_writes: "${context.mssql_lazy_writes_per_s}"
+    message: "Lazy writes 计数 {lazy_writes:.0f}，超出阈值，说明缓冲池持续被刷脏（注意：DMV 为累计值，阈值宜按实例规模调整）"
+    message_zh: "Lazy writes 计数 {lazy_writes:.0f}，超出阈值，说明缓冲池持续被刷脏（注意：DMV 为累计值，阈值宜按实例规模调整）"
+    fix_sql: "-- 降低刷脏压力：增加内存 / 拆分大事务 / 调整 checkpoint 与 recovery interval"
+
+  - id: sqlserver_backup_coverage_low
+    name: 完整备份覆盖率不足
+    name_zh: 完整备份覆盖率不足
+    category: backup
+    db_types: [sqlserver, sqlserver_jdbc]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: 近 7 天有完整备份的在线用户库占比低于 db_backup_success_required_pct（默认 100%）
+    description_zh: 近 7 天有完整备份的在线用户库占比低于 db_backup_success_required_pct（默认 100%）
+    condition: "backup_pct is not None and backup_pct < db_backup_success_required_pct"
+    params:
+      backup_pct: "${context.backup_success_pct}"
+    message: "近 7 天完整备份覆盖率仅 {backup_pct:.1f}%，存在数据库无可用恢复点的风险"
+    message_zh: "近 7 天完整备份覆盖率仅 {backup_pct:.1f}%，存在数据库无可用恢复点的风险"
+    fix_sql: "-- 为缺失备份的库补做完整备份：\nBACKUP DATABASE db_name TO DISK='D:\\backup\\db_name_full.bak' WITH COMPRESSION, CHECKSUM;"

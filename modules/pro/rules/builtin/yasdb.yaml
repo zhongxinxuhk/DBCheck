@@ -12,7 +12,7 @@ rules:
     enabled: true
     description: System memory usage exceeds 90%
     description_zh: 系统内存使用率超过 90%
-    condition: "mem_usage > 90"
+    condition: "mem_usage > mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "System memory usage {mem_usage:.1f}%, exceeding 90% may trigger OOM"
@@ -30,7 +30,7 @@ rules:
     enabled: true
     description: System memory usage exceeds 80%
     description_zh: 系统内存使用率超过 80%
-    condition: "mem_usage > 80 and mem_usage <= 90"
+    condition: "mem_usage > mem_warning_pct and mem_usage <= mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "System memory usage {mem_usage:.1f}%, attention needed"
@@ -48,7 +48,7 @@ rules:
     enabled: true
     description: Disk usage exceeds 90%
     description_zh: 磁盘使用率超过 90%
-    condition: "any(disk.get('usage_percent', 0) > 90 for disk in disk_list)"
+    condition: "any(disk.get('usage_percent', 0) > db_fs_usage_crit_pct for disk in disk_list)"
     params:
       disk_list: "${context.system_info.disk_list}"
     message: "Disk {mountpoint} usage {usage:.1f}%, may cause database write failures"
@@ -151,7 +151,7 @@ rules:
     enabled: true
     description: Temporary tablespace usage exceeds 90%
     description_zh: 临时表空间使用率超过 90%
-    condition: "temp_usage_pct > 90"
+    condition: "temp_usage_pct > db_tbs_usage_alert_pct"
     params:
       temp_usage_pct: "${context.temp_ts_usage}"
     message: "Temporary tablespace usage {pct:.1f}%, sorting operations may fail"

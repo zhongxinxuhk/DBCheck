@@ -1,0 +1,71 @@
+# 规则引擎取数层（自动生成，请勿手工编辑）
+#
+# 作用：本文件中的查询由 rule_engine.fill_missing_metrics 在巡检采集后执行，
+# 仅补齐模板未提供的 context 键——模板已提供的键不会重复采集。
+# 生成：scripts/gen_rule_metrics.py
+db_type: mongodb
+metrics:
+- key: baseline_results
+  shape: rows
+  sql: 'db.adminCommand({getParameter: ''*'', ...})'
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_collections
+  shape: rows
+  sql: db.getCollectionNames() + db.collStats()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_connections
+  shape: rows
+  sql: db.serverStatus().connections
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_db_stats
+  shape: rows
+  sql: db.stats()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_global_lock
+  shape: rows
+  sql: db.serverStatus().globalLock
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_memory
+  shape: rows
+  sql: db.serverStatus().mem / db.serverStatus().wiredTiger.cache
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_opcounters
+  shape: rows
+  sql: db.serverStatus().opcounters
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_profile
+  shape: rows
+  sql: db.getProfilingStatus()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_repl_status
+  shape: rows
+  sql: rs.status()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_roles
+  shape: rows
+  sql: 'db.getRoles({showBuiltinRoles: true})'
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_server_status
+  shape: rows
+  sql: db.serverStatus()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_shards
+  shape: rows
+  sql: 'sh.status() / db.adminCommand({listShards: 1})'
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_slow_queries
+  shape: rows
+  sql: 'db.system.profile.find().sort({millis: -1}).limit(10)'
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_users
+  shape: rows
+  sql: db.getUsers()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_version
+  shape: rows
+  sql: db.buildInfo()
+  note: 复用模板 mongodb 的同名查询
+- key: mongodb_wired_tiger
+  shape: rows
+  sql: db.serverStatus().wiredTiger
+  note: 复用模板 mongodb 的同名查询

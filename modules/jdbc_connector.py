@@ -18,6 +18,11 @@
 db_type 一致）：oracle_jdbc / sqlserver_jdbc / db2 / hgdb / clickhouse / uxdb /
 dm / gbase。新增 JDBC 类型只需在 driver_registry 登记驱动 + 本表加一行模板。
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import os
@@ -587,8 +592,15 @@ def resolve_driver_jars(db_type: str, driver_version: str = '', *,
        结果按文件名数字版本降序（高版本优先）。
     返回值统一经过 _append_driver_deps 附加运行时依赖 jar。
     """
+    def valid(jars):
+        expected = (JDBC_PROFILES.get(db_type) or {}).get('driver_class')
+        if expected and jars:
+            from modules.db_types.compatibility import jar_valid
+            return [p for p in jars if jar_valid(p, expected)]
+        return jars
+
     try:
-        _resolved = resolve_jdbc_driver_jars(db_type, driver_version or None)
+        _resolved = valid(resolve_jdbc_driver_jars(db_type, driver_version or None))
         if _resolved:
             return _append_driver_deps(db_type, _prefer_jvm_compatible(db_type, _resolved))
     except Exception:  # noqa: BLE001
@@ -599,7 +611,7 @@ def resolve_driver_jars(db_type: str, driver_version: str = '', *,
         import glob
         _pat = os.path.join(_d, '**', '*.jar') if recursive else os.path.join(_d, '*.jar')
         _jars = _order_jars_for_jvm(
-            _sort_jars_by_version(glob.glob(_pat, recursive=recursive)))
+            _sort_jars_by_version(valid(glob.glob(_pat, recursive=recursive))))
         if _jars:
             return _append_driver_deps(db_type, _jars)
     return None

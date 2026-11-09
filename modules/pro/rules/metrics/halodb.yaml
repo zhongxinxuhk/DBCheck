@@ -1,0 +1,29 @@
+# 规则引擎取数层（自动生成，请勿手工编辑）
+#
+# 作用：本文件中的查询由 rule_engine.fill_missing_metrics 在巡检采集后执行，
+# 仅补齐模板未提供的 context 键——模板已提供的键不会重复采集。
+# 生成：scripts/gen_rule_metrics.py
+db_type: halodb
+metrics:
+- key: archive_mode
+  shape: rows
+  sql: SELECT name AS "Variable_name", setting AS "Value" FROM pg_settings WHERE name = 'archive_mode'
+- key: autovacuum
+  shape: rows
+  sql: SELECT name AS "Variable_name", setting AS "Value" FROM pg_settings WHERE name = 'autovacuum'
+- key: bloat_ratio
+  shape: scalar
+  sql: SELECT COALESCE(ROUND(AVG(dead_tuple_percent), 2), 0) FROM pg_stat_user_tables
+- key: checkpoints_req
+  shape: rows
+  sql: SELECT 'checkpoints_req' AS "Variable_name", checkpoints_req::text AS "Value" FROM pg_stat_bgwriter
+- key: checkpoints_timed
+  shape: rows
+  sql: SELECT 'checkpoints_timed' AS "Variable_name", checkpoints_timed::text AS "Value" FROM pg_stat_bgwriter
+- key: max_connections
+  shape: rows
+  sql: SELECT name AS "Variable_name", setting AS "Value" FROM pg_settings WHERE name = 'max_connections'
+- key: numbackends
+  shape: rows
+  sql: SELECT 'numbackends' AS "Variable_name", numbackends::text AS "Value" FROM pg_stat_database WHERE datname
+    = current_database()

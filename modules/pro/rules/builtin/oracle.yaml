@@ -12,7 +12,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 90%
     description_zh: 系统内存使用率超过 90%
-    condition: "mem_usage > 90"
+    condition: "mem_usage > mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，超过 90% 可能触发 OOM"
@@ -30,7 +30,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 80%
     description_zh: 系统内存使用率超过 80%
-    condition: "mem_usage > 80 and mem_usage <= 90"
+    condition: "mem_usage > mem_warning_pct and mem_usage <= mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，建议关注"
@@ -48,7 +48,7 @@ rules:
     enabled: true
     description: 磁盘使用率超过 90%
     description_zh: 磁盘使用率超过 90%
-    condition: "any(disk.get('usage_percent', 0) > 90 for disk in disk_list)"
+    condition: "any(disk.get('usage_percent', 0) > db_fs_usage_crit_pct for disk in disk_list)"
     params:
       disk_list: "${context.system_info.disk_list}"
     message: "磁盘 {mountpoint} 使用率 {usage:.1f}%，可能导致数据库写入失败"
@@ -89,7 +89,7 @@ rules:
     enabled: true
     description: 库缓存命中率低于 95%
     description_zh: 库缓存命中率低于 95%
-    condition: "hit_ratio < 95"
+    condition: "hit_ratio < db_oracle_buf_cache_warn_min_pct"
     params:
       hit_ratio: "${context.library_cache_hit_ratio}"
     message: "库缓存命中率 {hit:.1f}%，SQL 重复解析开销大"
@@ -165,7 +165,7 @@ rules:
     enabled: true
     description: 临时表空间使用率超过 90%
     description_zh: 临时表空间使用率超过 90%
-    condition: "temp_usage_pct > 90"
+    condition: "temp_usage_pct > db_tbs_usage_alert_pct"
     params:
       temp_usage_pct: "${context.temp_tablespace_usage}"
     message: "临时表空间使用率 {pct:.1f}%，可能导致排序操作失败"
@@ -213,3 +213,112 @@ rules:
     fix_sql: "-- 清理 AWR 快照：\nBEGIN DBMS_WORKLOAD_REPOSITORY.DROP_SNAPSHOT_RANGE(low_snap_id => 1, high_snap_id => 100); END;"
     fix_params:
       pct: "sysaux_pct"
+
+  # ── §4.6 关键性能指标（阈值均可在 Web UI「指标阈值」调整，无需改本文件） ──
+  - id: oracle_cpu_avg_high
+    name: CPU 平均利用率过高
+    name_zh: CPU 平均利用率过高
+    category: system
+    db_types: [oracle]
+    severity: medium
+    priority: medium
+    owner: 系统管理员
+    enabled: true
+    description: 主机 CPU 平均利用率超过 db_cpu_avg_warn_pct（默认 70%）
+    description_zh: 主机 CPU 平均利用率超过 db_cpu_avg_warn_pct（默认 70%）
+    condition: "cpu_pct is not None and cpu_pct > db_cpu_avg_warn_pct"
+    params:
+      cpu_pct: "${context.cpu_avg_pct}"
+    message: "主机 CPU 平均利用率 {cpu_pct:.1f}%，超过预警阈值，建议排查 TOP 等待事件与并行度"
+    message_zh: "主机 CPU 平均利用率 {cpu_pct:.1f}%，超过预警阈值，建议排查 TOP 等待事件与并行度"
+    fix_sql: "-- 查看 TOP 等待事件：\nSELECT event, total_waits, time_waited FROM v$system_event ORDER BY time_waited DESC FETCH FIRST 10 ROWS ONLY;"
+
+  - id: oracle_library_cache_low
+    name: Library Cache 命中率偏低
+    name_zh: Library Cache 命中率偏低
+    category: performance
+    db_types: [oracle]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: SQL AREA 命名空间命中率低于 db_oracle_lib_cache_warn_min_pct（默认 95%）
+    description_zh: SQL AREA 命名空间命中率低于 db_oracle_lib_cache_warn_min_pct（默认 95%）
+    condition: "lib_hit is not None and lib_hit < db_oracle_lib_cache_warn_min_pct"
+    params:
+      lib_hit: "${context.library_cache_hit_ratio}"
+    message: "Library Cache 命中率 {lib_hit:.2f}%，低于阈值，硬解析偏多（绑定变量缺失或 shared_pool 不足）"
+    message_zh: "Library Cache 命中率 {lib_hit:.2f}%，低于阈值，硬解析偏多（绑定变量缺失或 shared_pool 不足）"
+    fix_sql: "-- 定位高硬解析 SQL：\nSELECT sql_text FROM v$sql WHERE executions = 1 AND parsing_schema_name NOT IN ('SYS','SYSTEM') AND rownum <= 20;"
+
+  - id: oracle_pga_hit_low
+    name: PGA 缓存命中率偏低
+    name_zh: PGA 缓存命中率偏低
+    category: performance
+    db_types: [oracle]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: V$PGASTAT cache hit percentage 低于 db_oracle_pga_warn_min_pct（默认 90%）
+    description_zh: V$PGASTAT cache hit percentage 低于 db_oracle_pga_warn_min_pct（默认 90%）
+    condition: "pga_hit is not None and pga_hit < db_oracle_pga_warn_min_pct"
+    params:
+      pga_hit: "${context.pga_cache_hit_pct}"
+    message: "PGA 缓存命中率 {pga_hit:.2f}%，低于阈值，work_area 不足导致大量磁盘排序与哈希溢出"
+    message_zh: "PGA 缓存命中率 {pga_hit:.2f}%，低于阈值，work_area 不足导致大量磁盘排序与哈希溢出"
+    fix_sql: "-- 查询 PGA 建议值：\nSELECT pga_target_for_estimate/1024/1024 AS target_mb, estd_pga_cache_hit_percentage FROM v$pga_target_advice;"
+
+  - id: oracle_disk_await_high
+    name: 磁盘平均 IO 等待偏高
+    name_zh: 磁盘平均 IO 等待偏高
+    category: performance
+    db_types: [oracle]
+    severity: medium
+    priority: medium
+    owner: 系统管理员
+    enabled: true
+    description: 平均单次物理 IO 等待超过 db_disk_await_warn_ms（默认 20 毫秒）
+    description_zh: 平均单次物理 IO 等待超过 db_disk_await_warn_ms（默认 20 毫秒）
+    condition: "await_ms is not None and await_ms > db_disk_await_warn_ms"
+    params:
+      await_ms: "${context.db_disk_await_ms}"
+    message: "平均单次物理 IO 等待 {await_ms:.2f} 毫秒，超过阈值，存储侧可能存在瓶颈（注意：V$FILESTAT 为累计值）"
+    message_zh: "平均单次物理 IO 等待 {await_ms:.2f} 毫秒，超过阈值，存储侧可能存在瓶颈（注意：V$FILESTAT 为累计值）"
+    fix_sql: "-- 定位 IO 热点数据文件：\nSELECT name, phyrds, phywrts, readtim, writim FROM v$filestat JOIN v$datafile ON file# = file# ORDER BY readtim + writim DESC FETCH FIRST 10 ROWS ONLY;"
+
+  - id: oracle_archive_gap_found
+    name: 归档日志存在断档
+    name_zh: 归档日志存在断档
+    category: backup
+    db_types: [oracle]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: V$ARCHIVE_GAP 返回记录数达到 db_archive_gap_crit_count（默认 1 条即告警）
+    description_zh: V$ARCHIVE_GAP 返回记录数达到 db_archive_gap_crit_count（默认 1 条即告警）
+    condition: "gap_rows is not None and len(gap_rows) >= db_archive_gap_crit_count"
+    params:
+      gap_rows: "${context.archive_gap}"
+    message: "检测到归档日志断档，Data Guard 或基于归档的恢复链已中断，需立即补归档"
+    message_zh: "检测到归档日志断档，Data Guard 或基于归档的恢复链已中断，需立即补归档"
+    fix_sql: "-- 从主库补传缺失归档：\n-- 在主库执行：SELECT name FROM v$archived_log WHERE sequence# BETWEEN <low> AND <high>;\n-- 再于备库注册：ALTER DATABASE REGISTER LOGFILE '<归档路径>';"
+
+  - id: oracle_hrisk_account_found
+    name: 存在高危特权账号
+    name_zh: 存在高危特权账号
+    category: security
+    db_types: [oracle]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: 被授予 DBA 角色的账号数达到 db_hrisk_account_new_unreported_alert（默认 1 个即告警）
+    description_zh: 被授予 DBA 角色的账号数达到 db_hrisk_account_new_unreported_alert（默认 1 个即告警）
+    condition: "priv_rows is not None and len(priv_rows) >= db_hrisk_account_new_unreported_alert"
+    params:
+      priv_rows: "${context.privileged_users}"
+    message: "检测到高危特权账号（DBA 角色授予），请确认均为在册账号；「新增未上报」的判定需与上次巡检快照比对，由巡检历史侧完成"
+    message_zh: "检测到高危特权账号（DBA 角色授予），请确认均为在册账号；「新增未上报」的判定需与上次巡检快照比对，由巡检历史侧完成"
+    fix_sql: "-- 复核 DBA 角色授予情况：\nSELECT grantee, granted_role, admin_option, default_role FROM dba_role_privs WHERE granted_role = 'DBA' ORDER BY grantee;"

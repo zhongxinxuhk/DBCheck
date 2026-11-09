@@ -1,0 +1,72 @@
+# 规则引擎取数层（自动生成，请勿手工编辑）
+#
+# 作用：本文件中的查询由 rule_engine.fill_missing_metrics 在巡检采集后执行，
+# 仅补齐模板未提供的 context 键——模板已提供的键不会重复采集。
+# 生成：scripts/gen_rule_metrics.py
+db_type: mariadb
+metrics:
+- key: aborted_connections
+  shape: rows
+  sql: SHOW GLOBAL STATUS LIKE 'Aborted_connections'
+- key: aria_pagecache_buffer_size
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'aria_pagecache_buffer_size'
+- key: character_set_database
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'character_set_database'
+- key: expire_logs_days
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'expire_logs_days'
+- key: innodb_buffer_pool_size
+  shape: rows
+  sql: SHOW VARIABLES LIKE 'innodb_buffer_pool_size';
+  note: 复用模板 mariadb 的同名查询
+- key: innodb_flush_log_at_trx_commit
+  shape: rows
+  sql: SHOW VARIABLES LIKE 'innodb_flush_log_at_trx_commit';
+  note: 复用模板 mariadb 的同名查询
+- key: log_bin
+  shape: rows
+  sql: SHOW VARIABLES LIKE 'log_bin';
+  note: 复用模板 mariadb 的同名查询
+- key: max_connections
+  shape: rows
+  sql: SHOW VARIABLES LIKE 'max_connections';
+  note: 复用模板 mariadb 的同名查询
+- key: max_used_connections
+  shape: rows
+  sql: SHOW GLOBAL STATUS LIKE 'Max_used_connections';
+  note: 复用模板 mariadb 的同名查询
+- key: opened_tables
+  shape: rows
+  sql: SHOW GLOBAL STATUS LIKE 'Opened_tables'
+- key: query_cache_type
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'query_cache_type'
+- key: slave_status
+  shape: rows
+  sql: SHOW SLAVE STATUS
+  note: 返回行为空表示未配置复制；列名 Seconds_Behind_Master / Slave_IO_Running / Slave_SQL_Running 与规则一致
+- key: slow_query_log
+  shape: rows
+  sql: SHOW VARIABLES LIKE 'slow_query_log';
+  note: 复用模板 mariadb 的同名查询
+- key: table_locks_immediate
+  shape: rows
+  sql: SHOW GLOBAL STATUS LIKE 'Table_locks_immediate'
+- key: table_locks_waited
+  shape: rows
+  sql: SHOW GLOBAL STATUS LIKE 'Table_locks_waited'
+- key: table_open_cache
+  shape: rows
+  sql: SHOW VARIABLES LIKE 'table_open_cache';
+  note: 复用模板 mariadb 的同名查询
+- key: thread_pool_size
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'thread_pool_size'
+- key: wsrep_cluster_address
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'wsrep_cluster_address'
+- key: wsrep_on
+  shape: rows
+  sql: SHOW GLOBAL VARIABLES LIKE 'wsrep_on'

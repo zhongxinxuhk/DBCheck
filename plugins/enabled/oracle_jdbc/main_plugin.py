@@ -9,6 +9,10 @@ Oracle JDBC 插件 - 通过 JPype + JDBC 驱动连接 Oracle 数据库
 支持 Oracle 11g/12c/19c/21c+
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import traceback
 from typing import Any, Dict, List, Optional
@@ -20,18 +24,54 @@ from typing import Any, Dict, List, Optional
 # ── JDBC 连接包装器（兼容 Python DB-API 2.0）─────────────────────────────
 class JdbcCursorWrapper:
     """包装 JDBC Statement/ResultSet，提供类似 Python DB-API 的 cursor 接口"""
-    
+
     def __init__(self, connection):
         self.conn = connection
         self.stmt = connection.createStatement()
         self.rs = None
         self.description = None
         self._rowcount = -1
-    
+        # DB-API 2.0：fetchmany() 缺省取多少行
+        self.arraysize = 1
+
+    @staticmethod
+    def _strip_leading_comments(sql):
+        """剥离 SQL 前导注释（-- 行注释 / /* */ 块注释），返回首个有效 token 起的内容。
+
+        Oracle 巡检 SQL 有相当一部分带前导注释，直接 startswith('SELECT') 判不出
+        查询语句，会被误送 executeUpdate 而报 ORA-00900/无效 SQL。
+        """
+        import re as _re
+        _s = (sql or '').strip()
+        while True:
+            if _s.startswith('--'):
+                _nl = _s.find('\n')
+                if _nl < 0:
+                    return ''
+                _s = _s[_nl + 1:].lstrip()
+                continue
+            if _s.startswith('/*'):
+                _end = _s.find('*/')
+                if _end < 0:
+                    return ''
+                _s = _s[_end + 2:].lstrip()
+                continue
+            return _s
+
+    def _is_query_sql(self, sql):
+        """判断是否为结果集语句（SELECT / WITH / 字典视图 EXPLAIN 等只读查询）。"""
+        _s = self._strip_leading_comments(sql).upper()
+        return _s.startswith(('SELECT', 'WITH', 'SHOW', 'DESC', 'EXPLAIN'))
+
     def execute(self, sql):
         """执行 SQL（自动判断查询/更新）"""
-        sql_upper = sql.strip().upper()
-        if sql_upper.startswith('SELECT') or sql_upper.startswith('WITH'):
+        if self.rs is not None:
+            self.rs.close()
+        self.rs = None
+        self.description = None
+        self._rowcount = -1
+        sql_upper = self._strip_leading_comments(sql).upper()
+        if self._is_query_sql(sql):
             self.rs = self.stmt.executeQuery(sql)
             # 获取列信息
             meta = self.rs.getMetaData()
@@ -42,7 +82,7 @@ class JdbcCursorWrapper:
             )
         else:
             self._rowcount = self.stmt.executeUpdate(sql)
-    
+
     def fetchall(self):
         """获取所有行"""
         if not self.rs:
@@ -54,7 +94,7 @@ class JdbcCursorWrapper:
             row = tuple(self._convert_java_obj(self.rs.getObject(i+1)) for i in range(col_count))
             rows.append(row)
         return rows
-    
+
     def fetchone(self):
         """获取一行"""
         if not self.rs:
@@ -64,57 +104,94 @@ class JdbcCursorWrapper:
             col_count = meta.getColumnCount()
             return tuple(self._convert_java_obj(self.rs.getObject(i+1)) for i in range(col_count))
         return None
-    
+
+    def fetchmany(self, size=None):
+        """按行取数（Python DB-API 2.0 必备方法）。
+
+        JDBC ResultSet 是单向游标，没有真正的「位置分页」，因此这里按 size
+        逐行 next() 聚合成一个 chunk 返回；再次调用会自然续读，语义与
+        pymysql / sqlite3 的 fetchmany 一致。
+
+        历史缺陷（本次修复）：本类原先只实现 execute/fetchall/fetchone，
+        而 inspection.engine._execute_query_safe 调 cursor.fetchmany(1001)，
+        直接抛 AttributeError —— 表现为 Oracle JDBC 巡检 52 个章节全部
+        「查询失败（'JdbcCursorWrapper' object has no attribute 'fetchmany'）」，
+        极易被误判成 JDBC 驱动不兼容。实际根因是 DB-API 方法缺失。
+        """
+        if not self.rs:
+            return []
+        try:
+            _size = int(size) if size is not None else int(self.arraysize)
+        except (TypeError, ValueError):
+            _size = int(self.arraysize or 1)
+        if _size <= 0:
+            _size = 1
+        meta = self.rs.getMetaData()
+        col_count = meta.getColumnCount()
+        rows = []
+        while len(rows) < _size:
+            if not self.rs.next():
+                break
+            rows.append(tuple(self._convert_java_obj(self.rs.getObject(i + 1))
+                              for i in range(col_count)))
+        return rows
+
+    @property
+    def rowcount(self):
+        """受影响行数（-1 表示未知，与 DB-API 约定一致）。"""
+        return self._rowcount
+
     def _convert_java_obj(self, obj):
         """将 Java 对象转换为 Python 对象"""
         if obj is None:
             return None
         # 尝试转换为 Python 类型
         try:
-            # 数字类型
-            if hasattr(obj, 'intValue'):
-                return obj.intValue()
+            import decimal
+            cls = str(obj.getClass().getName()) if hasattr(obj, 'getClass') else ''
+            if cls == 'java.math.BigDecimal':
+                return decimal.Decimal(str(obj.toPlainString()))
+            if cls in ('java.lang.Double', 'java.lang.Float'):
+                return float(obj.doubleValue())
             if hasattr(obj, 'longValue'):
-                return obj.longValue()
-            if hasattr(obj, 'doubleValue'):
-                return obj.doubleValue()
+                return int(obj.longValue())
             # 字符串类型
             return str(obj)
         except:
             return str(obj)
-    
+
     def close(self):
         """关闭游标"""
         if self.rs:
             self.rs.close()
         if self.stmt:
             self.stmt.close()
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.close()
 
 
 class JdbcConnectionWrapper:
     """包装 JDBC Connection，提供类似 Python DB-API 的 connection 接口"""
-    
+
     def __init__(self, jdbc_conn):
         self.jdbc_conn = jdbc_conn
-    
+
     def cursor(self):
         """返回包装后的 cursor 对象"""
         return JdbcCursorWrapper(self.jdbc_conn)
-    
+
     def close(self):
         """关闭连接"""
         self.jdbc_conn.close()
-    
+
     def commit(self):
         """提交事务"""
         self.jdbc_conn.commit()
-    
+
     def rollback(self):
         """回滚事务"""
         self.jdbc_conn.rollback()
@@ -180,6 +257,8 @@ class OracleJdbcInspector(BaseInspectionEngine):
         :return: (ok, msg) 元组
         """
         try:
+            if self.conn is not None:
+                return True, str(self.context.get('version', [{}])[0].get('VERSION', 'Oracle'))
             # 统一连接层：驱动解析 / JVM 启动 / URL 构造 / props 装配 / 建连
             # （build_jdbc_url 的 use_sid/服务名/EZConnect 透传逻辑集中一处）
             from modules.jdbc_connector import open_jdbc_connection
@@ -235,18 +314,7 @@ class OracleJdbcInspector(BaseInspectionEngine):
             print(f"[Oracle JDBC] 关闭连接失败: {e}")
 
     def get_template_id(self):
-        """
-        返回 inspection_template 表的 template_id
-
-        :return: template_id: int
-        """
-        try:
-            from modules.inspection.dal import get_templates_by_db_type
-            templates = get_templates_by_db_type("oracle_jdbc")
-            return templates[0]['id'] if templates else None
-        except Exception as e:
-            print(f"[Oracle JDBC] 获取模板 ID 失败: {e}")
-            return None
+        return super().get_template_id()
 
     def checkdb(self, sqlfile=''):
         """
@@ -424,11 +492,11 @@ def parse_connection_result(ok: bool, msg: Any) -> Dict[str, Any]:
     """
     解析 Oracle JDBC 连接测试结果，提取版本号。
     此函数会被 web_ui.py 动态调用，实现无侵入式架构。
-    
+
     参数：
         ok: 连接是否成功
         msg: 连接返回的消息（可能是字符串、异常对象等）
-    
+
     返回：
         字典，包含额外信息（如 {'oracle_major_version': 19}）
     """
@@ -446,7 +514,7 @@ def parse_connection_result(ok: bool, msg: Any) -> Dict[str, Any]:
 # 直接在文件中定义适配器类，避免模块导入问题
 try:
     from modules.pluginkit.core import InspectionPlugin, register
-    
+
     class OracleJdbcPluginAdapter(InspectionPlugin):
         """Oracle JDBC 插件适配器（实现标准接口）"""
         def __init__(self, parse_func=None):
@@ -458,19 +526,19 @@ try:
             self.description = 'Oracle 数据库 JDBC 巡检插件'
             self._parse_func = parse_func
             super().__init__()
-        
+
         def parse_connection_result(self, ok: bool, msg: Any) -> Dict[str, Any]:
             """实现 InspectionPlugin 接口，解析连接结果"""
             if self._parse_func:
                 return self._parse_func(ok, msg)
             return {}
-        
+
         def get_queries(self) -> List[Any]:
             return []
-        
+
         def analyze(self, context: Dict[str, Any]) -> List[Any]:
             return []
-        
+
         def on_install(self, db_path: str = None):
             """插件安装时调用：初始化模板和基线数据（参照 Oracle 11g）"""
             print(f"[Oracle JDBC] 开始初始化数据（参照 Oracle 11g）...")
@@ -483,21 +551,21 @@ try:
                     create_query,
                     create_baseline
                 )
-                
+
                 # 1. 创建模板（从 template_data.json 读取）
                 print(f"[Oracle JDBC] 步骤 1/3: 创建模板...")
-                
+
                 template_path = os.path.join(os.path.dirname(__file__), 'template_data.json')
                 if not os.path.isfile(template_path):
                     print(f"[Oracle JDBC] 错误：未找到 template_data.json")
                     return
-                
+
                 with open(template_path, 'r', encoding='utf-8') as f:
                     template_data = json.load(f)
-                
+
                 # 检查是否已存在模板（幂等性）
                 existing_templates = get_templates_by_db_type('oracle_jdbc', db_path=db_path)
-                
+
                 if existing_templates:
                     # 使用已存在的默认模板
                     template_id = existing_templates[0]['id']
@@ -515,27 +583,27 @@ try:
                         db_path=db_path
                     )
                     print(f"[Oracle JDBC] 创建模板: {template_id}")
-                
+
                 # 2. 创建章节和查询（从 template_data.json 读取）
                 print(f"[Oracle JDBC] 步骤 2/3: 创建章节和查询...")
-                
+
                 chapters_data = template_data.get('chapters', [])
                 print(f"[Oracle JDBC] 共有 {len(chapters_data)} 个章节")
-                
+
                 for chapter_data in chapters_data:
                     chapter_number = chapter_data['chapter_number']
                     chapter_title_zh = chapter_data['chapter_title_zh']
-                    
+
                     # 检查是否已存在章节（幂等性）
                     from modules.inspection.dal import get_db_connection
                     conn = get_db_connection(db_path) if db_path else get_db_connection()
                     cursor = conn.cursor()
                     cursor.execute("""
-                        SELECT id FROM inspection_chapter 
+                        SELECT id FROM inspection_chapter
                         WHERE template_id = ? AND chapter_number = ?
                     """, (template_id, chapter_number))
                     existing_chapter = cursor.fetchone()
-                    
+
                     if existing_chapter:
                         # 使用已存在的章节
                         chapter_id = existing_chapter[0]
@@ -551,7 +619,7 @@ try:
                             db_path=db_path
                         )
                         print(f"[Oracle JDBC]   创建章节 {chapter_number}: {chapter_title_zh} (ID: {chapter_id})")
-                    
+
                     # 创建查询
                     queries_data = chapter_data.get('queries', [])
                     for query_data in queries_data:
@@ -570,23 +638,23 @@ try:
                                 pass  # 忽略已存在的查询
                             else:
                                 print(f"[Oracle JDBC]     创建查询失败: {query_data['query_key']} - {e}")
-                    
+
                     conn.close()
-                
+
                 print(f"[Oracle JDBC] 章节和查询创建完成")
-                
+
                 # 3. 创建基线（从 baseline_data.json 读取）
                 print(f"[Oracle JDBC] 步骤 3/3: 创建基线...")
-                
+
                 baseline_path = os.path.join(os.path.dirname(__file__), 'baseline_data.json')
                 if not os.path.isfile(baseline_path):
                     print(f"[Oracle JDBC] 警告：未找到 baseline_data.json")
                 else:
                     with open(baseline_path, 'r', encoding='utf-8') as f:
                         baseline_data = json.load(f)
-                    
+
                     print(f"[Oracle JDBC] 共有 {len(baseline_data)} 条基线")
-                    
+
                     for baseline_item in baseline_data:
                         try:
                             baseline_id = create_baseline(
@@ -609,9 +677,9 @@ try:
                                 pass  # 忽略已存在的基线
                             else:
                                 print(f"[Oracle JDBC]   创建基线失败: {baseline_item['param_name']} - {e}")
-                    
+
                     print(f"[Oracle JDBC] 基线创建完成")
-                
+
                 print(f"[Oracle JDBC] 数据初始化完成（参照 Oracle 11g）")
             except Exception as e:
                 print(f"[Oracle JDBC] 数据初始化失败: {e}")
@@ -628,7 +696,7 @@ try:
                     delete_template,
                     delete_baseline
                 )
-                
+
                 # 1. 清理模板数据（仅清理 oracle_jdbc 的模板）
                 templates = get_templates_by_db_type('oracle_jdbc')
                 if templates:
@@ -641,7 +709,7 @@ try:
                         except Exception as e:
                             print(f"[Oracle JDBC] 删除模板 {template_id} 失败: {e}")
                     print(f"[Oracle JDBC] 模板清理完成")
-                
+
                 # 2. 清理基线数据（仅清理 oracle_jdbc 的基线）
                 baselines = get_baselines_by_db_type('oracle_jdbc')
                 if baselines:
@@ -654,17 +722,17 @@ try:
                         except Exception as e:
                             print(f"[Oracle JDBC] 删除基线 {baseline_id} 失败: {e}")
                     print(f"[Oracle JDBC] 基线清理完成")
-                
+
                 print(f"[Oracle JDBC] 数据清理完成（插件独立）")
             except Exception as e:
                 print(f"[Oracle JDBC] 数据清理失败: {e}")
                 import traceback
                 traceback.print_exc()
-    
+
     # 注册插件
     adapter = OracleJdbcPluginAdapter(parse_func=parse_connection_result)
     register(adapter)
     print(f"[Oracle JDBC] 插件注册成功（无侵入式架构）")
-    
+
 except Exception as e:
     print(f"[Oracle JDBC] 插件注册失败: {e}")

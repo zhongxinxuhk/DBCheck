@@ -8,6 +8,7 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
+
 import importlib
 import os
 import re
@@ -134,16 +135,78 @@ class TunnelConnection:
             self.tunnel.close()
 
 
+def needs_own_tunnel(data):
+    """是否需要「由本模块自己新建一条 SSH 隧道」。
+
+    必须区分三类情形，否则会重复转发或违背用户意图：
+
+    1. 调用方已建好隧道（``_tunnel_ready``）——此时 host/port 已是本机转发
+       端口，再建一次会指向「SSH 主机自身的这个端口」（那里没有服务在听），
+       表现为隧道套隧道后连不上。
+    2. 用户显式关闭「经 SSH 隧道连接数据库」（``ssh_tunnel=False``）——SSH
+       只用于采集主机指标，数据库应走 TLS/ODBC 直连，不能强行建隧道。
+    3. 其余（未配 SSH / ssh_enabled=False）→ 不建。
+    """
+    if data.get('_tunnel_ready'):
+        return False
+    if 'ssh_tunnel' in data and not data.get('ssh_tunnel'):
+        return False
+    return bool(data.get('ssh_host') and data.get('ssh_enabled', True))
+
+
+def tunnel_endpoint(data):
+    """决定本次连接用哪个 (host, port)。
+
+    Returns:
+        (host, port, tunnel)
+        - 需要新建隧道：( '127.0.0.1', local_port, tunnel )
+        - 上游已建隧道：( 现有端点, None )，调用方直连这条已加密的通路
+        - 不需要隧道：( None, None, None )，表示走 TLS/ODBC 直连分支
+    """
+    if needs_own_tunnel(data):
+        tunnel = verified_tunnel(data)
+        return '127.0.0.1', tunnel.local_port, tunnel
+    if data.get('_tunnel_ready'):
+        host = data.get('host') or data.get('ip')
+        return host, int(data['port']), None
+    return None, None, None
+
+
 def verified_tunnel(data):
     host=data.get('host') or data.get('ip')
-    if not data.get('ssh_host') or data['ssh_host'] != host:
+    if not data.get('ssh_host'):
         raise ValueError('加密隧道须连接数据库主机自身的已验证SSH端点')
+    # 数据库填 127.0.0.1 / localhost = 「仅监听 SSH 主机自身回环」
+    # （Navicat 式 SSH 隧道），此时 ssh_host 与 host 必然不同，属合法配置。
+    # 此前一律要求 ssh_host == host，导致这类标准场景被直接拒绝。
+    _loopback=str(host or '').strip().lower() in ('127.0.0.1','localhost','::1','')
+    if not _loopback and data['ssh_host'] != host:
+        # 报错带上两侧真实值：只说「须连接数据库主机自身的已验证SSH端点」时，
+        # 用户看到的是「我都填了啊」，无法判断是跳板机场景被策略挡下。
+        raise ValueError(
+            '加密隧道须连接数据库主机自身的已验证SSH端点：'
+            'ssh_host=%r 与数据库主机 host=%r 不一致。'
+            '若这是「跳板机 ≠ 数据库主机」的堡垒机场景，请改用 MySQL/PostgreSQL '
+            '类数据源（它们经 open_db_tunnel 支持任意跳板机），或把 SSH 端点配置在'
+            '数据库主机本身上。' % (data['ssh_host'], host))
+    remote_host='127.0.0.1' if _loopback else host
     from modules.ssh import SSHTunnel
     tunnel=SSHTunnel(ssh_host=data['ssh_host'],ssh_port=int(data.get('ssh_port') or 22),
                      ssh_user=data.get('ssh_user'),ssh_password=data.get('ssh_password'),
-                     ssh_key=data.get('ssh_key_file'),remote_host='127.0.0.1',remote_port=int(data['port']))
+                     ssh_key=data.get('ssh_key_file'),remote_host=remote_host,remote_port=int(data['port']))
     tunnel.__enter__()
     return tunnel
+
+
+def is_loopback_endpoint(data):
+    import ipaddress
+    host = str(data.get('host') or data.get('ip') or '').strip().lower()
+    if host == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def connect_gbase8a(data):
@@ -151,11 +214,15 @@ def connect_gbase8a(data):
     import ssl
     tunnel=None
     try:
-        options=dict(user=data['user'],password=data['password'],database=data.get('database') or 'information_schema',
+        options=dict(user=data['user'],password=data['password'],
                      connect_timeout=5,read_timeout=15,write_timeout=15,autocommit=False,local_infile=False)
-        if data.get('ssh_host') and data.get('ssh_enabled',True):
-            tunnel=verified_tunnel(data)
-            options.update(host='127.0.0.1',port=tunnel.local_port)
+        host,port,tunnel=tunnel_endpoint(data)
+        if host or is_loopback_endpoint(data):
+            host = host or data.get('host') or data.get('ip')
+            port = port or data['port']
+            # 隧道分支与「上游已建隧道」分支同走明文 pymysql：
+            # 传输已由 SSH 通道加密，无需再叠 TLS。
+            options.update(host=host,port=int(port))
             connection=pymysql.connect(**options)
         else:
             ca=data.get('tls_ca_file')
@@ -169,6 +236,16 @@ def connect_gbase8a(data):
                 connection.close()
                 raise ValueError('当前驱动无法强制TLS，已在认证前阻断')
             connection.connect()
+        # In GBase 8a, the fixture's vc1 is a virtual cluster, not a schema.
+        vc = str(data.get('virtual_cluster') or data.get('database') or '').strip()
+        if vc:
+            if not re.fullmatch(r'[A-Za-z0-9_]+', vc):
+                raise ValueError('GBase 8a 虚拟集群名仅支持字母、数字和下划线')
+            with connection.cursor() as cur:
+                cur.execute('USE VC ' + vc)
+        schema = data.get('schema')
+        if schema:
+            connection.select_db(schema)
         return TunnelConnection(connection,tunnel) if tunnel else connection
     except Exception:
         if tunnel:tunnel.close()
@@ -178,16 +255,18 @@ def connect_gbase8a(data):
 def connect_sqlserver(data):
     tunnel=None
     try:
-        if data.get('ssh_host') and data.get('ssh_enabled',True):
+        host,port,tunnel=tunnel_endpoint(data)
+        if host or is_loopback_endpoint(data):
+            host = host or data.get('host') or data.get('ip')
+            port = port or data['port']
+            # 隧道分支与「上游已建隧道」分支同走 pytds：传输已由 SSH 加密，
+            # 不需要再走 ODBC18 + Encrypt=yes 的强制 TLS 直连路径。
             import pytds
-            tunnel=verified_tunnel(data)
-            # TDS 7.2 is accepted by 2005, 2008 and 2014. Queries are selected
-            # after the authenticated server reports its actual product version.
-            connection=pytds.connect(server='127.0.0.1',port=tunnel.local_port,user=data['user'],
+            connection=pytds.connect(server=host,port=int(port),user=data['user'],
                                      password=data['password'],database=data.get('database') or 'master',
                                      tds_version=pytds.tds_base.TDS72,login_timeout=5,timeout=15,
                                      autocommit=False,use_mars=False,appname='DBPulse')
-            return TunnelConnection(connection,tunnel)
+            return TunnelConnection(connection,tunnel) if tunnel else connection
         import pyodbc
         if 'ODBC Driver 18 for SQL Server' not in pyodbc.drivers():
             raise ValueError('请安装ODBC Driver 18，或配置数据库主机的SSH加密隧道')

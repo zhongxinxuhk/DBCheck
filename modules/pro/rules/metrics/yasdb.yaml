@@ -1,0 +1,47 @@
+# 规则引擎取数层（自动生成，请勿手工编辑）
+#
+# 作用：本文件中的查询由 rule_engine.fill_missing_metrics 在巡检采集后执行，
+# 仅补齐模板未提供的 context 键——模板已提供的键不会重复采集。
+# 生成：scripts/gen_rule_metrics.py
+db_type: yasdb
+metrics:
+- key: default_pws
+  shape: scalar
+  sql: SELECT COUNT(*) FROM DBA_USERS WHERE ACCOUNT_STATUS LIKE '%OPEN%'
+- key: invalid_cnt
+  shape: scalar
+  sql: SELECT COUNT(*) FROM DBA_OBJECTS WHERE STATUS <> 'VALID'
+- key: lock_blocking
+  shape: scalar
+  sql: SELECT COUNT(*) FROM V$LOCK WHERE BLOCK = 1
+- key: lock_deadlock
+  shape: scalar
+  sql: SELECT 0
+- key: log_mode
+  shape: scalar
+  sql: SELECT LOG_MODE FROM V$DATABASE
+- key: pga_total
+  shape: scalar
+  sql: SELECT VALUE FROM V$PGASTAT WHERE NAME = 'total PGA allocated'
+- key: session_limit
+  shape: scalar
+  sql: SELECT VALUE FROM V$PARAMETER WHERE NAME = 'processes'
+- key: sessions
+  shape: scalar
+  sql: SELECT COUNT(*) FROM V$SESSION
+- key: sga_total
+  shape: scalar
+  sql: SELECT SUM(VALUE) FROM V$SGA
+- key: sys_privs
+  shape: scalar
+  sql: SELECT COUNT(*) FROM DBA_SYS_PRIVS WHERE PRIVILEGE LIKE '%ANY%'
+- key: tablespace
+  shape: scalar
+  sql: SELECT NVL(MAX(USED_PERCENT), 0) FROM DBA_TABLESPACE_USAGE_METRICS
+- key: temp_ts_usage
+  shape: scalar
+  sql: SELECT NVL(MAX(USED_PERCENT), 0) FROM DBA_TABLESPACE_USAGE_METRICS WHERE TABLESPACE_NAME IN (SELECT TABLESPACE_NAME
+    FROM DBA_TABLESPACES WHERE CONTENTS = 'TEMPORARY')
+- key: undo_retention
+  shape: scalar
+  sql: SELECT VALUE FROM V$PARAMETER WHERE NAME = 'undo_retention'

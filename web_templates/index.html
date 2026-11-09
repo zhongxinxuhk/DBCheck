@@ -13917,7 +13917,7 @@ async function loadInspectionTemplatesForSelect(dbType, selectId) {
         const opt = document.createElement('option');
         opt.value = t.id;
         const defaultTag = t.is_default ? ' ★' : '';
-        opt.textContent = `[${t.version || 'v1'}] ${t.template_name || t.template_name_zh || '未命名'}${defaultTag}`;
+        opt.textContent = `[${t.version || 'v1'}] ${t.template_name || t.template_name_zh || '未命名'}${t.family ? '（同系列）' : ''}${defaultTag}`;
         opt.dataset.isDefault = t.is_default ? '1' : '0';
         sel.appendChild(opt);
       });

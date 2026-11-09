@@ -1,0 +1,213 @@
+# -*- coding: utf-8 -*-
+# GBase 8a MPP Cluster 内置规则
+#
+# 适用产品：GBase 8a MPP Cluster（gcluster + gnode 架构，MySQL 协议兼容）
+# 不适用：   GBase 8s / Informix（那是 builtin/gbase.yaml，db_types 为 ['gbase']）
+#
+# 取数约定：本文件所有 condition 引用的键，均由 rules/metrics/gbase8a.yaml
+# 在巡检采集后以只读 SQL 补齐（rule_engine.fill_missing_metrics）。
+# 节点存活由 SHOW NODES / SHOW GCLUSTER NODES 实采；分片一致性、心跳和切换演练需逐节点证据。
+rules:
+  # ── 连接与会话 ──────────────────────────────────────────────
+  - id: gbase8a_conn_usage_high
+    name: 连接数使用率过高
+    name_zh: 连接数使用率过高
+    category: connection
+    db_types: [gbase8a]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: 当前连接数占 max_connections 的比例超过 90%
+    description_zh: 当前连接数占上限比例超过 90%，新连接可能被拒绝
+    condition: "conn_pct > db_session_usage_alert_pct"
+    params:
+      conn_pct: "${context.gbase8a_conn_pct}"
+    message: "连接使用率 {conn_pct:.1f}%（Threads_connected / max_connections），接近上限将拒绝新连接"
+    message_zh: "连接使用率 {conn_pct:.1f}%，接近上限将拒绝新连接"
+    fix_sql: "SHOW GLOBAL VARIABLES LIKE 'max_connections';\nSHOW GLOBAL STATUS LIKE 'Threads_connected';"
+
+  - id: gbase8a_conn_usage_warn
+    name: 连接数使用率预警
+    name_zh: 连接数使用率预警
+    category: connection
+    db_types: [gbase8a]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: 当前连接数占 max_connections 的比例处于 80%~90%
+    description_zh: 连接使用率 80%~90%，建议排查长连接泄漏
+    condition: "conn_pct > db_session_usage_warn_pct and conn_pct <= db_session_usage_alert_pct"
+    params:
+      conn_pct: "${context.gbase8a_conn_pct}"
+    message: "连接使用率 {conn_pct:.1f}%，建议关注连接池配置与会话回收"
+    message_zh: "连接使用率 {conn_pct:.1f}%，建议关注连接池配置与会话回收"
+    fix_sql: "SELECT ID, USER, HOST, COMMAND, TIME, STATE FROM information_schema.PROCESSLIST ORDER BY TIME DESC;"
+
+  - id: gbase8a_long_running_sql
+    name: 存在长时间执行的非空闲会话
+    name_zh: 存在长时间执行的非空闲会话
+    category: performance
+    db_types: [gbase8a]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: 有非 Sleep 会话持续时间超过 600 秒
+    description_zh: 长事务/慢查询可能持有锁并拖慢集群
+    condition: "long_sessions > 0"
+    params:
+      long_sessions: "${context.gbase8a_long_sessions}"
+    message: "存在 {long_sessions} 个执行超过 600 秒的会话，可能持有锁并阻塞其他任务"
+    message_zh: "存在 {long_sessions} 个执行超过 600 秒的会话，可能持有锁"
+    fix_sql: "SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 120) FROM information_schema.PROCESSLIST WHERE COMMAND <> 'Sleep' AND TIME > 600 ORDER BY TIME DESC;"
+
+  - id: gbase8a_idle_transaction
+    name: 存在长时间空闲事务
+    name_zh: 存在长时间空闲事务
+    category: lock
+    db_types: [gbase8a]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: 有 Sleep 状态会话超过 3600 秒（疑似未提交事务）
+    description_zh: 长时空闲会话会阻止 MVCC 清理，导致数据膨胀
+    condition: "idle_sessions > 0"
+    params:
+      idle_sessions: "${context.gbase8a_idle_sessions}"
+    message: "存在 {idle_sessions} 个空闲超过 3600 秒的会话，可能未提交事务并阻塞历史数据清理"
+    message_zh: "存在 {idle_sessions} 个空闲超过 3600 秒的会话"
+    fix_sql: "SELECT ID, USER, HOST, DB, TIME FROM information_schema.PROCESSLIST WHERE COMMAND = 'Sleep' AND TIME > 3600 ORDER BY TIME DESC;"
+
+  # ── 结构规范 ────────────────────────────────────────────────
+  - id: gbase8a_table_without_pk
+    name: 存在无主键表
+    name_zh: 存在无主键表
+    category: maintenance
+    db_types: [gbase8a]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: 业务表未定义主键，影响数据分布与更新效率
+    description_zh: 无主键表在 MPP 下易产生数据倾斜，且不利于行级更新
+    condition: "no_pk_tables > 0"
+    params:
+      no_pk_tables: "${context.gbase8a_no_pk_tables}"
+    message: "发现 {no_pk_tables} 张业务表未定义主键，MPP 环境下易产生数据倾斜且不利于行级更新"
+    message_zh: "发现 {no_pk_tables} 张业务表未定义主键"
+    fix_sql: "SELECT T.TABLE_SCHEMA, T.TABLE_NAME FROM information_schema.TABLES T WHERE T.TABLE_TYPE = 'BASE TABLE' AND T.TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema') AND NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS S WHERE S.TABLE_SCHEMA = T.TABLE_SCHEMA AND S.TABLE_NAME = T.TABLE_NAME AND S.INDEX_NAME = 'PRIMARY') ORDER BY 1, 2 LIMIT 50;"
+
+  - id: gbase8a_charset_not_utf8
+    name: 存在非 UTF8 字符集的库
+    name_zh: 存在非 UTF8 字符集的库
+    category: config
+    db_types: [gbase8a]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: 业务库默认字符集不是 utf8/utf8mb4，跨库关联可能乱码
+    description_zh: 字符集不一致会导致跨库 JOIN 与数据装载出现乱码
+    condition: "non_utf8_schemas > 0"
+    params:
+      non_utf8_schemas: "${context.gbase8a_non_utf8_schemas}"
+    message: "发现 {non_utf8_schemas} 个业务库默认字符集不是 utf8/utf8mb4，跨库关联可能乱码"
+    message_zh: "发现 {non_utf8_schemas} 个业务库默认字符集不是 utf8/utf8mb4"
+    fix_sql: "SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema','gbase','gclusterdb','performance_schema') AND DEFAULT_CHARACTER_SET_NAME NOT IN ('utf8','utf8mb4');"
+
+  # ── 容量 ────────────────────────────────────────────────────
+  - id: gbase8a_single_table_too_large
+    name: 单表数据量过大
+    name_zh: 单表数据量过大
+    category: storage
+    db_types: [gbase8a]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: 单表数据量超过 100GB，备份与扩容窗口风险显著
+    description_zh: 超大表会拉长备份窗口，并使扩容重分布耗时不可控
+    condition: "max_table_mb > 102400"
+    params:
+      max_table_mb: "${context.gbase8a_max_table_mb}"
+    message: "最大单表约 {max_table_mb:.0f} MB（>100GB），备份窗口与扩容重分布耗时风险显著"
+    message_zh: "最大单表约 {max_table_mb:.0f} MB（>100GB）"
+    fix_sql: "SELECT TABLE_SCHEMA, TABLE_NAME, ROUND(DATA_LENGTH/1024/1024, 2) AS DATA_MB FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema') ORDER BY DATA_LENGTH DESC LIMIT 20;"
+
+  - id: gbase8a_data_volume_large
+    name: 集群数据总量较大
+    name_zh: 集群数据总量较大
+    category: storage
+    db_types: [gbase8a]
+    severity: low
+    priority: low
+    owner: DBA
+    enabled: true
+    description: 业务数据总量超过 5TB，需评估备份与扩容规划
+    description_zh: 数据总量超过 5TB 时应做容量趋势与扩容规划
+    condition: "total_data_mb > 5242880"
+    params:
+      total_data_mb: "${context.gbase8a_total_data_mb}"
+    message: "业务数据总量约 {total_data_mb:.0f} MB（>5TB），需评估备份窗口与扩容规划"
+    message_zh: "业务数据总量约 {total_data_mb:.0f} MB（>5TB）"
+    fix_sql: "SELECT ROUND(SUM(DATA_LENGTH)/1024/1024, 2) AS TOTAL_MB, ROUND(SUM(INDEX_LENGTH)/1024/1024, 2) AS INDEX_MB FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema');"
+
+  - id: gbase8a_table_count_large
+    name: 表数量过多
+    name_zh: 表数量过多
+    category: maintenance
+    db_types: [gbase8a]
+    severity: low
+    priority: low
+    owner: DBA
+    enabled: true
+    description: 业务表数量超过 50000 张，元数据操作与 DDL 会明显变慢
+    description_zh: 表数量过多会拖慢元数据查询、备份与 DDL
+    condition: "table_count > 50000"
+    params:
+      table_count: "${context.gbase8a_table_count}"
+    message: "业务表数量 {table_count} 张（>50000），元数据操作、备份与 DDL 会明显变慢"
+    message_zh: "业务表数量 {table_count} 张（>50000）"
+    fix_sql: "SELECT TABLE_SCHEMA, COUNT(*) FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema') GROUP BY TABLE_SCHEMA ORDER BY 2 DESC;"
+
+  - id: gbase8a_schema_too_many
+    name: 业务库数量过多
+    name_zh: 业务库数量过多
+    category: config
+    db_types: [gbase8a]
+    severity: info
+    priority: info
+    owner: DBA
+    enabled: true
+    description: 业务库数量超过 50 个，建议按业务域归并
+    description_zh: 库数量过多会导致权限与备份策略难以收敛
+    condition: "schema_count > 50"
+    params:
+      schema_count: "${context.gbase8a_schema_count}"
+    message: "业务库数量 {schema_count} 个（>50），建议按业务域归并并收敛权限"
+    message_zh: "业务库数量 {schema_count} 个（>50）"
+    fix_sql: "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema','gbase','gclusterdb','performance_schema') ORDER BY 1;"
+
+  - id: gbase8a_data_node_offline
+    name: MPP 数据节点离线
+    db_types: [gbase8a]
+    category: availability
+    severity: critical
+    enabled: true
+    condition: "any(str(r.get('status', '')).lower() != 'online' for r in nodes)"
+    params:
+      nodes: "${context.gbase8a_data_nodes}"
+    message: "MPP 数据节点存在非 online 状态，请检查 gcadmin showcluster 和节点日志"
+  - id: gbase8a_coordinator_offline
+    name: MPP 协调节点离线
+    db_types: [gbase8a]
+    category: availability
+    severity: critical
+    enabled: true
+    condition: "any(str(r.get('status', '')).lower() != 'online' for r in nodes)"
+    params:
+      nodes: "${context.gbase8a_coordinators}"
+    message: "MPP 协调节点存在非 online 状态，请检查协调服务与网络"

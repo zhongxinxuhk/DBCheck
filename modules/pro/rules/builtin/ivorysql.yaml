@@ -13,7 +13,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 90%
     description_zh: 系统内存使用率超过 90%
-    condition: "mem_usage > 90"
+    condition: "mem_usage > mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，超过 90% 可能触发 OOM"
@@ -31,7 +31,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 80%
     description_zh: 系统内存使用率超过 80%
-    condition: "mem_usage > 80 and mem_usage <= 90"
+    condition: "mem_usage > mem_warning_pct and mem_usage <= mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，建议关注"
@@ -49,7 +49,7 @@ rules:
     enabled: true
     description: 磁盘使用率超过 90%
     description_zh: 磁盘使用率超过 90%
-    condition: "any(disk.get('usage_percent', 0) > 90 for disk in disk_list)"
+    condition: "any(disk.get('usage_percent', 0) > db_fs_usage_crit_pct for disk in disk_list)"
     params:
       disk_list: "${context.system_info.disk_list}"
     message: "磁盘 {mountpoint} 使用率 {usage:.1f}%，可能导致数据库写入失败"

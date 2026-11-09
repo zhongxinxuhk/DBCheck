@@ -14,6 +14,7 @@ DBCheck Pro Instance Manager
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
+
 import json
 import os
 import platform
@@ -26,6 +27,7 @@ import hashlib
 import base64
 
 from modules.core import paths
+from modules.ssh import resolve_db_endpoint, tunnel_enabled
 
 paths.ensure_migrated()
 
@@ -244,6 +246,10 @@ class DatabaseInstance:
     ssh_key_file: str = "" # SSH 私钥路径
     ssh_key_password: str = "" # SSH 私钥密码
     ssh_enabled: bool = False  # 是否启用 SSH
+    # 是否经 SSH 隧道连接数据库（Navicat 式「使用 SSH 隧道」）：
+    # True  → 数据库连接先落到本地转发端口，适配堡垒机/仅监听 127.0.0.1 的场景
+    # False → SSH 仅用于采集系统指标，数据库按 host/port 直连（默认）
+    ssh_tunnel: bool = False
     tags: List[str] = None  # 标签列表
     group: str = "default"  # 分组
     enabled: bool = True
@@ -357,8 +363,10 @@ class InstanceManager:
                             d['tags'] = json.loads(d['tags'])
                         except Exception:
                             d['tags'] = []
-                    # sysdba / ssh_enabled / enabled / encrypt / trust_server_certificate / use_sid 从 INTEGER 还原为 bool
-                    for bool_field in ('sysdba', 'ssh_enabled', 'enabled', 'encrypt', 'trust_server_certificate', 'use_sid'):
+                    # sysdba / ssh_enabled / ssh_tunnel / enabled / encrypt / trust_server_certificate / use_sid 从 INTEGER 还原为 bool
+                    for bool_field in ('sysdba', 'ssh_enabled', 'ssh_tunnel', 'enabled', 'encrypt', 'trust_server_certificate', 'use_sid'):
+                        # ssh_tunnel 缺省为「关闭」：列刚 ALTER 出来时可能是 NULL，
+                        # NULL 与缺失都按 False 处理（与 UI 开关默认值一致）。
                         d[bool_field] = bool(d.get(bool_field, False))
                     # 存量行 connection_mode 可能为 NULL/''，按类型归一化：
                     # sqlserver_jdbc 语义即 JDBC，缺省必须归 'jdbc'，否则会被固化成
@@ -558,6 +566,12 @@ class InstanceManager:
                 c.execute('ALTER TABLE instances ADD COLUMN "jdbc_url" TEXT DEFAULT \'\'')
             except Exception:
                 pass
+            # 迁移：为旧表添加 ssh_tunnel 列（是否经 SSH 隧道连接数据库）
+            # 默认 0 = 关闭：SSH 默认只承担系统信息采集，需要隧道连库时由用户显式开启。
+            try:
+                c.execute('ALTER TABLE instances ADD COLUMN "ssh_tunnel" INTEGER DEFAULT 0')
+            except Exception:
+                pass
             # 确保表存在
             c.execute("""
                 CREATE TABLE IF NOT EXISTS instances (
@@ -571,6 +585,7 @@ class InstanceManager:
                     ssh_host TEXT DEFAULT '', ssh_port INTEGER DEFAULT 22,
                     ssh_user TEXT DEFAULT '', ssh_password TEXT DEFAULT '',
                     ssh_key_file TEXT DEFAULT '', ssh_key_password TEXT DEFAULT '', ssh_enabled INTEGER DEFAULT 0,
+                    ssh_tunnel INTEGER DEFAULT 0,
                     tags TEXT DEFAULT '[]', "group" TEXT DEFAULT 'default',
                     enabled INTEGER DEFAULT 1, description TEXT DEFAULT '',
                     created_at TEXT DEFAULT '', updated_at TEXT DEFAULT '',
@@ -588,10 +603,10 @@ class InstanceManager:
                     INSERT OR REPLACE INTO instances
                     (id, name, db_type, host, port, "user", password, "database", service_name, gbase_server_name, tenant, sysdba,
                      connect_mode, auth_source, auth_mechanism, replica_set, tls, tls_ca_file, tls_cert_key_file, tls_allow_invalid_certs,
-                     ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_file, ssh_key_password, ssh_enabled,
+                     ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_file, ssh_key_password, ssh_enabled, ssh_tunnel,
                      tags, "group", enabled, description, created_at, updated_at, connection_mode,
                      encrypt, trust_server_certificate, use_sid, driver_version, jdbc_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     d.get("id", ""), d.get("name", ""), d.get("db_type", ""),
                     d.get("host", ""), d.get("port", 0), d.get("user", ""),
@@ -609,6 +624,7 @@ class InstanceManager:
                     d.get("ssh_host", ""), d.get("ssh_port", 22),
                     d.get("ssh_user", ""), d.get("ssh_password", ""),
                     d.get("ssh_key_file", ""), d.get("ssh_key_password", ""), 1 if d.get("ssh_enabled") else 0,
+                    1 if d.get("ssh_tunnel", False) else 0,
                     json.dumps(d.get("tags", []), ensure_ascii=False),
                     d.get("group", "default"), 1 if d.get("enabled", True) else 0,
                     d.get("description", ""), d.get("created_at", ""), d.get("updated_at", ""),
@@ -877,6 +893,37 @@ class InstanceManager:
         password = _decrypt_pwd(inst.password)
         db_type = inst.db_type.lower()
 
+        # SSH 隧道：数据源列表「测试」按钮落到本函数，此前完全按 host/port
+        # 直连，导致「经 SSH 隧道」的实例测试永远报
+        #   connection to server at "127.0.0.1", port 5432 failed: Connection refused
+        # 而巡检（app.py / api.py 显式 open_db_tunnel）却正常。
+        # 先把实例端点替换为隧道本地转发端点，后续所有分支自动生效。
+        # 注意 ssh_password 在库中是加密存储，必须解密后再交给隧道，
+        # 否则 SSH 认证失败会被误报成「数据库连不上」。
+        _orig_host, _orig_port = inst.host, inst.port
+        # sqlserver / gbase8a 由 modules.db_types.compatibility.verified_tunnel
+        # 内部自建隧道（含 TDS / TLS 强制校验），此处不接管，避免双重端口转发。
+        if db_type not in ('sqlserver', 'gbase8a') and tunnel_enabled(inst.to_dict()):
+            from dataclasses import replace as _dc_replace
+            try:
+                _rhost, _rport, _ = resolve_db_endpoint({
+                    **inst.to_dict(),
+                    'host': inst.host,
+                    'ip': inst.host,
+                    'password': password,
+                    'ssh_password': (_decrypt_pwd(inst.ssh_password)
+                                     if inst.ssh_password else ''),
+                })
+            except Exception as e:
+                # 隧道建不起来时必须如实报「SSH 层失败」，不能让它冒泡成 HTTP 500，
+                # 更不能回退直连 —— 回退只会让用户看到
+                # 「Connection refused」，把 SSH 认证/网络问题误认成数据库没启动。
+                return {'ok': False,
+                        'message': 'SSH隧道建立失败（%s）: %s: %s'
+                                   % ('%s:%s' % (inst.ssh_host, inst.ssh_port or 22),
+                                      type(e).__name__, e)}
+            inst = _dc_replace(inst, host=_rhost, port=_rport)
+
         try:
             if db_type == 'mysql':
                 import pymysql
@@ -886,7 +933,7 @@ class InstanceManager:
                     connect_timeout=10,
                 )
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (MySQL %s:%d)' % (inst.host, inst.port)}
+                return {'ok': True, 'message': '连接成功 (MySQL %s:%d)' % (_orig_host, _orig_port)}
 
             elif db_type == 'oceanbase':
                 import pymysql
@@ -898,7 +945,7 @@ class InstanceManager:
                     connect_timeout=10,
                 )
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (OceanBase %s:%d)' % (inst.host, inst.port)}
+                return {'ok': True, 'message': '连接成功 (OceanBase %s:%d)' % (_orig_host, _orig_port)}
 
             if db_type in ('postgresql', 'pg'):
                 import psycopg2
@@ -908,7 +955,7 @@ class InstanceManager:
                     connect_timeout=10,
                 )
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (PostgreSQL %s:%d)' % (inst.host, inst.port)}
+                return {'ok': True, 'message': '连接成功 (PostgreSQL %s:%d)' % (_orig_host, _orig_port)}
 
             elif db_type == 'ivorysql':
                 import psycopg2
@@ -918,7 +965,7 @@ class InstanceManager:
                     dbname='postgres', connect_timeout=10,
                 )
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (IvorySQL %s:%d)' % (inst.host, inst.port)}
+                return {'ok': True, 'message': '连接成功 (IvorySQL %s:%d)' % (_orig_host, _orig_port)}
 
             elif db_type == 'oracle':
                 import oracledb
@@ -972,7 +1019,9 @@ class InstanceManager:
                         raise
                 conn.close()
                 sysdba_msg = " (SYSDBA)" if inst.sysdba else ""
-                return {'ok': True, 'message': '连接成功 (Oracle%s %s)' % (sysdba_msg, dsn)}
+                # 消息里展示用户配置的原始端点，而非隧道本地随机端口（dsn 用于连接）
+                return {'ok': True, 'message': '连接成功 (Oracle%s %s:%s)' % (
+                    sysdba_msg, _orig_host, _orig_port)}
 
             elif db_type == 'sqlserver':
                 from modules.db_types.compatibility import connect_sqlserver
@@ -988,7 +1037,7 @@ class InstanceManager:
                     dsn = '%s:%d' % (inst.host, inst.port)
                     conn = dmPython.connect(user=inst.user, password=password, server=dsn)
                     conn.close()
-                    return {'ok': True, 'message': '连接成功 (DM %s:%d)' % (inst.host, inst.port)}
+                    return {'ok': True, 'message': '连接成功 (DM %s:%d)' % (_orig_host, _orig_port)}
                 except ImportError:
                     return {'ok': False, 'message': 'dmPython 驱动未安装'}
 
@@ -1000,14 +1049,14 @@ class InstanceManager:
                     connect_timeout=10,
                 )
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (TiDB %s:%d)' % (inst.host, inst.port)}
+                return {'ok': True, 'message': '连接成功 (TiDB %s:%d)' % (_orig_host, _orig_port)}
 
             elif db_type == 'yashandb':
                 try:
                     import yasdb
                     conn = yasdb.connect(host=inst.host, port=inst.port, user=inst.user, password=password)
                     conn.close()
-                    return {'ok': True, 'message': '连接成功 (YashanDB %s:%d)' % (inst.host, inst.port)}
+                    return {'ok': True, 'message': '连接成功 (YashanDB %s:%d)' % (_orig_host, _orig_port)}
                 except ImportError as e:
                     return {'ok': False, 'message': f'yasdb 驱动未安装: {str(e)}'}
 
@@ -1019,7 +1068,7 @@ class InstanceManager:
                     dbname=inst.database or 'kingbase', connect_timeout=10,
                 )
                 conn.close()
-                return {'ok': True, 'message': '连接成功 (KingbaseES %s:%d)' % (inst.host, inst.port)}
+                return {'ok': True, 'message': '连接成功 (KingbaseES %s:%d)' % (_orig_host, _orig_port)}
 
             elif db_type == 'gbase8a':
                 from modules.entrypoints.main_gbase8a import GBase8aInspector
@@ -1039,7 +1088,7 @@ class InstanceManager:
                         connect_timeout=10, charset='utf8mb4'
                     )
                     conn.close()
-                    return {'ok': True, 'message': '连接成功 (GBase 8s %s:%d)' % (inst.host, inst.port)}
+                    return {'ok': True, 'message': '连接成功 (GBase 8s %s:%d)' % (_orig_host, _orig_port)}
                 except ImportError as e:
                     return {'ok': False, 'message': 'pymysql 驱动未安装: %s' % str(e)}
                 except Exception as e:
@@ -1467,26 +1516,154 @@ class InstanceManager:
 
         return [dict(row) for row in rows]
 
+    def get_period_health_score(self, since: Optional[str] = None) -> Dict[str, Any]:
+        """按时间窗计算健康分。
+
+        口径：窗口内「每个实例最近一次巡检」的 health_score 求平均。
+        - 空分（health_score IS NULL）不计入分母，避免被拉低；
+        - 窗口内没有巡检记录 → score=0 / samples=0，由调用方决定如何展示；
+        - since 为 ISO 时间字符串（如本月 1 日 00:00），None 表示不限时间。
+
+        注意：不按「是否在线」扣分。离线属于连接性状态，单列展示，
+        不参与评分——需求明确要求健康分不压。
+        """
+        where = "WHERE inspect_time >= ?" if since else ""
+        sql = """
+            SELECT h.instance_id, h.health_score
+            FROM (
+                SELECT instance_id, MAX(inspect_time) AS latest
+                FROM inspection_history
+                {where}
+                GROUP BY instance_id
+            ) latest
+            JOIN inspection_history h
+              ON h.instance_id = latest.instance_id
+             AND h.inspect_time = latest.latest
+        """.format(where=where)
+        params = (since,) if since else ()
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception as e:
+            print(f"[InstanceManager] 计算周期健康分失败: {e}")
+            return {'score': 0, 'samples': 0, 'instances': 0, 'since': since}
+
+        scores = [r[1] for r in rows if r[1] is not None]
+        return {
+            'score': int(sum(scores) / len(scores)) if scores else 0,
+            'samples': len(scores),
+            'instances': len(rows),
+            'since': since,
+        }
+
     def get_global_health_score(self) -> int:
-        """计算全局健康评分"""
-        conn = sqlite3.connect(self.db_file)
-        cursor = conn.cursor()
+        """全量健康分（不限时间窗），保留给统计类接口使用"""
+        return self.get_period_health_score()['score']
 
-        # 获取最近一次巡检的每个实例的健康分
-        cursor.execute("""
-            SELECT instance_id, MAX(inspect_time) as latest, health_score
-            FROM inspection_history
-            GROUP BY instance_id
-        """)
+    def resolve_instance_id_by_endpoint(self, db_type: str, host: str, port=None) -> Optional[str]:
+        """按 (db_type, host, port) 反查已注册实例主键。
 
-        rows = cursor.fetchall()
-        conn.close()
+        巡检记录必须落在实例主键上，否则历史无法与实例表关联，
+        删除实例时也清理不掉（历史遗留的幽灵记录就是这么来的）。
+        多实例命中同一端点时返回 None——不猜。
+        """
+        try:
+            self._ensure_instances_fresh()
+        except Exception:
+            pass
+        dt = str(db_type or '').strip().lower().replace('oracle_full', 'oracle')
+        h = str(host or '').strip()
+        if not h:
+            return None
+        try:
+            p = int(port) if port not in (None, '') else None
+        except (TypeError, ValueError):
+            p = None
 
-        if not rows:
-            return 0
+        hits = []
+        for inst in self._instances.values():
+            if str(inst.host or '').strip() != h:
+                continue
+            if p is not None and int(inst.port or 0) != p:
+                continue
+            inst_dt = str(inst.db_type or '').strip().lower()
+            if dt and inst_dt and inst_dt != dt:
+                # pg / postgresql、oracle / oracle_full 等别名兜底
+                if not (inst_dt.startswith(dt) or dt.startswith(inst_dt)):
+                    continue
+            hits.append(inst.id)
+        return hits[0] if len(hits) == 1 else None
 
-        total_score = sum(row[2] for row in rows if row[2] is not None)
-        return int(total_score / len(rows))
+    def migrate_legacy_history_ids(self) -> Dict[str, Any]:
+        """把历史遗留的 md5(db_type-host-port) 形式 instance_id 收敛到实例主键。
+
+        早期 _record_inspection 用 md5(f"{db_type}-{host}-{port}")[:12] 当主键，
+        与 instances 表的 uuid 不是同一命名空间，导致：
+          · 仪表盘风险分布统计到的是对不上实例的幽灵行；
+          · delete_instance 的 DELETE WHERE instance_id=<uuid> 永远删不掉。
+        本方法幂等：已收敛的记录不会再被处理。
+        """
+        import hashlib
+
+        report = {'mapped': {}, 'history_rows': 0, 'trend_rows': 0, 'skipped': []}
+        try:
+            self._ensure_instances_fresh()
+        except Exception:
+            pass
+        known = set(self._instances.keys())
+
+        # 端点指纹 → 实例主键（同端点多实例时不映射，避免张冠李戴）
+        legacy_map: Dict[str, str] = {}
+        ambiguous = set()
+        for inst in self._instances.values():
+            raw = f"{inst.db_type}-{inst.host}-{inst.port}".encode()
+            fp = hashlib.md5(raw).hexdigest()[:12]
+            if fp in legacy_map and legacy_map[fp] != inst.id:
+                ambiguous.add(fp)
+                continue
+            legacy_map[fp] = inst.id
+        for fp in ambiguous:
+            legacy_map.pop(fp, None)
+
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT instance_id FROM inspection_history")
+            legacy_ids = [r[0] for r in cursor.fetchall() if r[0] and r[0] not in known]
+
+            for lid in legacy_ids:
+                target = legacy_map.get(lid)
+                if not target:
+                    report['skipped'].append(lid)
+                    continue
+                cursor.execute(
+                    "UPDATE inspection_history SET instance_id = ? WHERE instance_id = ?",
+                    (target, lid))
+                report['history_rows'] += cursor.rowcount
+                # instance_trend 有 UNIQUE(instance_id, date)：先清掉与目标同日冲突的旧行
+                cursor.execute("""
+                    DELETE FROM instance_trend
+                    WHERE instance_id = ?
+                      AND date IN (SELECT date FROM instance_trend WHERE instance_id = ?)
+                """, (lid, target))
+                cursor.execute(
+                    "UPDATE instance_trend SET instance_id = ? WHERE instance_id = ?",
+                    (target, lid))
+                report['trend_rows'] += cursor.rowcount
+                report['mapped'][lid] = target
+            conn.commit()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            raise RuntimeError(f"历史 instance_id 收敛失败: {e}")
+        finally:
+            if conn:
+                conn.close()
+        return report
 
     # 批量操作
     def batch_add_from_csv(self, csv_content: str) -> Dict[str, Any]:

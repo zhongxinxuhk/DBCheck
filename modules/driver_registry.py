@@ -27,6 +27,8 @@ Stage A 范围：
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
+
+
 import os
 import re
 import json
@@ -102,7 +104,7 @@ def normalize_db_type(db_type: str) -> str:
     low = dt.lower()
     if low.endswith('_jdbc'):
         dt = dt[: -len('_jdbc')]
-    if low == 'hgdb':
+    if dt.lower() == 'hgdb':
         dt = 'highgo'
     return dt
 
@@ -122,6 +124,8 @@ DB_FAMILY_ALIASES = {
     'oracle': 'oracle', 'oracle_full': 'oracle',
     'sqlserver': 'sqlserver', 'mssql': 'sqlserver',
     'dm': 'dm', 'dameng': 'dm', 'dm8': 'dm',
+    'gbase8a': 'gbase8a', 'gbase8a_mpp': 'gbase8a',
+    'gbase8a': 'gbase8a', 'gbase8a_mpp': 'gbase8a',
 }
 
 
@@ -859,6 +863,11 @@ def scan_driver_dirs() -> int:
         }
         inserted = 0
         for db_type, version, jfname, jpath, hint in candidates:
+            if db_type in ('gbase8a', 'oracle', 'sqlserver', 'dm') and hint:
+                from modules.db_types.compatibility import jar_valid
+                if not jar_valid(jpath, hint):
+                    c.execute('UPDATE jdbc_driver_registry SET is_active=0 WHERE jar_path=?', (jpath,))
+                    continue
             if (db_type, version, jfname) in have:
                 continue
             try:

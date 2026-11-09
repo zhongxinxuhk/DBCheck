@@ -429,7 +429,7 @@ class ExistingSystemIntegration(unittest.TestCase):
             with sqlite3.connect(path) as database:
                 self.assertEqual(database.execute("SELECT query_sql FROM inspection_query WHERE query_key='user_marker'").fetchone()[0],'SELECT 17 AS KEEP_VALUE')
                 for family,version,count in [('gbase8a','8a',14),('sqlserver','2005',17),('sqlserver','2008',17),('sqlserver','2014',17)]:
-                    result=database.execute('SELECT t.id,COUNT(q.id) FROM inspection_template t JOIN inspection_chapter ch ON ch.template_id=t.id JOIN inspection_query q ON q.chapter_id=ch.id WHERE t.db_type=? AND t.version=? GROUP BY t.id',(family,version)).fetchall()
+                    result=database.execute('SELECT t.id,COUNT(q.id) FROM inspection_template t JOIN inspection_chapter ch ON ch.template_id=t.id JOIN inspection_query q ON q.chapter_id=ch.id WHERE t.db_type=? AND t.version=? AND t.template_name_zh NOT LIKE ? GROUP BY t.id',(family,version,'%_业务专项巡检_%')).fetchall()
                     self.assertEqual(len(result),1);self.assertEqual(result[0][1],count)
                     if family=='sqlserver':
                         inspector=SQLServerInspector('localhost',1433,'reader','fixture')

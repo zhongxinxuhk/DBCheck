@@ -88,9 +88,10 @@ class RemoteSystemInfoCollector:
             print("[WARN] paramiko 未安装，无法使用 SSH 功能")
             return False
         try:
-            self.ssh_client = paramiko.SSHClient()
-            self.ssh_client.load_system_host_keys()
-            self.ssh_client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            # 未知主机密钥只告警不拒绝：RejectPolicy 会让「首次接入的服务器」
+            # （known_hosts 无条目）直接失败，巡检工具面对的多是此类环境。
+            from modules.ssh import build_ssh_client
+            self.ssh_client = build_ssh_client()
             self.ssh_client.connect(
                 hostname=self.host, port=self.port,
                 username=self.username, password=self.password,
@@ -665,6 +666,32 @@ class BaseInspectionEngine:
         except Exception:
             self._lang = 'zh'
             self._t = lambda x, **kw: x  # 备用：直接返回键名
+
+    def _bind_self_instance(self):
+        """把本次巡检对应的实例主键写进 ``context['_instance_id']``。
+
+        实例级基线（§4.6 脚注「首月为每个实例建立自身基线」）靠这个键才生效：
+        ``rule_engine.load_thresholds(instance_id=...)`` 据此叠加
+        ``instance_thresholds`` 的覆盖值，让「自己跟自己比」。
+
+        解析顺序与巡检落库完全一致，保证「算基线用的实例」与「跑规则的实例」
+        是同一个：
+            1. 调用方已显式放入的 instance_id（Web 数据源入口已带）；
+            2. 按 (db_type, host, port) 反查已注册实例；
+            3. 都拿不到 → 不写该键，规则退回全局阈值（行为与改前一致，不误报）。
+        """
+        iid = self.context.get('_instance_id')
+        if iid:
+            return iid
+        try:
+            from modules.pro import get_instance_manager
+            iid = get_instance_manager().resolve_instance_id_by_endpoint(
+                self.db_type, self.host, self.port)
+        except Exception:
+            iid = None
+        if iid:
+            self.context['_instance_id'] = iid
+        return iid
     
     @staticmethod
     def _classify_sql_error(item_name, err_str):
@@ -699,28 +726,24 @@ class BaseInspectionEngine:
         raise NotImplementedError("子类必须实现 connect() 方法")
     
     def get_template_id(self):
-        """获取模板 ID - 优先使用用户显式指定的 _template_id，否则根据 db_type 自动查询"""
-        # 1. 优先返回用户显式指定的 template_id
+        """Explicit selection wins; defaults use normalized family and server version."""
         if self._template_id is not None:
             return self._template_id
-        # 2. 否则根据 db_type 从数据库自动查询默认模板
-        try:
-            _db_path = os.path.join(str(PROJECT_ROOT), 'data', 'inspection.db')
-            if not os.path.exists(_db_path):
-                return None
-            _conn = sqlite3.connect(_db_path)
-            _cur = _conn.cursor()
-            _cur.execute(
-                "SELECT id FROM inspection_template WHERE db_type=? ORDER BY is_default DESC, id LIMIT 1",
-                (self.db_type,))
-            row = _cur.fetchone()
-            _conn.close()
-            return row[0] if row else None
-        except Exception:
-            return None
-    
-    
-    # ── 通用方法（所有数据库共用）────────────────────────
+        from modules.inspection.dal import get_default_template, get_templates_by_db_type
+        from modules.driver_registry import db_family
+        major = getattr(self, '_db_version_major', None)
+        if major is None and db_family(self.db_type) == 'oracle':
+            import re
+            version = str(self.context.get('version', ''))
+            match = re.search(r'(\d+)\.\d+|(?:Oracle.*?)(\d+)g', version, re.I)
+            if match:
+                major = int(match.group(1) or match.group(2))
+        template = get_default_template(self.db_type, db_version_major=major)
+        if not template:
+            rows = get_templates_by_db_type(self.db_type)
+            template = rows[0] if rows else None
+        return template['id'] if template else None
+
     def _customize_queries(self, sql_dict):
         """子类 SQL 定制钩子 - 加载模板后可覆盖特定查询"""
         pass
@@ -739,7 +762,17 @@ class BaseInspectionEngine:
         # 注意：后续 init_keys 和 SQL 查询可能会覆盖此值，
         # 但 _append_chapters 读取时会兼容 'VERSION'/'version' 两种键名
         self.context['version'] = [{'VERSION': version}]
-        
+
+        # 尽早绑定实例主键：后续规则引擎（analyze_with_plugins）与配置基线
+        # 检查都要用它去取实例级阈值/自身基线。这里不阻断流程——拿不到就
+        # 静默跳过，规则退回全局阈值。
+        _iid = self._bind_self_instance()
+        if _iid:
+            print(f"[INFO] 实例基线绑定: {_iid}")
+
+        if self._template_id is None:
+            self._template_id = self.get_template_id()
+
         # 2. 加载 SQL 模板（从 inspection.db 或内置）
         sql_dict = {}  # {query_key: sql_text}
         cfg = None     # 兼容 configparser（仅当 sql_templates 非空时使用）
@@ -774,6 +807,28 @@ class BaseInspectionEngine:
                         ORDER BY ch.sort_order, q.sort_order
                     ''', (self.db_type, *_chap_params))
                 queries = c.fetchall()
+                # 同族兜底：精确库种名下没有启用查询时（模板落在族内主名下），
+                # 按 db_family 展开后重查，避免「同系列库巡检时章节全空」。
+                if not queries and self._template_id is None:
+                    try:
+                        from modules.inspection.dal import family_db_types
+                        _fam_types = family_db_types(self.db_type, db_path=_db_path)
+                    except Exception:
+                        _fam_types = []
+                    for _ft in _fam_types:
+                        if _ft == (self.db_type or '').lower():
+                            continue
+                        c.execute('''
+                            SELECT q.query_key, q.query_sql
+                            FROM inspection_query q
+                            JOIN inspection_chapter ch ON q.chapter_id = ch.id
+                            JOIN inspection_template t ON ch.template_id = t.id
+                            WHERE t.db_type = ? AND q.enabled = 1''' + _chap_frag + '''
+                            ORDER BY ch.sort_order, q.sort_order
+                        ''', (_ft, *_chap_params))
+                        queries = c.fetchall()
+                        if queries:
+                            break
 
                 # 直接用 dict 存储，不再经过 configparser
                 for name, sql in queries:
@@ -956,6 +1011,18 @@ class BaseInspectionEngine:
             # 异常时同样不写入任何本机磁盘数据，避免误报告警
             self.context.update({"system_info": {}})
         
+        # 6.5 规则引擎取数补齐（metrics 层）
+        # 规则 params 引用的 context 键与模板 query_key 是两套命名；此处把模板
+        # 未提供的键补齐（只读、缺啥补啥），使规则引擎对任何模板都能取到数。
+        # 单条失败静默跳过，不影响巡检主流程。
+        try:
+            from modules.pro.rule_engine import fill_missing_metrics
+            _filled = fill_missing_metrics(self.db_type, self.context, self.conn)
+            if _filled:
+                print('  ℹ️ 规则取数补齐 %d 项' % _filled)
+        except Exception as _metrics_err:
+            print('  [WARN] 规则取数补齐失败（不影响巡检）: %s' % _metrics_err)
+
         # 7. 风险分析
         current_step = total_steps - 3
         self.print_progress_bar(current_step, total_steps, prefix=_prog_prefix, suffix=self._t(f'{self.db_type}_progress_health', default='dm8_progress_health'))
@@ -1229,6 +1296,24 @@ class BaseInspectionEngine:
             self.context['_chapters'] = []
             return []
     
+    def _query_unavailable_reason(self, cursor, sql):
+        """Probe optional metadata; an absent/hidden feature stays an evidence gap."""
+        from modules.driver_registry import db_family
+        family = db_family(self.db_type)
+        if family == 'sqlserver' and any(x in sql.lower() for x in ('dm_hadr_', 'sys.availability_')):
+            major = getattr(self, '_db_version_major', None)
+            if major is None:
+                cursor.execute("SELECT SERVERPROPERTY('ProductVersion')")
+                major = int(str(cursor.fetchone()[0]).split('.')[0])
+                self._db_version_major = major
+            if major < 11:
+                return '不适用：SQL Server 2005/2008 不提供 AlwaysOn 可用性组（需要 2012+）'
+        if family == 'dm' and 'SYSJOB.SYSJOBS' in sql.upper():
+            cursor.execute("SELECT COUNT(*) FROM DBA_OBJECTS WHERE OWNER='SYSJOB' AND OBJECT_NAME='SYSJOBS'")
+            if int(cursor.fetchone()[0]) == 0:
+                return '未采集：作业系统未初始化或当前账号不可见 SYSJOB.SYSJOBS；请核实作业配置及授权'
+        return None
+
     def _execute_query_safe(self, cursor, sql, item_name=""):
         """安全执行 SQL — 报错时 rollback 当前事务，防止 PostgreSQL 级联失败
         
@@ -1237,20 +1322,31 @@ class BaseInspectionEngine:
         """
         try:
             from modules.core.data_security import assert_readonly_sql
+            from modules.core.dbapi_compat import fetch_rows
+            reason = self._query_unavailable_reason(cursor, sql)
+            if reason:
+                self._query_errors[item_name] = reason
+                self._safe_errors.append(reason)
+                self.context.setdefault('_query_status', {})[item_name] = {'status': 'not_applicable', 'reason': reason}
+                return {'columns': [], 'data': [], '_unavailable': reason}
             assert_readonly_sql(sql)
             cursor.execute(sql)
-            columns = [col[0] for col in cursor.description]
+            columns = [str(col[0]) for col in cursor.description]
             data = []
-            rows = cursor.fetchmany(1001)
+            # 取数走兼容层：JDBC 包装游标（JdbcCursorWrapper）历史上缺
+            # fetchmany，直接调用会抛 AttributeError 并被误记为「章节查询失败」。
+            rows = fetch_rows(cursor, 1001)
             for row in rows[:1000]:
                 data.append(dict(zip(columns, row)))
             if len(rows) > 1000:
                 self._safe_errors.append('查询结果超过1000行，需要缩小范围后复核')
+            self.context.setdefault('_query_status', {})[item_name] = {'status': 'collected', 'rows': len(data), 'truncated': len(rows) > 1000}
             return {"columns": columns, "data": data, "_truncated": len(rows) > 1000}
         except Exception as e:
             # 分类错误，生成友好描述
             err_str = str(e)
             friendly = self._classify_sql_error(item_name, err_str)
+            self.context.setdefault('_query_status', {})[item_name] = {'status': 'error', 'reason': friendly}
             print(f"[WARN] {friendly}")
             # 记录到实例字典和列表，供渲染和"巡检跳过记录"章节使用
             if not hasattr(self, '_safe_errors'):
@@ -1611,7 +1707,9 @@ class BaseInspectionEngine:
             )
 
             # 1. 获取当前 db_type 的默认模板
-            template = get_default_template(self.db_type)
+            from modules.inspection.dal import get_template
+            selected_id = self.get_template_id()
+            template = get_template(selected_id) if selected_id is not None else None
             if not template:
                 print(f"[WARN] 未找到 {self.db_type} 的模板配置，跳过章节渲染")
                 self.context['_chapters'] = []
@@ -1767,12 +1865,16 @@ class BaseInspectionEngine:
                     if not _cur:
                         raise Exception("数据库连接已关闭")
                     from modules.core.data_security import assert_readonly_sql
+                    query_sql = query_sql.strip().rstrip(';').strip()
                     assert_readonly_sql(query_sql)
                     _cur.execute(query_sql)
                     rows = _cur.fetchall()
                     _cur.close()
                     
                     if not rows:
+                        # 空结果集 ≠ 无法判定，绝大多数情况是「参数名或视图名写错」。
+                        # 标记 data_suspect，并在本轮结束后汇总告警：否则一条错名的
+                        # 基线会永远显示 UNKNOWN，既不误报也查不出，等于白占一条。
                         results.append({
                             'param_name': param_name,
                             'current_value': 'N/A',
@@ -1782,7 +1884,8 @@ class BaseInspectionEngine:
                             'risk_level': risk_level,
                             'description_zh': description_zh,
                             'description_en': description_en,
-                            'message': '查询无返回结果'
+                            'message': '查询无返回结果',
+                            'data_suspect': True,
                         })
                         continue
                     
@@ -1870,6 +1973,43 @@ class BaseInspectionEngine:
             
             self.context['baseline_results'] = results
             print(f"[INFO] 基线检查完成，共 {len(results)} 项")
+
+            # ── 基线命中统计 ────────────────────────────────────────────
+            # 业务要求「接入时看巡检日志的基线命中条数」。没有这行统计时，
+            # 参数名写错的条目只会安静地停在 UNKNOWN，运维无法判断某产品到底
+            # 有多少条基线真正取到了数。这里把命中率显式打出来。
+            _stats = {'total': len(results), 'pass': 0, 'fail': 0,
+                      'unknown': 0, 'skip': 0, 'error': 0}
+            _suspect = []
+            for _r in results:
+                _st = str(_r.get('status') or '').upper()
+                if _st == 'PASS':
+                    _stats['pass'] += 1
+                elif _st == 'FAIL':
+                    _stats['fail'] += 1
+                elif _st == 'SKIP':
+                    _stats['skip'] += 1
+                elif _st == 'ERROR':
+                    _stats['error'] += 1
+                else:
+                    _stats['unknown'] += 1
+                if _r.get('data_suspect'):
+                    _suspect.append(_r.get('param_name', ''))
+            _effective = _stats['pass'] + _stats['fail']
+            _stats['effective'] = _effective
+            _stats['hit_pct'] = (round(_effective / _stats['total'] * 100, 1)
+                                 if _stats['total'] else 0.0)
+            _stats['suspect_params'] = _suspect
+            self.context['baseline_stats'] = _stats
+            print("[INFO] 基线命中统计(%s): 共 %d 项 / 有效 %d / 通过 %d / 不符 %d / "
+                  "空集 %d / 跳过 %d / 错误 %d → 命中率 %.1f%%" % (
+                      self.db_type, _stats['total'], _effective, _stats['pass'],
+                      _stats['fail'], _stats['unknown'], _stats['skip'],
+                      _stats['error'], _stats['hit_pct']))
+            if _suspect:
+                print("[WARN] %d 条基线查询返回空集，参数名或视图名可能写错"
+                      "（接入新实例时请手工执行 query_sql 确认非空）: %s" % (
+                          len(_suspect), ', '.join(_suspect[:20])))
             
             # 将失败的基线检查结果添加到 auto_analyze（风险与建议章节）
             # 这样即使插件的智能分析为空，风险与建议章节也会显示基线问题
@@ -2082,22 +2222,23 @@ class BaseInspectionEngine:
     def _compare_baseline(self, current_value, operator, expected_value, expected_value_min, expected_value_max):
         """对比当前值与期望值，返回状态（PASS/FAIL）"""
         try:
+            operator = str(operator).strip().upper()
             # 尝试转换为数值
             try:
-                current_num = float(current_value)
+                current_num = float('inf') if str(current_value).upper() == 'UNLIMITED' else float(current_value)
                 expected_num = float(expected_value) if expected_value else None
             except (ValueError, TypeError):
                 current_num = None
                 expected_num = None
             
             if operator == '=':
-                if current_value == expected_value:
+                if (current_num == expected_num if current_num is not None and expected_num is not None else str(current_value).strip() == str(expected_value).strip()):
                     return 'PASS'
                 else:
                     return 'FAIL'
             
             elif operator == '!=':
-                if current_value != expected_value:
+                if (current_num != expected_num if current_num is not None and expected_num is not None else str(current_value).strip() != str(expected_value).strip()):
                     return 'PASS'
                 else:
                     return 'FAIL'
@@ -2130,7 +2271,7 @@ class BaseInspectionEngine:
                     return 'ERROR'
             
             elif operator == 'LIKE':
-                if expected_value and expected_value in current_value:
+                if expected_value and str(expected_value).upper() in str(current_value).upper():
                     return 'PASS'
                 else:
                     return 'FAIL'
@@ -2215,6 +2356,10 @@ class BaseInspectionEngine:
                 bl_rows = []
                 for br in baseline_results:
                     status = br.get('status', 'ERROR')
+                    # 空集条目在报告里显式标注，避免与「确实无法判定」混为一谈
+                    if br.get('data_suspect'):
+                        status = (status + '（空集·参数名可疑）' if self._lang == 'zh'
+                                  else status + ' (empty - suspect name)')
                     desc = br.get('description_zh' if self._lang == 'zh' else 'description_en', '')
                     if not desc:
                         desc = br.get('description_en' if self._lang == 'zh' else 'description_zh', '')
@@ -2304,8 +2449,31 @@ class BaseInspectionEngine:
             print(f"[INFO] ai_advice length: {len(ai_advice)}")
             try:
                 _add_heading(f"{_ch_prefix(ch_ai)} {self._t(f'report.{self.db_type}_ch17', default='AI 诊断分析')}")
-                if ai_advice and ai_advice.strip():
-                    print(f"[DEBUG] _append_chapters: AI 诊断内容长度={len(ai_advice)}")
+                # ── AI 分析状态行：启用/未启用必须在报告里一眼可见 ──────────
+                # run_ai_diagnosis 的首行恒为「【AI 分析状态】…」，这里剥离后单独着色；
+                # 历史调用方（部分插件直接塞 ai_advice）没有这一行时，按当前配置补一行。
+                from modules.inspection.analyzer import AI_STATUS_PREFIX, ai_status_text
+                _lang = getattr(self, '_lang', 'zh')
+                _status_txt = ''
+                _body = (ai_advice or '').strip()
+                if _body.startswith(AI_STATUS_PREFIX):
+                    _first, _, _rest = _body.partition('\n')
+                    _status_txt = _first.strip()
+                    _body = _rest.strip()
+                if not _status_txt:
+                    _status_txt = ai_status_text(None, _lang)
+                _ai_enabled = not ('未启用' in _status_txt or 'Disabled' in _status_txt)
+
+                _sp = doc.add_paragraph()
+                _sr = _sp.add_run(_status_txt)
+                _sr.font.size = Pt(9.5)
+                _sr.font.name = '微软雅黑'
+                _sr.font.bold = True
+                _sr.font.color.rgb = (RGBColor(0x1E, 0x8E, 0x3E) if _ai_enabled
+                                      else RGBColor(0xB0, 0x6A, 0x00))
+
+                if _body:
+                    print(f"[DEBUG] _append_chapters: AI 诊断正文长度={len(_body)}")
                     disclaimer = self._t('report.ai_disclaimer')
                     dp = doc.add_paragraph()
                     dr = dp.add_run(disclaimer)
@@ -2314,12 +2482,13 @@ class BaseInspectionEngine:
                     dr.font.italic = True
                     dr.font.color.rgb = RGBColor(128, 128, 128)
                     doc.add_paragraph()
-                    self._render_markdown_to_doc(doc, ai_advice.strip(), chapter_num=ch_ai)
+                    self._render_markdown_to_doc(doc, _body, chapter_num=ch_ai)
                     print(f"[DEBUG] _append_chapters: AI 诊断章节添加成功")
                 else:
-                    print(f"[DEBUG] _append_chapters: AI 诊断内容为空，添加占位符")
+                    # 未启用 / 无正文：给出明确原因与开启路径，不再用含糊的"暂未返回结果"
+                    print(f"[DEBUG] _append_chapters: AI 诊断正文为空，标注未启用")
                     ap = doc.add_paragraph()
-                    ar = ap.add_run(self._t('report.ai_disabled'))
+                    ar = ap.add_run(self._t('report.ai_notice_disabled'))
                     ar.font.size = Pt(10.5)
                     ar.font.name = '微软雅黑'
                     ar.font.color.rgb = RGBColor(128, 128, 128)

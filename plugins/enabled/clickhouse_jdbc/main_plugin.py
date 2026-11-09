@@ -16,6 +16,10 @@
   且 smart_analyze_clickhouse 必须定义在核心 analyzer.py（web_ui L953 经 cfg['smart_analyze'] 解析）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import sys
 import json
@@ -273,15 +277,24 @@ class ClickHouseJdbcInspector(BaseInspectionEngine):
 
             # 2. 可选 SSH 隧道：把连接目标改写为 127.0.0.1:<local_port>（决策 ③）
             tunnel_cfg = cfg
-            if getattr(self, 'ssh_info', None) and self.ssh_info.get('ssh_host'):
+            _ssh_info = getattr(self, 'ssh_info', None) or {}
+            # 只在「确实需要本插件自己建隧道」时才建：
+            #   ① 上游（Web 巡检 / 数据源测试）已建好隧道并置 _tunnel_ready：
+            #      此时 host/port 已是本机转发端口，再建一次会指向 SSH 主机自身
+            #      的这个端口（那里没有服务在听）→ 隧道套隧道，连接必失败。
+            #   ② 用户显式关闭 ssh_tunnel（SSH 仅用于采主机指标）：
+            #      数据库应直连，不能强行建隧道。键缺失时按 True 处理，保持旧行为。
+            if (_ssh_info.get('ssh_host')
+                    and not _ssh_info.get('_tunnel_ready')
+                    and _ssh_info.get('ssh_tunnel', True)):
                 try:
                     from modules.ssh import SSHTunnel
                     tunnel = SSHTunnel(
-                        ssh_host=self.ssh_info['ssh_host'],
-                        ssh_port=int(self.ssh_info.get('ssh_port', 22)),
-                        ssh_user=self.ssh_info.get('ssh_user', 'root'),
-                        ssh_password=self.ssh_info.get('ssh_password', ''),
-                        ssh_key=self.ssh_info.get('ssh_key_file', ''),
+                        ssh_host=_ssh_info['ssh_host'],
+                        ssh_port=int(_ssh_info.get('ssh_port', 22)),
+                        ssh_user=_ssh_info.get('ssh_user', 'root'),
+                        ssh_password=_ssh_info.get('ssh_password', ''),
+                        ssh_key=_ssh_info.get('ssh_key_file', ''),
                         remote_host=self.host,
                         remote_port=int(self.port),
                     )

@@ -21,6 +21,7 @@ DBCheck 增强智能分析模块
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
+
 from modules.core.paths import PROJECT_ROOT, DBC_CONFIG_PATH
 import os
 import json
@@ -413,14 +414,6 @@ def smart_analyze_mysql(context: dict) -> list:
             issues.extend(plugin_issues)
     except Exception:
         pass
-    # ── 插件规则检查（Pro 版）──────────────────────────────
-    try:
-        from modules.pro.rule_engine import analyze_with_plugins
-        plugin_issues = analyze_with_plugins('postgresql', context)
-        if plugin_issues:
-            issues.extend(plugin_issues)
-    except Exception:
-        pass
     return issues
 
 
@@ -780,7 +773,7 @@ def smart_analyze_pg(context: dict) -> list:
     # ── 插件规则检查（Pro 版）──────────────────────────────
     try:
         from modules.pro.rule_engine import analyze_with_plugins
-        plugin_issues = analyze_with_plugins('oracle', context)
+        plugin_issues = analyze_with_plugins('postgresql', context)
         if plugin_issues:
             issues.extend(plugin_issues)
     except Exception:
@@ -1367,6 +1360,12 @@ def _friendly_ai_failure(e, backend):
 
     s = str(e)
     low = s.lower()
+    # 数据安全策略拦截：这是本地策略判定，不是网络/密钥问题。
+    # 不给这条分支的话会落到下面的兜底文案，把运维引向"检查 API 地址/密钥"，完全误判。
+    if '数据安全策略阻断' in s or '未批准的外部数据发送' in s or '数据外发须验证' in s \
+            or 'egress' in low and 'disabled' in low:
+        return ('数据外发被安全策略拦截（请在 AI 设置中开启「自动允许在线 AI」，'
+                '或由运维把该主机加入 DBPULSE_ALLOWED_EGRESS_HOSTS，仅 https 生效）')
     if '10061' in s or 'connection refused' in low or '由于目标计算机积极拒绝' in s \
             or 'connectionrefusederror' in low:
         return 'AI 服务连接被拒绝（请确认 Ollama / 在线模型服务已启动且地址可达）'
@@ -1380,6 +1379,12 @@ def _friendly_ai_failure(e, backend):
         return 'AI 服务地址无法解析（请检查服务地址拼写）'
     if 'ssl' in low or 'certificate' in low or 'cert' in low:
         return 'AI 服务 SSL / 证书校验失败'
+    # 模型「调通了但没产出」：与网络/密钥无关，兜底文案会把人带偏。
+    # 典型原因是推理模型的思考 token 吃满了 max_tokens（finish_reason=length），
+    # 或者触发内容过滤。
+    if '返回内容为空' in s or 'choices 为空' in s or 'finish_reason' in low:
+        return ('AI 模型未返回正文（多为推理模型的思考过程耗尽输出上限，'
+                '或触发内容过滤）；请调大 AI 配置中的 max_tokens 后重试')
     return 'AI 服务调用失败，请检查 AI 服务配置、网络与模型名称'
 
 
@@ -1458,7 +1463,7 @@ class AIAdvisor:
 
     def __init__(self, backend: str = None, api_key: str = None,
                  api_url: str = None, model: str = None,
-                 rag_enabled: bool = True):
+                 rag_enabled: bool = True, auto_allow_egress: bool = None):
         # ── 加载 dbc_config.json 的 ai 字段获取在线模型开关 ──
         _online_enabled = False
         _online_backend = 'openai'
@@ -1466,6 +1471,9 @@ class AIAdvisor:
         _online_model = 'gpt-4o-mini'
         _config_api_key = ''
         _config_rag = {}
+        # 「自动允许在线 AI」总闸：开启后在线模型可直接外发（免逐次人工审批）；
+        # 关闭时在线模型不得参与无人值守的报告诊断，只能使用本地 Ollama。
+        _auto_allow_egress = False
         _cfg = {}  # ai 配置段；文件缺失/解析失败时保持空 dict，避免后续引用 NameError
         try:
             import os as _os
@@ -1482,8 +1490,20 @@ class AIAdvisor:
                 _online_model = (_cfg.get('online_model') or 'gpt-4o-mini').strip()
                 _config_api_key = _cfg.get('api_key', '')
                 _config_rag = _cfg.get('rag', {})
+                _auto_allow_egress = bool(_cfg.get('auto_allow_egress', False))
         except Exception:
             pass  # 配置文件读取失败时不阻塞
+
+        # 调用方（run_ai_diagnosis）已按两个开关解析出最终决策时，以传入值为准。
+        # 否则这里会「再读一次配置、再判一次开关」：一旦两次读到的不一致
+        # （配置刚被别处改写 / 进程内解析源与文件不同步），就会出现
+        # 「报告状态行写在线模型、实际却调用本地 Ollama」的自相矛盾。
+        if auto_allow_egress is not None:
+            _auto_allow_egress = bool(auto_allow_egress)
+            if _auto_allow_egress:
+                # 调用方已判定在线模型可用且已放行，此处不再用文件里的
+                # online_enabled 反向否定，否则会被下面的 raw_backend 校验二判为 disabled
+                _online_enabled = True
 
         # ── 安全限制：默认只允许 ollama 或 disabled ──
         raw_backend = (backend or os.environ.get('DBCHECK_AI_BACKEND', 'disabled')).lower()
@@ -1504,6 +1524,29 @@ class AIAdvisor:
             raw_backend = 'disabled'
         self.backend = raw_backend
 
+        # ── 「自动允许在线 AI」总闸 ────────────────────────────────────────
+        # 语义与 AI 设置页的开关一一对应：
+        #   开启 → 在线模型可直接外发（免逐次人工审批），巡检报告自动调用；
+        #   关闭 → 只允许本地 Ollama，在线模型一律不用于报告诊断（数据不出机）。
+        # 该判断放在 URL/模型解析之前，才能把在线地址整体换成本地 Ollama 配置，
+        # 否则会出现「backend=ollama 但 URL 仍是 api.xxx.com」的错配。
+        self.auto_allow_egress = bool(_auto_allow_egress)
+        if self.backend == 'openai' and not self.auto_allow_egress:
+            _fb_backend = (((_cfg.get('backend') if isinstance(_cfg, dict) else None) or 'ollama'))
+            if _fb_backend != 'disabled':
+                # 语义与 resolve_ai_runtime 保持一致：未显式关闭 AI 时一律回落本地 Ollama，
+                # 不能因为「当前传的是 openai 后端」就把整个 AI 诊断关掉。
+                print("[AI] 未开启「自动允许在线 AI」：在线模型不参与报告诊断，已回落到本地 Ollama")
+                self.backend = 'ollama'
+                _loc_url = ((_cfg.get('api_url') if isinstance(_cfg, dict) else None)
+                            or os.environ.get('DBCHECK_AI_URL', 'http://localhost:11434'))
+                _loc_model = ((_cfg.get('model') if isinstance(_cfg, dict) else None)
+                              or os.environ.get('DBCHECK_AI_MODEL', 'qwen3:8b'))
+                api_url, model = _loc_url, _loc_model
+            else:
+                print("[AI] 未开启「自动允许在线 AI」：在线模型不可用于报告诊断，AI 诊断已禁用")
+                self.backend = 'disabled'
+
         # ── URL 校验：在线模型不限制地址，Ollama 支持本地和远程地址 ──
         resolved_url = api_url or os.environ.get('DBCHECK_AI_URL', 'http://localhost:11434')
         # 注：已移除 Ollama 必须为本地地址的限制，支持配置远程 Ollama 服务
@@ -1523,6 +1566,20 @@ class AIAdvisor:
         # 规范化：去除首尾空白（防御真实配置 / 传参中可能携带的空格，避免请求 URL 非法而静默失败）
         self.api_url = (resolved_url or '').strip()
 
+        # ── 按「自动允许在线 AI」把在线主机登记到运行时放行清单 ──────────
+        # 仅 https 生效；未开启时不会走到这里，数据安全策略保持 fail-closed。
+        # 登记是进程级、易失的：改了开关需要重新触发一次诊断（或重启）才生效。
+        if self.backend == 'openai' and self.auto_allow_egress:
+            try:
+                from modules.core.data_security import allow_egress_host
+                _ok, _info = allow_egress_host(self.api_url)
+                if _ok:
+                    print(f"[AI] 已按「自动允许在线 AI」放行外发主机：{_info}")
+                else:
+                    print(f"[AI] ⚠️ 在线模型地址无法自动放行（{_info}）：{self.api_url}")
+            except Exception as _e:
+                print(f"[AI] ⚠️ 自动放行外发主机失败：{_e}")
+
         # ── 模型选择 ──
         if self.backend == 'openai':
             self.model = model or _online_model or 'gpt-4o-mini'
@@ -1532,6 +1589,17 @@ class AIAdvisor:
                 self.model = 'qwen3:8b'
         else:
             self.model = model or ''
+
+        # ── 输出 token 上限 ──
+        # 推理模型（deepseek-flash / o1 / R1 / QwQ 等）的「思考 token」同样计入
+        # completion_tokens。上限设 4096 时，思考过程很容易把它吃光，结果就是
+        # content 为空、finish_reason=length —— 表现为"调用成功但诊断什么都没有"。
+        # 因此默认提到 8192，并允许 dbc_config.json 的 ai.max_tokens 覆盖。
+        try:
+            _mt = int((_cfg.get('max_tokens') if isinstance(_cfg, dict) else 0) or 0)
+        except Exception:
+            _mt = 0
+        self.max_tokens = _mt if _mt > 0 else 8192
 
         # ── RAG 知识库初始化（静默降级，失败不影响 AI 诊断主流程）─────────
         self.rag_enabled = False
@@ -1961,8 +2029,9 @@ class AIAdvisor:
                 {'role': 'user', 'content': prompt}
             ],
             'temperature': 0.3,
-            # 确保长诊断（慢查询 Top 5、整体路线图等）不被截断
-            'max_tokens': 4096,
+            # 确保长诊断（慢查询 Top 5、整体路线图等）不被截断；
+            # 推理模型的 reasoning_tokens 也计入 completion，故用可配置的 self.max_tokens
+            'max_tokens': self.max_tokens,
         }
         # 统一入口会传入 response_format；OpenAI 协议支持 json_object / json_schema
         if response_format:
@@ -2021,12 +2090,30 @@ class AIAdvisor:
         if not choices:
             raise RuntimeError(
                 "AI 服务返回空结果（choices 为空），请检查模型名称/API Key/网络或适当增大超时")
-        # 3) choices 非空但 content 为 None/空/纯空白（可能触发内容过滤或 max_tokens 不足）
-        _content = choices[0].get('message', {}).get('content')
+        # 3) choices 非空但 content 为 None/空/纯空白
+        _choice = choices[0] or {}
+        _msg = _choice.get('message') or {}
+        _content = _msg.get('content')
+        _finish = _choice.get('finish_reason')
         if _content is None or str(_content).strip() == '':
+            # 推理模型（deepseek-flash / DeepSeek-R1 / QwQ 等）把思考过程写在
+            # reasoning_content，正文留空；max_tokens 被思考吃光时尤其常见。
+            # 这里回落到 reasoning_content —— 宁可给出带"思考过程"的分析，
+            # 也好过把整段有效内容丢掉、报告里只剩一句"AI 返回内容为空"。
+            _reasoning = (_msg.get('reasoning_content') or _msg.get('reasoning')
+                          or _msg.get('thinking') or '')
+            if str(_reasoning).strip():
+                print("[AI] 模型正文为空，已回落到 reasoning_content"
+                      f"（finish_reason={_finish}，max_tokens={self.max_tokens}）")
+                return str(_reasoning).strip()
+            _usage = data.get('usage') or {}
             raise RuntimeError(
-                "AI 返回内容为空（可能触发内容过滤或 max_tokens 不足），finish_reason=%s"
-                % choices[0].get('finish_reason'))
+                "AI 返回内容为空（可能触发内容过滤或 max_tokens 不足），"
+                f"finish_reason={_finish}, usage={_usage}, max_tokens={self.max_tokens}")
+        if _finish == 'length':
+            # 有正文但被截断：不当作失败，但必须留痕，否则会误以为诊断是完整的
+            print(f"[AI] ⚠️ 模型输出达到 max_tokens={self.max_tokens} 被截断，"
+                  "如需完整结论请在 AI 配置中调大 max_tokens")
         return str(_content).strip()
 
 
@@ -2192,16 +2279,35 @@ def smart_analyze_dm(context: dict) -> list:
             except Exception:
                 pass
 
+    # ── 插件规则检查（rules/builtin/dm.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('dm', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
     return issues
 
 
 def smart_analyze_sqlserver(context: dict) -> list:
     """
     对 SQL Server 巡检结果执行基础风险规则分析。
+
+    手写规则历史上为空壳（TODO）；风险判定统一收敛到规则引擎
+    （rules/builtin/sqlserver.yaml，11 条），取数由 metrics 层补齐。
     """
     issues = []
-    # TODO: 添加完整的 SQL Server 风险规则
+    # ── 插件规则检查（rules/builtin/sqlserver.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('sqlserver', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
     return issues
+
 
 
 def smart_analyze_tidb(context: dict) -> list:
@@ -2401,33 +2507,145 @@ def smart_analyze_tidb(context: dict) -> list:
             })
 
     print(f"[INFO] smart_analyze_tidb: 完成，发现 {len(issues)} 个问题")
+    # ── 插件规则检查（rules/builtin/tidb.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('tidb', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
     return issues
 
 
 def smart_analyze_ivorysql(context: dict) -> list:
     """
-    对 IvorySQL 巡检结果执行风险规则分析。
-    IvorySQL 兼容 PostgreSQL 协议，复用 PG 规则。
+    兼容协议复用基础规则（postgresql），并叠加本产品专属规则
+    （rules/builtin/ivorysql.yaml，经 metrics 层取数）。
     """
-    # 复用 PostgreSQL 的风险规则
-    return smart_analyze_pg(context)
+    issues = list(smart_analyze_pg(context) or [])
+    # ── 插件规则检查（rules/builtin/ivorysql.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('ivorysql', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
 
 
 def smart_analyze_yashandb(context: dict) -> list:
     """
-    对崖山 YashanDB 巡检结果执行基础风险规则分析。
-    YashanDB 与 Oracle 兼容，复用 DM8 规则作为基础。
+    兼容协议复用基础规则（dm），并叠加本产品专属规则
+    （rules/builtin/yashandb.yaml，经 metrics 层取数）。
     """
-    return smart_analyze_dm(context)
+    issues = list(smart_analyze_dm(context) or [])
+    # ── 插件规则检查（rules/builtin/yashandb.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('yashandb', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
 
 
 def smart_analyze_kingbase(context: dict) -> list:
     """
-    对 KingbaseES 巡检结果执行风险规则分析。
-    KingbaseES 兼容 PostgreSQL 协议，复用 PG 规则。
+    兼容协议复用基础规则（postgresql），并叠加本产品专属规则
+    （rules/builtin/kingbase.yaml，经 metrics 层取数）。
     """
-    # 复用 PostgreSQL 的风险规则
-    return smart_analyze_pg(context)
+    issues = list(smart_analyze_pg(context) or [])
+    # ── 插件规则检查（rules/builtin/kingbase.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('kingbase', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
+def smart_analyze_halodb(context: dict) -> list:
+    """
+    HaloDB 智能风险分析。
+
+    HaloDB 与 PostgreSQL 协议兼容，复用 smart_analyze_pg 的基础判定，
+    再叠加本产品规则文件（rules/builtin/halodb.yaml）——其 db_types 为
+    ['halodb']，不会被 pg 规则覆盖，必须显式再跑一次。
+    """
+    issues = list(smart_analyze_pg(context) or [])
+    # ── 插件规则检查（rules/builtin/halodb.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('halodb', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
+def smart_analyze_hgdb(context: dict) -> list:
+    """
+    瀚高 HighGo 智能风险分析。
+
+    瀚高 HighGo 与 PostgreSQL 协议兼容，复用 smart_analyze_pg 的基础判定，
+    再叠加本产品规则文件（rules/builtin/hgdb.yaml）——其 db_types 为
+    ['hgdb']，不会被 pg 规则覆盖，必须显式再跑一次。
+    """
+    issues = list(smart_analyze_pg(context) or [])
+    # ── 插件规则检查（rules/builtin/hgdb.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('hgdb', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
+def smart_analyze_uxdb(context: dict) -> list:
+    """
+    优炫 UxDB 智能风险分析。
+
+    优炫 UxDB 与 PostgreSQL 协议兼容，复用 smart_analyze_pg 的基础判定，
+    再叠加本产品规则文件（rules/builtin/uxdb.yaml）——其 db_types 为
+    ['uxdb']，不会被 pg 规则覆盖，必须显式再跑一次。
+    """
+    issues = list(smart_analyze_pg(context) or [])
+    # ── 插件规则检查（rules/builtin/uxdb.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('uxdb', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
+def smart_analyze_vastbase(context: dict) -> list:
+    """
+    海量 Vastbase 智能风险分析。
+
+    海量 Vastbase 与 PostgreSQL 协议兼容，复用 smart_analyze_pg 的基础判定，
+    再叠加本产品规则文件（rules/builtin/vastbase.yaml）——其 db_types 为
+    ['vastbase']，不会被 pg 规则覆盖，必须显式再跑一次。
+    """
+    issues = list(smart_analyze_pg(context) or [])
+    # ── 插件规则检查（rules/builtin/vastbase.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('vastbase', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
 
 
 def smart_analyze_gbase(context: dict) -> list:
@@ -2504,6 +2722,37 @@ def smart_analyze_gbase(context: dict) -> list:
             'advice_en': 'Check GBase 8s service status (onstat -), log files, confirm database is running normally',
         })
 
+    # ── 插件规则检查（rules/builtin/gbase.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('gbase', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
+    return issues
+
+def smart_analyze_gbase8a(context: dict) -> list:
+    """
+    GBase 8a MPP Cluster 智能风险分析。
+
+    注意与 GBase 8s 区分：builtin/gbase.yaml 面向 8s（Informix），其判定依赖
+    cf_effective 等 8s 专有视图，套用到 8a 只会静默失效。8a 的判定统一由
+    rules/builtin/gbase8a.yaml（MySQL 协议 + information_schema）承担，
+    取数由 rules/metrics/gbase8a.yaml 在巡检后补齐。
+
+    集群层状态（gcadmin 的节点存活、分片一致性、双主）无法由单条 SQL 表达，
+    不在本函数内虚构判定——那类检查由巡检模板的命令行采集项与人工判据覆盖。
+    """
+    issues = []
+    # ── 插件规则检查（rules/builtin/gbase8a.yaml，经 metrics 层取数）──
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('gbase8a', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
     return issues
 
 
@@ -2762,12 +3011,22 @@ def smart_analyze_mariadb(context: dict) -> list:
     MariaDB 智能分析入口（供 web_ui.py 按名调用）。
 
     MariaDB 与 MySQL 协议/参数高度兼容，直接复用 MySQL 风险分析主规则，
-    并叠加 MariaDB 专有参数补充检查（低风险探测，无实时连接时不产出）。
+    再叠加 mariadb.yaml 专属规则（25 条）与 MariaDB 专有参数补充检查。
 
     :param context: checkdb()/巡检返回的上下文
     :return: 风险项列表（col1/col2/col3/col4/col5/fix_sql）
     """
     issues = smart_analyze_mysql(context)
+    # ── 插件规则检查（rules/builtin/mariadb.yaml，经 metrics 层取数）──
+    # MySQL 主规则内部只覆盖 mysql 库型，而 mariadb.yaml 的 db_types 为 ['mariadb']，
+    # 因此必须在入口显式再跑一次，否则 25 条规则永不执行。
+    try:
+        from modules.pro.rule_engine import analyze_with_plugins
+        plugin_issues = analyze_with_plugins('mariadb', context)
+        if plugin_issues:
+            issues.extend(plugin_issues)
+    except Exception:
+        pass
     try:
         extras = smart_analyze_mariadb_extras(context)
         if extras:
@@ -2775,6 +3034,7 @@ def smart_analyze_mariadb(context: dict) -> list:
     except Exception as e:  # 补充检查异常不影响主规则
         print(f"[WARN] smart_analyze_mariadb extras failed: {e}")
     return issues
+
 
 
 def run_full_analysis(db_type: str, host: str, port, label: str,
@@ -2870,12 +3130,166 @@ def run_full_analysis(db_type: str, host: str, port, label: str,
     return result
 
 
+def load_ai_config() -> dict:
+    """读取 dbc_config.json 的 ai 配置段（缺失 / 解析失败一律返回空 dict，不抛错）。"""
+    try:
+        import json as _json
+        if os.path.exists(DBC_CONFIG_PATH):
+            with open(DBC_CONFIG_PATH, 'r', encoding='utf-8') as _f:
+                _ai = _json.load(_f).get('ai', {})
+            return _ai if isinstance(_ai, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+# 报告/AI 正文统一的状态行前缀（渲染端据此剥离并单独着色，避免重复展示）
+AI_STATUS_PREFIX = '【AI 分析状态】'
+
+
+def _url_host(url) -> str:
+    """取出 URL 的 host:port，用于状态文案（不打印完整 URL，避免带出路径/查询串）。"""
+    try:
+        from urllib.parse import urlsplit
+        s = str(url or '').strip()
+        if '://' not in s:
+            return s
+        p = urlsplit(s)
+        host = p.hostname or ''
+        if p.port:
+            host = f'{host}:{p.port}'
+        return host
+    except Exception:
+        return str(url or '')
+
+
+def ollama_reachable(url, timeout: float = 0.8) -> bool:
+    """TCP 探活本地 Ollama 服务（只建连、不发推理请求，毫秒级返回）。
+
+    用途：开关关闭时按「只能用本地 Ollama」回落，但若本机根本没跑 Ollama，
+    直接调用会卡满一次完整超时（默认 600s）。先探活可立即给出准确结论。
+    """
+    try:
+        import socket
+        from urllib.parse import urlsplit
+        s = str(url or '').strip()
+        if not s:
+            return False
+        if '://' not in s:
+            s = 'http://' + s
+        p = urlsplit(s)
+        host = (p.hostname or 'localhost').lower()
+        if host in ('localhost', '::1'):
+            host = '127.0.0.1'
+        port = p.port or (443 if p.scheme == 'https' else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def resolve_ai_runtime(cfg: dict = None) -> dict:
+    """解析「报告 AI 诊断实际会走哪条后端」。
+
+    与 AI 设置页两个开关严格对应，避免 UI 显示与实际行为不一致：
+
+    ============== ==================== ==================================
+    backend        online / auto_allow   实际后端
+    ============== ==================== ==================================
+    disabled       —                    disabled（报告标注「未启用」）
+    其它           true / true          在线模型（自动外发放行）
+    其它           其它任意组合          本地 Ollama（数据不出机）
+    ============== ==================== ==================================
+
+    ``fallback=True`` 表示本次是「在线被开关拦下、回落本地」，调用方可据此先
+    探活本地 Ollama，连不上就直接按「未启用」出报告，而不是白等一次超时。
+
+    :return: {'enabled','online','auto_allow','backend','model','url'}
+    """
+    cfg = cfg if isinstance(cfg, dict) else load_ai_config()
+
+    # 幂等：允许把本函数的返回值再次传入（ai_status_text 内部会再解析一次，
+    # 若不做这层保护，已解析结果的键名（auto_allow/online）与原始配置
+    # （auto_allow_egress/online_enabled）不匹配，会被误降级成「未启用」）。
+    if ('enabled' in cfg and 'online' in cfg and 'backend' in cfg
+            and 'online_enabled' not in cfg and 'auto_allow_egress' not in cfg):
+        return {
+            'enabled': bool(cfg.get('enabled')),
+            'online': bool(cfg.get('online')),
+            'auto_allow': bool(cfg.get('auto_allow')),
+            'fallback': bool(cfg.get('fallback')),
+            'backend': (cfg.get('backend') or 'disabled'),
+            'model': (cfg.get('model') or ''),
+            'url': (cfg.get('url') or ''),
+        }
+
+    online_on = bool(cfg.get('online_enabled', False))
+    auto_allow = bool(cfg.get('auto_allow_egress', False))
+    local_backend = (cfg.get('backend') or 'disabled')
+
+    # ① 用户显式关闭 AI：尊重该选择，报告标注「未启用 AI 分析」
+    if local_backend == 'disabled':
+        return {
+            'enabled': False, 'online': False, 'auto_allow': auto_allow,
+            'fallback': False, 'backend': 'disabled', 'model': '', 'url': '',
+        }
+
+    if online_on and auto_allow:
+        return {
+            'enabled': True, 'online': True, 'auto_allow': True,
+            'fallback': False,
+            'backend': (cfg.get('online_backend') or 'openai'),
+            'model': (cfg.get('online_model') or 'gpt-4o-mini'),
+            'url': (cfg.get('online_api_url') or 'https://api.openai.com/v1'),
+        }
+    # ② 其余情况一律回落本地 Ollama —— 严格对应「不打开自动允许，只能用本地 Ollama」。
+    #    fallback=True 表示这是从在线模型回落的（用户本意是走在线），
+    #    调用前会先做一次 TCP 探活，避免本机没装 Ollama 时白等一次完整超时。
+    return {
+        'enabled': True, 'online': False, 'auto_allow': auto_allow,
+        'fallback': (local_backend == 'openai'),
+        'backend': 'ollama',
+        'model': (cfg.get('model') or 'qwen3:8b'),
+        'url': (cfg.get('api_url') or 'http://localhost:11434'),
+    }
+
+
+def ai_status_text(cfg: dict = None, lang: str = 'zh') -> str:
+    """报告 / 日志用的一行 AI 分析状态说明（后端 + 是否外发）。
+
+    以 ``AI_STATUS_PREFIX`` 开头，渲染端（Word 报告）据此剥离并单独着色，
+    保证「启用还是未启用 AI 分析结论」在任何报告里都写得明明白白。
+    """
+    st = resolve_ai_runtime(cfg)
+    if lang == 'en':
+        if not st['enabled']:
+            return f'{AI_STATUS_PREFIX} Disabled — rule-engine findings only, no LLM analysis.'
+        if st['online']:
+            return (f"{AI_STATUS_PREFIX} Enabled · online model {st['model']} "
+                    f"({_url_host(st['url'])}) · automatic egress allowed, metrics leave this host")
+        return (f"{AI_STATUS_PREFIX} Enabled · local Ollama {st['model']} "
+                f"({_url_host(st['url'])}) · data stays on this machine")
+    if not st['enabled']:
+        return f'{AI_STATUS_PREFIX}未启用 · 仅输出规则引擎结论，不含大模型分析。'
+    if st['online']:
+        return (f"{AI_STATUS_PREFIX}已启用 · 在线模型 {st['model']}（{_url_host(st['url'])}）"
+                f" · 已开启自动外发放行，指标将发送至该服务")
+    return (f"{AI_STATUS_PREFIX}已启用 · 本地 Ollama {st['model']}（{_url_host(st['url'])}）"
+            f" · 数据不出本机")
+
+
 def run_ai_diagnosis(db_type, label, context, issues=None, lang='zh', timeout=600):
     """统一的 AI 诊断调用接口（所有插件 / 内置引擎共用，避免重复实现与静默失败）。
 
     自动读取 dbc_config.json 的 ai 配置、构造 AIAdvisor 并调用 diagnose。
-    返回诊断文本；未启用时返回空字符串，调用失败时返回以「⚠」开头的错误说明串（非空），并打印分级日志
-    （[AI] / [WARN] / [ERROR]），这些前缀不在前端日志过滤列表，巡检日志面板可见。
+
+    后端选择由 :func:`resolve_ai_runtime` 决定（两个开关的语义见该函数）：
+    只有 ``online_enabled`` 与 ``auto_allow_egress`` 同时开启才会调用在线模型，
+    否则回落本地 Ollama；本地也没配就返回"未启用"状态行。
+
+    返回值**恒非空**：首行是 ``【AI 分析状态】…`` 状态行，其后（若 AI 可用）
+    是模型给出的诊断正文。报告侧据此标注"启用 / 未启用 AI 分析结论"，
+    调用失败时正文是以「⚠」开头的可读原因。
 
     :param db_type: 数据库类型标识('mysql','pg','oracle','hgdb','redis','db2','clickhouse','mongodb','uxdb',...)
     :param label:   数据库标签（host / 实例名），用于 Prompt 展示
@@ -2883,43 +3297,61 @@ def run_ai_diagnosis(db_type, label, context, issues=None, lang='zh', timeout=60
     :param issues:  风险项列表（auto_analyze 结果）；省略时从 context['auto_analyze'] 取
     :param lang:    语言 'zh' / 'en'
     :param timeout: 请求超时（秒）
-    :return:        诊断文本或 ''
+    :return:        状态行 +（可选）诊断正文，恒非空
     """
     if issues is None:
         issues = context.get('auto_analyze', []) or []
+
+    _cfg = load_ai_config()
+    _st = resolve_ai_runtime(_cfg)
+    _status = ai_status_text(_cfg, lang)
+
+    # 在线被开关拦下、回落到本地 Ollama 时，先确认本地服务真的在跑：
+    # 连不上就直接按「未启用 AI 分析」出报告，避免每次巡检白等一次完整超时。
+    if (_st['enabled'] and not _st['online'] and _st.get('fallback')
+            and not ollama_reachable(_st.get('url'))):
+        print(f"[AI] 未开启「自动允许在线 AI」，且本地 Ollama 不可达"
+              f"（{_st.get('url')}）→ 报告标注「未启用 AI 分析」")
+        _st = {'enabled': False, 'online': False,
+               'auto_allow': _st.get('auto_allow', False),
+               'fallback': True, 'backend': 'disabled', 'model': '', 'url': ''}
+        _status = ai_status_text(_st, lang)
+
+    # 状态回写 context：报告渲染端可据此单独着色，不必解析字符串
     try:
-        _backend = 'openai'
-        try:
-            import os as _os, json as _json
-            _p = DBC_CONFIG_PATH
-            if _os.path.exists(_p):
-                with open(_p, 'r', encoding='utf-8') as _f:
-                    _ai = _json.load(_f).get('ai', {})
-                # 与 modules/web/app.py 的 AWR 步骤解析保持一致：
-                # 在线模型开启 → 用 online_backend；未开启 → 回落到本地 backend（默认 ollama）
-                _online_on = _ai.get('online_enabled', False)
-                _backend = (_ai.get('online_backend', 'openai') or 'openai') if _online_on \
-                    else (_ai.get('backend', 'ollama') or 'ollama')
-                _api_url = _ai.get('api_url', '')  # Ollama URL
-                _model = _ai.get('model', '')  # Ollama model
-        except Exception:
-            pass
-        advisor = AIAdvisor(backend=_backend, api_url=_api_url, model=_model)
+        if isinstance(context, dict):
+            context['ai_status'] = _st
+    except Exception:
+        pass
+
+    try:
+        if not _st['enabled']:
+            print(f"[AI] 诊断未启用（online_enabled={_cfg.get('online_enabled', False)}, "
+                  f"auto_allow_egress={_cfg.get('auto_allow_egress', False)}, "
+                  f"backend={_cfg.get('backend')}）→ 报告将标注「未启用 AI 分析」")
+            return _status
+
+        advisor = AIAdvisor(backend=_st['backend'],
+                            api_url=_st['url'] or None,
+                            model=_st['model'] or None,
+                            # 把已解析好的开关决策传下去，避免 AIAdvisor 二次读配置、
+                            # 二次判开关导致「状态行与实际调用后端不一致」
+                            auto_allow_egress=_st['auto_allow'])
         if not advisor.enabled:
-            print(f"[AI] 诊断被禁用（backend={advisor.backend}）；请确认 dbc_config.json 的 ai.online_enabled=true 且 backend={_backend}")
-            return ''
+            print(f"[AI] 诊断被禁用（backend={advisor.backend}）→ 报告将标注「未启用 AI 分析」")
+            return _status
+
         print(f"[AI] 诊断已启用，准备调用 backend={advisor.backend} model={advisor.model} url={advisor.api_url}")
         advice = advisor.diagnose(db_type, label, context, issues, lang=lang, timeout=timeout)
+        print(f"[AI] 诊断完成，长度={len(advice or '')}")
         if not advice:
-            print(f"[WARN] AI 诊断返回空字符串（db_type={db_type}）；请检查 API 地址/密钥/网络/模型")
-        else:
-            print(f"[AI] 诊断完成，长度={len(advice)}")
-        return advice or ''
+            return _status
+        return _status + '\n\n' + advice
     except Exception as e:
         # 外层兜底：不向用户暴露内部异常 / 完整堆栈，仅给出友好提示并跳过 AI 诊断
-        _friendly_ai_failure(e, 'unknown')
+        _reason = _friendly_ai_failure(e, 'unknown')
         print("[ERROR] AI 诊断流程异常，已跳过 AI 诊断（详见 debug 日志）")
-        return ''
+        return _status + '\n\n⚠ AI 诊断调用失败：' + _reason
 
 
 # ═══════════════════════════════════════════════════════
@@ -2932,7 +3364,12 @@ _ISSUE_ANALYZER_ALIASES = {
     'postgres': 'pg',
     'sqlserver_jdbc': 'sqlserver',
     'oracle_full': 'oracle',
+    # OraCle JDBC 采集器与 Oracle 共用判定；不加这条会去查不存在的
+    # smart_analyze_oracle_jdbc，智能分析恒为空。
+    'oracle_jdbc': 'oracle',
     'dm8': 'dm',
+    # 崖山数据库：库型简称 yasdb，规则文件 yasdb.yaml 的 db_types 为 ['yashandb']
+    'yasdb': 'yashandb',
     # OceanBase 兼容 MySQL 协议：Web UI 任务配置使用 smart_analyze_mysql，
     # 此处保持一致，确保报告/通知/历史/智能分析推导到同一分析函数。
     'oceanbase': 'mysql',
@@ -2992,7 +3429,9 @@ def collect_issues(db_type: str, context, analyzer_fn: str = '') -> list:
         _t = str(db_type or '').strip().lower()
         _suffix = _ISSUE_ANALYZER_ALIASES.get(_t, _t)
         if _suffix:
-            fn_name = 'smart_analyze_%s' % _suffix
+            # 函数名必须是合法标识符：db_type 里的连字符要转下划线，
+            # 否则 'redis-cluster' 会拼出 smart_analyze_redis-cluster 而永远查不到。
+            fn_name = 'smart_analyze_%s' % _suffix.replace('-', '_')
 
     fn = globals().get(fn_name) if fn_name else None
     if callable(fn):

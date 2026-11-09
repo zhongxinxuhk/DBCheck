@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
@@ -18,6 +18,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 
 
 from modules.core.paths import INSPECTION_DB
@@ -274,6 +275,10 @@ def init_database(db_path: str = None):
         print(f"[巡检] 日志盘章节补齐失败（已忽略）: {e}")
 
 
+    from modules.inspection.business_templates import ensure_business_defaults
+    ensure_business_defaults(db_path=db_path)
+
+
 def create_template(db_type: str, template_name: str, description: str = None,
                    template_name_en: str = None, version: str = 'v1', is_default: int = 0, is_preset: int = 0, db_path: str = None) -> int:
     """
@@ -392,19 +397,64 @@ def get_all_templates(db_path: str = None) -> List[Dict]:
         conn.close()
 
 
-def get_templates_by_db_type(db_type: str, db_path: str = None) -> List[Dict]:
+def family_db_types(db_type: str, db_path: str = None) -> List[str]:
+    """把一个库种展开为「同族且实际存在模板」的 db_type 列表（精确名最优先）。
+
+    背景：业务专项模板历史上只落在族内的「主名」下（oracle / sqlserver /
+    dm8 / gbase8a / mysql / postgresql ...），而实例注册时可能用的是
+    oracle_jdbc / sqlserver_jdbc / dm / kingbase 等同族别名——模板查询
+    若按 db_type 严格相等过滤，就会出现「同系列数据库巡检时选不到
+    业务专项模板」的问题。
+
+    归并口径复用 modules.driver_registry.db_family（PG 协议族 / MySQL
+    协议族 / oracle / sqlserver / dm 等同名族），不在此另造一套映射。
+
+    返回顺序保证：
+    1. 传入的 db_type 本身（若模板表中存在）永远排第一；
+    2. 其余按模板数量降序（覆盖面广的主名在前）。
+    """
+    from modules.driver_registry import db_family as _family
+
+    target = (db_type or '').strip().lower()
+    if not target:
+        return []
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT db_type, COUNT(*) AS n FROM inspection_template GROUP BY db_type")
+        present = {str(r['db_type']).lower(): int(r['n']) for r in cursor.fetchall()}
+    finally:
+        conn.close()
+    if not present:
+        return []
+    fam = _family(target)
+    fam_types = [t for t, _n in present.items() if _family(t) == fam]
+    fam_types.sort(key=lambda t: (t != target, -present[t]))
+    return fam_types
+
+
+def get_templates_by_db_type(db_type: str, db_path: str = None,
+                              include_family: bool = True) -> List[Dict]:
     """
     获取指定数据库类型的所有巡检模板。
-    
+
     :param db_type: 数据库类型
     :param db_path: 数据库文件路径
+    :param include_family: 是否包含「同族」库种的模板（默认开）。
+        例如 oracle_jdbc 实例可以选用 oracle 名下的业务专项模板、
+        dm 实例可以选用 dm8 模板。精确匹配的模板永远排在族内其余之前，
+        前端可据 ``family`` 标记给跨库种模板加「同系列」徽标。
     :return: 模板信息字典列表
     """
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
-    
+
     try:
-        cursor.execute("""
+        types = [db_type]
+        if include_family:
+            types = family_db_types(db_type, db_path=db_path) or [db_type]
+        marks = ','.join('?' * len(types))
+        cursor.execute(f"""
             SELECT id,
                    template_name_zh as template_name,
                    template_name_en,
@@ -416,12 +466,20 @@ def get_templates_by_db_type(db_type: str, db_path: str = None) -> List[Dict]:
                    created_at,
                    updated_at
             FROM inspection_template
-            WHERE db_type = ?
-            ORDER BY is_default DESC, version DESC, template_name_zh
-        """, (db_type,))
-        
-        return [dict(row) for row in cursor.fetchall()]
-        
+            WHERE LOWER(db_type) IN ({marks})
+            ORDER BY CASE WHEN db_type = ? THEN 0 ELSE 1 END,
+                     is_default DESC, version DESC, template_name_zh
+        """, (*types, db_type))
+
+        rows = [dict(row) for row in cursor.fetchall()]
+        rows.sort(key=lambda r: (not (r['is_default'] and '业务专项巡检_周巡检' in r['template_name']),
+                                 str(r['db_type']).lower() != (db_type or '').lower(), not r['is_default']))
+        # 打上「是否跨库种（同族）」标记，供前端分组/徽标展示
+        exact = (db_type or '').lower()
+        for r in rows:
+            r['family'] = 1 if str(r.get('db_type', '')).lower() != exact else 0
+        return rows
+
     finally:
         conn.close()
 
@@ -454,18 +512,22 @@ def get_default_template(db_type: str, db_path: str = None,
                    created_at,
                    updated_at
             FROM inspection_template
-            WHERE db_type = ? AND is_default = 1
+            WHERE LOWER(db_type) IN ({marks}) AND is_default = 1
         """
-        params = [db_type]
+        types = family_db_types(db_type, db_path=db_path) or [db_type]
+        sql = sql.format(marks=','.join('?' for _ in types))
+        params = list(types)
 
         # Oracle 按版本分组匹配默认模板
-        if db_type == 'oracle' and db_version_major is not None:
+        from modules.driver_registry import db_family
+        if db_family(db_type) == 'oracle' and db_version_major is not None:
             if db_version_major <= 11:
                 sql += " AND version = '11g'"
             else:
                 sql += " AND (version IS NULL OR version != '11g')"
 
-        sql += " LIMIT 1"
+        sql += " ORDER BY CASE WHEN is_preset=0 THEN 0 WHEN template_name_zh LIKE '%业务专项巡检_周巡检' THEN 1 WHEN db_type=? THEN 2 ELSE 3 END, id LIMIT 1"
+        params.append(db_type)
         cursor.execute(sql, params)
         
         row = cursor.fetchone()
@@ -1553,21 +1615,19 @@ def get_baselines_by_db_type(db_type: str, enabled_only: bool = True, db_path: s
     cursor = conn.cursor()
     
     try:
-        if enabled_only:
-            cursor.execute("""
-                SELECT * FROM inspection_baseline 
-                WHERE db_type = ? AND enabled = 1
-                ORDER BY param_name
-            """, (db_type,))
-        else:
-            cursor.execute("""
-                SELECT * FROM inspection_baseline 
-                WHERE db_type = ?
-                ORDER BY param_name
-            """, (db_type,))
-        
-        return [dict(row) for row in cursor.fetchall()]
-        
+        from modules.driver_registry import db_family
+        available = [r[0] for r in cursor.execute('SELECT DISTINCT db_type FROM inspection_baseline')]
+        target = (db_type or '').strip().lower()
+        types = [t for t in available if db_family(t) == db_family(target)] or [target]
+        marks = ','.join('?' for _ in types)
+        cursor.execute('SELECT * FROM inspection_baseline WHERE db_type IN ('+marks+') '
+                       'ORDER BY CASE WHEN LOWER(db_type)=? THEN 0 ELSE 1 END, id', (*types,target))
+        merged = {}
+        for row in cursor.fetchall():
+            merged.setdefault(row['param_name'], dict(row))
+        return sorted((row for row in merged.values() if not enabled_only or row['enabled']),
+                      key=lambda row: row['param_name'])
+
     finally:
         conn.close()
 
@@ -1737,8 +1797,8 @@ def _builtin_default_baselines() -> Dict[str, List[Dict[str, Any]]]:
         # ═══════════════════════════════════════════
         'oracle': [
             # ── 安全 ──
-            {'param_name': 'FAILED_LOGIN_ATTEMPTS', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='failed_login_attempts'", 'operator': '<=', 'expected_value': '5', 'risk_level': 'HIGH', 'description_zh': '登录失败尝试次数应 <= 5，防止暴力破解', 'description_en': 'Failed login attempts should be <= 5 to prevent brute force'},
-            {'param_name': 'PASSWORD_LIFE_TIME', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='password_life_time'", 'operator': '<=', 'expected_value': '180', 'risk_level': 'MEDIUM', 'description_zh': '密码有效期应 <= 180 天', 'description_en': 'Password lifetime should be <= 180 days'},
+            {'param_name': 'FAILED_LOGIN_ATTEMPTS', 'query_sql': "SELECT RESOURCE_NAME, LIMIT FROM DBA_PROFILES WHERE PROFILE='DEFAULT' AND RESOURCE_NAME='FAILED_LOGIN_ATTEMPTS'", 'operator': '<=', 'expected_value': '5', 'risk_level': 'HIGH', 'description_zh': '登录失败尝试次数应 <= 5，防止暴力破解', 'description_en': 'Failed login attempts should be <= 5 to prevent brute force'},
+            {'param_name': 'PASSWORD_LIFE_TIME', 'query_sql': "SELECT RESOURCE_NAME, LIMIT FROM DBA_PROFILES WHERE PROFILE='DEFAULT' AND RESOURCE_NAME='PASSWORD_LIFE_TIME'", 'operator': '<=', 'expected_value': '180', 'risk_level': 'MEDIUM', 'description_zh': '密码有效期应 <= 180 天', 'description_en': 'Password lifetime should be <= 180 days'},
             {'param_name': 'AUDIT_TRAIL', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='audit_trail'", 'operator': '=', 'expected_value': 'DB', 'risk_level': 'HIGH', 'description_zh': '审计应开启（AUDIT_TRAIL=DB）', 'description_en': 'Audit trail should be enabled (AUDIT_TRAIL=DB)'},
             {'param_name': 'REMOTE_LOGIN_PASSWORDFILE', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='remote_login_passwordfile'", 'operator': '=', 'expected_value': 'EXCLUSIVE', 'risk_level': 'MEDIUM', 'description_zh': '远程登录密码文件应为 EXCLUSIVE', 'description_en': 'Remote login password file should be EXCLUSIVE'},
             # ── 性能 ──
@@ -1750,7 +1810,7 @@ def _builtin_default_baselines() -> Dict[str, List[Dict[str, Any]]]:
             {'param_name': 'ARCHIVELOG_MODE', 'query_sql': "SELECT LOG_MODE FROM V$DATABASE", 'operator': '=', 'expected_value': 'ARCHIVELOG', 'risk_level': 'HIGH', 'description_zh': '数据库应运行在归档模式', 'description_en': 'Database should be in ARCHIVELOG mode'},
             {'param_name': 'FORCE_LOGGING', 'query_sql': "SELECT FORCE_LOGGING FROM V$DATABASE", 'operator': '=', 'expected_value': 'YES', 'risk_level': 'MEDIUM', 'description_zh': '应启用强制日志（FORCE_LOGGING=YES）', 'description_en': 'Force logging should be enabled (FORCE_LOGGING=YES)'},
             # ── 运维 ──
-            {'param_name': 'OPEN_CURSORS_PER_SESSION', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='open_cursors_per_session'", 'operator': '>=', 'expected_value': '300', 'risk_level': 'LOW', 'description_zh': '每会话打开游标数应 >= 300', 'description_en': 'Open cursors per session should be >= 300'},
+            {'param_name': 'OPEN_CURSORS_PER_SESSION', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='open_cursors'", 'operator': '>=', 'expected_value': '300', 'risk_level': 'LOW', 'description_zh': '每会话打开游标数应 >= 300', 'description_en': 'Open cursors per session should be >= 300'},
             {'param_name': 'UNDO_RETENTION', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='undo_retention'", 'operator': '>=', 'expected_value': '900', 'risk_level': 'LOW', 'description_zh': 'UNDO 保留时间应 >= 900 秒', 'description_en': 'UNDO retention should be >= 900 seconds'},
         ],
         # ═══════════════════════════════════════════
@@ -1910,10 +1970,10 @@ def _builtin_default_baselines() -> Dict[str, List[Dict[str, Any]]]:
             {'param_name': 'is_broker_enabled', 'query_sql': "SELECT name, is_broker_enabled FROM sys.databases WHERE name = DB_NAME()", 'operator': '=', 'expected_value': '0', 'risk_level': 'MEDIUM', 'description_zh': 'Service Broker 应关闭（除非使用）', 'description_en': 'Service Broker should be OFF unless used'},
             {'param_name': 'HAS_DBACCESS', 'query_sql': "SELECT IS_SRVROLEMEMBER('sysadmin') AS is_sa", 'operator': '=', 'expected_value': '0', 'risk_level': 'CRITICAL', 'description_zh': '当前登录不应是 sysadmin（最小权限原则）', 'description_en': 'Current login should not be sysadmin (principle of least privilege)'},
             # ── 性能 ──
-            {'param_name': 'max server memory', 'query_sql': "EXEC sp_configure 'max server memory'", 'operator': '>=', 'expected_value': '4096', 'risk_level': 'MEDIUM', 'description_zh': '最大服务器内存应 >= 4096 (MB)', 'description_en': 'Max server memory should be >= 4096 (MB)'},
-            {'param_name': 'min server memory', 'query_sql': "EXEC sp_configure 'min server memory'", 'operator': '>=', 'expected_value': '1024', 'risk_level': 'LOW', 'description_zh': '最小服务器内存应 >= 1024 (MB)', 'description_en': 'Min server memory should be >= 1024 (MB)'},
-            {'param_name': 'max degree of parallelism', 'query_sql': "EXEC sp_configure 'max degree of parallelism'", 'operator': '>=', 'expected_value': '1', 'risk_level': 'MEDIUM', 'description_zh': '最大并行度应 >= 1（建议 = CPU 核心数）', 'description_en': 'Max degree of parallelism should be configured'},
-            {'param_name': 'cost threshold for parallelism', 'query_sql': "EXEC sp_configure 'cost threshold for parallelism'", 'operator': '>=', 'expected_value': '50', 'risk_level': 'LOW', 'description_zh': '并行成本阈值应 >= 50', 'description_en': 'Cost threshold for parallelism should be >= 50'},
+            {'param_name': 'max server memory', 'query_sql': "SELECT name, value_in_use FROM sys.configurations WHERE name='max server memory (MB)'", 'operator': '>=', 'expected_value': '4096', 'risk_level': 'MEDIUM', 'description_zh': '最大服务器内存应 >= 4096 (MB)', 'description_en': 'Max server memory should be >= 4096 (MB)'},
+            {'param_name': 'min server memory', 'query_sql': "SELECT name, value_in_use FROM sys.configurations WHERE name='min server memory (MB)'", 'operator': '>=', 'expected_value': '1024', 'risk_level': 'LOW', 'description_zh': '最小服务器内存应 >= 1024 (MB)', 'description_en': 'Min server memory should be >= 1024 (MB)'},
+            {'param_name': 'max degree of parallelism', 'query_sql': "SELECT name, value_in_use FROM sys.configurations WHERE name='max degree of parallelism'", 'operator': '>=', 'expected_value': '1', 'risk_level': 'MEDIUM', 'description_zh': '最大并行度应 >= 1（建议 = CPU 核心数）', 'description_en': 'Max degree of parallelism should be configured'},
+            {'param_name': 'cost threshold for parallelism', 'query_sql': "SELECT name, value_in_use FROM sys.configurations WHERE name='cost threshold for parallelism'", 'operator': '>=', 'expected_value': '50', 'risk_level': 'LOW', 'description_zh': '并行成本阈值应 >= 50', 'description_en': 'Cost threshold for parallelism should be >= 50'},
             # ── 高可用 ──
             {'param_name': 'recovery model', 'query_sql': "SELECT name, recovery_model_desc FROM sys.databases WHERE name = DB_NAME()", 'operator': '=', 'expected_value': 'FULL', 'risk_level': 'HIGH', 'description_zh': '恢复模式应为 FULL（用于完整备份/恢复）', 'description_en': 'Recovery model should be FULL for full backup/recovery'},
             {'param_name': 'is_fulltext_enabled', 'query_sql': "SELECT name, is_fulltext_enabled FROM sys.databases WHERE name = DB_NAME()", 'operator': '=', 'expected_value': '0', 'risk_level': 'LOW', 'description_zh': '全文索引应关闭（除非使用）', 'description_en': 'Fulltext should be OFF unless used'},
@@ -2071,7 +2131,7 @@ def _builtin_default_baselines() -> Dict[str, List[Dict[str, Any]]]:
             {'param_name': 'ARCHIVELOG_MODE', 'query_sql': "SELECT LOG_MODE FROM V$DATABASE", 'operator': '=', 'expected_value': 'ARCHIVELOG', 'risk_level': 'HIGH', 'description_zh': '数据库应运行在归档模式', 'description_en': 'Database should be in ARCHIVELOG mode'},
             {'param_name': 'FORCE_LOGGING', 'query_sql': "SELECT FORCE_LOGGING FROM V$DATABASE", 'operator': '=', 'expected_value': 'YES', 'risk_level': 'MEDIUM', 'description_zh': '应启用强制日志（FORCE_LOGGING=YES）', 'description_en': 'Force logging should be enabled (FORCE_LOGGING=YES)'},
             # ── 运维 ──
-            {'param_name': 'OPEN_CURSORS_PER_SESSION', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='open_cursors_per_session'", 'operator': '>=', 'expected_value': '300', 'risk_level': 'LOW', 'description_zh': '每会话打开游标数应 >= 300', 'description_en': 'Open cursors per session should be >= 300'},
+            {'param_name': 'OPEN_CURSORS_PER_SESSION', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='open_cursors'", 'operator': '>=', 'expected_value': '300', 'risk_level': 'LOW', 'description_zh': '每会话打开游标数应 >= 300', 'description_en': 'Open cursors per session should be >= 300'},
             {'param_name': 'UNDO_RETENTION', 'query_sql': "SELECT NAME, VALUE FROM V$PARAMETER WHERE NAME='undo_retention'", 'operator': '>=', 'expected_value': '900', 'risk_level': 'LOW', 'description_zh': 'UNDO 保留时间应 >= 900 秒', 'description_en': 'UNDO retention should be >= 900 seconds'},
         ],
         # ═════════════════════════════════════════
@@ -2445,14 +2505,28 @@ def force_reset_baselines(db_type: str = None, db_path: str = None):
 
     filtered = [bl for bl in default_baselines if db_type is None or bl['db_type'] == db_type]
 
+    # 种子覆盖范围：只有被种子覆盖的 db_type 才允许「删后重插」。
+    # 插件库型（db2_jdbc / clickhouse / hgdb / uxdb / vastbase 等）的基线由插件
+    # 自身播种，不在 _get_default_baselines() 里。若无参重置时一律 DELETE 全表，
+    # 这些库型的基线会被清空且不会回填——用户表现为「重置后插件基线消失」。
+    seeded_types = {bl['db_type'] for bl in default_baselines}
+
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
     try:
         if db_type:
+            if db_type not in seeded_types:
+                raise ValueError(
+                    f"{db_type} 的基线由插件提供，不在内置重置清单内；"
+                    f"请通过插件重新初始化，避免清空后无法回填")
             cursor.execute("DELETE FROM inspection_baseline WHERE db_type = ?", (db_type,))
         else:
-            cursor.execute("DELETE FROM inspection_baseline")
+            # 仅清空种子覆盖的库型，插件库型原样保留
+            placeholders = ','.join('?' for _ in seeded_types)
+            cursor.execute(
+                f"DELETE FROM inspection_baseline WHERE db_type IN ({placeholders})",
+                tuple(sorted(seeded_types)))
 
         for bl in filtered:
             cursor.execute("""

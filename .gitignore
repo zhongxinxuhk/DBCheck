@@ -205,3 +205,6 @@ build/core-missing.txt
 
 # Generic integration guidance; contains no customer requirements or records
 !/docs/database-compatibility.md
+
+# Generic business inspection compatibility documentation
+!/docs/business-inspection-compatibility.md

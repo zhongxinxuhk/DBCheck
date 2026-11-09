@@ -257,7 +257,7 @@ rules:
     enabled: true
     description: 系统内存使用率超过 90%
     description_zh: 系统内存使用率超过 90%
-    condition: "mem_usage > 90"
+    condition: "mem_usage > mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，超过 90% 可能触发 OOM 并影响 HGDB"

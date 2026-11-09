@@ -309,7 +309,7 @@ rules:
     enabled: true
     description: 系统内存使用率 > 90%
     description_zh: 系统内存使用率 > 90%
-    condition: "mem_usage > 90"
+    condition: "mem_usage > mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，超过 90% 可能触发 OOM Killer"
@@ -327,7 +327,7 @@ rules:
     enabled: true
     description: 系统内存使用率 > 80%
     description_zh: 系统内存使用率 > 80%
-    condition: "mem_usage > 80 and mem_usage <= 90"
+    condition: "mem_usage > mem_warning_pct and mem_usage <= mem_critical_pct"
     params:
       mem_usage: "${context.system_info.memory.usage_percent}"
     message: "系统内存使用率 {mem_usage:.1f}%，建议关注内存增长趋势"
@@ -345,7 +345,7 @@ rules:
     enabled: true
     description: 磁盘使用率 > 90%
     description_zh: 磁盘使用率 > 90%
-    condition: "any(disk.get('usage_percent', 0) > 90 for disk in disk_list)"
+    condition: "any(disk.get('usage_percent', 0) > db_fs_usage_crit_pct for disk in disk_list)"
     params:
       disk_list: "${context.system_info.disk_list}"
     message: "磁盘 {mountpoint} 使用率 {usage:.1f}%，可能导致数据库写入失败"
@@ -387,3 +387,58 @@ rules:
     message: "当前字符集为 {charset}，建议统一使用 utf8mb4 以支持 emoji 和多语言"
     message_zh: "当前字符集为 {charset}，建议统一使用 utf8mb4 以支持 emoji 和多语言"
     fix_sql: "-- 修改 my.cnf：\n-- character-set-server = utf8mb4\n-- collation-server = utf8mb4_unicode_ci"
+
+  # ── §4.6 关键性能指标（阈值均可在 Web UI「指标阈值」调整，无需改本文件） ──
+  - id: mysql_cpu_avg_high
+    name: CPU 平均利用率过高
+    name_zh: CPU 平均利用率过高
+    category: system
+    db_types: [mysql, tdsqlc_mysql, mariadb, tidb, oceanbase]
+    severity: medium
+    priority: medium
+    owner: 系统管理员
+    enabled: true
+    description: 主机 CPU 平均利用率超过 db_cpu_avg_warn_pct（默认 70%）
+    description_zh: 主机 CPU 平均利用率超过 db_cpu_avg_warn_pct（默认 70%）
+    condition: "cpu_pct is not None and cpu_pct > db_cpu_avg_warn_pct"
+    params:
+      cpu_pct: "${context.cpu_avg_pct}"
+    message: "主机 CPU 平均利用率 {cpu_pct:.1f}%，超过预警阈值，建议排查慢查询、全表扫描与并发连接数"
+    message_zh: "主机 CPU 平均利用率 {cpu_pct:.1f}%，超过预警阈值，建议排查慢查询、全表扫描与并发连接数"
+    fix_sql: "-- 查看当前消耗 CPU 的线程：\nSELECT * FROM performance_schema.threads WHERE TYPE = 'FOREGROUND' ORDER BY THREAD_ID DESC LIMIT 20;"
+
+  - id: mysql_slow_sql_over_threshold
+    name: 慢查询数量超阈值
+    name_zh: 慢查询数量超阈值
+    category: performance
+    db_types: [mysql, tdsqlc_mysql, mariadb, tidb]
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    description: Slow_queries 状态计数超过 db_slow_sql_warn_per_week（默认每周 1 条）
+    description_zh: Slow_queries 状态计数超过 db_slow_sql_warn_per_week（默认每周 1 条）
+    condition: "slow_cnt is not None and slow_cnt > db_slow_sql_warn_per_week"
+    params:
+      slow_cnt: "${context.slow_query_count[0].Value}"
+    message: "慢查询计数达 {slow_cnt:.0f}，超过阈值；注意该值为实例累计值，阈值按「每周新增」口径设定时需结合采集周期"
+    message_zh: "慢查询计数达 {slow_cnt:.0f}，超过阈值；注意该值为实例累计值，阈值按「每周新增」口径设定时需结合采集周期"
+    fix_sql: "-- 开启并落盘慢查询日志：\nSET GLOBAL slow_query_log = ON;\nSET GLOBAL long_query_time = 1;\n-- 用 mysqldumpslow 汇总：\n-- mysqldumpslow -s t -t 20 /var/log/mysql/slow.log"
+
+  - id: mysql_repl_lag_over_threshold
+    name: 主从复制延迟超阈值
+    name_zh: 主从复制延迟超阈值
+    category: replication
+    db_types: [mysql, tdsqlc_mysql, mariadb, tidb]
+    severity: high
+    priority: high
+    owner: DBA
+    enabled: true
+    description: Seconds_Behind_Master 超过 db_cluster_lag_warn_s（默认 5 秒）
+    description_zh: Seconds_Behind_Master 超过 db_cluster_lag_warn_s（默认 5 秒）
+    condition: "lag_s is not None and lag_s > db_cluster_lag_warn_s"
+    params:
+      lag_s: "${context.replication_lag[0].Seconds_Behind_Master}"
+    message: "主从复制延迟 {lag_s:.0f} 秒，超过阈值；备库读一致性已受影响"
+    message_zh: "主从复制延迟 {lag_s:.0f} 秒，超过阈值；备库读一致性已受影响"
+    fix_sql: "-- 检查复制线程与延迟来源：\nSHOW SLAVE STATUS\\G\n-- 关注 Slave_IO_Running / Slave_SQL_Running / Seconds_Behind_Master\n-- 若为大事务导致，评估开启并行复制：SET GLOBAL slave_parallel_workers = 4;"

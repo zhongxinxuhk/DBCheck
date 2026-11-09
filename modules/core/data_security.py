@@ -27,7 +27,7 @@ _DENIED = set(
 )
 _READ_FUNCTIONS = set(
     (
-        'IS_MEMBER COUNT SUM MIN MAX AVG ROUND FLOOR CEIL CEILING ABS MOD TRUNC COALESCE NULLIF NVL  '
+        'AGENT_DATETIME DM_IO_VIRTUAL_FILE_STATS DATEPART CURRENT_USER REGEXP_LIKE SUSER_NAME SYSTEM_USER ORIGINAL_LOGIN APP_NAME HOST_NAME LOGINPROPERTY USER DATABASE FN_VIRTUALFILESTATS FN_VIRTUAL_FILE_STATS FN_AGENT_DATETIME PARSENAME IS_MEMBER COUNT SUM MIN MAX AVG ROUND FLOOR CEIL CEILING ABS MOD TRUNC COALESCE NULLIF NVL  '
         'NVL2 DECODE CAST CONVERT TRY_CONVERT TO_CHAR TO_DATE TO_NUMBER TO_TIMESTAMP UPPER LOWER  '
         'LENGTH CHAR_LENGTH SUBSTR SUBSTRING LEFT RIGHT REPLACE CONCAT CONCAT_WS TRIM LTRIM RTRIM  '
         'REVERSE INSTR LOCATE LPAD RPAD REGEXP_REPLACE REGEXP_SUBSTR EXTRACT DATE_PART DATE_TRUNC  '
@@ -45,6 +45,9 @@ _READ_FUNCTIONS = set(
         'CHECKSUM_AGG TIMESTAMPDIFF PG_POSTMASTER_START_TIME PG_TABLESPACE_SIZE PG_CURRENT_WAL_LSN '
         'PG_IS_IN_RECOVERY PG_WALFILE_NAME PG_WAL_LSN_DIFF PG_LAST_WAL_RECEIVE_LSN AGE FILTER '
         'PG_LS_DIR JOIN AND OR DATALENGTH DM_DB_INDEX_PHYSICAL_STATS DM_EXEC_SQL_TEXT NVARCHAR DBINFO '
+        'DECIMAL FLOAT INTEGER SMALLINT BIGINT VARCHAR CHAR DATE TIME TIMESTAMP SYSDATE '
+        'TODAY YESTERDAY TO_DAYS TO_SECONDS IFNULL NOW CURDATE CURTIME SYSTEM UUID '
+        'ROWCOUNT PIPE ADD_MONTHS MONTHS_BETWEEN LAST_DAY NEXT_DAY TRUNC'
     ).split()
 )
 
@@ -59,6 +62,9 @@ def assert_readonly_sql(sql):
         raise ValueError('巡检 SQL 为空或超出长度限制')
     if '/*!' in sql or any(ord(c) < 32 and c not in '\r\n\t' for c in sql):
         raise ValueError('禁止可执行注释或控制字符')
+    # Only these fixed SQL Server diagnostics are read-only; never permit arbitrary EXEC/DBCC.
+    if re.fullmatch(r"\s*(?:DBCC\s+LOGINFO|DBCC\s+SQLPERF\s*\(\s*LOGSPACE\s*\)|EXEC\s+(?:master\.\.)?xp_readerrorlog\s+0\s*,\s*1|EXEC\s+master\.dbo\.sp_readerrorlog\s+0\s*,\s*1\s*,\s*N'Error')\s*;?\s*", sql, re.I):
+        return
     tokens = []
     i = 0
     semicolon = False
@@ -108,7 +114,7 @@ def assert_readonly_sql(sql):
         if match:
             token = match.group().upper()
             if sql[i+len(match.group()):].lstrip().startswith('(') and token not in _READ_FUNCTIONS:
-                raise ValueError('未知函数须经只读审查后加入白名单')
+                raise ValueError('未知函数须经只读审查后加入白名单: ' + token)
             tokens.append(token)
             i += len(match.group())
         else:
@@ -154,21 +160,77 @@ def redact(value, *, mask_identity=False, key=''):
     return value
 
 
-def ensure_egress_allowed(url):
-    """Customer data stays local unless the operator explicitly allowlists a TLS host."""
+# ── 运行时放行清单 ────────────────────────────────────────────────────────
+# 由「自动允许在线 AI」（dbc_config.json → ai.auto_allow_egress）在进程内登记。
+# 与 DBPULSE_ALLOWED_EGRESS_HOSTS 的区别：那个是运维在部署层写的静态清单，
+# 这个是管理员在 AI 设置页点开关产生的会话级授权，进程重启即失效。
+# 两者都只对 https 生效，且都不改变「默认 fail-closed」的基线行为。
+_RUNTIME_ALLOWED_HOSTS = set()
+
+
+def allow_egress_host(url_or_host):
+    """登记一个运行时放行的外发主机（仅 https）。
+
+    :return: ``(ok, host_or_reason)``；ok 为 False 时第二项是拒绝原因（中文）。
+    """
+    from urllib.parse import urlsplit
+    s = (url_or_host or '').strip()
+    if not s:
+        return False, '地址为空'
+    if '://' not in s:
+        s = 'https://' + s
+    try:
+        parsed = urlsplit(s)
+    except Exception:
+        return False, '地址无效'
+    if parsed.scheme != 'https':
+        return False, '仅支持 https'
+    host = (parsed.hostname or '').lower()
+    if not host:
+        return False, '地址无效'
+    _RUNTIME_ALLOWED_HOSTS.add(host)
+    return True, host
+
+
+def runtime_allowed_hosts():
+    """返回当前进程内已登记放行的主机（只读副本，供自检/日志使用）。"""
+    return frozenset(_RUNTIME_ALLOWED_HOSTS)
+
+
+def egress_policy(url):
+    """判定外发目标属于哪种策略态，返回 ``('local'|'allowlisted'|'needs_approval', host)``。
+
+    与 ``ensure_egress_allowed`` 的分工：
+    - 非交互场景（通知、外部索引、后台任务）继续用 ``ensure_egress_allowed``，
+      未批准主机直接失败——这些场景没有"人在旁边点头"的条件；
+    - 交互场景（AI 助手对话）用本函数拿到 ``needs_approval`` 后走
+      ``egress_consent`` 的人工审批闸门，不再一刀切报错。
+    地址本身非法时抛 ``ValueError``（两种场景都不放行）。
+    """
     import ipaddress
     import os
     from urllib.parse import urlsplit
     parsed = urlsplit(str(url))
     if parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError('外联地址无效')
-    local = parsed.hostname.lower() == 'localhost'
+    host = parsed.hostname.lower()
+    local = host == 'localhost'
     try:
-        local = local or ipaddress.ip_address(parsed.hostname).is_loopback
+        local = local or ipaddress.ip_address(host).is_loopback
     except ValueError:
         pass
-    allowed = {host.strip().lower() for host in os.environ.get('DBPULSE_ALLOWED_EGRESS_HOSTS','').split(',') if host.strip()}
-    if not local and (parsed.scheme != 'https' or parsed.hostname.lower() not in allowed):
+    if local:
+        return 'local', host
+    allowed = {h.strip().lower() for h in os.environ.get('DBPULSE_ALLOWED_EGRESS_HOSTS','').split(',') if h.strip()}
+    if parsed.scheme == 'https' and (host in allowed or host in _RUNTIME_ALLOWED_HOSTS):
+        return 'allowlisted', host
+    return 'needs_approval', host
+
+
+def ensure_egress_allowed(url):
+    """Customer data stays local unless the operator explicitly allowlists a TLS host."""
+    state, _host = egress_policy(url)
+    if state == 'needs_approval':
         raise ValueError('数据安全策略阻断未批准的外部数据发送')
 
 
