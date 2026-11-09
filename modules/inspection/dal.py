@@ -434,13 +434,13 @@ def family_db_types(db_type: str, db_path: str = None) -> List[str]:
 
 
 def get_templates_by_db_type(db_type: str, db_path: str = None,
-                              include_family: bool = True) -> List[Dict]:
+                              include_family: bool = False) -> List[Dict]:
     """
     获取指定数据库类型的所有巡检模板。
 
     :param db_type: 数据库类型
     :param db_path: 数据库文件路径
-    :param include_family: 是否包含「同族」库种的模板（默认开）。
+    :param include_family: 是否包含「同族」库种的模板（仅查询界面显式启用）。
         例如 oracle_jdbc 实例可以选用 oracle 名下的业务专项模板、
         dm 实例可以选用 dm8 模板。精确匹配的模板永远排在族内其余之前，
         前端可据 ``family`` 标记给跨库种模板加「同系列」徽标。
@@ -1602,7 +1602,8 @@ def get_baseline(baseline_id: int, db_path: str = None) -> Optional[Dict]:
         conn.close()
 
 
-def get_baselines_by_db_type(db_type: str, enabled_only: bool = True, db_path: str = None) -> List[Dict]:
+def get_baselines_by_db_type(db_type: str, enabled_only: bool = True, db_path: str = None,
+                             include_family: bool = False) -> List[Dict]:
     """
     获取指定数据库类型的所有基线配置。
     
@@ -1618,7 +1619,7 @@ def get_baselines_by_db_type(db_type: str, enabled_only: bool = True, db_path: s
         from modules.driver_registry import db_family
         available = [r[0] for r in cursor.execute('SELECT DISTINCT db_type FROM inspection_baseline')]
         target = (db_type or '').strip().lower()
-        types = [t for t in available if db_family(t) == db_family(target)] or [target]
+        types = ([t for t in available if db_family(t) == db_family(target)] or [target]) if include_family else [target]
         marks = ','.join('?' for _ in types)
         cursor.execute('SELECT * FROM inspection_baseline WHERE db_type IN ('+marks+') '
                        'ORDER BY CASE WHEN LOWER(db_type)=? THEN 0 ELSE 1 END, id', (*types,target))

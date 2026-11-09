@@ -4916,7 +4916,7 @@ def api_list_baselines():
     try:
         db_type = request.args.get('db_type', '')
         if db_type:
-            rows = get_baselines_by_db_type(db_type, enabled_only=False)
+            rows = get_baselines_by_db_type(db_type, enabled_only=False, include_family=True)
         else:
             conn = __import__('modules.inspection.dal', fromlist=['_']).get_db_connection()
             rows = [dict(r) for r in conn.execute(
@@ -5088,7 +5088,7 @@ def api_list_icfg_templates():
         _DB_TYPE_MAP = {'pg': 'postgresql', 'dm': 'dm8', 'ivorysql': 'ivorysql'}
         if db_type:
             db_type = _DB_TYPE_MAP.get(db_type, db_type)
-            rows = get_templates_by_db_type(db_type)
+            rows = get_templates_by_db_type(db_type, include_family=True)
         else:
             rows = get_all_templates()
         return jsonify({'success': True, 'data': rows})

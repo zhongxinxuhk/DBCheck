@@ -42,13 +42,13 @@ class CompatibilityTests(unittest.TestCase):
 
     def test_fresh_presets_and_aliases(self):
         for token in ('oracle_jdbc','sqlserver_jdbc','dm','gbase8a'):
-            presets = dal.get_templates_by_db_type(token, db_path=self.db)
+            presets = dal.get_templates_by_db_type(token, db_path=self.db, include_family=True)
             specials = [r for r in presets if '业务专项巡检' in r['template_name']]
             self.assertEqual(len(specials), 12, token)
             self.assertTrue(all(r['is_preset'] for r in specials))
             default = dal.get_default_template(token, self.db, db_version_major=11)
             self.assertIn('周巡检', default['template_name'])
-            self.assertTrue(dal.get_baselines_by_db_type(token, db_path=self.db))
+            self.assertTrue(dal.get_baselines_by_db_type(token, db_path=self.db, include_family=True))
         self.assertEqual(db_family('hgdb_jdbc'), 'postgresql')
         self.assertNotEqual(db_family('gbase8a'),db_family('gbase'))
 
@@ -65,6 +65,13 @@ class CompatibilityTests(unittest.TestCase):
             self.assertEqual(tuple(saved),(0,'custom'))
         finally:
             conn.close()
+
+    def test_plugin_write_scope_remains_exact(self):
+        self.assertEqual(dal.get_templates_by_db_type('oracle_jdbc',db_path=self.db), [])
+        self.assertEqual(dal.get_baselines_by_db_type('oracle_jdbc',db_path=self.db), [])
+        with __import__('unittest').mock.patch('modules.jdbc_connector.resolve_driver_jars', return_value=['fixture.jar']):
+            from modules.jdbc_test_cli import _find_dm_jdbc_jar
+            self.assertEqual(_find_dm_jdbc_jar(), 'fixture.jar')
 
     def test_catalog_readonly_guard(self):
         for product,items in ITEM_SQL.items():

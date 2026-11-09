@@ -740,7 +740,7 @@ class BaseInspectionEngine:
                 major = int(match.group(1) or match.group(2))
         template = get_default_template(self.db_type, db_version_major=major)
         if not template:
-            rows = get_templates_by_db_type(self.db_type)
+            rows = get_templates_by_db_type(self.db_type, include_family=True)
             template = rows[0] if rows else None
         return template['id'] if template else None
 
@@ -1815,7 +1815,7 @@ class BaseInspectionEngine:
         try:
             from modules.inspection.dal import get_baselines_by_db_type
             
-            baselines = get_baselines_by_db_type(self.db_type, enabled_only=True)
+            baselines = get_baselines_by_db_type(self.db_type, enabled_only=True, include_family=True)
             if not baselines:
                 print(f"[INFO] 未找到 {self.db_type} 的基线配置")
                 self.context['baseline_results'] = []
