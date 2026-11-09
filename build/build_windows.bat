@@ -1,6 +1,9 @@
 @echo off
+REM SPDX-License-Identifier: Apache-2.0
+REM Copyright 2025-2026 fiyo (Jack Ge) ^<sdfiyon@gmail.com^>
+REM Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 chcp 437 >nul
-title RaccoonX Windows Build
+title DBPulse Windows Build
 cd /d "%~dp0.."
 
 :: Use temp directory for PyInstaller intermediate files
@@ -9,7 +12,7 @@ set WORKPATH=%TEMP%\dbcheck_build_%RANDOM%
 set DISTPATH=dist
 
 echo ==========================================
-echo   RaccoonX Windows Build Script
+echo   DBPulse Windows Build Script
 echo   Target: Windows x64
 echo ==========================================
 echo.
@@ -35,7 +38,7 @@ if errorlevel 1 (
 :: --- Read version ---
 for /f "tokens=*" %%v in ('python -c "import json,sys; d=json.load(open('modules/config/version.json','r',encoding='utf-8-sig')); print(d['version'])"') do set VERSION=%%v
 if not defined VERSION set VERSION=v26.11.5.1
-echo [    ] RaccoonX version: %VERSION%
+echo [    ] DBPulse version: %VERSION%
 echo.
 
 :: --- Install dependencies ---
@@ -102,7 +105,7 @@ pyinstaller --clean --workpath "%WORKPATH%" --distpath "%DISTPATH%" build\dbchec
 if errorlevel 1 (
     echo.
     echo [ERROR] PyInstaller failed!
-    echo [    ] Common fix: close any running RaccoonX instances, then retry.
+    echo [    ] Common fix: close any running DBPulse instances, then retry.
     if not defined GITHUB_ACTIONS pause
     exit /b 1
 )
@@ -113,8 +116,8 @@ if exist "%WORKPATH%" (
 )
 
 :: Check output
-if not exist "%DISTPATH%\RaccoonX-Windows" (
-    echo [ERROR] Build output not found at %DISTPATH%\RaccoonX-Windows
+if not exist "%DISTPATH%\DBPulse-Windows" (
+    echo [ERROR] Build output not found at %DISTPATH%\DBPulse-Windows
     if not defined GITHUB_ACTIONS pause
     exit /b 1
 )

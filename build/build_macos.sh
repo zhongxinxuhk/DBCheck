@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 # ============================================================
 # RaccoonX macOS Build Script
 # Target: macOS 12+ (Monterey and later)
@@ -7,7 +10,7 @@
 set -e
 
 echo "========================================"
-echo "  RaccoonX macOS Build Script"
+echo "  DBPulse macOS Build Script"
 echo "========================================"
 echo ""
 
@@ -104,10 +107,10 @@ case "$ARCH" in
     x86_64) ARCH="x86_64" ;;
 esac
 VERSION=$($PYTHON_CMD -c "import json; print(json.load(open('modules/config/version.json', encoding='utf-8-sig'))['version'])")
-RELEASE_NAME="RaccoonX-macOS-$ARCH-$VERSION"
+RELEASE_NAME="DBPulse-macOS-$ARCH-$VERSION"
 
 # Create start script
-BUILDDIR="dist/RaccoonX-macOS"
+BUILDDIR="dist/DBPulse-macOS"
 cat > "$BUILDDIR/start.sh" << 'STARTEOF'
 #!/bin/bash
 cd "$(dirname "$0")"
@@ -117,7 +120,7 @@ chmod +x "$BUILDDIR/start.sh"
 
 # Create tar.gz
 cd dist
-tar czf "$RELEASE_NAME.tar.gz" RaccoonX-macOS/
+tar czf "$RELEASE_NAME.tar.gz" DBPulse-macOS/
 cd "$PROJECT_ROOT"
 
 RELEASE_SIZE=$(du -sh "dist/$RELEASE_NAME.tar.gz" | cut -f1)
@@ -129,4 +132,4 @@ echo "========================================"
 echo ""
 echo "Deploy to macOS:"
 echo "  tar xzvf $RELEASE_NAME.tar.gz"
-echo "  cd RaccoonX-macOS && bash start.sh"
+echo "  cd DBPulse-macOS && bash start.sh"

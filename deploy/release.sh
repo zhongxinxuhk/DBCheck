@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 # ============================================================
 #  DBCheck 版本发布脚本 (Bash)
 #  Usage: bash release.sh 26.9.23.0
@@ -105,12 +108,11 @@ echo "  ✅ 版本 $VERSION_WITH_V 发布完成！"
 echo "════════════════════════════════════════════════"
 echo ""
 echo "📦 GitHub Actions 正在构建 Docker 镜像..."
-echo "   查看进度: https://github.com/fiyo/DBCheck/actions"
+echo "   查看进度: https://github.com/zhongxinxuhk/DBCheck/actions"
 echo ""
 echo "🐳 构建完成后拉取镜像："
-echo "   docker pull jackge12345/dbcheck:$VERSION"
-echo "   docker pull ghcr.io/fiyo/dbcheck:$VERSION"
+echo "   docker pull ghcr.io/zhongxinxuhk/dbpulse:$VERSION"
 echo ""
 echo "📝 创建 GitHub Release（可选）："
-echo "   https://github.com/fiyo/DBCheck/releases/new?tag=$VERSION_WITH_V"
+echo "   https://github.com/zhongxinxuhk/DBCheck/releases/new?tag=$VERSION_WITH_V"
 echo ""

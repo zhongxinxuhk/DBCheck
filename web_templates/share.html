@@ -1,9 +1,14 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ title }} - DBCheck 分享报告</title>
+<title>{{ title }} - {{ product_name }} 分享报告</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -89,7 +94,7 @@
 <div class="container">
   <div id="report-content"></div>
   <div class="footer">
-    <p>由 <a href="https://github.com/fiyo/DBCheck" target="_blank">DBCheck</a> · fiyo 生成 | 分享于 {{ created_at }}</p>
+    <p>由 {{ product_full_name }} · 基于 <a href="https://github.com/fiyo/DBCheck" target="_blank">DBCheck</a> · fiyo 生成 | 分享于 {{ created_at }}</p>
     <p style="margin-top:8px;font-size:11px;color:#484f58">此报告为只读分享，仅包含巡检结果数据 · Apache License 2.0</p>
   </div>
 </div>

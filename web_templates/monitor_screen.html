@@ -1,9 +1,14 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+-->
 <!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RaccoonX · 数据库监控大屏</title>
+<title>{{ product_name }} · 数据库监控大屏</title>
 <!-- ECharts 本地离线包（与主界面同源），无网环境可用 -->
 <script src="/static/js/echarts.min.js"></script>
 <style>
@@ -384,7 +389,7 @@
 <body>
 
 <header>
-  <div class="logo"><b>RaccoonX</b><span>{{ S.subtitle }} · {{ version }}</span></div>
+  <div class="logo"><b>{{ product_name }}</b><span>{{ S.subtitle }} · {{ version }}</span></div>
   <div class="kpis">
     <div class="kpi ok"><div class="v" id="k-online">–</div><div class="l">{{ S.k_online }}</div></div>
     <div class="kpi warn"><div class="v" id="k-warn">–</div><div class="l">{{ S.k_warn }}</div></div>

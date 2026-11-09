@@ -50,6 +50,7 @@ paths.ensure_migrated()
 from flask import Flask, request, jsonify, render_template, Response, send_file, make_response, session
 from modules.config.version import __version__, EDITION
 from modules.core.brand import PRODUCT_NAME_EN, PRODUCT_NAME_ZH, PRODUCT_FULL_NAME, PRODUCT_TAGLINE_EN
+from modules.core.brand import PROJECT_URL, SYSTEM_UPDATE_URL
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import socket
 from i18n import t as _t
@@ -101,6 +102,8 @@ def _print_startup_banner() -> None:
   ██║  ██║██╔══██╗██║     ██╔══██║██║     ██║     ██╔═██╗
   ██████╔╝██████╔╝╚██████╗██║  ██║███████╗╚██████╗██║  ██╗
   ╚═════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝{RESET}
+{CYAN}{BOLD}{PRODUCT_FULL_NAME} {__version__} ({EDITION}){RESET}
+{DIM}Based on RaccoonX / DBCheck{RESET}
 {CYAN}{BOLD}DBCheck {__version__} ({EDITION}){RESET}
 {DIM}Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>{RESET}
 {DIM}Licensed under Apache-2.0 · https://github.com/fiyo/DBCheck{RESET}
@@ -602,6 +605,14 @@ except ImportError:
 # 静态资源已收口到 assets/web/（阶段5：原 web_templates 下的 static/、icons/ 及各 png/ico/js 等）。
 # 因 static_url_path='/'，前端所有绝对引用（/static/...、/icons/...、/xxx.png 等）自动映射到 static_folder 根。
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / 'web_templates'), static_folder=str(PROJECT_ROOT / 'assets' / 'web'), static_url_path='/')
+
+
+@app.context_processor
+def product_context():
+    return dict(product_name=PRODUCT_NAME_EN, product_name_zh=PRODUCT_NAME_ZH,
+                product_full_name=PRODUCT_FULL_NAME, product_tagline=PRODUCT_TAGLINE_EN,
+                project_url=PROJECT_URL, system_update_url=SYSTEM_UPDATE_URL)
+
 # 会话密钥取自环境变量 DBCheck_SECRET_KEY（已在启动时为未设置的情况种入进程级随机值）。
 # 重启后旧会话 cookie 失效，需重新登录；生产可固定该环境变量保持登录态。
 app.config['SECRET_KEY'] = os.environ['DBCheck_SECRET_KEY']

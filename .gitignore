@@ -119,6 +119,7 @@ tests/
 # 署名机制核心文件：必须纳入版本控制（覆盖上方 *.md / check_*.py 全局忽略）
 # AGENTS.md = 给 AI 编码助手的强制署名约束；scripts/check_license_headers.py = CI 检测脚本
 !AGENTS.md
+!/.github/UPSTREAM_SYNC.md
 !scripts/check_license_headers.py
 
 # 目录结构重构：data 统一收口

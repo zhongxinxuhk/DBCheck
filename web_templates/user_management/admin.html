@@ -1,9 +1,14 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title id="um-page-title">DBCheck - 系统管理</title>
+    <title id="um-page-title">{{ product_name }} - 系统管理</title>
     <style>
 
         /* ═══ 主题变量：默认浅色，JS 会根据父页面主题动态覆盖 ═══ */
@@ -283,7 +288,7 @@
 </head>
 <body>
     <div class="admin-header">
-        <h1>🔍 DBCheck <span id="um-header-title">系统管理</span></h1>
+        <h1>🔍 {{ product_name }} <span id="um-header-title">系统管理</span></h1>
         <div class="user-info">
             <span id="currentUser">...</span>
             <a href="/" id="um-back-home">返回主页</a>
@@ -327,9 +332,9 @@
         }
         function applyStaticI18N() {
             const title = i18n('webui.um_title','系统管理');
-            document.title = 'DBCheck - ' + title;
+            document.title = '{{ product_name }} - ' + title;
             const pageTitle = document.getElementById('um-page-title');
-            if (pageTitle) pageTitle.textContent = 'DBCheck - ' + title;
+            if (pageTitle) pageTitle.textContent = '{{ product_name }} - ' + title;
             const headerTitle = document.getElementById('um-header-title');
             if (headerTitle) headerTitle.textContent = title;
             const backHome = document.getElementById('um-back-home');

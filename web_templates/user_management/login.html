@@ -1,9 +1,14 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ product_name }} - Login</title>
+    <title>{{ product_full_name }} - Login</title>
     <style>
         /* ─── 基础重置 ─── */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -702,6 +707,8 @@
                     <span class="brand-name" data-i18n="login.title">{{ product_name }}</span>
                 </div>
 
+                <div class="brand-slogan">{{ product_name_zh }}</div>
+
                 <!-- Slogan -->
                 <div class="brand-slogan" data-i18n="login.slogan">让数据库运维 可知 · 可控 · 可防</div>
 
@@ -788,7 +795,7 @@
 
                 <!-- 底部版本 -->
                 <div class="login-footer">
-                    <span id="login-version">v26.11.5.1</span> · <span data-i18n="login.copyright">{{ product_name }} © 2026</span>
+                    <span id="login-version">v26.11.5.1</span> · <span data-i18n="login.copyright">{{ product_name }} · RaccoonX © 2026 · fiyo (Jack Ge)</span>
                 </div>
             </div>
         </div>
@@ -859,7 +866,7 @@
             });
 
             // 更新页面标题
-            document.title = (i18n('login.title') || '{{ product_name }}') + ' - Login';
+            document.title = '{{ product_full_name }} - Login';
         }
 
         async function changeLang() {

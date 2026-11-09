@@ -1,3 +1,18 @@
+# 数据库智能巡检系统（DBPulse）
+
+当前项目仓库为 https://github.com/zhongxinxuhk/DBCheck ，系统更新与发行包见 [Releases](https://github.com/zhongxinxuhk/DBCheck/releases)。
+
+```bash
+git clone https://github.com/zhongxinxuhk/DBCheck.git
+cd DBCheck
+# 容器镜像由本仓库 Actions 构建发布
+docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
+```
+
+本项目基于 RaccoonX / DBCheck，原作者为 fiyo (Jack Ge) <sdfiyon@gmail.com>，原仓库为 https://github.com/fiyo/DBCheck 。原项目介绍与署名保留如下。自动同步范围、冲突处理和启用步骤见 [.github/UPSTREAM_SYNC.md](.github/UPSTREAM_SYNC.md)。
+
+---
+
 ﻿# 🦝 RaccoonX
 
 ![RaccoonX Logo](snapshot/dbcheck_logo_info.png)

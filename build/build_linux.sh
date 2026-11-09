@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 # ============================================================
 # RaccoonX Linux Build Script
 # Target: CentOS 7.9 / RHEL 7+
@@ -7,7 +10,7 @@
 set -e
 
 echo "========================================"
-echo "  RaccoonX Linux Build Script"
+echo "  DBPulse Linux Build Script"
 echo "========================================"
 echo ""
 
@@ -84,7 +87,7 @@ $PYTHON_CMD -m PyInstaller build/dbcheck_linux.spec --noconfirm
 echo "[5/5] Packaging release..."
 
 # Create start script
-BUILDDIR="dist/RaccoonX-Linux"
+BUILDDIR="dist/DBPulse-Linux"
 cat > "$BUILDDIR/start.sh" << 'STARTEOF'
 #!/bin/bash
 cd "$(dirname "$0")"
@@ -94,9 +97,9 @@ chmod +x "$BUILDDIR/start.sh"
 
 # Create tar.gz
 VERSION=$($PYTHON_CMD -c "import json; print(json.load(open('modules/config/version.json', encoding='utf-8-sig'))['version'])")
-RELEASE_NAME="RaccoonX-Linux-x86_64-$VERSION"
+RELEASE_NAME="DBPulse-Linux-x86_64-$VERSION"
 cd dist
-tar czf "$RELEASE_NAME.tar.gz" RaccoonX-Linux/
+tar czf "$RELEASE_NAME.tar.gz" DBPulse-Linux/
 cd "$PROJECT_ROOT"
 
 RELEASE_SIZE=$(du -sh "dist/$RELEASE_NAME.tar.gz" | cut -f1)
@@ -108,4 +111,4 @@ echo "========================================"
 echo ""
 echo "Deploy to CentOS:"
 echo "  tar xzvf $RELEASE_NAME.tar.gz"
-echo "  cd RaccoonX-Linux && bash start.sh"
+echo "  cd DBPulse-Linux && bash start.sh"

@@ -48,6 +48,7 @@ jobs:
           else
             VERSION="$(grep -m1 '__version__' modules/config/version.py | sed -E "s/.*=[[:space:]]*['\"]//; s/['\"].*//")"
           fi
+          VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building version: $VERSION"
 
@@ -59,7 +60,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        if: ${{ env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE != '' }}
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         uses: docker/login-action@v3
@@ -68,6 +69,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push (multi-arch)
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -79,7 +82,7 @@ jobs:
           build-args: |
             DBCHECK_VERSION=${{ steps.version.outputs.version }}
           tags: |
-            ghcr.io/fiyo/dbcheck:${{ steps.version.outputs.version }}
-            ghcr.io/fiyo/dbcheck:latest
-            ${{ secrets.DOCKERHUB_TOKEN != '' && format('jackge12345/dbcheck:{0}', steps.version.outputs.version) || '' }}
-            ${{ secrets.DOCKERHUB_TOKEN != '' && 'jackge12345/dbcheck:latest' || '' }}
+            ghcr.io/zhongxinxuhk/dbpulse:${{ steps.version.outputs.version }}
+            ghcr.io/zhongxinxuhk/dbpulse:latest
+            ${{ env.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE != '' && format('{0}:{1}', vars.DOCKERHUB_IMAGE, steps.version.outputs.version) || '' }}
+            ${{ env.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE != '' && format('{0}:latest', vars.DOCKERHUB_IMAGE) || '' }}

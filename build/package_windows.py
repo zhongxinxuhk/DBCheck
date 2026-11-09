@@ -1,8 +1,12 @@
-"""Package RaccoonX Windows distribution folder into a release package.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+
+"""Package DBPulse Windows distribution folder into a release package.
 
 Usage: python package_windows.py <distpath> <version>
 
-  distpath  - path to 'dist' directory (contains RaccoonX-Windows folder)
+  distpath  - path to 'dist' directory (contains DBPulse-Windows folder)
   version   - version string, e.g. v26.11.5.1
 """
 import os
@@ -19,8 +23,8 @@ def main():
     distpath = sys.argv[1]
     version = sys.argv[2]
 
-    src = os.path.join(distpath, "RaccoonX-Windows")
-    dst_name = "RaccoonX-Windows-x86_64-" + version
+    src = os.path.join(distpath, "DBPulse-Windows")
+    dst_name = "DBPulse-Windows-x86_64-" + version
     dst = os.path.join(distpath, dst_name)
     zip_path = dst + ".zip"
 
@@ -35,10 +39,10 @@ def main():
     # Write start.bat
     start_bat = (
         "@echo off\r\n"
-        "title RaccoonX Web UI\r\n"
+        "title DBPulse Web UI\r\n"
         'cd /d "%%~dp0"\r\n'
         "echo ==========================================\r\n"
-        "echo   RaccoonX Database Inspection Tool\r\n"
+        "echo   DBPulse Database Inspection Tool\r\n"
         "echo ==========================================\r\n"
         "echo Starting Web UI server...\r\n"
         "echo Open browser: http://localhost:5003\r\n"
@@ -55,7 +59,7 @@ def main():
         "#!/bin/bash\n"
         'cd "$(dirname "$0")"\n'
         "echo ==========================================\n"
-        "echo \"  RaccoonX Database Inspection Tool\"\n"
+        "echo \"  DBPulse Database Inspection Tool\"\n"
         "echo ==========================================\n"
         "echo \"Starting Web UI server...\"\n"
         "echo \"Open browser: http://localhost:5003\"\n"
@@ -66,7 +70,7 @@ def main():
 
     # Write README.txt
     readme = (
-        "RaccoonX Windows Distribution\r\n"
+        "DBPulse Windows Distribution\r\n"
         "=============================\r\n"
         "\r\n"
         "To start: double-click start.bat\r\n"

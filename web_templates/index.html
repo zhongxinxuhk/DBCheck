@@ -1,9 +1,14 @@
-﻿<!DOCTYPE html>
+﻿<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+-->
+<!DOCTYPE html>
 <html lang="{{ lang }}" data-page-node-id="fcM7dG4gfO1ELPNtEYszv4">
 <head data-page-node-id="E92TlHYrVwgZKiKCSJHy5v">
 <meta charset="UTF-8" data-page-node-id="tggsINVg1tM7kmqJ9V2uB2" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="CADWKKkq5gXsagOuVXgTwb" />
-<title>{{ product_name }} · {{ product_tagline }}</title>
+<title>{{ product_full_name }}</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico" data-page-node-id="bFYbzHs6oDCIIMrtvvGXAD">
 <style>
 /* ─── Reset & Base ─── */
@@ -7676,7 +7681,7 @@ function wfCloseRunDrawer() {
       <span class="icon" data-page-node-id="tV0sAReKY66zoa8JBiMlg2"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="L506z40Xu9GuDRbOXL0kC6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" data-page-node-id="gPp3BzHa18uyEpV7THOrwf"/><path d="M12 8v4" data-page-node-id="e9cYArdj1SBabKUcSEfLq0"/><path d="m10 10 2-2 2 2" data-page-node-id="K3Q5cptPIpdWLSinqx9hf1"/></svg></span> <span data-i18n="webui.nav_disaster_recovery" data-page-node-id="fuhEegebRRrJ4uHrnSDSIB">容灾备份</span>
     </div>
     <div class="nav-item" onclick="showPage('data-management')" id="nav-data-management" data-page-node-id="QFm2PFw7zDBbj5KplQpUxc">
-      <span class="icon" data-page-node-id="T6rVBSOcejyJMLa16FDNme"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="cTPrFHf3iUC21Mm1GRiELE"><rect x="2" y="4" width="20" height="5" rx="1" data-page-node-id="n2dxBT7TNYQjXL8gnvFNQb"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" data-page-node-id="OlyEBSXr8omGdUWcgtFY9U"/><path d="M10 13h4" data-page-node-id="K7NpN9iRuw9lIi8u9KC49n"/></svg></span> <span data-i18n="webui.nav_data_management" data-page-node-id="f3NRs5ROVMznttvuNvdMu8">RaccoonX 备份</span>
+      <span class="icon" data-page-node-id="T6rVBSOcejyJMLa16FDNme"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="cTPrFHf3iUC21Mm1GRiELE"><rect x="2" y="4" width="20" height="5" rx="1" data-page-node-id="n2dxBT7TNYQjXL8gnvFNQb"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" data-page-node-id="OlyEBSXr8omGdUWcgtFY9U"/><path d="M10 13h4" data-page-node-id="K7NpN9iRuw9lIi8u9KC49n"/></svg></span> <span data-i18n="webui.nav_data_management" data-page-node-id="f3NRs5ROVMznttvuNvdMu8">{{ product_name }} 备份</span>
     </div>
 
     <!-- ── 数据源与配置 ── -->
@@ -8985,7 +8990,7 @@ function wfCloseRunDrawer() {
 
         <div class="card" style="margin-bottom:16px;font-size:13px;color:var(--text-muted);" id="dr-mechanism-card" data-page-node-id="0s1TvVLswMB4xpX7LIA50z">
           <span style="font-weight:600;color:var(--text);" data-i18n="dr.mechanism_title" data-page-node-id="azjwLuJdAACrGDP7zAyJYa">备份机制说明</span>
-          <span data-i18n="dr.mechanism_note" data-page-node-id="wqXqvBmGxcShLc7CCTQUSg">MySQL/MariaDB 通过 mysqldump、PostgreSQL 通过 pg_dump 本地命令执行；文件/目录使用 Python tarfile 直接打包。执行备份命令的机器即运行 RaccoonX 的机器，需确保该机器网络可达目标数据库且已安装对应客户端工具。</span>
+          <span data-i18n="dr.mechanism_note" data-page-node-id="wqXqvBmGxcShLc7CCTQUSg">MySQL/MariaDB 通过 mysqldump、PostgreSQL 通过 pg_dump 本地命令执行；文件/目录使用 Python tarfile 直接打包。执行备份命令的机器即运行 {{ product_name }} 的机器，需确保该机器网络可达目标数据库且已安装对应客户端工具。</span>
         </div>
 
         <div class="card" style="margin-bottom:16px;" id="dr-health-card" data-page-node-id="3yltMosCnYNlH4v1XC9aZG">
@@ -10083,7 +10088,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
             <div data-page-node-id="1yM5UcobrzAng1j5qSWVDO">
               <h2 style="margin:0;font-size:18px;" data-i18n="webui.plugin_market_title" data-page-node-id="kiJDzFAiBmmpG0eEf6VVgE">🧩 插件市场</h2>
               <p style="margin:4px 0 0 0;font-size:12px;color:var(--text-muted);" data-page-node-id="IbdIIwVct4asYMXXh5s8EE">
-                <span data-i18n="webui.plugin_market_subtitle" data-page-node-id="8pXt6r9tRHaY9MO7LVjD2F">浏览社区插件，一键安装扩展你的 RaccoonX</span>
+                <span data-i18n="webui.plugin_market_subtitle" data-page-node-id="8pXt6r9tRHaY9MO7LVjD2F">浏览社区插件，一键安装扩展你的 {{ product_name }}</span>
                 &nbsp;<a href="#" onclick="loadMarketPlugins(true)" style="font-size:11px;" data-i18n="webui.plugin_market_refresh" data-page-node-id="BJtGGXWe8AUeH9OEFxTcNb">🔄 刷新</a>
               </p>
             </div>
@@ -10909,7 +10914,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <!-- 1. 数据文件概览 -->
           <div class="card" style="margin-bottom:16px;" data-page-node-id="A5F2VhjWaPrsePJDKswjiM">
             <h3 style="font-size:15px;font-weight:600;margin-bottom:4px;" data-i18n="webui.dm_overview_title" data-page-node-id="zZ3XT8x0sCoGaFB39rvcTL">数据文件概览</h3>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" data-i18n="webui.dm_overview_desc" data-page-node-id="1lqHAB2ugZwSMi3PvEiVEz">以下文件是 RaccoonX 的核心数据，升级或迁移时必须备份</p>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" data-i18n="webui.dm_overview_desc" data-page-node-id="1lqHAB2ugZwSMi3PvEiVEz">以下文件是 {{ product_name }} 的核心数据，升级或迁移时必须备份</p>
             <div class="table-wrap" data-page-node-id="WfryTPQRGIZSE3rMZCZY5D">
               <table class="data-table" style="font-size:13px;" data-page-node-id="UzXcmokBxXvfMgXoxJ2xXx">
                 <thead data-page-node-id="qMulb2KTTdh9UwQAxhmtFH">
@@ -10960,7 +10965,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <button class="btn btn-ghost" onclick="dmCheckUpgrade()" data-i18n="webui.dm_upgrade_check" data-page-node-id="2b2xQ7Q9oePDDsmdDiHTBr">检测升级状态</button>
             </div>
             <div id="dm-upgrade-result" data-page-node-id="PhjojPdFShq3g43MBvWfDy">
-              <p style="font-size:13px;color:var(--text-muted);" data-i18n="webui.dm_upgrade_hint" data-page-node-id="aqbFdF0RIGeK7mu1Fv7ckZ">升级 RaccoonX 时，请确保备份以下核心文件：</p>
+              <p style="font-size:13px;color:var(--text-muted);" data-i18n="webui.dm_upgrade_hint" data-page-node-id="aqbFdF0RIGeK7mu1Fv7ckZ">升级 {{ product_name }} 时，请确保备份以下核心文件：</p>
               <p style="font-size:12px;color:var(--text-muted);" data-i18n="webui.dm_upgrade_files" data-page-node-id="7JkBwia12ZpJp3HTpSw7yt">data/ 目录、pro_data/ 目录、inspection.db、.db_key</p>
             </div>
           </div>
@@ -27199,7 +27204,7 @@ function mkdirRemote() {
 <div class="status-bar" id="status-bar" data-page-node-id="E0jlA1UaqTA24TltOH3TVC">
   <div class="sb-item sb-brand" data-page-node-id="upIEHjuNpzMJN8eZoS2MXe">
     <span class="version-badge" id="version-badge" data-page-node-id="bGB3An2d8pdFqskUcT6fsN">{{ version }}{% if edition == 'professional' %} · <span data-i18n="webui.edition_badge" data-page-node-id="lzLhBmNoQ1d47M0VyVj4vf">专业版</span>{% endif %}</span>
-    <span style="font-size:10px;color:var(--text-muted,#8a8f98);white-space:nowrap;" data-page-node-id="8iUoCmEFznhrqRfivaJ05u">{{ product_name }} · <a href="https://github.com/fiyo/DBCheck" target="_blank" style="color:inherit;" data-page-node-id="HFjWyzcc2OxZB8UR8bhGxM">fiyo</a></span>
+    <span style="font-size:10px;color:var(--text-muted,#8a8f98);white-space:nowrap;" data-page-node-id="8iUoCmEFznhrqRfivaJ05u">{{ product_name }} · RaccoonX / DBCheck · <a href="https://github.com/fiyo/DBCheck" target="_blank" style="color:inherit;" data-page-node-id="HFjWyzcc2OxZB8UR8bhGxM">fiyo</a></span>
   </div>
   <div class="sb-item" id="sb-inspection" data-page-node-id="4V3Wgln47ZFyXPpVVKdqNA">
     <span data-page-node-id="ls4d7SvDabVRWdg8kt7DIF">⏱️</span>
@@ -28143,22 +28148,27 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
     <div class="about-hero" data-page-node-id="dGeSdJGi7jEGyypJegMg4n">
       <button class="about-close-btn" onclick="closeAboutModal()" data-page-node-id="repCJmkF1GtSPVaKtem6fc">✕</button>
       <div class="about-hero-inner" data-page-node-id="V6iWv6NYnHRjx87bcdEmje">
-        <img class="about-logo" src="/dbcheck_logo.png" alt="RaccoonX" data-page-node-id="5G2XyW9tfip4UqF3fFKXEn">
+        <img class="about-logo" src="/dbcheck_logo.png" alt="{{ product_name }}" data-page-node-id="5G2XyW9tfip4UqF3fFKXEn">
         <div class="about-hero-text" data-page-node-id="8DoyOFj5TgZNyCVpp0SOLZ">
-          <h2 data-page-node-id="hewj0XchilOg4BVkpLUeHd">RaccoonX</h2>
-          <div class="about-sub" data-page-node-id="fdLZ7UyShDproi8DdcuLRz">数据库智能巡检平台 <span id="about-version" data-page-node-id="ypTawxsHG1TDMFk8n1cNt2">{{ version }}</span></div>
+          <h2 data-page-node-id="hewj0XchilOg4BVkpLUeHd">{{ product_name }}</h2>
+          <div class="about-sub" data-page-node-id="fdLZ7UyShDproi8DdcuLRz">{{ product_name_zh }} <span id="about-version" data-page-node-id="ypTawxsHG1TDMFk8n1cNt2">{{ version }}</span></div>
         </div>
       </div>
     </div>
     <!-- Body -->
     <div class="about-body" data-page-node-id="kfcsjPHsYqKL6A5XCpPIaO">
       <p class="about-desc" data-i18n="webui.about_desc" data-page-node-id="Ym310YDxMAHbSpDLYRZPzp">
-        浣巡（RaccoonX）是一款数据库智能巡检平台，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。
+        {{ product_full_name }}是一款数据库智能巡检平台，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。
       </p>
       <div class="about-meta" data-page-node-id="WjGu6XczLVpELccU1OSAvw">
         <span class="about-meta-item" data-page-node-id="jp5XueqftWFaXv6PlbLC25">作者：Jack Ge (fiyo)</span>
         <span class="about-meta-item" data-page-node-id="AI28f7YFfM6TBQ0w7ttzin">协议：Apache License 2.0</span>
         <span class="about-meta-item" data-page-node-id="yrykYb11r31Hdo30e3hmwd">官网：<a href="https://dbcheck.top" target="_blank" data-page-node-id="PIaCNyBpUpyTdLHsSsjlY6">dbcheck.top</a></span>
+      </div>
+
+      <div class="about-meta">
+        <span class="about-meta-item">项目仓库：<a href="{{ project_url }}" target="_blank" rel="noopener noreferrer">{{ product_name }}</a></span>
+        <span class="about-meta-item">系统更新：<a id="system-update-link" href="{{ system_update_url }}" target="_blank" rel="noopener noreferrer">Releases</a></span>
       </div>
 
       <!-- 支持的数据库 -->
@@ -28196,7 +28206,7 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
     </div>
     <!-- Footer -->
     <div class="about-footer" data-page-node-id="xUj7FjQTzl5cmHQvSNDlLL">
-      © 2026 RaccoonX · 浣巡智能巡检平台
+      {{ product_full_name }} · 基于 RaccoonX / DBCheck · © 2025-2026 fiyo (Jack Ge) &lt;sdfiyon@gmail.com&gt;
     </div>
   </div>
 </div>

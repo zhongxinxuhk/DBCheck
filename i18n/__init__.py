@@ -18,8 +18,10 @@ RaccoonX i18n 模块
 
 import os
 import json
+import re
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core.brand import PRODUCT_NAME_EN
 
 from .zh import ZI
 from .en import EN
@@ -135,6 +137,15 @@ def set_lang(lang, persist=True):
 
 # ── 翻译查询 ────────────────────────────────────────────────────────────────
 
+def _brand_text(key, value):
+    # Preserve upstream attribution, license identifiers and original-design notices.
+    if key == 'login.copyright':
+        return f'{PRODUCT_NAME_EN} · {value} · fiyo (Jack Ge)'
+    if 'license' in key or key == 'webui.about_grayscale_note':
+        return value
+    return re.sub(r'\b(?:RaccoonX|DBCheck)\b(?![/-])', PRODUCT_NAME_EN, value)
+
+
 def t(key, lang=None, default=None):
     """
     根据 key 返回翻译后的字符串。
@@ -152,21 +163,21 @@ def t(key, lang=None, default=None):
     val = data.get(key)
 
     if val is not None:
-        return str(val)
+        return _brand_text(key, str(val))
 
     # 回退到简体中文
     val = ZI.get(key)
     if val is not None:
-        return str(val)
+        return _brand_text(key, str(val))
 
     # default 可能也是一个翻译 key，先尝试翻译它
     if default is not None:
         default_val = _LANGS.get(lang, ZI).get(default)
         if default_val is not None:
-            return str(default_val)
+            return _brand_text(default, str(default_val))
         default_val = ZI.get(default)
         if default_val is not None:
-            return str(default_val)
+            return _brand_text(default, str(default_val))
         return str(default)
 
     return key
@@ -179,7 +190,8 @@ def get_all_translations(lang=None):
     if lang is None:
         lang = get_lang()
     lang = _normalize_lang(lang)
-    return _LANGS.get(lang, ZI)
+    return {key: _brand_text(key, str(value))
+            for key, value in _LANGS.get(lang, ZI).items()}
 
 
 def get_language_display(lang=None):

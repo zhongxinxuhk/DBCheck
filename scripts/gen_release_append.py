@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 """发版时从 CHANGELOG.md 动态生成 GitHub Release 追加说明。
 
 用法: python3 gen_release_append.py <tag>   # 如 v26.11.5.1
@@ -59,28 +60,21 @@ def main() -> int:
     if section:
         out.append(section)
     else:
-        out.append(f'> 本版本（{tag}）的更新说明缺失，请参阅仓库 [CHANGELOG.md](https://github.com/fiyo/DBCheck/blob/main/CHANGELOG.md)。')
+        out.append(f'> 本版本（{tag}）的更新说明缺失，请参阅仓库 [CHANGELOG.md](https://github.com/zhongxinxuhk/DBCheck/blob/main/CHANGELOG.md)。')
     out.append('')
     out.append('## 🐳 Docker 镜像')
     out.append('')
-    out.append('推荐使用 Docker Hub（国内可用）：')
+    out.append('GitHub Container Registry：')
     out.append('')
     out.append('```bash')
-    out.append(f'docker pull jackge12345/dbcheck:{ver}')
-    out.append('docker pull jackge12345/dbcheck:latest')
-    out.append('```')
-    out.append('')
-    out.append('或 GitHub Container Registry：')
-    out.append('')
-    out.append('```bash')
-    out.append(f'docker pull ghcr.io/fiyo/dbcheck:{ver}')
-    out.append('docker pull ghcr.io/fiyo/dbcheck:latest')
+    out.append(f'docker pull ghcr.io/zhongxinxuhk/dbpulse:{ver}')
+    out.append('docker pull ghcr.io/zhongxinxuhk/dbpulse:latest')
     out.append('```')
     out.append('')
     out.append('运行示例：')
     out.append('')
     out.append('```bash')
-    out.append(f'docker run -d -p 5003:5003 --name raccoonx jackge12345/dbcheck:{ver}')
+    out.append(f'docker run -d -p 5003:5003 --name dbpulse ghcr.io/zhongxinxuhk/dbpulse:{ver}')
     out.append('```')
     out.append('')
     out.append('> 镜像同时支持 `linux/amd64` 与 `linux/arm64`（ARM64 信创主机）。')

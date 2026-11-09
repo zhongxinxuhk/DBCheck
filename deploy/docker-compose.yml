@@ -7,7 +7,7 @@ services:
       dockerfile: deploy/Dockerfile
       # 自定义版本号可在此传参（不传则使用 Dockerfile 内 ARG DBCHECK_VERSION 默认值）：
       # args: { DBCHECK_VERSION: "v26.11.5.1" }
-    image: jackge12345/dbcheck:latest
+    image: ghcr.io/zhongxinxuhk/dbpulse:latest
     container_name: dbcheck
     restart: unless-stopped
     ports:

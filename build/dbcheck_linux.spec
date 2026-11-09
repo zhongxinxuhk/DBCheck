@@ -1,4 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 # RaccoonX Linux 打包配置
 
 import os
@@ -146,7 +149,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    name='RaccoonX-Linux',
+    name='DBPulse-Linux',
     upx=False,
     upx_exclude=[],
     bootloader_ignore_signals=False,

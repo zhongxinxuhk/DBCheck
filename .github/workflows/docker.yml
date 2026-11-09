@@ -16,8 +16,8 @@ on:
         default: "true"
 
 env:
-  DOCKER_IMAGE: jackge12345/dbcheck
-  GHCR_IMAGE: ghcr.io/fiyo/dbcheck
+  DOCKER_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+  GHCR_IMAGE: ghcr.io/zhongxinxuhk/dbpulse
   DOCKER_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -44,6 +44,9 @@ jobs:
 
       # ── Login to Docker Hub ────────────────────────
       - name: Login to Docker Hub
+        if: ${{ env.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE != '' }}
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         uses: docker/login-action@v4.5.1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -72,6 +75,8 @@ jobs:
 
       # ── Build & push (multi-arch, dual registry) ──
       - name: Build and push (multi-arch)
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         uses: docker/build-push-action@v7.3.0
         with:
           context: .
@@ -79,14 +84,14 @@ jobs:
           platforms: ${{ env.DOCKER_PLATFORMS }}
           push: true
           tags: |
-            ${{ env.DOCKER_IMAGE }}:latest
-            ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version_num }}
+            ${{ env.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE != '' && format('{0}:latest', vars.DOCKERHUB_IMAGE) || '' }}
+            ${{ env.DOCKERHUB_TOKEN != '' && vars.DOCKERHUB_IMAGE != '' && format('{0}:{1}', vars.DOCKERHUB_IMAGE, steps.version.outputs.version_num) || '' }}
             ${{ env.GHCR_IMAGE }}:latest
             ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version_num }}
           labels: |
-            org.opencontainers.image.title=RaccoonX
+            org.opencontainers.image.title=DBPulse
             org.opencontainers.image.description=Database Intelligent Inspection Tool
-            org.opencontainers.image.source=https://github.com/fiyo/DBCheck
+            org.opencontainers.image.source=https://github.com/zhongxinxuhk/DBCheck
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
 
       - name: Image digest
@@ -95,18 +100,6 @@ jobs:
           echo "✅ Docker Hub  : ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version_num }}"
           echo "✅ GHCR        : ${{ env.GHCR_IMAGE }}:latest"
           echo "✅ GHCR        : ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version_num }}"
-
-      # ── Make GHCR package public ────────────────────
-      - name: Set GHCR package visibility to public
-        run: |
-          gh api --method PATCH \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            /users/${{ github.repository_owner }}/packages/container/dbcheck \
-            -f visibility=public
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
 
       # ── Generate release notes ─────────────────────
       - name: Generate release notes
@@ -134,21 +127,12 @@ jobs:
         uses: softprops/action-gh-release@v3.0.2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: RaccoonX ${{ steps.version.outputs.version }}
+          name: DBPulse ${{ steps.version.outputs.version }}
           body: |
             ## What's Changed
             ${{ steps.notes.outputs.notes }}
 
             ## Docker Images
-
-            ### Docker Hub
-            ```bash
-            docker pull ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version_num }}
-            docker run -d -p 5003:5003 \
-              -v dbcheck_data:/app/data \
-              -v dbcheck_reports:/app/data/reports \
-              ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version_num }}
-            ```
 
             ### GitHub Container Registry (China-friendly)
             ```bash
@@ -159,7 +143,7 @@ jobs:
               ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version_num }}
             ```
 
-            See [README](https://github.com/fiyo/DBCheck#docker-quick-start-recommended) for full usage.
+            See [README](https://github.com/zhongxinxuhk/DBCheck#docker-quick-start-recommended) for full usage.
           draft: false
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -52,11 +52,11 @@ jobs:
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
+        timeout-minutes: 20
         with:
           name: ${{ matrix.artifact }}
           path: wheels-${{ matrix.target }}
           if-no-files-found: error
-          timeout-minutes: 20
 
   build-windows:
     name: Build Windows (x64)
@@ -161,7 +161,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/RaccoonX-Windows-x86_64-*.zip
+          path: dist/DBPulse-Windows-x86_64-*.zip
         timeout-minutes: 15
         continue-on-error: true
 
@@ -258,7 +258,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: dist/RaccoonX-Linux-x86_64-*.tar.gz
+          path: dist/DBPulse-Linux-x86_64-*.tar.gz
         timeout-minutes: 15
         continue-on-error: true
 
@@ -363,7 +363,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
-          path: dist/RaccoonX-macOS-${{ matrix.arch }}-*.tar.gz
+          path: dist/DBPulse-macOS-${{ matrix.arch }}-*.tar.gz
         timeout-minutes: 15
         continue-on-error: true
 
@@ -409,7 +409,6 @@ jobs:
         with:
           tag_name: ${{ env.TAG }}
           generate_release_notes: true
-          allowUpdates: true
           files: release_assets/*
 
       # 动态生成追加说明：主要更新取自 CHANGELOG.md 当前 tag 段落（此前静态

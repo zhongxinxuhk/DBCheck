@@ -9,10 +9,13 @@
 """
 
 # 对外英文产品名（展示层，全语言一致，不参与翻译）
-PRODUCT_NAME_EN = "RaccoonX"
+PRODUCT_NAME_EN = "DBPulse"
 # 对外中文产品名
-PRODUCT_NAME_ZH = "浣巡"
+PRODUCT_NAME_ZH = "数据库智能巡检系统"
 # 完整品牌名（中英文组合）
-PRODUCT_FULL_NAME = "浣巡（RaccoonX）智能巡检平台"
+PRODUCT_FULL_NAME = "数据库智能巡检系统（DBPulse）"
 # 英文标语（与标题搭配：RaccoonX · Database Inspector）
-PRODUCT_TAGLINE_EN = "Database Inspector"
+PRODUCT_TAGLINE_EN = "Intelligent Database Inspection System"
+
+PROJECT_URL = "https://github.com/zhongxinxuhk/DBCheck"
+SYSTEM_UPDATE_URL = PROJECT_URL + "/releases"

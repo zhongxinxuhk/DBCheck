@@ -1,4 +1,7 @@
-﻿# DBCheck Release Script (simplified)
+﻿# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+# DBCheck Release Script (simplified)
 # Usage: .\release.ps1 -Version "26.11.5.1"  (or date-based "26.7.8.1")
 # GitHub Actions will handle Docker build/push and GitHub Release automatically.
 
@@ -200,9 +203,9 @@ if ($tagPushCode -eq 0) {
     Write-Host "============================================" -ForegroundColor Green
     Write-Host "  Release $VersionWithV tagged successfully!" -ForegroundColor Green
     Write-Host "  GitHub Actions is building and releasing..." -ForegroundColor Green
-    Write-Host "  Watch progress: https://github.com/fiyo/DBCheck/actions" -ForegroundColor White
-    Write-Host "  Release will be at: https://github.com/fiyo/DBCheck/releases/tag/$VersionWithV" -ForegroundColor White
-    Write-Host "  Docker Hub: https://hub.docker.com/r/jackge12345/dbcheck/tags" -ForegroundColor White
+    Write-Host "  Watch progress: https://github.com/zhongxinxuhk/DBCheck/actions" -ForegroundColor White
+    Write-Host "  Release will be at: https://github.com/zhongxinxuhk/DBCheck/releases/tag/$VersionWithV" -ForegroundColor White
+    Write-Host "  GHCR: ghcr.io/zhongxinxuhk/dbpulse" -ForegroundColor White
     Write-Host "============================================" -ForegroundColor Green
 } else {
     Write-Host "ERROR: Failed to push tag" -ForegroundColor Red
