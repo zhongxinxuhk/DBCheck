@@ -46,6 +46,10 @@ monkey-patch 的干净进程里**，主进程只做 ``subprocess`` 调用 + 超�
     {"ok": false, "msg": "连接被拒绝: ..."}
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import json
 import os
 import sys
@@ -241,33 +245,12 @@ def _tcp_preflight(host, port, timeout=8):
 
 
 def _find_dm_jdbc_jar():
-    """定位 <项目根>/drivers/dm8/ 下的达梦 JDBC 驱动 jar。
-
-    选择优先级：DmJdbcDriver18.jar（达梦官方推荐 DM8 驱动）>
-    其余按版本号降序取最高版本（如 DmJdbcDriver11 > 8 > 7 > 6）。
-
-    Returns:
-        jar 绝对路径；未找到返回 None。
-    """
-    import glob
-    import re
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _dm_dir = os.path.join(_root, 'drivers', 'dm8')
-    if not os.path.isdir(_dm_dir):
-        return None
-    _jars = glob.glob(os.path.join(_dm_dir, 'DmJdbcDriver*.jar'))
-    if not _jars:
-        return None
-
-    def _ver(p):
-        m = re.search(r'DmJdbcDriver(\d+)', os.path.basename(p))
-        return int(m.group(1)) if m else 0
-
-    _sorted = sorted(_jars, key=_ver, reverse=True)
-    for _j in _sorted:
-        if os.path.basename(_j) == 'DmJdbcDriver18.jar':
-            return _j
-    return _sorted[0]
+    """Use registered and packaged DM drivers, including drivers/dm/<version>."""
+    from modules.jdbc_connector import resolve_driver_jars
+    jars = resolve_driver_jars('dm', fallback_dirs=[
+        os.path.join(str(PROJECT_ROOT), 'drivers', 'dm'),
+        os.path.join(str(PROJECT_ROOT), 'drivers', 'dm8')], recursive=True)
+    return jars[0] if jars else None
 
 
 def _test_dm_jdbc(payload):

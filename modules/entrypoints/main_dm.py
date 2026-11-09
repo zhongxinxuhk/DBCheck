@@ -4,6 +4,12 @@
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
+"""DM8 inspection entry point and driver compatibility helpers."""
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from modules.config.version import __version__ as VER
 from i18n import get_lang, t as _t
 from modules.inspection.engine import BaseInspectionEngine
@@ -152,18 +158,12 @@ def _setup_jvm_for_dm(jar_path):
 
 
 def _find_dm_jdbc_jar():
-    """定位 <项目根>/drivers/dm8/DmJdbcDriver*.jar，按版本号降序取最高版。"""
-    _dm_dir = os.path.join(str(PROJECT_ROOT), 'drivers', 'dm8')
-    if not os.path.isdir(_dm_dir):
-        return None
-
-    def _ver(name):
-        _m = __import__('re').search(r'(\d+)', name)
-        return int(_m.group(1)) if _m else 0
-
-    _jars = sorted(_glob.glob(os.path.join(_dm_dir, 'DmJdbcDriver*.jar')),
-                   key=_ver, reverse=True)
-    return _jars[0] if _jars else None
+    """Use registered and packaged DM drivers, including drivers/dm/<version>."""
+    from modules.jdbc_connector import resolve_driver_jars
+    jars = resolve_driver_jars('dm', fallback_dirs=[
+        os.path.join(str(PROJECT_ROOT), 'drivers', 'dm'),
+        os.path.join(str(PROJECT_ROOT), 'drivers', 'dm8')], recursive=True)
+    return jars[0] if jars else None
 
 
 class DmInspector(BaseInspectionEngine):
