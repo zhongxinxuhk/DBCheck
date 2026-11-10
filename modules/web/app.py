@@ -1664,7 +1664,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filename_tmpl = _t(cfg['filename_key'])
         ext_name = filename_tmpl.format(ip=db_info['ip'], name=label_name, ts=timestamp)
-        file_name = ext_name + '.docx'
+        file_name = ext_name + '_' + task_id + '.docx'
         ofile = os.path.join(reports_dir, file_name)
 
         from modules.core.data_security import redact
