@@ -16,12 +16,16 @@ import platform
 import shutil
 import sqlite3
 import sys
+import sysconfig
 from pathlib import Path
 
 
 def platform_key():
     system = {'win32':'windows','linux':'linux','darwin':'macos'}.get(sys.platform,sys.platform)
     machine = platform.machine().lower()
+    if sys.platform == 'win32':
+        # An emulated x64 process must load x64 JNI libraries on an ARM64 host.
+        machine = sysconfig.get_platform().removeprefix('win-').lower()
     arch = {'amd64':'x86_64','x64':'x86_64','aarch64':'arm64'}.get(machine,machine)
     return system+'-'+arch
 

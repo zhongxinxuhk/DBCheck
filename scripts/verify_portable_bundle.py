@@ -179,6 +179,17 @@ class PortableChecks(unittest.TestCase):
             self.assertEqual(status,403)
             callback.assert_not_called()
 
+    def test_windows_arm_host_keeps_x64_process_runtime(self):
+        with patch.object(sys,'platform','win32'),patch('platform.machine',return_value='ARM64'),patch('sysconfig.get_platform',return_value='win-amd64'):
+            self.assertEqual(portable.platform_key(),'windows-x86_64')
+            with patch.object(paths,'PORTABLE_ROOT',self.bundle):
+                java=self.bundle/'runtime/windows-x86_64/jre'
+                (java/'bin').mkdir(parents=True)
+                (java/'bin/java.exe').touch()
+                self.assertEqual(portable.bundled_java_home(),java)
+        with patch.object(sys,'platform','win32'),patch('platform.machine',return_value='ARM64'),patch('sysconfig.get_platform',return_value='win-arm64'):
+            self.assertEqual(portable.platform_key(),'windows-arm64')
+
     def test_windows_pe_architecture_is_validated(self):
         builder=load_file('portable_builder_fixture',ROOT/'build/portable_bundle.py')
         path=self.root/'fixture.exe';data=bytearray(512);data[:2]=b'MZ';data[60:64]=(128).to_bytes(4,'little');data[128:132]=b'PE\0\0';data[132:134]=(0x8664).to_bytes(2,'little');path.write_bytes(data)

@@ -24,6 +24,14 @@ Windows 双击 `start.bat`，Linux 执行 `bash start.sh`，macOS 使用 `start.
 
 保存位于目录外的 SSH 密钥或证书引用时，便携模式会将文件复制至 `data/portable_files/`，配置保存相对路径。数据目录随迁移携带这些文件。
 
+## Windows ARM64 运行方式
+
+Windows x64 二进制在 Windows 11 ARM64 上使用系统内置的 x64 仿真运行，启动入口同为 `start.bat`。随包 Python 扩展与 JVM 均使用 x64 架构，程序按进程编译架构选择运行时。Windows 11 24H2 的 Prism 提供了更新的 x64 仿真能力。
+
+此兼容路径的最低系统为 Windows 11 ARM64。当前锁定依赖中的 NumPy 1.26.4 缺少 Windows ARM64 预编译包，发布的 Windows 可执行文件采用 AMD64 架构。Windows ARM64 实机验收待完成。
+
+微软运行方式说明见 https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-x86-emulation 。
+
 ## 运行检查与旧版导入
 
 ```bat
