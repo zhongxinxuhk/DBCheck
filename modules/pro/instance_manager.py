@@ -15,6 +15,7 @@ DBCheck Pro Instance Manager
 
 
 
+
 import json
 import os
 import platform
@@ -1165,6 +1166,12 @@ class InstanceManager:
             instance.id = self._generate_id(instance.name, instance.db_type)
         if instance.id in self._instances:
             return {"ok": False, "message": "实例ID已存在"}
+        if paths.PORTABLE_ROOT is not None:
+            from modules.core.portable import preserve_file_reference
+            for field in ('ssh_key_file','tls_ca_file','tls_cert_key_file'):
+                value = getattr(instance,field,'')
+                if value:
+                    setattr(instance,field,preserve_file_reference(value,field))
         # 加密密码
         instance.password = _encrypt_pwd(instance.password)
         if instance.ssh_password:
@@ -1180,6 +1187,12 @@ class InstanceManager:
         if instance_id not in self._instances:
             return {"ok": False, "message": "实例不存在"}
         instance = self._instances[instance_id]
+        if paths.PORTABLE_ROOT is not None:
+            from modules.core.portable import preserve_file_reference
+            updates = dict(updates)
+            for field in ('ssh_key_file','tls_ca_file','tls_cert_key_file'):
+                if updates.get(field):
+                    updates[field] = preserve_file_reference(updates[field],field)
         for key, value in updates.items():
             if hasattr(instance, key):
                 # 空值跳过，保留原值（密码字段除外：空密码不保存）
@@ -1279,6 +1292,10 @@ class InstanceManager:
             d['ssh_password'] = _decrypt_pwd(d['ssh_password'])
         if d.get('ssh_key_password'):
             d['ssh_key_password'] = _decrypt_pwd(d['ssh_key_password'])
+        if paths.PORTABLE_ROOT is not None:
+            for field in ('ssh_key_file','tls_ca_file','tls_cert_key_file'):
+                if d.get(field):
+                    d[field] = str(paths.resolve_portable_file(d[field]))
         return d
 
     def get_all_instances_decrypted(self) -> List[Dict]:
@@ -1300,20 +1317,11 @@ class InstanceManager:
         """
         self._ensure_instances_fresh()
         result = []
-        for inst in self._instances.values():
-            # 统一转为字典（兼容对象和字典两种存储格式）
-            if isinstance(inst, dict):
-                d = inst.copy()
-            else:
-                d = inst.to_dict()
-            if d.get('password'):
-                d['password'] = _decrypt_pwd(d['password'])
-            if d.get('ssh_password'):
-                d['ssh_password'] = _decrypt_pwd(d['ssh_password'])
-            result.append(d)
+        for instance_id in list(self._instances):
+            value = self.get_instance_decrypted(instance_id)
+            if value is not None:
+                result.append(value)
         return result
-
-
 
 
     def get_instances_by_group(self, group: str) -> List[DatabaseInstance]:

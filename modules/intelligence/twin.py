@@ -30,15 +30,21 @@
 * 绝不写入监控历史库；不缓存敏感明文（host/port 仅透传大屏快照已有值）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import os
+from modules.core.paths import DATA_DIR
 import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_DB_PATH = os.path.join(_REPO_ROOT, "data", "twin.db")
+_DB_PATH = str(DATA_DIR / 'twin.db')
 
 # 智能层（漂移/容量/健康分）缓存 TTL（秒）
 _SMART_TTL = 60.0

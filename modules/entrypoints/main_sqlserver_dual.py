@@ -25,6 +25,10 @@ SQL Server 双轨巡检入口 —— 根据 connection_mode 路由 JDBC 或 ODBC
   - JPype1 / jar 缺失时才打印清晰提示，不抛栈到 web_ui
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import sys
 import glob
@@ -207,6 +211,10 @@ class SQLServerDualInspector:
     @property
     def context(self) -> Dict[str, Any]:
         return getattr(self._inner, 'context', {})
+
+    @context.setter
+    def context(self, value: Dict[str, Any]):
+        self._inner.context = value
 
     @property
     def conn(self):

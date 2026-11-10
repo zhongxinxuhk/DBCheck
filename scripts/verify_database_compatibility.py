@@ -126,6 +126,70 @@ class CompatibilityTests(unittest.TestCase):
         self.assertIsNone(cur.description)
         self.assertIsNone(cur.rs)
 
+    def test_sqlserver_cursor_reads_procedure_results_and_resets(self):
+        path=ROOT/'plugins/enabled/sqlserver_jdbc/main_plugin.py'
+        spec=importlib.util.spec_from_file_location('sqlserver_cursor_regression',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        conn=Mock();cursor=module.JdbcCursorWrapper(conn);stmt=cursor.stmt
+        stmt.execute.return_value=False
+        stmt.getUpdateCount.return_value=0
+        stmt.getMoreResults.return_value=True
+        rs=stmt.getResultSet.return_value
+        rs.getMetaData().getColumnCount.return_value=1
+        rs.next.side_effect=[True,True,False]
+        rs.getObject.side_effect=[11,22]
+        cursor._convert_java_obj=lambda value:value
+        cursor.execute('EXEC master.dbo.sp_readerrorlog 0,1')
+        self.assertEqual(cursor.fetchmany(1),[(11,)])
+        self.assertEqual(cursor.fetchone(),(22,))
+        self.assertEqual(cursor.fetchmany(1),[])
+        stmt.getUpdateCount.return_value=-1
+        cursor.execute('UPDATE fixture SET value=1')
+        rs.close.assert_called_once()
+        self.assertIsNone(cursor.description)
+        self.assertIsNone(cursor.rs)
+
+    def test_sqlserver_selected_family_template_and_enabled_queries(self):
+        path=ROOT/'plugins/enabled/sqlserver_jdbc/main_plugin.py'
+        spec=importlib.util.spec_from_file_location('sqlserver_template_regression',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        template=next(t for t in dal.get_templates_by_db_type('sqlserver_jdbc',db_path=self.db,include_family=True) if '业务专项巡检' in t['template_name'])
+        inspector=module.MssqlJdbcInspector('localhost',1433,'fixture','fixture',template_id=template['id'])
+        inspector.cursor=Mock()
+        inspector._execute_query_safe=Mock(return_value={'columns':[],'data':[]})
+        from functools import partial
+        with __import__('unittest').mock.patch('modules.inspection.dal.get_chapters_by_template',partial(dal.get_chapters_by_template,db_path=self.db)), __import__('unittest').mock.patch('modules.inspection.dal.get_queries_by_chapter',partial(dal.get_queries_by_chapter,db_path=self.db)):
+            chapters=inspector._load_chapters_from_db()
+        queries=[q for ch in chapters for q in ch['queries'] if q['enabled']]
+        self.assertTrue(queries)
+        self.assertEqual(inspector._execute_query_safe.call_count,len(queries))
+        self.assertTrue(all(ch['template_id']==template['id'] for ch in chapters))
+        self.assertTrue(all(q['query_key'] in inspector.context for q in queries))
+
+    def test_sqlserver_wrapper_accepts_redacted_report_context(self):
+        from modules.entrypoints.main_sqlserver_dual import SQLServerDualInspector
+        inspector=SQLServerDualInspector.__new__(SQLServerDualInspector)
+        inspector._inner=Mock(context={'password':'fixture'})
+        redacted={'password':'***','mssql_version':[]}
+        inspector.context=redacted
+        self.assertIs(inspector.context,redacted)
+        self.assertIs(inspector._inner.context,redacted)
+
+    def test_oracle_timezone_retry_preserves_login_and_sysdba(self):
+        path=ROOT/'plugins/enabled/oracle_jdbc/main_plugin.py'
+        spec=importlib.util.spec_from_file_location('oracle_timezone_regression',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        inspector=module.OracleJdbcInspector('localhost',1521,'sys','fixture',sysdba=True)
+        with __import__('unittest').mock.patch('modules.jdbc_connector.open_jdbc_connection',return_value=(None,{'error':'fixture'})) as connect:
+            inspector.connect()
+        callback=connect.call_args.kwargs['on_error']
+        context={'url':'jdbc:oracle:thin:@fixture','properties':{'internal_logon':'sysdba'}}
+        self.assertIsNone(callback(ValueError('ORA-01017'),context))
+        url,props=callback(ValueError('ORA-01882'),context)
+        self.assertEqual(url,context['url'])
+        self.assertEqual(props,{'user':'sys','password':'fixture','internal_logon':'sysdba','oracle.jdbc.timezoneAsRegion':'false'})
+        self.assertNotIn('password',context['properties'])
+
     def test_cluster_rule_fires_only_on_observed_offline_nodes(self):
         engine=RuleEngine()
         rule=next(r for r in engine.get_enabled_rules('gbase8a') if r['id']=='gbase8a_data_node_offline')

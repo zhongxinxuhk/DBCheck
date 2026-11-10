@@ -14,6 +14,11 @@
 - 环形缓冲区存储历史连接数数据（最近 72 条，每条记录所有数据源）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import time
 import os
 import sys
@@ -578,6 +583,11 @@ class MonitorEngine:
         # _create_connection 的 python 驱动分支按协议族分派（TDSQL-C 兼容 MySQL
         # 协议、oracle_jdbc 实例字段与 oracle 相同），与 jdbc 插件 id 无关。
         raw_type = (inst.get('db_type') or '').strip().lower()
+        from modules.core.paths import PORTABLE_ROOT
+        if PORTABLE_ROOT is not None and raw_type in ('oracle','sqlserver','dm'):
+            connector = {'oracle':'oracle_jdbc','sqlserver':'sqlserver_jdbc','dm':'dm'}[raw_type]
+            return self._jdbc_query(inst,connector,sql,timeout=timeout,template_key=raw_type)
+
         db_type = mq.normalize_db_type(raw_type)
 
         # *_jdbc 专属数据源：必须走 JDBC 子进程通道，绝不能被归一成

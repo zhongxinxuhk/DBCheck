@@ -1,4 +1,4 @@
-﻿# coding: utf-8
+# coding: utf-8
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
@@ -11,6 +11,8 @@ RaccoonX Web UI - Flask 应用
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 
 # gevent monkey patch 必须放在所有 import 之前
 # import gevent.monkey
@@ -2149,6 +2151,9 @@ def test_halodb_connection(host, port, user, password, database='halo', driver_v
 
 # (函数已迁移至 modules.oracle_conn_test：def _find_oracle_client_lib_dir)
 def test_oracle_connection(host, port, user, password, service_name='ORCL', sysdba=False, jdbc_url=None):
+    if paths.PORTABLE_ROOT is not None:
+        return run_jdbc_test_subprocess('oracle_jdbc',{'host':host,'port':port,'user':user,'password':password,
+            'service_name':service_name,'sysdba':sysdba,'jdbc_url':jdbc_url})
     try:
         import oracledb
         # 解析 "user as sysdba" 语法
@@ -2655,6 +2660,9 @@ def _ct_kingbase(data, flavor):
 # (函数已迁移至 modules.oracle_conn_test：def _normalize_oracle_dsn)
 # (函数已迁移至 modules.oracle_conn_test：def _ct_oracle_pro)
 def _ct_oracle(data, flavor):
+    if paths.PORTABLE_ROOT is not None:
+        ok,message = run_jdbc_test_subprocess('oracle_jdbc',dict(data,connection_mode='jdbc'))
+        return {'ok':ok,'msg':message,'message':message}
     """Oracle 连接测试 —— 走子进程隔离。
 
     oracledb thin 模式与 gevent monkey-patch 不兼容（连接会挂死），且启用 Instant
@@ -2707,6 +2715,9 @@ def _ct_dm(data, flavor):
 
 
 def _ct_sqlserver(data, flavor):
+    if paths.PORTABLE_ROOT is not None:
+        ok,message = run_jdbc_test_subprocess('sqlserver_jdbc',dict(data,connection_mode='jdbc'))
+        return {'ok':ok,'msg':message,'message':message}
     ok,msg=test_sqlserver_connection(data['host'],data['port'],data['user'],data['password'],data.get('database','master'),data)
     return {'ok':ok,('message' if flavor=='pro' else 'msg'):msg}
 
@@ -2717,6 +2728,9 @@ def _ct_gbase8a(data,flavor):
 
 
 def _ct_sqlserver_jdbc(data, flavor):
+    if paths.PORTABLE_ROOT is not None:
+        ok,message = run_jdbc_test_subprocess('sqlserver_jdbc',dict(data,connection_mode='jdbc'))
+        return {'ok':ok,'msg':message,'message':message}
     """SQL Server (JDBC) 连接测试：按 connection_mode 透传到双轨测试方法。
 
     缺省 / 空串 → 'jdbc'（本类型语义即 JDBC；旧实例无该字段时向后兼容）。
@@ -4730,6 +4744,8 @@ def api_start_inspection():
     try:
         data = request.json
         db_type = data.get('db_type', 'mysql')
+        if paths.PORTABLE_ROOT is not None:
+            db_type = {'oracle':'oracle_jdbc','sqlserver':'sqlserver_jdbc'}.get(db_type,db_type)
         inspector_name = data.get('inspector_name', data.get('inspector', 'Jack'))
 
         # 章节可选：读取前端勾选的章节 ID 列表
@@ -7505,6 +7521,11 @@ def api_pro_datasource_test(instance_id):
         ok, err = assert_visible(user, 'instance', instance_id)
         if not ok:
             return jsonify({'ok': False, **err}), 403
+        if paths.PORTABLE_ROOT is not None:
+            data = im.get_instance_decrypted(instance_id)
+            if data is None:
+                return jsonify(ok=False,error='数据源不存在'),404
+            return jsonify(_conn_test_with_timeout(data['db_type'],data,'pro'))
         result = im.test_connection(instance_id)
         return jsonify(result)
     except ImportError as e:
@@ -12532,7 +12553,7 @@ def main():
     start_scheduler(app)
     from modules.clusters.service import start_cluster_monitor
     start_cluster_monitor(app)
-    port = 5003
+    port = int(os.environ.get('DBPULSE_PORT', '5003'))
     print(_t('webui.startup_msg').format(port=port))
     print("[提示] 按 Ctrl+C 停止服务\n")
     # Git Bash (mintty/MSYS2) 伪终端：Ctrl+C 的 MSYS2 模拟信号无法投递到原生

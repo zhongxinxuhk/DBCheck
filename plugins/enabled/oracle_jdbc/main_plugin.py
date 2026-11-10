@@ -267,6 +267,14 @@ class OracleJdbcInspector(BaseInspectionEngine):
 
             # sys 用户必须以 SYSDBA 身份登录：经统一层 properties 透传
             _props = {'internal_logon': 'sysdba'} if self.sysdba else None
+
+            def retry_timezone(error, context):
+                # Older server timezone files may not recognize the client region.
+                if 'ORA-01882' not in str(error):
+                    return None
+                properties = dict(context['properties'], user=self.user, password=self.password)
+                properties['oracle.jdbc.timezoneAsRegion'] = 'false'
+                return context['url'], properties
             conn, meta = open_jdbc_connection(
                 'oracle_jdbc', self.host, self.port,
                 user=self.user, password=self.password,
@@ -276,6 +284,7 @@ class OracleJdbcInspector(BaseInspectionEngine):
                 jdbc_url=self.jdbc_url,
                 mode='jpype',
                 properties=_props,
+                on_error=retry_timezone,
             )
             if conn is None:
                 return False, meta['error']

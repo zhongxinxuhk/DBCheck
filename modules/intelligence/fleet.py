@@ -32,11 +32,17 @@
   解析失败回退 iid 短形式（不缓存敏感明文）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import json
 import math
 import os
+from modules.core.paths import DATA_DIR
 import sqlite3
 import statistics
 import time
@@ -63,7 +69,7 @@ Z_CRITICAL = 3.0
 Z_WARNING = 2.0
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_DB_PATH = os.path.join(_REPO_ROOT, "data", "fleet_baseline.db")
+_DB_PATH = str(DATA_DIR / 'fleet_baseline.db')
 
 # 参与容量预测的默认指标（有明确触顶语义的）
 FORECAST_METRICS = ("conn_usage_pct", "tbs_free_pct", "cache_hit_pct", "repl_lag_s")

@@ -6,7 +6,7 @@
 
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
 
@@ -35,6 +35,21 @@ data_files = [
     # 已随上面的 data_dirs 整体打包，此处无需重复列出（根目录原本就没有这两个文件）。
 ]
 
+# Portable releases use one shared resource tree and never embed installation state.
+if os.environ.get('DBPULSE_PORTABLE_BUILD') == '1':
+    data_dirs = ['i18n', 'modules/rag', 'modules/pro', 'modules/user_management', 'modules/config']
+    data_files = []
+
+portable_modules = []
+if os.environ.get('DBPULSE_PORTABLE_BUILD') == '1':
+    from pathlib import Path
+    for source in (Path(PROJECT_DIR)/'modules').rglob('*.py'):
+        parts = list(source.relative_to(PROJECT_DIR).with_suffix('').parts)
+        if parts[-1] == '__init__':
+            parts.pop()
+        if all(part.isidentifier() for part in parts):
+            portable_modules.append('.'.join(parts))
+
 # Build datas list with absolute paths
 # 注意：data/pro_data 这类运行时目录是空目录，git 不跟踪，CI 全新 checkout 下不存在。
 # 这里对 data/ 开头的目录自动创建，其余缺失目录降级为 WARN 跳过，
@@ -61,12 +76,19 @@ for item in data_files:
     else:
         print(f"[WARN] data file not found, skipped: {src}")
 
+datas.extend(collect_data_files('tzdata'))
+
 a = Analysis(
     [os.path.join(PROJECT_DIR, 'web_ui.py')],
     pathex=[PROJECT_DIR],
     binaries=[],
     datas=datas,
     hiddenimports=[
+        *portable_modules,
+        *collect_submodules('modules.clusters'),
+        'modules.core.portable',
+        'tzdata',
+        'numpy', 'pandas',
         *collect_submodules('modules.service_management'),
         'modules.entrypoints.main_gbase8a',
         'modules.db_types.compatibility',
@@ -81,8 +103,8 @@ a = Analysis(
         'jinja2', 'jinja2.ext',
         'docx',
         'openpyxl',
-        'psutil', 'psutil._psutil_osx', 'psutil._psutil_posix',
-        'charset_normalizer', 'charset_normalizer.md__mypyc',
+        'psutil', 'psutil._psutil_osx',
+        'charset_normalizer', 'charset_normalizer.md',
         'certifi',
         'cryptography',
         'cryptography.fernet',
@@ -110,7 +132,6 @@ a = Analysis(
         'gevent.server', 'gevent._greenlet_primitives',
         'greenlet',
         'engineio.async_drivers.gevent',
-        'socketio.async_server.gevent',
         # App modules（已统一迁入 modules/ 命名空间；列举各子包，PyInstaller 递归收集全部子模块）
         'modules.entrypoints', 'modules.inspection', 'modules.web',
         'modules.pro', 'modules.rag', 'modules.user_management',
@@ -122,7 +143,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['pyodbc','dmPython','gbase8sdb','cx_Oracle'] if os.environ.get('DBPULSE_PORTABLE_BUILD')=='1' else [],
     noarchive=False,
     cipher=block_cipher,
 )

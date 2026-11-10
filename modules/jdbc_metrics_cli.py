@@ -22,6 +22,10 @@ modules/jdbc_metrics_cli.py — JVM 类型实时指标采集子进程
   env['DBCheck_NO_GEVENT_PATCH']='1' 与 cwd=PROJECT_ROOT，本文件自身不触发任何 patch。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import sys
 import os
 import json
@@ -90,6 +94,11 @@ def main() -> int:
         'sysdba': bool(inst.get('sysdba', False)),
         'jdbc_url': inst.get('jdbc_url') or None,
     }
+
+    for field in ('driver_version','use_sid','connection_mode','encrypt','trust_server_certificate',
+                  'ssh_enabled','ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password','ssh_tunnel','_tunnel_ready'):
+        if field in inst:
+            norm[field] = inst[field]
 
     try:
         result = _collect(norm, db_type)

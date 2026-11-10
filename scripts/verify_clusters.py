@@ -235,7 +235,7 @@ class ClusterChecks(unittest.TestCase):
         app.config['CLUSTER_TASK_LOOKUP']=lambda iid:dict(status='done' if iid=='one' else 'error',report_file='',result={})
         service=ClusterService(app,store=self.store)
         run,_=self.store.create_run(self.record,'fixture-normal-path',service.runtime)
-        with patch('modules.clusters.service.visible_instance',side_effect=lambda actor,iid,decrypted=False:SOURCES[iid]),patch('modules.clusters.service.ensure_template',return_value=123):
+        with patch('modules.access.get_principal',return_value=ADMIN),patch('modules.clusters.service.visible_instance',side_effect=lambda actor,iid,decrypted=False:SOURCES[iid]),patch('modules.clusters.service.ensure_template',return_value=123):
             service._run_inspections(run)
         result=self.store.get_run(run['id'])
         self.assertEqual(result['status'],'partial_failed')

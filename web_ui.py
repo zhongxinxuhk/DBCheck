@@ -8,6 +8,11 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
+
+
+from modules.core.portable import bootstrap as _portable_bootstrap
+_portable_bootstrap()
+
 # ── 单实例守卫（必须在 import modules.web.app 之前）──
 # 避免双击 / 重复启动 / 旧进程残留时多个 dbcheck.exe 同时运行，
 # 互相抢占端口、并重复打印整段启动 banner（表现为『反复重启』）。

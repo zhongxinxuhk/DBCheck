@@ -9,9 +9,30 @@
 入口，供 ``data_manager.py`` / ``web_ui.py`` 在导入时触发一次性旧路径迁移。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import sys
+import os
 import shutil
 from pathlib import Path
+
+
+def _portable_root():
+    configured = os.environ.get('DBPULSE_PORTABLE_HOME')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    if getattr(sys,'frozen',False):
+        executable_dir = Path(sys.executable).resolve().parent
+        for parent in [executable_dir,*list(executable_dir.parents)[:6]]:
+            if (parent/'dbpulse-portable.json').is_file():
+                return parent
+    return None
+
+
+PORTABLE_ROOT = _portable_root()
 
 
 def _project_root() -> Path:
@@ -23,6 +44,8 @@ def _project_root() -> Path:
       以 web_templates / db 作为标记目录定位真实根，避免模板与建表脚本找不到。
     - 普通 Python 运行：使用本文件的上三级目录（core/ 的父目录）。
     """
+    if PORTABLE_ROOT is not None:
+        return PORTABLE_ROOT
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent
         candidates = [exe_dir, exe_dir / "_internal"]
@@ -61,7 +84,9 @@ ASSETS_DIR = PROJECT_ROOT / "assets"
 #   PROJECT_ROOT —— 只读资源根（模板/建表脚本/前端资源），frozen 下 = _internal；
 #   DATA_ROOT    —— 可写数据根，frozen 下 = **exe 同级**（与分发包分离，升级不覆盖）。
 # 旧数据在首次启动时由 ensure_data_dir_migrated() 一次性迁到新位置（幂等）。
-if getattr(sys, "frozen", False):
+if PORTABLE_ROOT is not None:
+    DATA_ROOT = PORTABLE_ROOT
+elif getattr(sys, "frozen", False):
     DATA_ROOT = Path(sys.executable).resolve().parent
 else:
     DATA_ROOT = PROJECT_ROOT
@@ -223,3 +248,21 @@ def ensure_migrated():
             run()
     except Exception as e:  # 降级：迁移失败不阻断启动
         print(f"[migration] 自动迁移跳过（降级旧路径）: {e}")
+
+
+def resolve_portable_file(value):
+    """Resolve shared files without persisting a machine-specific installation path."""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        return DATA_ROOT / path
+    return path
+
+
+def resolve_report_file(value):
+    """Rebase a recorded Windows/POSIX report path after moving the shared folder."""
+    from pathlib import PureWindowsPath
+    recorded = Path(value)
+    if recorded.is_file() and recorded.resolve().is_relative_to(REPORTS_DIR.resolve()):
+        return recorded
+    name = PureWindowsPath(str(value)).name
+    return REPORTS_DIR / name

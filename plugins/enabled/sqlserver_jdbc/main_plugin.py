@@ -20,6 +20,11 @@ jdbc_jvm 连接 Microsoft SQL Server 2017/2019/2022/2025。
   'smart_analyze_sqlserver'（复用现有函数）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import json
@@ -102,20 +107,23 @@ class JdbcCursorWrapper:
         self._rowcount = -1
 
     def execute(self, sql):
-        """执行 SQL（自动判断查询/更新）"""
-        sql_upper = sql.strip().upper()
-        if sql_upper.startswith('SELECT') or sql_upper.startswith('WITH') \
-                or 'FROM SYS' in sql_upper or 'FROM MSDB' in sql_upper \
-                or 'FROM SYS.' in sql_upper:
-            self.rs = self.stmt.executeQuery(sql)
+        """Use JDBC result metadata for SELECT and result-returning procedures."""
+        if self.rs is not None:
+            self.rs.close()
+        self.rs = None
+        self.description = None
+        self._rowcount = -1
+        has_result = self.stmt.execute(sql)
+        while not has_result and self.stmt.getUpdateCount() != -1:
+            self._rowcount = self.stmt.getUpdateCount()
+            has_result = self.stmt.getMoreResults()
+        if has_result:
+            self.rs = self.stmt.getResultSet()
             meta = self.rs.getMetaData()
-            col_count = meta.getColumnCount()
             self.description = tuple(
                 (meta.getColumnName(i + 1), meta.getColumnTypeName(i + 1), None, None, None, None, None)
-                for i in range(col_count)
+                for i in range(meta.getColumnCount())
             )
-        else:
-            self._rowcount = self.stmt.executeUpdate(sql)
 
     def fetchall(self):
         """获取所有行"""
@@ -139,15 +147,14 @@ class JdbcCursorWrapper:
         return None
 
     def fetchmany(self, n):
-        """分页获取：首次 execute 时把结果全集缓存到 self._rows 并按游标切片。"""
-        if not hasattr(self, '_rows') or self._rows is None:
-            self._rows = self.fetchall() if self.rs else []
-            self._idx = 0
-        if self._idx >= len(self._rows):
-            return []
-        chunk = self._rows[self._idx:self._idx + n]
-        self._idx += len(chunk)
-        return chunk
+        """Read at most n rows from the current result set."""
+        rows = []
+        for _ in range(max(0, int(n))):
+            row = self.fetchone()
+            if row is None:
+                break
+            rows.append(row)
+        return rows
 
     @property
     def rowcount(self):
@@ -430,14 +437,8 @@ class MssqlJdbcInspector(BaseInspectionEngine):
             print(f"[MSSQL-JDBC] 关闭连接失败: {e}")
 
     def get_template_id(self):
-        """返回 inspection_template 表的 template_id。"""
-        try:
-            from modules.inspection.dal import get_templates_by_db_type
-            templates = get_templates_by_db_type("sqlserver_jdbc")
-            return templates[0]['id'] if templates else None
-        except Exception as e:
-            print(f"[MSSQL-JDBC] 获取模板 ID 失败: {e}")
-            return None
+        return super().get_template_id()
+
 
     # ════════════════════════════════════════════════
     # 采集辅助
@@ -848,56 +849,19 @@ class MssqlJdbcInspector(BaseInspectionEngine):
     # 报告章节（从 inspection.db 加载并执行模板 query）
     # ════════════════════════════════════════════════
     def _load_chapters_from_db(self):
-        """从 inspection.db 加载本插件模板章节，并把每个 query_sql 执行结果
-        存入 context[query_key]（与 _collect_* 同键时跳过，避免重复执行）。
-        """
-        db_path = os.path.join(_PROJECT_ROOT, 'data', 'inspection.db')
-        if not os.path.exists(db_path):
-            self.context['_chapters'] = []
-            return
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT ch.id, ch.chapter_number, ch.chapter_title_zh, ch.chapter_title_en, ch.description "
-            "FROM inspection_chapter ch JOIN inspection_template t ON ch.template_id=t.id "
-            "WHERE t.db_type=? ORDER BY ch.chapter_number",
-            (self.db_type,))
-        chapters = []
-        for tid, num, zh, en, desc in cur.fetchall():
-            cur2 = conn.cursor()
-            cur2.execute(
-                "SELECT query_key, query_sql, query_description_zh, query_description_en "
-                "FROM inspection_query WHERE chapter_id=? ORDER BY sort_order, id",
-                (tid,))
-            queries = [{
-                'query_key': r[0],
-                'query_sql': r[1],
-                'query_description_zh': r[2] or '',
-                'query_description_en': r[3] or '',
-            } for r in cur2.fetchall()]
-            cur2.close()
-            chapters.append({
-                'chapter_number': num,
-                'chapter_title_zh': zh,
-                'chapter_title_en': en,
-                'description': desc or '',
-                'queries': queries,
-            })
-        cur.close()
-        conn.close()
+        """Collect enabled queries from the selected template and chapter scope."""
+        from modules.inspection.dal import get_chapters_by_template, get_queries_by_chapter
+        template_id = self.get_template_id()
+        chapters = get_chapters_by_template(template_id, chapter_ids=self.chapter_ids) if template_id else []
+        for chapter in chapters:
+            chapter['queries'] = get_queries_by_chapter(chapter['id'])
+            for query in chapter['queries']:
+                if query.get('enabled'):
+                    key = query['query_key']
+                    result = self._execute_query_safe(self.cursor, query['query_sql'], key)
+                    self.context[key] = result if '_error' in result or '_unavailable' in result else result['data']
         self.context['_chapters'] = chapters
-
-        # 执行每个模板 query（已由 _collect_* 填充的键跳过）
-        for ch in chapters:
-            for q in ch['queries']:
-                key = q['query_key']
-                if key in self.context and self.context.get(key):
-                    continue
-                try:
-                    self.context[key] = self._exec_to_dicts(q['query_sql'])
-                except Exception as e:
-                    self.context[key] = [{'ERROR': str(e)[:200]}]
+        return chapters
 
     # ════════════════════════════════════════════════
     # 主采集入口

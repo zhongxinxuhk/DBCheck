@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+name: Build unified portable bundle
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: windows-x86_64, runner: windows-latest, python_arch: x64, collect: DBPulse-Windows}
+          - {platform: macos-arm64, runner: macos-14, python_arch: arm64, collect: DBPulse-macOS}
+          - {platform: macos-x86_64, runner: macos-15-intel, python_arch: x64, collect: DBPulse-macOS}
+          - {platform: linux-x86_64, runner: ubuntu-latest, python_arch: x64, collect: DBPulse-Linux, docker_arch: amd64, image: quay.io/pypa/manylinux_2_28_x86_64}
+          - {platform: linux-arm64, runner: ubuntu-latest, python_arch: x64, collect: DBPulse-Linux, docker_arch: arm64, image: quay.io/pypa/manylinux_2_28_aarch64}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+      - uses: docker/setup-qemu-action@v3
+        if: startsWith(matrix.platform, 'linux-')
+      - name: Prepare verified drivers and Java
+        shell: bash
+        run: |
+          python build/portable_release.py drivers --cache .portable-build/downloads
+          python build/portable_bundle.py runtime --platform '${{ matrix.platform }}' --cache .portable-build/downloads
+      - name: Build Windows or macOS binary
+        if: ${{ !startsWith(matrix.platform, 'linux-') }}
+        shell: bash
+        run: python build/portable_release.py native --platform '${{ matrix.platform }}'
+      - name: Build Linux binary against glibc 2.28
+        if: startsWith(matrix.platform, 'linux-')
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python build/portable_release.py python --platform '${{ matrix.platform }}'
+          docker run --rm --platform 'linux/${{ matrix.docker_arch }}' -v "$PWD:/src" -w /src '${{ matrix.image }}' \
+            '.portable-build/native-python/${{ matrix.platform }}/python/bin/python3.12' \
+            build/portable_release.py native --platform '${{ matrix.platform }}'
+      - name: Stage shared layout and verify frozen runtime
+        shell: bash
+        run: |
+          JAVA_ARCHIVE=$(python -c "import json;print(json.load(open('.portable-build/downloads/${{ matrix.platform }}-java.json'))['archive'])")
+          python build/portable_bundle.py stage --output .portable-build/staged/DBPulse-Portable \
+            --platform '${{ matrix.platform }}' --component '.portable-build/native/${{ matrix.platform }}/${{ matrix.collect }}' \
+            --runtime "$JAVA_ARCHIVE" --receipt '.portable-build/downloads/${{ matrix.platform }}-java.json'
+          if [[ '${{ matrix.platform }}' == linux-* ]]; then
+            docker run --rm --platform 'linux/${{ matrix.docker_arch }}' -v "$PWD/.portable-build/staged/DBPulse-Portable:/bundle" \
+              debian:11-slim '/bundle/bin/${{ matrix.platform }}/dbcheck' --portable-self-test
+          elif [[ '${{ matrix.platform }}' == windows-* ]]; then
+            '.portable-build/staged/DBPulse-Portable/bin/${{ matrix.platform }}/dbcheck.exe' --portable-self-test
+          else
+            '.portable-build/staged/DBPulse-Portable/bin/${{ matrix.platform }}/dbcheck' --portable-self-test
+          fi
+          cp '.portable-build/downloads/${{ matrix.platform }}-java.json' '.portable-build/staged/DBPulse-Portable/runtime/${{ matrix.platform }}/receipt.json'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-component-${{ matrix.platform }}
+          path: |
+            .portable-build/staged/DBPulse-Portable/bin/${{ matrix.platform }}
+            .portable-build/staged/DBPulse-Portable/runtime/${{ matrix.platform }}
+          if-no-files-found: error
+  unified:
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: portable-component-*
+          merge-multiple: true
+          path: .portable-build/components
+      - name: Assemble one package with empty shared state
+        shell: bash
+        run: |
+          python build/portable_release.py drivers --cache .portable-build/downloads
+          for PLATFORM in windows-x86_64 linux-x86_64 linux-arm64 macos-arm64 macos-x86_64; do
+            python build/portable_bundle.py stage --output dist/DBPulse-Portable --platform "$PLATFORM" \
+              --component ".portable-build/components/bin/$PLATFORM" \
+              --runtime ".portable-build/components/runtime/$PLATFORM/jre" \
+              --receipt ".portable-build/components/runtime/$PLATFORM/receipt.json"
+          done
+          python build/portable_bundle.py archive --directory dist/DBPulse-Portable --output dist/DBPulse-Portable.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DBPulse-Portable-unified
+          path: |
+            dist/DBPulse-Portable.zip
+            dist/DBPulse-Portable.zip.sha256
+          if-no-files-found: error

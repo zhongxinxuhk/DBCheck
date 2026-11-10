@@ -9,6 +9,7 @@
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
+
 import importlib
 import os
 import re
@@ -99,6 +100,17 @@ def readiness():
         rows.append(dict(db_type='sqlserver',version='SQL Server '+version,backend='python-tds（隔离隧道） / ODBC 18（TLS）',
                          available=bool(tds or odbc and 'ODBC Driver 18 for SQL Server' in installed),
                          requirement='2005使用已验证SSH隧道；2008/2014可选验证证书的TLS或显式SSH隧道',notes=['ODBC驱动：'+(', '.join(installed) or '未安装'), 'TDS组件可加载' if tds else 'TDS组件缺失']))
+    from modules.core.paths import PORTABLE_ROOT
+    if PORTABLE_ROOT is not None:
+        classes = {'oracle':'oracle.jdbc.OracleDriver','sqlserver':'com.microsoft.sqlserver.jdbc.SQLServerDriver','dm':'dm.jdbc.driver.DmDriver'}
+        for row in rows:
+            family = row['db_type']
+            if family in classes:
+                jars = (PROJECT_ROOT/'drivers'/family).glob('**/*.jar')
+                row['available'] = bool(jdbc and jpype and jvm and any(jar_valid(path,classes[family]) for path in jars))
+                row['backend'] = '随包 Java / JDBC'
+                row['requirement'] = '使用共享目录登记的 JDBC 驱动及连接配置'
+                row['notes'] = ['随包 JVM 已就绪' if jvm else '随包 JVM 缺失']
     for row in rows:
         row['status'] = 'component_ready' if row['available'] else 'dependency_missing'
         row['connection_verified'] = False
@@ -253,6 +265,10 @@ def connect_gbase8a(data):
 
 
 def connect_sqlserver(data):
+    from modules.core.paths import PORTABLE_ROOT
+    if PORTABLE_ROOT is not None:
+        from modules.core.portable import open_portable_connection
+        return open_portable_connection(dict(data,db_type='sqlserver'))
     tunnel=None
     try:
         host,port,tunnel=tunnel_endpoint(data)

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
@@ -10,6 +10,11 @@ DBCheck - Oracle 全面巡检工具（增强版）
 支持: 10g / 11g / 12c / 18c / 19c / 21c / 23c
 作者: Jack Ge
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 
 from modules.core.paths import PROJECT_ROOT
 import sys
@@ -4119,6 +4124,20 @@ def oracle_check_alert_v19(conn, days=7):
 
 def getData(host, port, user, password, **kwargs):
     """Web UI 统一接口 - 返回 CompatWrapper"""
+    if paths.PORTABLE_ROOT is not None:
+        from modules.pluginkit.loader import get_plugin_module
+        module = get_plugin_module('oracle_jdbc')
+        if module is None:
+            raise ValueError('便携 Oracle JDBC 插件未加载')
+        inspector = module.OracleJdbcInspector(host,port,user,password,
+            kwargs.get('service_name') or kwargs.get('sid') or 'ORCL',
+            kwargs.get('ssh_info') or {},kwargs.get('template_id'),
+            sysdba=bool(kwargs.get('sysdba')),jdbc_url=kwargs.get('jdbc_url'),
+            driver_version=kwargs.get('driver_version') or '',use_sid=bool(kwargs.get('use_sid')))
+        ok,message = inspector.connect()
+        if not ok:
+            raise ValueError(message)
+        return inspector
     ssh_info = kwargs.get('ssh_info', {})
     inspector_name = kwargs.get('inspector_name', 'Jack')
     service_name = kwargs.get('service_name')

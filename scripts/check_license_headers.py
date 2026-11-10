@@ -33,6 +33,11 @@ Exit codes
 * 1  -> one or more license requirements are missing
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import argparse
@@ -50,6 +55,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # segment, case-sensitive).
 EXCLUDED_DIR_COMPONENTS = {
     "__pycache__",
+    ".portable-build",
     ".git",
     "node_modules",
     "dist",

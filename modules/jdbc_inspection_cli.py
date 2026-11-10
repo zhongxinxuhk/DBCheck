@@ -48,6 +48,11 @@ HGDB / DB2 / SQL Server(JDBC) / oracle_jdbc 等插件依赖 JPype 在**当前进
     }
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import json
 import os
 import sys
@@ -59,6 +64,10 @@ DONE_PREFIX = "__DBCHECK_INSP_DONE__"
 # 本 CLI 需要隔离执行的 JVM 数据库类型
 # 全部走 JDBC 的巡检类型：JDBC 插件 + 核心内置 dm/gbase/ivorysql（与 driver_registry.JDBC_PLUGIN_TO_CATALOG 对齐）
 JVM_INSPECTION_DB_TYPES = ('hgdb', 'db2', 'sqlserver_jdbc', 'oracle_jdbc', 'dm', 'gbase', 'clickhouse', 'uxdb', 'ivorysql', 'halodb', 'pg', 'kingbase', 'yashandb', 'mysql', 'mariadb', 'tidb', 'oceanbase', 'vastbase')
+from modules.core.paths import PORTABLE_ROOT
+if PORTABLE_ROOT is not None:
+    JVM_INSPECTION_DB_TYPES += ('oracle','sqlserver')
+
 
 
 def _ensure_project_root_on_path():

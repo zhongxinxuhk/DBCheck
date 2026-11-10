@@ -17,6 +17,8 @@ DBCheck Pro 插件规则引擎
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
+
+
 import os
 import ast
 import re
@@ -334,7 +336,8 @@ class RuleEngine:
     def __init__(self, rules_dir: str = None):
         if rules_dir is None:
             # 默认相对于本文件
-            self.rules_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rules')
+            from modules.core.paths import PROJECT_ROOT
+            self.rules_dir = str(PROJECT_ROOT / 'modules/pro/rules')
         else:
             self.rules_dir = rules_dir
 
@@ -653,7 +656,8 @@ def load_metrics(db_type):
     canonical = normalize_db_type(db_type)
     if canonical in _METRICS_CACHE:
         return _METRICS_CACHE[canonical]
-    mdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rules', 'metrics')
+    from modules.core.paths import PROJECT_ROOT
+    mdir = str(PROJECT_ROOT / 'modules/pro/rules/metrics')
     path = os.path.join(mdir, canonical + '.yaml')
     # 兜底：metrics 文件名可能按「规则文件名」而非「规范库名」命名
     # （例：规则文件 yasdb.yaml 声明 db_types ['yashandb']，metrics 却叫 yasdb.yaml）。
@@ -758,9 +762,8 @@ def load_thresholds(db_path=None, instance_id=None):
     注入 eval 命名空间。加载失败返回空字典——规则会因变量未定义而跳过，
     不会误报。
     """
-    default_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        'data', 'inspection.db')
+    from modules.core.paths import INSPECTION_DB
+    default_path = str(INSPECTION_DB)
     path = db_path or default_path
     try:
         mtime = os.path.getmtime(path)

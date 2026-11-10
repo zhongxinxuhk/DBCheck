@@ -23,6 +23,7 @@ SSH 隧道工具模块 v3
 
 
 
+
 import socket
 import sys
 import threading
@@ -72,7 +73,8 @@ def _ssh_connect_kwargs(ssh_info: dict) -> dict:
     }
     key_file = (ssh_info.get('ssh_key_file') or ssh_info.get('key_file') or '').strip()
     if key_file:
-        kwargs['key_filename'] = key_file
+        from modules.core.paths import resolve_portable_file
+        kwargs['key_filename'] = str(resolve_portable_file(key_file))
         key_pwd = ssh_info.get('ssh_key_password') or ''
         if key_pwd:
             kwargs['passphrase'] = key_pwd

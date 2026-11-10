@@ -25,7 +25,13 @@
    host/port/label/ssh/err/name 任一都不出现在任何列/JSON 中。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
+from modules.core.paths import DATA_DIR
 import time
 import json
 import threading
@@ -34,7 +40,7 @@ from collections import deque
 
 # 仓库根：modules/monitor → modules → repo_root
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(_REPO_ROOT, 'data', 'monitor_history.db')
+DB_PATH = str(DATA_DIR / 'monitor_history.db')
 
 RETENTION_DAYS = 30
 FLUSH_INTERVAL = 1.0

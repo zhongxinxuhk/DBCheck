@@ -23,6 +23,8 @@ dm / gbase。新增 JDBC 类型只需在 driver_registry 登记驱动 + 本表�
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
+
+
 from __future__ import annotations
 
 import os
@@ -213,6 +215,10 @@ def detect_java_home() -> Optional[str]:
       4) PATH 里的 java 可执行文件反推（javapath 等 shim 会因校验不过
          被自然淘汰）。
     """
+    from modules.core.portable import bundled_java_home
+    _bundled = bundled_java_home()
+    if _bundled is not None:
+        return str(_bundled)
     _env = os.environ.get('JAVA_HOME') or os.environ.get('JRE_HOME')
     if _env and os.path.isdir(_env):
         return _env

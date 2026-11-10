@@ -26,6 +26,8 @@ pro/metrics_collector.py — 实时监控采集器（v2.10）
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
+
+
 import os
 import re
 import json
@@ -48,6 +50,10 @@ CONNECT_TIMEOUT = 3            # 连接超时（秒）
 # 这类连接**绝不能在 gevent monkey-patch 的主进程内执行**（会冻结 hub → 整个界面卡死），
 # 必须隔离到干净子进程（modules/jdbc_metrics_cli.py）执行，与测试连接/巡检同源。
 JVM_METRICS_DB_TYPES = ('oracle_jdbc', 'uxdb_jdbc')
+from modules.core.paths import PORTABLE_ROOT
+if PORTABLE_ROOT is not None:
+    JVM_METRICS_DB_TYPES += ('oracle','sqlserver','dm')
+
 # 子进程采集硬超时（秒）。Oracle thin 驱动连接不可达主机可能阻塞较久，超时就丢本轮。
 JVM_METRICS_SUBPROC_TIMEOUT = 50
 
@@ -413,6 +419,9 @@ class MetricsCollector:
                                     password=password, dbname=dbname,
                                     connect_timeout=CONNECT_TIMEOUT,
                                     options="-c statement_timeout=%d" % (t * 1000))
+        if PORTABLE_ROOT is not None and db_type in ('oracle','sqlserver','dm'):
+            from modules.core.portable import open_portable_connection
+            return open_portable_connection(inst)
         if db_type == 'oracle_jdbc':
             # oracle_jdbc 数据源一律走插件 JDBC 连接，绝不走 oracledb，
             # 以避免 Oracle 11g 在无 Oracle 客户端环境下连接失败。
@@ -1594,6 +1603,10 @@ class MetricsCollector:
                 'jdbc_url': inst.get('jdbc_url') or None,
             },
         }
+        for field in ('driver_version','use_sid','connection_mode','encrypt','trust_server_certificate',
+                      'ssh_enabled','ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password','ssh_tunnel','_tunnel_ready'):
+            if field in inst:
+                payload['db_info'][field] = inst[field]
         raw = json.dumps(payload, ensure_ascii=True)
 
         if getattr(sys, 'frozen', False):

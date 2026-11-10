@@ -1,5 +1,12 @@
 # DBCheck Build Guide / DBCheck 打包指南
 
+## 统一便携包
+
+Windows、Linux 和 macOS 的统一便携包使用同一个 `data/` 目录、加密密钥、驱动和配置。
+启动入口为 `start.bat`、`start.sh` 和 `start.command`，各平台执行随包二进制。
+构建、组装、运行检查及旧版配置导入见 [统一便携包指南](portable/README.md)。
+
+
 ## System Requirements / 系统要求
 
 | Component | Minimum | Notes |

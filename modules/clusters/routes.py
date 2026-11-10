@@ -8,12 +8,13 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
+
+
 import io
 import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import time
-from pathlib import Path
 from flask import Blueprint, current_app, g, jsonify, render_template, request, send_file
 from modules.core import paths
 from modules.driver_registry import db_family
@@ -213,7 +214,7 @@ def member_report(run_id, instance_id):
     member = next((row for row in run['payload']['members'] if row['instance_id']==instance_id),None)
     if not member or not member.get('report_file'):
         raise LookupError('节点报告尚未生成')
-    report_path = Path(member['report_file']).resolve()
+    report_path = paths.resolve_report_file(member['report_file']).resolve()
     if not report_path.is_relative_to(paths.REPORTS_DIR.resolve()) or not report_path.is_file():
         raise LookupError('节点报告文件不存在')
     return send_file(report_path,as_attachment=True,download_name=report_path.name)

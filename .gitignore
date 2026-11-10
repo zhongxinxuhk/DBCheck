@@ -208,3 +208,6 @@ build/core-missing.txt
 
 # Generic business inspection compatibility documentation
 !/docs/business-inspection-compatibility.md
+
+# Isolated native build environments and staging
+/.portable-build/
