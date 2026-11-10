@@ -1,0 +1,30 @@
+[Unit]
+Description=DBPulse (RaccoonX) database inspection and monitoring platform
+Documentation=https://github.com/zhongxinxuhk/DBCheck
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 建议使用独立系统用户运行（useradd -r -s /sbin/nologin dbpulse）
+User=dbpulse
+Group=dbpulse
+WorkingDirectory=/opt/dbpulse
+# 监听地址：默认只监听 127.0.0.1；服务化对外提供页面时改为 0.0.0.0 或反向代理后端
+Environment=DBPULSE_BIND_HOST=0.0.0.0
+Environment=PYTHONUNBUFFERED=1
+# 容量参数（也可写在 data/runtime_tuning.json，环境变量优先级更高）
+Environment=DBPULSE_INSPECTION_MAX_CONCURRENT=3
+Environment=DBPULSE_INSPECTION_JVM_CONCURRENT=1
+Environment=DBPULSE_MONITOR_WORKERS=8
+Environment=DBPULSE_MONITOR_INTERVAL=15
+ExecStart=/opt/dbpulse/.venv/bin/python web_ui.py
+Restart=always
+RestartSec=5
+# 停止时给巡检子进程留出收尾时间，再由 KillMode=mixed 回收整个进程组
+TimeoutStopSec=30
+KillMode=mixed
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

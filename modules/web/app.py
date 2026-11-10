@@ -101,16 +101,16 @@ def _print_startup_banner() -> None:
     """
     _enable_ansi()
     banner = f"""
-{CYAN}{BOLD}  ██████╗ ██████╗  ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗
-  ██╔══██╗██╔══██╗██╔════╝██║  ██║██╔════╝██╔════╝██║  ██╔╝
-  ██║  ██║██████╔╝██║     ███████║██║     ██║     █████╔╝
-  ██║  ██║██╔══██╗██║     ██╔══██║██║     ██║     ██╔═██╗
-  ██████╔╝██████╔╝╚██████╗██║  ██║███████╗╚██████╗██║  ██╗
-  ╚═════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝{RESET}
+{CYAN}{BOLD}  ██████╗ ██████╗ ██████╗ ██╗   ██╗██╗     ███████╗███████╗
+  ██╔══██╗██╔══██╗██╔══██╗██║   ██║██║     ██╔════╝██╔════╝
+  ██║  ██║██████╔╝██████╔╝██║   ██║██║     ███████╗█████╗
+  ██║  ██║██╔══██╗██╔═══╝ ██║   ██║██║     ╚════██║██╔══╝
+  ██████╔╝██████╔╝██║     ╚██████╔╝███████╗███████║███████╗
+  ╚═════╝ ╚═════╝ ╚═╝      ╚═════╝ ╚══════╝╚══════╝╚══════╝{RESET}
 {CYAN}{BOLD}{PRODUCT_FULL_NAME} {__version__} ({EDITION}){RESET}
 {DIM}Based on RaccoonX / DBCheck{RESET}
-{CYAN}{BOLD}DBCheck {__version__} ({EDITION}){RESET}
 {DIM}Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>{RESET}
+{DIM}衍生开发 / Derivative by sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn> · https://github.com/zhongxinxuhk/DBCheck{RESET}
 {DIM}Licensed under Apache-2.0 · https://github.com/fiyo/DBCheck{RESET}
 """
     try:
@@ -628,6 +628,23 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['EXPLAIN_TEMPLATE_LOADING'] = False
 socketio.init_app(app)
 
+# ── 容量参数（巡检/监控并发、间隔、超时）───────────────
+# 生效值来自环境变量 > data/runtime_tuning.json > 默认值；启动时打印一次，
+# 便于服务化部署后直接核对，详见 docs/install/SCALE_zh.md。
+try:
+    from modules.core.runtime_tuning import describe as _tuning_describe
+    print('[tuning] ' + _tuning_describe(), flush=True)
+except Exception as _tuning_err:  # noqa: BLE001
+    print('[tuning] 读取容量参数失败，使用默认值: %s' % _tuning_err, flush=True)
+
+# ── 日志生命周期：后台清理线程（轮转由各写入方负责，这里只管保留与预算）──
+# 立即执行一次（异步），此后每 sweep_interval_seconds 一次；不阻塞启动。
+try:
+    from modules.core.log_manager import start_maintenance as _start_log_maintenance
+    _start_log_maintenance()
+except Exception as _log_mgr_err:  # noqa: BLE001
+    print('[log] 日志清理线程启动失败: %s' % _log_mgr_err, flush=True)
+
 # ── 实时监控采集器（v2.10）────────────────────────────────────
 # 采集器与 web_ui 同进程运行，复用同一 socketio 实时推流。
 _monitor_started = False
@@ -656,7 +673,11 @@ try:
     from modules.monitor.screen_metrics import get_screen_collector as _get_sc
     _me = _get_me()
     if not _me.is_running:
-        _me.start()
+        try:
+            from modules.core.runtime_tuning import get as _tg
+            _me.start(interval=int(_tg('monitor', 'interval')))
+        except Exception:
+            _me.start()
     _get_sc().start()
 except Exception as _sc_e:
     print('[screen] 大屏采样器启动失败: %s' % _sc_e, flush=True)
@@ -953,6 +974,14 @@ try:
 except Exception as e:
     print(f"  [WARN] 容灾备份模块加载失败: {e}")
 
+# ── 对象存储备份（S3 兼容：AWS S3 / MinIO / OSCA fgws3 等）───────
+try:
+    from modules.web.api import register_object_storage
+    register_object_storage(app)
+    print("  [OK] 对象存储备份模块已加载（S3 兼容）")
+except Exception as e:
+    print(f"  [WARN] 对象存储备份模块加载失败: {e}")
+
 # ── SQL 审核（内置模块 MVP1：解析 + 规则 + 评分，不执行）──
 try:
     from modules.sqlaudit import register_sql_audit
@@ -1161,6 +1190,46 @@ def _hub_log(msg, category='inspection'):
         logging.getLogger('dbcheck.' + _cat).info(msg)
     except Exception:
         pass
+
+
+def _task_log_path(task_id):
+    """巡检任务日志文件路径：data/logs/inspection-YYYYMMDD.log（按天滚动）。"""
+    try:
+        log_dir = os.path.join(str(paths.DATA_DIR), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        return os.path.join(log_dir,
+                            'inspection-%s.log' % datetime.datetime.now().strftime('%Y%m%d'))
+    except Exception:
+        return None
+
+
+def _append_task_log(task_id, msg):
+    """把巡检日志落盘。
+
+    此前巡检日志只存在于内存 task['log'] 与 socket 推送中：进程重启 / 前端未订阅
+    socket / 任务对象被回收后，失败现场全部丢失，用户只能看到一句「巡检失败」而
+    拿不到任何可排查的日志。这里按天追加写入 data/logs/inspection-YYYYMMDD.log。
+    """
+    if not msg:
+        return
+    path = _task_log_path(task_id)
+    if not path:
+        return
+    line = '%s [%s] %s' % (
+        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        (task_id or '-')[:8],
+        str(msg).replace('\n', '\n    '),
+    )
+    try:
+        # 写前按阈值轮转（单文件默认 50MB），避免连续巡检把当天文件写成巨型文件
+        from modules.core.log_manager import append_line
+        append_line(path, line, family='inspection')
+    except Exception:
+        try:
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(line + '\n')
+        except Exception:
+            pass
 
 
 def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chapter_ids=None):
@@ -1516,6 +1585,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
             task.setdefault('log', []).append(msg)
         if event == 'log':
             _hub_log(msg, data.get('category', 'inspection'))
+            _append_task_log(task_id, msg)   # 同时落盘，失败现场可追溯
         emit(event, data, room=task_id)
 
     cfg = task_configs.get(db_type)
@@ -1552,6 +1622,15 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
     _emit('log', {'msg': _t(cfg['log_start_key']).format(ts=_ts())})
     _emit('inspection_step', {'step': 0, 'msg': _t('webui.log_connecting').format(ts=_ts(), host=db_info['ip'], port=db_info['port'])})
 
+    _tunnel = None      # SSH 本地端口转发（若配置了 SSH）
+    conn_info = db_info  # 实际用于建连的参数（隧道场景下主机/端口会被改写）
+    # 子进程巡检（jdbc_inspection_cli）已提前建好隧道并通过 _conn_ip/_conn_port
+    # 传入，此时直接复用，避免在建好的隧道上再套一层隧道。
+    if db_info.get('_tunnel_ready') and db_info.get('_conn_ip'):
+        conn_info = dict(db_info)
+        conn_info['ip'] = db_info['_conn_ip']
+        conn_info['port'] = int(db_info.get('_conn_port') or db_info['port'])
+
     try:
         # 插件类型：使用动态导入的模块
         if cfg.get('module'):
@@ -1562,16 +1641,57 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
         
         _emit('log', {'msg': _t('webui.log_connecting').format(ts=_ts(), host=db_info['ip'], port=db_info['port'])})
 
-        ok, ver = cfg['connect_test'](*cfg['connect_test_args'](db_info))
+        # ── SSH 跳板：数据库只监听远端 127.0.0.1 时，必须走端口转发 ──────────
+        # 此前 SSH 配置只用于采集主机指标，数据库连接始终直连：
+        # 用户按 Navicat 习惯填写 127.0.0.1 时，实际连的是巡检机自己的回环
+        # → Connection refused（或连到本机另一套库），且日志里看不出原因。
+        if db_info.get('ssh_host') and db_info.get('ssh_tunnel', False) and not db_info.get('_tunnel_ready'):
+            try:
+                from modules.ssh import open_db_tunnel
+                _opened = open_db_tunnel(db_info, log=lambda m: _emit('log', {'msg': m}))
+            except Exception as e_ssh:
+                _emit('log', {'msg': f'❌ SSH 隧道建立失败（{db_info.get("ssh_host")}:'
+                                      f'{db_info.get("ssh_port", 22)}）：{e_ssh}'})
+                raise RuntimeError(f'SSH 隧道建立失败: {e_ssh}')
+            if _opened:
+                _tunnel, _lh, _lp = _opened
+                conn_info = dict(db_info)
+                conn_info['ip'] = _lh
+                conn_info['port'] = _lp
+                # 打上「隧道已就绪」标记：下游 entrypoints / 插件（sqlserver、
+                # gbase8a、clickhouse_jdbc 等会自建隧道）据此跳过二次建隧道。
+                # 不打这个标记时，它们会把 127.0.0.1:<本机转发端口> 当成远端
+                # 数据库地址，再经 SSH 建一条隧道指向「SSH 主机自身的该端口」
+                # → 那里没有服务在听 → 隧道套隧道后连接失败。
+                conn_info['_tunnel_ready'] = True
+                _emit('log', {'msg': f'✅ SSH 隧道就绪：远程 {db_info["ip"]}:{db_info["port"]}'
+                                      f' → 本地 {_lh}:{_lp}'})
+        elif db_info.get('ssh_host') and not db_info.get('ssh_tunnel', False):
+            # 隧道开关被关闭：SSH 只采集系统指标，数据库直连
+            _ip = (db_info.get('ip') or '').strip().lower()
+            _emit('log', {'msg': f'ℹ️ 已关闭 SSH 隧道，数据库将直连 {db_info.get("ip")}:'
+                                  f'{db_info.get("port")}（SSH 仅用于系统指标采集）'})
+            if _ip in ('127.0.0.1', 'localhost', '::1'):
+                _emit('log', {'msg': '⚠️ 数据库主机是回环地址（127.0.0.1），关闭隧道后会连接'
+                                      '本机回环而非 SSH 服务器。堡垒机/内网映射场景请开启'
+                                      '「通过 SSH 隧道连接数据库」。'})
+
+        ok, ver = cfg['connect_test'](*cfg['connect_test_args'](conn_info))
         if not ok:
             raise RuntimeError(_t('webui.err_db_connect').format(ver=ver))
         _emit('log', {'msg': _t('webui.log_connected').format(ts=_ts(), ver=ver)})
         _emit('inspection_step', {'step': 1, 'msg': _t('webui.log_executing_sql').format(ts=_ts())})
 
         # SSH
+        # 透传 ssh_tunnel 与 _tunnel_ready：插件层（clickhouse_jdbc 等）据此判断
+        # 是否需要自建隧道。两者都取自 conn_info —— 隧道是否已经由本函数建好，
+        # 只有 conn_info 知道；只看 db_info 会让插件再建一条（隧道套隧道）。
         ssh_info = {}
         if db_info.get('ssh_host'):
-            ssh_info = {k: db_info[k] for k in ('ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_file', 'ssh_key_password', 'ssh_ebpf') if k in db_info}
+            ssh_info = {k: conn_info[k] for k in (
+                'ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_file',
+                'ssh_key_password', 'ssh_ebpf', 'ssh_tunnel', '_tunnel_ready',
+            ) if k in conn_info}
 
         if db_type=='gbase8a':
             ssh_info['tls_ca_file']=db_info.get('tls_ca_file','')
@@ -1612,7 +1732,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
 
         try:
             # getData
-            _pos, _kw = cfg['getdata_args'](db_info)
+            _pos, _kw = cfg['getdata_args'](conn_info)
             if ssh_info:
                 _kw['ssh_info'] = ssh_info
             data = mod.getData(*_pos, **_kw)
@@ -1839,9 +1959,18 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
             if datasource_id:
                 instance_id = datasource_id
             else:
-                import hashlib
-                raw = f"{cfg['instance_prefix']}-{db_info['ip']}-{db_info['port']}".encode()
-                instance_id = hashlib.md5(raw).hexdigest()[:12]
+                # 未走数据源入口时，先按端点反查已注册实例，再退回 md5 指纹
+                instance_id = None
+                try:
+                    instance_id = im.resolve_instance_id_by_endpoint(
+                        cfg.get('history_db_type') or db_type,
+                        db_info.get('ip'), db_info.get('port'))
+                except Exception:
+                    instance_id = None
+                if not instance_id:
+                    import hashlib
+                    raw = f"{cfg['instance_prefix']}-{db_info['ip']}-{db_info['port']}".encode()
+                    instance_id = hashlib.md5(raw).hexdigest()[:12]
             im.record_inspection(
                 instance_id=instance_id,
                 instance_name=label_name,
@@ -1879,6 +2008,13 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
             task['status'] = 'error'
             task['error_msg'] = str(e)
         print(f"[巡检] ===== 巡检任务结束（异常）：{_insp_name} ({_insp_host}) db_type={db_type} =====", flush=True)
+    finally:
+        # 关掉 SSH 隧道（含失败路径），避免端口/连接泄漏
+        if _tunnel is not None:
+            try:
+                _tunnel.close()
+            except Exception:
+                pass
 # ── 配置基线检查任务 ────────────────────────────────────────
 def run_config_task(task_id, db_info, output_format='txt'):
     """配置基线检查 Web UI 任务"""
@@ -3099,6 +3235,8 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
                 msg = data.get('msg', '')
                 if msg:
                     task.setdefault('log', []).append(msg)
+                    _hub_log(msg, 'inspection')
+                    _append_task_log(task_id, msg)
             elif event == 'done':
                 task['status'] = 'done'
                 task.setdefault('report_path', data.get('report_path'))
@@ -3106,6 +3244,13 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
             elif event == 'error':
                 task['status'] = 'error'
                 task['error_msg'] = data.get('msg', '')
+                # 子进程的错误此前只进 error_msg，日志面板与日志文件都拿不到，
+                # 表现为「巡检失败但没有任何日志」。这里补一条可见、可落盘的记录。
+                _em = (data.get('msg') or '').strip()
+                if _em:
+                    _line = '❌ ' + _em
+                    task.setdefault('log', []).append(_line)
+                    _append_task_log(task_id, _line)
 
     try:
         with os.fdopen(_in_fd, 'w', encoding='utf-8') as f:
@@ -3158,6 +3303,11 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
             elif _ln.startswith(DONE_PREFIX):
                 try:
                     _final = json.loads(_ln[len(DONE_PREFIX):])
+                    # 关键：结束行本身就是「任务已结束」的权威信号。
+                    # 之前只在子进程发 done 事件时才置位，而失败路径子进程只发
+                    # error 事件 + 结束行、不发 done 事件 —— 于是父进程判定
+                    # 「未返回结束事件」，把已经拿到的真实错误原因覆盖掉。
+                    done_seen = True
                     _t = tasks.get(task_id)
                     if _t:
                         _t['status'] = _final.get('status', _t.get('status', 'done'))
@@ -3213,11 +3363,21 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
             _cooperative_sleep(0.1)
 
         if not done_seen:
+            # 子进程刚退出时结束行可能尚未被读到（退出与文件落盘之间的竞态），
+            # 失败场景子进程存活时间极短，这个竞态更容易命中：本来已经拿到了
+            # 明确的错误原因，却被覆盖成「未返回结束事件」。这里再补读几次。
+            for _ in range(10):
+                _cooperative_sleep(0.1)
+                _drain_new()
+                if done_seen:
+                    break
+
+        if not done_seen:
             err_msg = '巡检子进程未返回结束事件'
             _forward_event('error', {'msg': err_msg})
             _forward_event('done', {'msg': err_msg, 'task_id': task_id})
             task = tasks.get(task_id)
-            if task:
+            if task and task.get('status') != 'error':
                 task['status'] = 'error'
                 task['error_msg'] = err_msg
 
@@ -3407,13 +3567,44 @@ def _conn_test_with_timeout(db_type, data, flavor, timeout=None):
     done = threading.Event()
 
     def _runner():
+        _tnl = None
         try:
-            r = _dispatch_conn_test(db_type, data, flavor)
+            # 配置了 SSH 时，「测试连接」同样要经跳板：否则数据库只监听远端
+            # 127.0.0.1 的场景下测试永远失败，而实际巡检（走隧道）却能成功。
+            _data = data
+            if data.get('ssh_host') and data.get('ssh_tunnel', False):
+                from modules.ssh import open_db_tunnel
+                _opened = open_db_tunnel({
+                    'ip': data.get('host'), 'port': data.get('port'),
+                    'ssh_host': data.get('ssh_host'),
+                    'ssh_port': data.get('ssh_port', 22),
+                    'ssh_user': data.get('ssh_user', 'root'),
+                    'ssh_password': data.get('ssh_password', ''),
+                    'ssh_key_file': data.get('ssh_key_file', ''),
+                    'ssh_key_password': data.get('ssh_key_password', ''),
+                }, log=lambda m: None)
+                if _opened:
+                    _tnl, _lh, _lp = _opened
+                    _data = dict(data)
+                    _data['host'] = _lh
+                    _data['port'] = _lp
+                    # 端点已换成本机转发端口 —— 必须显式标记，否则下游
+                    # compatibility.needs_own_tunnel / clickhouse_jdbc 会把
+                    # 127.0.0.1:转发端口当成 SSH 主机上的真实地址，再建一条
+                    # 指向 SSH 主机自身该端口的隧道（远端无服务）→ 必失败。
+                    _data['_tunnel_ready'] = True
+                    _data['ssh_tunnel'] = False
+            r = _dispatch_conn_test(db_type, _data, flavor)
             result['value'] = r if r is not None else {
                 'ok': False, 'error': f'不支持的数据库类型: {db_type}'}
         except Exception as e:  # noqa: BLE001 - 连接测试异常需转成前端可读错误
             result['value'] = {'ok': False, 'error': str(e)}
         finally:
+            if _tnl is not None:
+                try:
+                    _tnl.close()
+                except Exception:
+                    pass
             done.set()
 
     t = threading.Thread(target=_runner, daemon=True)
@@ -3860,6 +4051,8 @@ def api_ai_config():
         ai_cfg = cfg.get('ai', {})
         # 确保返回的配置包含 online_enabled 字段
         ai_cfg.setdefault('online_enabled', False)
+        # 报告 AI 是否免人工审批直接外发（关闭时报告只能用本地 Ollama）
+        ai_cfg.setdefault('auto_allow_egress', False)
         ai_cfg.setdefault('online_backend', 'openai')
         ai_cfg.setdefault('online_api_url', 'https://api.openai.com/v1')
         ai_cfg.setdefault('online_model', 'gpt-4o-mini')
@@ -3868,7 +4061,7 @@ def api_ai_config():
         return jsonify(ai_cfg)
     return jsonify({
         'enabled': False, 'backend': 'disabled', 'model': '',
-        'online_enabled': False, 'online_backend': 'openai',
+        'online_enabled': False, 'auto_allow_egress': False, 'online_backend': 'openai',
         'online_api_url': '', 'online_model': '',
         'api_key': '', 'api_url': ''
     })
@@ -3892,9 +4085,33 @@ def api_save_ai_config():
         data['api_key'] = ai_existing['api_key']
 
     # 深度合并：保持已有配置中未提交的字段
-    for key in ('rag',):
+    # api_url / model 是本地 Ollama 的地址与模型名：前端保存在线模型时不会提交它们，
+    # 若在这里被整体覆盖，之后关闭「自动允许在线 AI」就找不到本地 Ollama 可回落。
+    # auto_allow_egress / online_enabled 同理：写回是整段替换，若调用方没带这两个
+    # 开关就会被静默清零，表现为"刚打开的开关一保存又变回去了"。
+    for key in ('rag', 'api_url', 'model', 'auto_allow_egress', 'online_enabled',
+                'max_tokens'):
         if key not in data and key in ai_existing:
             data[key] = ai_existing[key]
+
+    # ── 两个开关必须自洽 ──────────────────────────────────────────────
+    # 「自动允许在线 AI」的语义是"在线模型免人工审批直接外发"，没有在线模型
+    # 就无从谈起；反过来关掉在线模型时必须连带关掉自动放行，否则配置里会留下
+    # "auto_allow_egress=true 但 online_enabled=false" 的矛盾态。
+    if data.get('auto_allow_egress'):
+        data['online_enabled'] = True
+        data['online_backend'] = data.get('online_backend') or 'openai'
+        if (data.get('backend') or '') not in ('ollama',):
+            data['backend'] = 'openai'
+    elif data.get('online_enabled') is False:
+        data['auto_allow_egress'] = False
+
+    # 自动放行只对 https 生效：保存时就拒绝 http，避免"开关开了、运行时仍被拦"
+    if data.get('auto_allow_egress'):
+        _u = (data.get('online_api_url') or '').strip()
+        if _u and not _u.lower().startswith('https://'):
+            return jsonify({'ok': False,
+                            'msg': _t('webui.ai_auto_allow_https_only')}), 400
 
     # 写回 dbc_config.json 的 ai 字段
     existing['ai'] = data
@@ -4585,9 +4802,11 @@ def api_test_ollama():
 
     # 本机地址归一化为 127.0.0.1，并绕过系统代理直连
     api_url = _ollama_normalize_url(api_url)
-    from modules.core.data_security import ensure_egress_allowed,redact
+    # 这里只做连通性测试（GET /api/tags），不发送任何巡检数据，没有 prompt/system
+    # 需要脱敏。历史误留的一行 `redact(prompt, ...)` 引用了本函数内不存在的变量，
+    # 会让整个接口抛 NameError → 前端"测试连接"必然 500。
+    from modules.core.data_security import ensure_egress_allowed
     ensure_egress_allowed(api_url)
-    prompt,system=redact(prompt,mask_identity=True),redact(system,mask_identity=True)
     opener = _ollama_no_proxy_opener()
 
     # 先测 /api/tags（列出模型）
@@ -4847,7 +5066,7 @@ def api_start_inspection():
                     db_info['use_sid'] = bool(data.get('use_sid', False))
 
         if datasource_id and instance.get('ssh_enabled'):
-            for field in ('ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password'):
+            for field in ('ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password','ssh_tunnel'):
                 if instance.get(field) is not None:db_info[field]=instance[field]
 
         if not datasource_id and data.get('ssh_host'):
@@ -4859,7 +5078,12 @@ def api_start_inspection():
                 'ssh_key_file': data.get('ssh_key_file', ''),
                 'ssh_key_password': data.get('ssh_key_password',''),
                 'ssh_ebpf':     data.get('ssh_ebpf', True),
+                # 是否经 SSH 隧道连接数据库（Navicat 式开关）；缺省关闭
+                'ssh_tunnel':   bool(data.get('ssh_tunnel', False)),
             })
+        elif db_info.get('ssh_host') and db_info.get('ssh_tunnel') is None:
+            # 数据源路径未显式给出时按「默认关闭」处理（与 UI 开关默认一致）
+            db_info['ssh_tunnel'] = False
 
         if db_type=='gbase8a':
             db_info['tls_ca_file']=(instance if datasource_id else data).get('tls_ca_file','')
@@ -5083,13 +5307,15 @@ def api_save_server_thresholds():
 
 @app.route('/api/inspection/templates', methods=['GET'])
 def api_list_icfg_templates():
-    """获取巡检模板列表，支持按 db_type 过滤"""
+    """获取巡检模板列表，支持按 db_type 过滤。
+
+    同族展开：oracle_jdbc / sqlserver_jdbc / dm 等实例也能选到
+    oracle / sqlserver / dm8 名下的业务专项模板（dal 层按
+    driver_registry.db_family 归并，精确匹配在前，族内其余靠后）。
+    """
     try:
         db_type = request.args.get('db_type')
-        # 前端 db_type 简称 → 数据库 template 全称映射
-        _DB_TYPE_MAP = {'pg': 'postgresql', 'dm': 'dm8', 'ivorysql': 'ivorysql'}
         if db_type:
-            db_type = _DB_TYPE_MAP.get(db_type, db_type)
             rows = get_templates_by_db_type(db_type, include_family=True)
         else:
             rows = get_all_templates()
@@ -6982,49 +7208,100 @@ def api_pro_health_score():
 
 @app.route('/api/pro/dashboard', methods=['GET'])
 def api_pro_dashboard():
-    """获取首页健康评分仪表盘数据"""
+    """首页健康驾驶舱数据。
+
+    数据口径（v2）：
+      1. 健康分 = 统计窗口内「每实例最近一次巡检」的平均分；空分不计分母。
+         窗口默认本自然月，可用 ?period=30d 切到近 30 天。
+         **离线不压分**——连接性状态不参与评分，单独展示。
+      2. 风险分布 = 只统计在线实例，且只看窗口内巡检；
+         离线实例单列返回，不混进风险等级；在线但窗口内无巡检归入 uninspected。
+      3. 可用性 = 实时读采集器最新快照（30s 一轮），不作为评分因子。
+    """
     try:
         from modules.pro import get_instance_manager
         im = get_instance_manager()
 
-        # 获取全局评分
-        score = im.get_global_health_score()
+        # ── 统计窗口 ──
+        period_key = (request.args.get('period') or 'month').lower()
+        now = datetime.datetime.now()
+        if period_key in ('30d', '30', 'recent'):
+            since_dt = now - datetime.timedelta(days=30)
+            period_key, period_label = '30d', '近 30 天'
+        else:
+            since_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_key, period_label = 'month', '本月'
+        since_iso = since_dt.isoformat()
+
+        # ── 健康分（窗口口径） ──
+        period_score = im.get_period_health_score(since_iso)
+        score = period_score['score']
         level = 'critical' if score <= 30 else 'high' if score <= 50 else 'medium' if score <= 70 else 'low' if score <= 85 else 'healthy'
 
-        # 获取风险统计（从最近巡检记录）
+        # ── 实例清单 + 实时可用性（采集器最新快照） ──
+        instances = im.get_all_instances(mask_password=True)
+        known_ids = [i.get('id') for i in instances if i.get('id')]
+        known_set = set(known_ids)
+
+        collector = None
+        try:
+            from modules.pro.metrics_collector import get_collector
+            collector = get_collector()
+        except Exception:
+            collector = None
+
+        avail = {}
+        avail_ts = None
+        for iid in known_ids:
+            live = {}
+            if collector is not None:
+                try:
+                    live = collector.store.get_latest(iid) or {}
+                except Exception:
+                    live = {}
+            a = live.get('available')
+            avail[iid] = None if a is None else bool(a)
+            ts = live.get('ts')
+            if ts and (avail_ts is None or ts > avail_ts):
+                avail_ts = ts
+
+        # 只有明确 available=False 才算离线；从未采集到（None）按未知处理，不误判
+        offline_ids = {iid for iid, a in avail.items() if a is False}
+        online_ids = [iid for iid in known_ids if iid not in offline_ids]
+
+        # ── 巡检记录 ──
         conn = sqlite3.connect(im.db_file)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # 获取所有实例最新巡检的风险分布
-        cursor.execute("""
-            SELECT h.risk_level, COUNT(*) as cnt
-            FROM (
-                SELECT instance_id, MAX(inspect_time) as latest
-                FROM inspection_history GROUP BY instance_id
-            ) latest
-            JOIN inspection_history h
-              ON h.instance_id = latest.instance_id
-             AND h.inspect_time = latest.latest
-            GROUP BY h.risk_level
-        """)
-        risk_rows = cursor.fetchall()
-        risk_breakdown = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'healthy': 0}
-        for row in risk_rows:
-            risk_breakdown[row['risk_level'] or 'healthy'] = row['cnt']
-
-        # 获取最新巡检记录
+        # 窗口内每实例最近一次巡检
         cursor.execute("""
             SELECT h.instance_id, h.instance_name, h.db_type, h.inspect_time,
                    h.health_score, h.risk_count, h.risk_level
             FROM (
-                SELECT instance_id, MAX(inspect_time) as latest
+                SELECT instance_id, MAX(inspect_time) AS latest
+                FROM inspection_history
+                WHERE inspect_time >= ?
+                GROUP BY instance_id
+            ) latest
+            JOIN inspection_history h
+              ON h.instance_id = latest.instance_id
+             AND h.inspect_time = latest.latest
+        """, (since_iso,))
+        window_rows = cursor.fetchall()
+
+        # 全量（不限窗口）每实例最近一次，供「健康态势大屏」的实例矩阵
+        cursor.execute("""
+            SELECT h.instance_id, h.instance_name, h.db_type, h.inspect_time,
+                   h.health_score, h.risk_count, h.risk_level
+            FROM (
+                SELECT instance_id, MAX(inspect_time) AS latest
                 FROM inspection_history GROUP BY instance_id
             ) latest
             JOIN inspection_history h
               ON h.instance_id = latest.instance_id
              AND h.inspect_time = latest.latest
-            LIMIT 10
+            LIMIT 50
         """)
         latest_rows = cursor.fetchall()
 
@@ -7035,9 +7312,47 @@ def api_pro_dashboard():
             GROUP BY date ORDER BY date DESC LIMIT 30
         """)
         trend_rows = cursor.fetchall()
+        conn.close()
+
+        latest_map = {r['instance_id']: r for r in latest_rows}
+
+        # ── 风险分布（在线实例 + 窗口口径） ──
+        risk_breakdown = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0,
+                          'healthy': 0, 'uninspected': 0}
+        inspected_ids = set()
+        for r in window_rows:
+            iid = r['instance_id']
+            if iid not in known_set:
+                continue  # 未注册实例（临时巡检）不计入分布
+            inspected_ids.add(iid)
+            if iid in offline_ids:
+                continue  # 离线单列展示，不混进风险等级
+            lv = (r['risk_level'] or 'healthy').strip().lower()
+            if lv not in risk_breakdown:
+                lv = 'healthy'
+            risk_breakdown[lv] += 1
+
+        risk_breakdown['uninspected'] = len([i for i in online_ids if i not in inspected_ids])
+
+        # ── 离线实例单列 ──
+        offline_instances = []
+        for inst in instances:
+            iid = inst.get('id')
+            if iid not in offline_ids:
+                continue
+            lr = latest_map.get(iid)
+            offline_instances.append({
+                'instance_id': iid,
+                'name': inst.get('name'),
+                'db_type': inst.get('db_type'),
+                'host': inst.get('host'),
+                'port': inst.get('port'),
+                'health_score': lr['health_score'] if lr else None,
+                'last_inspect_time': lr['inspect_time'] if lr else None,
+            })
 
         # 实例矩阵（各实例最新巡检真实数据）
-        instances = [{
+        matrix = [{
             'instance_id': r['instance_id'],
             'instance_name': r['instance_name'],
             'db_type': r['db_type'],
@@ -7046,25 +7361,31 @@ def api_pro_dashboard():
             'inspect_time': r['inspect_time'],
         } for r in latest_rows]
 
-        conn.close()
-
         trend = [{'date': r['date'], 'score': round(r['avg_score'])} for r in reversed(trend_rows)]
-
-        # 总实例数和已巡检实例数
-        stats = im.get_statistics()
-        total_instances = stats.get('total_instances', 0)
-        inspected_count = len(latest_rows)
 
         return jsonify({
             'ok': True,
             'total_score': score,
             'level': level,
+            'period': {
+                'key': period_key,
+                'label': period_label,
+                'since': since_iso,
+                'samples': period_score['samples'],
+            },
             'risk_breakdown': risk_breakdown,
             'trend': trend,
-            'instances': instances,
-            'total_instances': total_instances,
-            'inspected_count': inspected_count,
-            'has_history': inspected_count > 0,
+            'instances': matrix,
+            'total_instances': len(known_ids),
+            'inspected_count': len([i for i in inspected_ids if i in known_set]),
+            'online_count': len(online_ids),
+            'offline_count': len(offline_instances),
+            'offline_instances': offline_instances,
+            'uninspected_count': risk_breakdown['uninspected'],
+            'availability_ts': avail_ts,
+            'collector_running': bool(collector and getattr(collector, 'running', False)),
+            'has_history': len(window_rows) > 0,
+            'has_lifetime_history': len(latest_rows) > 0,
         })
 
     except ImportError:
@@ -7353,6 +7674,8 @@ def api_pro_datasource_add():
             ssh_password=data.get('ssh_password', ''),
             ssh_key_file=data.get('ssh_key_file', ''),
             ssh_enabled=bool(data.get('ssh_enabled', False)),
+            # 是否经 SSH 隧道连接数据库；未显式传值时缺省启用（堡垒机场景）
+            ssh_tunnel=bool(data.get('ssh_tunnel', False)),
             gbase_server_name=data.get('gbase_server_name', ''),
             tenant=data.get('tenant', ''),
             seed_nodes=data.get('seed_nodes', ''),
@@ -7684,6 +8007,12 @@ def api_ds_databases(ds_id):
     if not inst:
         return jsonify({'error': f'数据源不存在: {ds_id}'}), 404
 
+    # SSH 隧道：库列表同样必须经隧道。数据库填 127.0.0.1 表示「仅监听 SSH
+    # 主机回环」（Navicat 式隧道语义），此处若直连巡检机自身回环必然被拒，
+    # 而巡检走隧道正常 → 表现为「巡检通过、库列表打不开」的功能分裂。
+    from modules.ssh import apply_tunnel as _apply_tunnel
+    inst = _apply_tunnel(inst)
+
     db_type = inst.get('db_type', '').lower().replace('oracle_full', 'oracle').replace('_jdbc', '')
     if db_type == 'pg':
         db_type = 'postgresql'
@@ -7916,6 +8245,11 @@ def api_ds_objects(ds_id):
     inst = mgr.get_instance_decrypted(ds_id)
     if not inst:
         return jsonify({'error': f'数据源不存在: {ds_id}'}), 404
+
+    # SSH 隧道：表/视图列表与库列表同属连接层，必须共用同一入口，
+    # 否则库列表能开、点进去取对象又直连回环被拒。
+    from modules.ssh import apply_tunnel as _apply_tunnel
+    inst = _apply_tunnel(inst)
 
     db_type = inst.get('db_type', '').lower().replace('oracle_full', 'oracle').replace('_jdbc', '')
     if db_type == 'pg':
@@ -8230,6 +8564,18 @@ _sql_cursors = {}
 _SQL_CURSOR_TTL = 300  # 游标超时 5 分钟
 
 
+def _compat_fetch_rows(cursor, limit):
+    """SQL 编辑器翻页取数的兼容层。
+
+    游标可能来自原生驱动（pymysql/psycopg2，有 fetchmany）也可能来自
+    ``*_jdbc`` 插件的 JdbcCursorWrapper（历史上部分实现缺 fetchmany）。
+    统一走 modules.core.dbapi_compat.fetch_rows 兜底，避免缺方法时
+    整个查询被误判为失败。
+    """
+    from modules.core.dbapi_compat import fetch_rows
+    return fetch_rows(cursor, limit)
+
+
 def _cleanup_expired_cursors():
     """清理过期的 SQL 游标"""
     global _sql_cursors
@@ -8397,7 +8743,7 @@ def api_execute_sql():
         cur_info['created_at'] = time.time()  # 刷新过期时间
         try:
             cursor = cur_info['cursor']
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
             new_cursor_id = cursor_id if has_more else None
             return jsonify({
@@ -8430,6 +8776,11 @@ def api_execute_sql():
     db_info = im.get_instance_decrypted(instance_id)
     if not db_info:
         return jsonify({'error': '数据源不存在'}), 404
+
+    # SSH 隧道：SQL 工作台的查询执行必须经隧道。此处是用户手动查数的入口，
+    # 直连回环会直接报 Connection refused，与巡检结果矛盾。
+    from modules.ssh import apply_tunnel as _apply_tunnel
+    db_info = _apply_tunnel(db_info)
 
     db_type = (db_info.get('db_type', '') or '').lower().replace('oracle_full', 'oracle').replace('_jdbc', '')
     if db_type == 'pg':
@@ -8499,7 +8850,7 @@ def api_execute_sql():
             cursor = conn.cursor(pymysql.cursors.DictCursor)
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type in ('postgresql', 'ivorysql', 'halodb', 'kingbase', 'hgdb'):
@@ -8512,7 +8863,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type == 'oracle':
@@ -8530,7 +8881,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type == 'sqlserver':
@@ -8540,7 +8891,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [col[0] for col in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type == 'dm':
@@ -8549,7 +8900,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type == 'yashandb':
@@ -8558,7 +8909,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type == 'db2':
@@ -8568,7 +8919,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         elif db_type == 'clickhouse':
@@ -8578,7 +8929,7 @@ def api_execute_sql():
             cursor = conn.cursor()
             cursor.execute(sql)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            rows = cursor.fetchmany(200)
+            rows = _compat_fetch_rows(cursor, 200)
             has_more = len(rows) >= 200
 
         else:
@@ -9183,6 +9534,11 @@ def api_inspection_execute_sql():
     if not db_info:
         return jsonify({'ok': False, 'error': '数据源不存在'})
 
+    # SSH 隧道：巡检修复 SQL 的执行必须经隧道。巡检发现问题的过程走隧道，
+    # 但「一键修复」若直连回环就会执行失败，形成「能发现、修不了」的断裂。
+    from modules.ssh import apply_tunnel as _apply_tunnel
+    db_info = _apply_tunnel(db_info)
+
     db_type = db_info.get('db_type', '').lower().replace('oracle_full', 'oracle').replace('_jdbc', '')
     datasource_name = db_info.get('name', datasource_id)
 
@@ -9454,6 +9810,15 @@ def api_loghub():
 #  AI 聊天巡检 API
 # ══════════════════════════════════════════════════════════════
 
+def _ai_security_clause() -> str:
+    """AI 系统提示词的硬安全条款（纵深防御：服务端另有 ai_guard 硬阻断）。"""
+    try:
+        from modules.core.ai_guard import SYSTEM_PROMPT_CLAUSE
+        return SYSTEM_PROMPT_CLAUSE
+    except Exception:
+        return ''
+
+
 def _load_ai_config():
     """加载 AI 配置"""
     cfg_path = paths.DBC_CONFIG_PATH
@@ -9473,11 +9838,15 @@ def _load_ai_config():
     }
 
 
-def _call_llm(prompt: str, system: str = '', stream_callback=None) -> str:
+def _call_llm(prompt: str, system: str = '', stream_callback=None,
+              session_id=None, egress_ticket=None, purpose='AI 问答') -> str:
     """调用 LLM API 生成文本（支持 Ollama 和 OpenAI 协议兼容的远程模型）
-    
+
     Args:
         stream_callback: 流式回调函数，接收 chunk 字符串。如果提供，则流式输出
+        session_id: 会话 ID，用于外发审批票据归属（远程后端才需要）
+        egress_ticket: 用户已批准的外发票据；未批准时抛 EgressApprovalRequired
+        purpose: 外发用途描述，回显给用户时说明"这些数据为什么要发出去"
     """
     cfg = _load_ai_config()
     backend = cfg.get('backend', 'ollama')
@@ -9492,9 +9861,86 @@ def _call_llm(prompt: str, system: str = '', stream_callback=None) -> str:
         online_enabled = cfg.get('online_enabled', False)
         if not online_enabled:
             return '[在线模型未启用，请在 AI 设置中开启"启用在线模型"]'
-        return _call_llm_openai(cfg, prompt, system, timeout, stream_callback)
+        return _call_llm_openai(cfg, prompt, system, timeout, stream_callback,
+                                session_id=session_id, egress_ticket=egress_ticket,
+                                purpose=purpose)
     else:
         return '[AI 后端未启用]'
+
+
+def _prepare_online_messages(cfg: dict, prompt: str, system: str) -> list:
+    """构造将发往远程模型的 messages（与发送端完全同源，供审批回显与指纹计算）。"""
+    from modules.core.data_security import redact
+    prompt, system = redact(prompt, mask_identity=True), redact(system, mask_identity=True)
+    messages = []
+    if system:
+        messages.append({'role': 'system', 'content': system})
+    messages.append({'role': 'user', 'content': prompt})
+    return messages
+
+
+def _online_endpoint(cfg: dict):
+    """归一化在线 API 地址，返回 (api_url, chat_completions_url)。"""
+    api_url = cfg.get('online_api_url', 'https://api.openai.com/v1').rstrip('/')
+    if not api_url.endswith('/v1'):
+        if '/v1/' in api_url:
+            api_url = api_url[:api_url.index('/v1') + 3]
+        else:
+            api_url = api_url + '/v1'
+    return api_url, api_url + '/chat/completions'
+
+
+def _online_egress_text(cfg: dict, messages: list) -> str:
+    """外发内容的规范化文本（指纹计算基准）。
+
+    刻意**不含** ``stream`` 等易变字段——同一份对话内容在流式与非流式下
+    必须是同一个指纹，否则用户批准后走 fallback 会被判为"内容不一致"。
+    """
+    return json.dumps(
+        {'model': cfg.get('online_model', 'gpt-4o-mini'), 'messages': messages},
+        ensure_ascii=False, sort_keys=True)
+
+
+def _egress_gate(cfg: dict, messages: list, session_id, egress_ticket, purpose,
+                 dry_run: bool = False):
+    """外发闸门：可发送返回 None；需要审批则抛 ``EgressApprovalRequired``。
+
+    三种情况：
+    - 目标是本地回环 → 直接放行（数据不出机）；
+    - 目标在运维显式允许清单（DBPULSE_ALLOWED_EGRESS_HOSTS + https）→ 直接放行；
+    - AI 设置页已开启「自动允许在线 AI」（ai.auto_allow_egress=true）→ 直接放行；
+    - 其它 → 不走"一刀切报错"，而是登记审批票据，把待发内容回显到聊天框。
+
+    ``dry_run=True`` 时只校验票据不消费——流式路由的「发送前预检」必须用这个模式，
+    否则一次性票据会在预检时被作废，真正发送时又被拦，表现为"批准了却拿不到回答"。
+    """
+    from modules.core.data_security import egress_policy
+    from modules.core import egress_consent
+
+    _api_url, url = _online_endpoint(cfg)
+    state, host = egress_policy(url)
+    if state != 'needs_approval':
+        return None
+
+    # 「自动允许在线 AI」已开启：管理员在 AI 设置页显式做出了持续性授权，
+    # 与 DBPULSE_ALLOWED_EGRESS_HOSTS 同等效力，不再逐次弹审批卡片。
+    # 仅 https 可登记（http 会被 allow_egress_host 拒绝，继续走审批流程）。
+    if cfg.get('auto_allow_egress'):
+        from modules.core.data_security import allow_egress_host
+        _ok, _registered = allow_egress_host(url)
+        if _ok:
+            return None
+
+    text = _online_egress_text(cfg, messages)
+    if egress_ticket:
+        if dry_run:
+            if egress_consent.peek(session_id, egress_ticket, text):
+                return None
+        else:
+            ok, reason = egress_consent.consume(session_id, egress_ticket, text)
+            if ok:
+                return None
+    raise egress_consent.register(session_id, host, purpose or 'AI 问答', text)
 
 
 def _call_llm_ollama(cfg: dict, prompt: str, system: str, timeout: int, stream_callback=None) -> str:
@@ -9571,30 +10017,28 @@ def _call_llm_ollama(cfg: dict, prompt: str, system: str, timeout: int, stream_c
         return f'[Ollama 调用失败: {e}]'
 
 
-def _call_llm_openai(cfg: dict, prompt: str, system: str, timeout: int, stream_callback=None) -> str:
+def _call_llm_openai(cfg: dict, prompt: str, system: str, timeout: int, stream_callback=None,
+                     session_id=None, egress_ticket=None, purpose='AI 问答') -> str:
     """调用 OpenAI 协议兼容的远程 API 生成文本（支持流式）
-    
+
+    外发内容先过 ``_egress_gate``：命中未批准主机时抛 ``EgressApprovalRequired``，
+    由上层渲染成聊天框里的审批卡片；用户批准后凭票据放行，拒绝则跳过。
+    不再使用"一刀切抛错"的 ``ensure_egress_allowed``——那条路径保留给
+    通知 / 外部索引等无人值守场景。
+
     Args:
         stream_callback: 流式回调函数，接收 chunk 字符串
+        session_id: 会话 ID（审批票据归属）
+        egress_ticket: 用户已批准的外发票据
+        purpose: 外发用途说明（回显给用户）
     """
-    api_url = cfg.get('online_api_url', 'https://api.openai.com/v1').rstrip('/')
-    from modules.core.data_security import ensure_egress_allowed,redact
-    ensure_egress_allowed(api_url)
-    prompt,system=redact(prompt,mask_identity=True),redact(system,mask_identity=True)
+    messages = _prepare_online_messages(cfg, prompt, system)
+    # 闸门必须在任何实际网络发送之前执行（含流式分支，原实现流式分支漏检）
+    _egress_gate(cfg, messages, session_id, egress_ticket, purpose)
+
     model = cfg.get('online_model', 'gpt-4o-mini')
     api_key = cfg.get('api_key', '')
-
-    if not api_url.endswith('/v1'):
-        if '/v1/' in api_url:
-            api_url = api_url[:api_url.index('/v1') + 3]
-        else:
-            api_url = api_url + '/v1'
-    url = api_url + '/chat/completions'
-
-    messages = []
-    if system:
-        messages.append({'role': 'system', 'content': system})
-    messages.append({'role': 'user', 'content': prompt})
+    _api_url, url = _online_endpoint(cfg)
 
     payload = {
         'model': model,
@@ -9675,8 +10119,22 @@ def _add_to_history(session_id: str, role: str, content: str):
 
 
 def _clear_chat_session(session_id: str):
-    """清空指定会话历史"""
+    """清空指定会话历史。
+
+    同时作废该会话下所有待处理的授权票据（任务授权 + 外发审批），
+    避免清空对话后旧票据仍可被重放执行。
+    """
     _chat_sessions.pop(session_id, None)
+    try:
+        from modules.core import task_consent as _tc
+        _tc.clear_session(session_id)
+    except Exception:
+        pass
+    try:
+        from modules.core import egress_consent as _ec
+        _ec.clear_session(session_id)
+    except Exception:
+        pass
 
 
 def _format_conversation_history(session_id: str) -> str:
@@ -9772,7 +10230,8 @@ def _classify_chat_intent(user_message: str) -> str:
         return 'qa'  # v2.6.2: 异常时默认问答，避免误判为巡检报错
 
 
-def _answer_chat_qa(session_id: str, user_message: str, db_type: str = None, context: dict = None) -> dict:
+def _answer_chat_qa(session_id: str, user_message: str, db_type: str = None, context: dict = None,
+                    egress_ticket: str = None) -> dict:
     """
     基于 RAG 知识库回答数据库运维问题（v2.6.2 支持上下文感知）
 
@@ -9830,15 +10289,15 @@ def _answer_chat_qa(session_id: str, user_message: str, db_type: str = None, con
         pass  # RAG 失败不影响回答
 
     # 构建 Prompt（v2.6.2：注入上下文）
-    system_prompt = """你是 DBCheck 数据库运维智能助手，专门帮助用户解答数据库运维、性能优化、故障排查等方面的问题。
+    system_prompt = """你是 DBCheck 数据库智能助手，面向 DBA 与运维工程师，帮助他们完成数据库巡检、诊断与日常运维。
 
-回答规则：
-1. 如果知识库中有相关文档，优先参考知识库内容回答
-2. 如果没有知识库参考，基于自身知识回答
-3. 回答要简洁实用，多给具体建议和命令示例
-4. 涉及 SQL 时注明适用的数据库类型
-5. 使用 Markdown 格式排版
-6. 如果问题与数据库运维无关，礼貌地说明能力范围"""
+## 回答方式
+1. **简洁友好**：先给结论，再给必要步骤；不复述问题、不寒暄铺垫。
+2. **直接回答**：无论用户问什么，都尽力给出有用的答案。不要输出「我无法」「不在我的能力范围」「这属于其他领域」这类拒绝式回应。不确定的地方说明假设与适用范围，而不是回避。
+3. **给可执行动作**：优先给能直接复制的命令、SQL、参数与检查步骤，并说明预期结果。
+4. **标注适用类型**：涉及 SQL / 参数 / 系统表时注明适用的数据库（MySQL / PostgreSQL / Oracle / SQL Server / 达梦 DM / 人大金仓 / 瀚高 / TiDB / OceanBase 等）。
+5. **排版**：使用 Markdown，善用代码块、表格、加粗与有序列表。
+6. **知识库优先**：检索到相关文档时以文档内容为准；没有检索到时基于通用运维经验回答。""" + _ai_security_clause()
 
     # v2.6.2：将上下文注入 system_prompt
     if context:
@@ -9868,7 +10327,20 @@ def _answer_chat_qa(session_id: str, user_message: str, db_type: str = None, con
             system_prompt += '\n\n## 当前上下文（用户当前正在操作的界面信息）\n' + '\n'.join(ctx_parts) + \
                 '\n请根据上下文，给出更贴合用户当前场景的回答。'
 
-    conversation = _format_conversation_history(session_id)
+        # 「快速开始」页专属引导（与流式路径保持一致）
+        if page == 'wizard':
+            system_prompt += (
+                '\n\n## 用户当前在「快速开始」页\n'
+                '该页是 5 步式接入向导：\n'
+                '1. 选择数据库类型（MySQL / PostgreSQL / Oracle / SQL Server / 达梦 / 金仓 等）\n'
+                '2. 填写连接信息（实例标签、主机、端口、用户名、密码；也可直接选已保存的数据源）\n'
+                '3. SSH 配置（可选，仅当数据库不对本机直连时需要）\n'
+                '4. 巡检设置（字符集、时区、备份、阈值等检查项）\n'
+                '5. 执行巡检（生成巡检报告）\n'
+                '回答时请：先说明用户当前处于第几步、这一步要填什么；再给出该步常见的坑'
+                '（如端口默认值、Oracle 服务名与 SID 的区别、PostgreSQL 默认库为 postgres）；'
+                '最后明确指出"点哪个按钮进入下一步"。不要重复罗列全部 5 步。'
+            )
     if conversation:
         prompt = f"""## 历史对话
 {conversation}
@@ -9891,12 +10363,18 @@ def _answer_chat_qa(session_id: str, user_message: str, db_type: str = None, con
 
     # 调用 LLM
     try:
-        answer = _call_llm(prompt, system_prompt)
+        answer = _call_llm(prompt, system_prompt, session_id=session_id,
+                           egress_ticket=egress_ticket,
+                           purpose='AI 知识问答（调用远程模型）')
         # 保存到会话历史
         _add_to_history(session_id, 'user', user_message)
         _add_to_history(session_id, 'ai', answer)
         return {'ok': True, 'answer': answer, 'rag_used': rag_used, 'rag_disabled': False}
     except Exception as e:
+        # 外发审批不是"失败"，必须上抛给路由层渲染审批卡片
+        from modules.core.egress_consent import EgressApprovalRequired
+        if isinstance(e, EgressApprovalRequired):
+            raise
         return {'ok': True, 'answer': f'❌ LLM 调用失败: {e}\n\n请检查 AI 后端服务是否正常运行。', 'rag_used': False, 'rag_disabled': False}
 
 
@@ -9913,7 +10391,20 @@ def parse_intent(user_message: str) -> dict:
 只输出 JSON，不要输出其他内容。"""
 
     prompt = f'输入："{user_message}"'
-    response = _call_llm(prompt, system_prompt)
+    try:
+        response = _call_llm(prompt, system_prompt)
+    except Exception as _pi_err:
+        # 意图解析是辅助步骤：外发未获批准（或后端异常）时降级为默认值，
+        # 不因为"要不要发一条分类请求"打断用户主流程，更不把审批卡片顶到前面。
+        from modules.core.egress_consent import EgressApprovalRequired
+        degraded = isinstance(_pi_err, EgressApprovalRequired)
+        return {
+            'db_type': 'unknown',
+            'db_name': '',
+            'scope': 'all',
+            'need_report': True,
+            'raw': {'degraded': 'egress_approval_required'} if degraded else {},
+        }
 
     # 解析 JSON
     try:
@@ -10641,8 +11132,66 @@ def _format_workflow_result(result, wf_name):
     return '\n'.join(lines)
 
 
-def _stream_diagnose_response(message, chat_context):
+def _sse_thinking(stage, content, detail=''):
+    """构造一条 SSE 思考事件。
+
+    为什么需要它：意图分类、RAG 检索、LLM 首 token、连库采集这些阶段
+    动辄数秒到数十秒，期间若前端没有任何输出，用户会以为界面卡死。
+    这里把「正在做什么」实时推给前端，前端渲染成状态条 + 可展开思考详情。
+
+    Args:
+        stage: 阶段标识（classify / retrieve / generate / resolve / execute ...）
+        content: 一行状态文案，展示在当前状态条上
+        detail: 更细的思考内容，进折叠区（可为空）
+    """
+    return 'data: ' + json.dumps(
+        {'type': 'thinking', 'stage': stage, 'content': content, 'detail': detail},
+        ensure_ascii=False) + '\n\n'
+
+
+def _sse_event(payload):
+    """构造一条通用 SSE 事件行。"""
+    return 'data: ' + json.dumps(payload, ensure_ascii=False) + '\n\n'
+
+
+def _task_gate_payload(session_id, task_ticket, kind, action, target, plan,
+                       detail='', impact=None):
+    """任务授权闸门的核心判定，返回 ``(ok, payload_dict)``。
+
+    - ``ok=True``  → 票据已校验通过并消费，调用方可以真正执行；
+    - ``ok=False`` → ``payload_dict`` 是要回给前端的事件
+      （首次进入是授权确认卡；票据失效/被拒是说明）。
+
+    ``plan`` 做指纹绑定：用户批准的是"A 计划"，就不能拿这张票据去跑"B 计划"。
+    """
+    from modules.core import task_consent
+
+    if task_ticket:
+        ok, reason, _item = task_consent.consume(session_id, task_ticket)
+        if ok:
+            return True, None
+        return False, {'type': 'task_denied', 'message': reason}
+
+    ticket = task_consent.register(
+        session_id, kind, action, target, plan,
+        detail=detail, impact=impact or [],
+    )
+    return False, ticket.to_dict()
+
+
+def _task_gate(session_id, task_ticket, kind, action, target, plan,
+               detail='', impact=None):
+    """``_task_gate_payload`` 的 SSE 版本：返回 ``(ok, sse_text)``。"""
+    ok, payload = _task_gate_payload(session_id, task_ticket, kind, action,
+                                    target, plan, detail, impact)
+    if ok:
+        return True, None
+    return False, _sse_event(payload)
+
+
+def _stream_diagnose_response(message, chat_context, session_id='', task_ticket=''):
     """SSE：对指定数据源启动智能诊断（多专家协同），逐事件回灌聊天框。"""
+    yield _sse_thinking('resolve', '正在定位诊断目标数据源…')
     inst = _match_chat_instance(message, chat_context)
     if not inst:
         names = _list_instance_names()
@@ -10656,6 +11205,23 @@ def _stream_diagnose_response(message, chat_context):
         return
     instance_id = inst.get('id') or inst.get('name')
     name = inst.get('name', '')
+
+    # 智能诊断会真实连库采集 + 多专家多轮分析，属任务类操作 → 需用户授权
+    _ok, _gate = _task_gate(
+        session_id, task_ticket, 'diagnose', '智能诊断',
+        target=('%s（%s）' % (name, inst.get('db_type') or '未知类型')).strip(),
+        plan={'kind': 'diagnose', 'instance_id': str(instance_id), 'goal': message},
+        detail=('将对 **%s** 启动多专家协同诊断：连接数据库只读采集指标 → '
+                '专家分组分析 → Reviewer 复核 → 汇总诊断结论。' % name),
+        impact=['会连接目标数据库执行只读采集', '耗时通常 30 秒至数分钟', '不修改任何数据或配置'],
+    )
+    if not _ok:
+        yield _gate
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return
+
+    yield _sse_thinking('execute', '已授权，正在启动多专家协同诊断…',
+                        detail='专家链路：协调者规划 → 并行执行 → Reviewer 复核')
     yield f"data: {json.dumps({'type': 'chunk', 'content': '🧭 已对 **%s** 启动智能诊断（多专家协同）...' % name}, ensure_ascii=False)}\n\n"
     try:
         from modules.intelligence.hub import get_hub
@@ -10685,8 +11251,9 @@ def _stream_diagnose_response(message, chat_context):
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
-def _stream_workflow_response(message, chat_context):
+def _stream_workflow_response(message, chat_context, session_id='', task_ticket=''):
     """SSE：解析工作流 + 实例并启动执行，回灌进度与结果。"""
+    yield _sse_thinking('resolve', '正在匹配工作流与目标数据源…')
     wf = _match_chat_workflow(message)
     if not wf:
         try:
@@ -10716,6 +11283,24 @@ def _stream_workflow_response(message, chat_context):
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
         return
     instance_id = inst.get('id') or inst.get('name')
+
+    # 工作流会按编排真实连库执行（可能含多条采集/检查），属任务类操作 → 需用户授权
+    _ok, _gate = _task_gate(
+        session_id, task_ticket, 'workflow', '工作流执行',
+        target=('%s → %s' % (wf_name, inst.get('name', ''))).strip(),
+        plan={'kind': 'workflow', 'workflow_id': str(wf_id),
+              'instance_id': str(instance_id), 'goal': message},
+        detail=('将启动工作流 **%s**，目标数据源 **%s**。工作流会按其编排依次执行各节点。'
+                % (wf_name, inst.get('name', ''))),
+        impact=['会连接目标数据库执行工作流编排的各节点', '耗时取决于节点数量', '不修改任何数据或配置'],
+    )
+    if not _ok:
+        yield _gate
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return
+
+    yield _sse_thinking('execute', '已授权，正在启动工作流…',
+                        detail='工作流：%s' % wf_name)
     yield f"data: {json.dumps({'type': 'chunk', 'content': '⚙️ 已启动工作流 **%s**（目标 **%s**）...' % (wf_name, inst.get('name', ''))}, ensure_ascii=False)}\n\n"
     try:
         result = _run_workflow_by_id(wf_id, instance_id, message or '执行工作流')
@@ -10728,7 +11313,7 @@ def _stream_workflow_response(message, chat_context):
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
-def _handle_diagnose_nonstream(message, chat_context):
+def _handle_diagnose_nonstream(message, chat_context, session_id='', task_ticket=''):
     """非流式（/api/chat fallback）：执行智能诊断并返回结果。"""
     inst = _match_chat_instance(message, chat_context)
     if not inst:
@@ -10740,6 +11325,17 @@ def _handle_diagnose_nonstream(message, chat_context):
         return jsonify({'ok': True, 'type': 'qa',
                         'message': '⚠️ 当前平台还没有已配置的数据源，请先在「数据源管理」添加实例。'})
     instance_id = inst.get('id') or inst.get('name')
+    _name = inst.get('name', '')
+    _ok, _payload = _task_gate_payload(
+        session_id, task_ticket, 'diagnose', '智能诊断',
+        target=('%s（%s）' % (_name, inst.get('db_type') or '未知类型')).strip(),
+        plan={'kind': 'diagnose', 'instance_id': str(instance_id), 'goal': message},
+        detail=('将对 **%s** 启动多专家协同诊断：连接数据库只读采集指标 → '
+                '专家分组分析 → Reviewer 复核 → 汇总诊断结论。' % _name),
+        impact=['会连接目标数据库执行只读采集', '耗时通常 30 秒至数分钟', '不修改任何数据或配置'],
+    )
+    if not _ok:
+        return jsonify(dict(_payload, ok=True))
     try:
         from modules.intelligence.hub import get_hub
         hub = get_hub()
@@ -10751,7 +11347,7 @@ def _handle_diagnose_nonstream(message, chat_context):
     return jsonify({'ok': True, 'type': 'qa', 'message': summary, 'intelligence_diagnose': True})
 
 
-def _handle_workflow_nonstream(message, chat_context):
+def _handle_workflow_nonstream(message, chat_context, session_id='', task_ticket=''):
     """非流式（/api/chat fallback）：启动工作流并返回结果。"""
     wf = _match_chat_workflow(message)
     if not wf:
@@ -10776,6 +11372,17 @@ def _handle_workflow_nonstream(message, chat_context):
         return jsonify({'ok': True, 'type': 'qa',
                         'message': '⚠️ 当前平台还没有已配置的数据源，无法启动工作流。'})
     instance_id = inst.get('id') or inst.get('name')
+    _wf_ok, _wf_payload = _task_gate_payload(
+        session_id, task_ticket, 'workflow', '工作流执行',
+        target=('%s → %s' % (wf_name, inst.get('name', ''))).strip(),
+        plan={'kind': 'workflow', 'workflow_id': str(wf_id),
+              'instance_id': str(instance_id), 'goal': message},
+        detail=('将启动工作流 **%s**，目标数据源 **%s**。工作流会按其编排依次执行各节点。'
+                % (wf_name, inst.get('name', ''))),
+        impact=['会连接目标数据库执行工作流编排的各节点', '耗时取决于节点数量', '不修改任何数据或配置'],
+    )
+    if not _wf_ok:
+        return jsonify(dict(_wf_payload, ok=True))
     try:
         result = _run_workflow_by_id(wf_id, instance_id, message or '执行工作流')
         summary = _format_workflow_result(result, wf_name)
@@ -10785,21 +11392,39 @@ def _handle_workflow_nonstream(message, chat_context):
 
 
 def _stream_inspection_response(data, message, session_id, chat_context):
-    """巡检意图：解析→匹配数据源→执行巡检，通过SSE返回结果"""
+    """巡检意图：解析→匹配数据源→执行巡检，通过SSE返回结果
+
+    全过程推送 thinking 事件，前端实时显示当前阶段，避免长耗时阶段界面像卡死。
+    真正启动巡检任务前必须经 _task_gate 授权（票据一次性、5 分钟时效、计划指纹绑定）。
+    """
     import time
 
     # 1. 解析意图
+    yield _sse_thinking('classify', '正在理解巡检需求（目标数据库 / 巡检范围）…')
     intent = parse_intent(message)
     db_type = intent.get('db_type', 'unknown')
     db_name = intent.get('db_name', '')
     scope = intent.get('scope', 'all')
     need_report = intent.get('need_report', scope == 'all')
 
+    _SCOPE_LABELS = {
+        'all': '全库巡检', 'connection_count': '连接数查询',
+        'lock_wait': '锁等待查询', 'slow_queries': '慢查询分析',
+    }
+    yield _sse_thinking(
+        'classify',
+        '已识别为%s' % _SCOPE_LABELS.get(scope, '巡检'),
+        detail=('数据库类型：%s\n目标名称：%s\n巡检范围：%s\n是否生成报告：%s'
+                % (db_type or '未指定', db_name or '未指定', scope,
+                   '是' if need_report else '否')),
+    )
+
     print(f'[AI Stream] 巡检意图: db_type={db_type}, db_name={db_name}, scope={scope}', flush=True)
 
     # 2. 解析候选数据源并确认（AI 助手巡检：先列出候选让用户确认，防多数据源串库）
     ds = None
     matched_name = None
+    yield _sse_thinking('resolve', '正在匹配已配置的数据源…')
 
     # 2.0 候选按钮点选回传：显式 instance_id 优先，直接取实例，跳过名称模糊解析
     # （防止 LLM 对「巡检 <名称>」解析漂移导致再次列出全部候选）
@@ -10875,12 +11500,56 @@ def _stream_inspection_response(data, message, session_id, chat_context):
 
     # 3. 执行简单查询或启动巡检任务
     if scope in ('connection_count', 'lock_wait', 'slow_queries') and not need_report:
+        _sq_target = matched_name or ds.get('name') or ds.get('host', '')
+        yield _sse_thinking(
+            'execute',
+            '正在连接 %s 执行只读查询…' % _sq_target,
+            detail='查询范围：%s\n目标：%s:%s\n该操作只读，不修改任何数据'
+                   % (_SCOPE_LABELS.get(scope, scope), ds.get('host', ''), ds.get('port', '')),
+        )
         try:
             result = execute_simple_query(ds, db_type, scope)
             yield f"data: {json.dumps({'type': 'inspect_result', 'message': result, 'scope': scope, 'db_name': matched_name or ds.get('name', '')}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'[WARN] 执行查询失败: {e}'}, ensure_ascii=False)}\n\n"
         return
+
+    # 全库巡检属「任务类操作」：会真实连库跑完整巡检并生成报告，
+    # 必须先取得用户明确授权——绝不因为匹配到唯一数据源就直接开跑。
+    _target_label = matched_name or ds.get('name') or db_name or ds.get('host', '')
+    _inspect_plan = {
+        'kind': 'inspect',
+        'db_type': db_type,
+        'host': str(ds.get('host', '')),
+        'port': str(ds.get('port', '')),
+        'name': str(_target_label),
+        'instance_id': str(ds.get('id') or ''),
+        'scope': scope,
+        'need_report': bool(need_report),
+    }
+    _ok, _gate = _task_gate(
+        session_id, str(data.get('task_ticket') or ''), 'inspect', '巡检任务',
+        target='%s（%s %s:%s）' % (_target_label, db_type,
+                                  ds.get('host', ''), ds.get('port', '')),
+        plan=_inspect_plan,
+        detail=('即将对 **%s** 执行%s，并%s生成巡检报告。'
+                % (_target_label, _SCOPE_LABELS.get(scope, '全库巡检'),
+                   '会' if need_report else '不会')),
+        impact=['会连接目标数据库执行完整巡检采集',
+                '会产生一定数据库负载，建议避开业务高峰',
+                '仅只读采集，不修改任何数据或配置'],
+    )
+    if not _ok:
+        yield _gate
+        yield _sse_event({'type': 'done'})
+        return
+
+    yield _sse_thinking(
+        'execute',
+        '已授权，正在启动巡检任务…',
+        detail='目标：%s\n类型：%s\n范围：%s'
+               % (_target_label, db_type, _SCOPE_LABELS.get(scope, scope)),
+    )
 
     # 全库巡检：启动任务
     task_id = str(uuid.uuid4())
@@ -10941,6 +11610,21 @@ def api_chat_stream():
         if not message:
             return jsonify({'error': '消息不能为空'}), 400
 
+        # ═══ 高危删改请求：入口硬阻断（无开关 / 无白名单 / 无例外）═══
+        # 在意图分类、数据源解析、任何数据库访问之前执行；命中即拒绝，不调用 LLM。
+        from modules.core import ai_guard as _ai_guard
+        _blocked_msg = _ai_guard.guard(message, session_id=session_id)
+        if _blocked_msg:
+            _evt = json.dumps({'type': 'qa', 'message': _blocked_msg,
+                               'blocked': True, 'policy': 'destructive_op_guard'},
+                              ensure_ascii=False)
+
+            def _gen_blocked(_payload=_evt):
+                yield f"data: {_payload}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+            return Response(_gen_blocked(), mimetype='text/event-stream')
+
         # ═══ 平台数据查询意图（优先于问答/巡检分类）═══
         # 例如「列一下所有数据源」应直接查平台返回清单，而非交给 LLM 泛答。
         platform_reply = _try_platform_query(message)
@@ -10951,20 +11635,25 @@ def api_chat_stream():
             return Response(_gen_pq(), mimetype='text/event-stream')
 
         # ═══ 意图分类（自动判断问答 vs 巡检）═══
+        _task_ticket = str(data.get('task_ticket') or '')
         chat_intent = _classify_chat_intent(message)
         print(f'[AI Stream] 意图分类: "{message[:40]}" → {chat_intent}', flush=True)
 
         # ═══ 智能诊断意图：贯通诊断中心（多专家协同）═══
         if chat_intent == 'diagnose':
             return Response(
-                _stream_diagnose_response(message, chat_context),
+                _stream_diagnose_response(message, chat_context,
+                                          session_id=session_id,
+                                          task_ticket=_task_ticket),
                 mimetype='text/event-stream'
             )
 
         # ═══ 启动工作流意图：贯通工作流编排 ═══
         if chat_intent == 'workflow':
             return Response(
-                _stream_workflow_response(message, chat_context),
+                _stream_workflow_response(message, chat_context,
+                                          session_id=session_id,
+                                          task_ticket=_task_ticket),
                 mimetype='text/event-stream'
             )
 
@@ -10991,16 +11680,19 @@ def api_chat_stream():
                 yield f"data: {json.dumps({'type': 'error', 'message': 'AI 后端未启用'}, ensure_ascii=False)}\n\n"
             return Response(gen_error(), mimetype='text/event-stream')
 
-        system_prompt = """你是 DBCheck 数据库运维智能助手，专门帮助用户解答数据库运维、性能优化、故障排查等方面的问题。
+        system_prompt = """你是 DBCheck 数据库智能助手，面向 DBA 与运维工程师，帮助他们完成数据库巡检、诊断与日常运维。
 
-回答规则：
-1. 如果知识库中有相关文档，优先参考知识库内容回答
-2. 如果没有知识库参考，基于自身知识回答
-3. 回答要简洁实用，多给具体建议和命令示例
-4. 涉及 SQL 时注明适用的数据库类型
-5. 使用 Markdown 格式排版（支持代码块、表格、加粗等）
-6. 如果问题与数据库运维无关，礼貌地说明能力范围"""
-        
+## 回答方式
+1. **简洁友好**：先给结论，再给必要步骤；不复述问题、不寒暄铺垫、不写大段背景介绍。
+2. **直接回答**：无论用户问什么，都尽力给出有用的答案。不要输出「我无法」「不在我的能力范围」「这属于其他领域」这类拒绝式回应。不确定的地方直接说明假设与适用范围，而不是回避。
+3. **给可执行动作**：优先给能直接复制的命令、SQL、参数与检查步骤，并说明预期结果。
+4. **标注适用类型**：涉及 SQL / 参数 / 系统表时注明适用的数据库（MySQL / PostgreSQL / Oracle / SQL Server / 达梦 DM / 人大金仓 / 瀚高 / TiDB / OceanBase 等）。
+5. **排版**：使用 Markdown，善用代码块、表格、加粗与有序列表，方便直接阅读。
+6. **知识库优先**：检索到相关文档时以文档内容为准；没有检索到时基于通用运维经验回答。
+
+## 任务类请求
+用户要求执行巡检、诊断、工作流等任务时，系统会先弹出授权确认。你只需说明将要做什么、影响范围与预计耗时，等待用户在卡片上确认，不要自行假设已获授权。"""
+
         # 注入上下文
         if chat_context.get('page'):
             ctx_parts = []
@@ -11022,10 +11714,29 @@ def api_chat_stream():
             template_id = chat_context.get('template_id', None)
             if template_id:
                 ctx_parts.append(f'当前巡检模板 ID：{template_id}')
-            
+
             if ctx_parts:
                 system_prompt += '\n\n## 当前上下文（用户当前正在操作的界面信息）\n' + '\n'.join(ctx_parts) + \
                     '\n请根据上下文，给出更贴合用户当前场景的回答。'
+
+        # 「快速开始」页专属引导：用户正处在 5 步接入向导里，
+        # 需要的是"下一步点哪里、这一格填什么"，而不是泛泛的数据库知识。
+        if chat_context.get('page') == 'wizard':
+            system_prompt += (
+                '\n\n## 用户当前在「快速开始」页\n'
+                '该页是 5 步式接入向导：\n'
+                '1. 选择数据库类型（MySQL / PostgreSQL / Oracle / SQL Server / 达梦 / 金仓 等）\n'
+                '2. 填写连接信息（实例标签、主机、端口、用户名、密码；也可直接选已保存的数据源）\n'
+                '3. SSH 配置（可选，仅当数据库不对本机直连时需要）\n'
+                '4. 巡检设置（字符集、时区、备份、阈值等检查项）\n'
+                '5. 执行巡检（生成巡检报告）\n'
+                '回答时请：先说明用户当前处于第几步、这一步要填什么；再给出该步常见的坑'
+                '（如端口默认值、Oracle 服务名与 SID 的区别、PostgreSQL 默认库为 postgres）；'
+                '最后明确指出"点哪个按钮进入下一步"。不要重复罗列全部 5 步。'
+            )
+
+        # 纵深防御：保留只读安全条款（仅约束删改数据/配置的请求，不影响正常问答）
+        system_prompt += _ai_security_clause()
         
         # 构建完整 prompt
         conversation = _format_conversation_history(session_id)
@@ -11059,6 +11770,25 @@ def api_chat_stream():
         else:
             prompt = f"{prompt}\n\n（本次未检索到相关知识库文档，请基于自身知识回答）"
         
+        # ═══ 外发审批闸门（远程模型）═══
+        # 未批准主机不再一刀切报错：把待发内容回显到聊天框，等用户决定。
+        egress_ticket = str(data.get('egress_ticket') or '')
+        if backend == 'openai':
+            try:
+                _msgs = _prepare_online_messages(cfg, prompt, system_prompt)
+                _egress_gate(cfg, _msgs, session_id, egress_ticket,
+                             'AI 知识问答（调用远程模型）', dry_run=True)
+            except Exception as _eg:
+                from modules.core.egress_consent import EgressApprovalRequired
+                if not isinstance(_eg, EgressApprovalRequired):
+                    raise
+
+                def _gen_approval(_d=_eg.to_dict()):
+                    yield f"data: {json.dumps(_d, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+                return Response(_gen_approval(), mimetype='text/event-stream')
+
         # SSE 生成器（使用 queue + thread 实现真正的流式输出）
         import threading
         from queue import Queue
@@ -11081,7 +11811,9 @@ def api_chat_stream():
                 """在子线程中调用 LLM"""
                 try:
                     print(f'[AI Stream] 开始调用 _call_llm...', flush=True)
-                    result = _call_llm(prompt, system_prompt, stream_callback=stream_callback)
+                    result = _call_llm(prompt, system_prompt, stream_callback=stream_callback,
+                                        session_id=session_id, egress_ticket=egress_ticket,
+                                        purpose='AI 知识问答（调用远程模型）')
                     print(f'[AI Stream] _call_llm 返回: result={result!r}, len(full_chunks)={len(full_chunks)}', flush=True)
                     q.put(('done', result))
                 except Exception as e:
@@ -11094,7 +11826,15 @@ def api_chat_stream():
             t = threading.Thread(target=run_llm, daemon=True)
             t.start()
 
-            # 发送开始标记
+            # 发送开始标记 + 首条思考事件（模型首 token 通常最慢，先给用户一个明确反馈）
+            yield _sse_thinking(
+                'generate',
+                '正在生成回答…',
+                detail=('后端：%s\n模型：%s\n已检索知识库：%s'
+                        % (backend,
+                           cfg.get('model') or cfg.get('online_model') or 'unknown',
+                           '是' if rag_context else '否')),
+            )
             yield f"data: {json.dumps({'type': 'start'})}\n\n"
 
             # 从队列读取 chunk 并流式发送
@@ -11111,7 +11851,9 @@ def api_chat_stream():
                     if not full_text.strip() and not str(data or '').startswith('['):
                         print(f'[AI Stream] 流式返回空内容, 执行 fallback 非流式调用...', flush=True)
                         try:
-                            fallback_result = _call_llm(prompt, system_prompt, stream_callback=None)
+                            fallback_result = _call_llm(prompt, system_prompt, stream_callback=None,
+                                                         session_id=session_id, egress_ticket=egress_ticket,
+                                                         purpose='AI 知识问答（调用远程模型）')
                             print(f'[AI Stream] fallback 返回: {fallback_result!r}', flush=True)
                             if fallback_result and not fallback_result.startswith('['):
                                 # 将完整结果作为单个 chunk 发送
@@ -11140,8 +11882,103 @@ def api_chat_stream():
     
     except Exception as e:
         print(f'[AI Stream] 顶层异常: {e}', file=sys.stderr, flush=True)
+        from modules.core.egress_consent import EgressApprovalRequired as _EAR
+        if isinstance(e, _EAR):
+            _d = json.dumps(e.to_dict(), ensure_ascii=False)
+            _done = json.dumps({'type': 'done'})
+            return Response(f"data: {_d}\n\ndata: {_done}\n\n",
+                            mimetype='text/event-stream')
         error_json = json.dumps({'type': 'error', 'message': str(e)})
         return Response(f"data: {error_json}\n\n", mimetype='text/event-stream')
+
+
+@app.route('/api/chat/egress_decision', methods=['POST'])
+def api_chat_egress_decision():
+    """AI 助手外发审批：记录用户对外发票据的决定（批准 / 拒绝）。
+
+    批准只是"放行这一次发送"，票据一次性、有时效（默认 10 分钟），
+    且与原登记内容的指纹绑定——内容变了必须重新征求同意。
+    """
+    try:
+        data = request.get_json() or {}
+        session_id = data.get('session_id', 'default')
+        ticket_id = str(data.get('ticket_id') or '')
+        approved = bool(data.get('approved'))
+
+        from modules.core import egress_consent
+        res = egress_consent.decide(session_id, ticket_id, approved)
+        if not res.get('ok'):
+            return jsonify({
+                'ok': False,
+                'state': res.get('state'),
+                'message': res.get('reason') or '审批失败',
+            }), 400
+
+        if approved:
+            return jsonify({
+                'ok': True,
+                'state': 'approved',
+                'ticket_id': ticket_id,
+                'host': res.get('host'),
+                'message': '已批准：本次外发已放行（一次性，仅对已展示的内容有效）',
+            })
+        return jsonify({
+            'ok': True,
+            'state': 'denied',
+            'ticket_id': ticket_id,
+            'message': '已拒绝：未发送任何数据。可继续提问，后续请求会重新征求同意。',
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
+
+
+@app.route('/api/chat/task_decision', methods=['POST'])
+def api_chat_task_decision():
+    """AI 助手任务授权：记录用户对「巡检 / 诊断 / 工作流」任务的授权决定。
+
+    与 ``/api/chat/egress_decision`` 同一范式：这里**只记录决定**，
+    前端随后携带 ``task_ticket`` 重发原请求，由服务端流程
+    ``_task_gate`` 消费票据后才真正执行——这样诊断/工作流的流式进度不丢失。
+
+    安全语义：
+    - 票据一次性，用后即废；
+    - 有效期默认 5 分钟（任务授权比外发授权更短）；
+    - 与执行计划指纹绑定，计划变了必须重新授权；
+    - 按会话隔离，别的会话拿不到这张票。
+    """
+    try:
+        data = request.get_json() or {}
+        session_id = data.get('session_id', 'default')
+        ticket_id = str(data.get('ticket_id') or '')
+        approved = bool(data.get('approved'))
+
+        from modules.core import task_consent
+        res = task_consent.decide(session_id, ticket_id, approved)
+        if not res.get('ok'):
+            return jsonify({
+                'ok': False,
+                'state': res.get('state'),
+                'message': res.get('reason') or '授权失败',
+            }), 400
+
+        if approved:
+            return jsonify({
+                'ok': True,
+                'state': 'approved',
+                'ticket_id': ticket_id,
+                'kind': res.get('kind'),
+                'action': res.get('action'),
+                'target': res.get('target'),
+                'message': '已授权：本次任务即将执行（一次性授权，仅对已确认的执行计划有效）',
+            })
+        return jsonify({
+            'ok': True,
+            'state': 'denied',
+            'ticket_id': ticket_id,
+            'message': '已取消：未执行任何任务，也没有连接数据库。',
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'message': str(e)}), 500
 
 
 @app.route('/api/chat', methods=['POST'])
@@ -11164,6 +12001,18 @@ def api_chat():
 
         if not message:
             return jsonify({'ok': False, 'type': 'error', 'message': '请输入您的问题'})
+
+        # ═══ 高危删改请求：入口硬阻断（与流式路由同一守卫，无旁路）═══
+        from modules.core import ai_guard as _ai_guard_ns
+        _blocked_msg = _ai_guard_ns.guard(message, session_id=session_id)
+        if _blocked_msg:
+            return jsonify({
+                'ok': False,
+                'type': 'blocked',
+                'blocked': True,
+                'policy': 'destructive_op_guard',
+                'message': _blocked_msg,
+            })
 
         # 0. 清空对话特殊指令
         if message.strip() in ('/clear', '/清空', '/new'):
@@ -11190,14 +12039,19 @@ def api_chat():
 
         # 0.6 分类意图：智能诊断 / 启动工作流 / 巡检执行 / 知识问答
         chat_intent = _classify_chat_intent(message)
+        _task_ticket = str(data.get('task_ticket') or '')
 
         # ─── 智能诊断模式（贯通诊断中心）───
         if chat_intent == 'diagnose':
-            return _handle_diagnose_nonstream(message, chat_context)
+            return _handle_diagnose_nonstream(message, chat_context,
+                                              session_id=session_id,
+                                              task_ticket=_task_ticket)
 
         # ─── 启动工作流模式（贯通工作流编排）───
         if chat_intent == 'workflow':
-            return _handle_workflow_nonstream(message, chat_context)
+            return _handle_workflow_nonstream(message, chat_context,
+                                              session_id=session_id,
+                                              task_ticket=_task_ticket)
 
         # ─── 知识问答模式 ───
         if chat_intent == 'qa':
@@ -11208,7 +12062,16 @@ def api_chat():
             if qa_db_type == 'unknown':
                 qa_db_type = None
 
-            result = _answer_chat_qa(session_id, message, db_type=qa_db_type, context=chat_context)
+            try:
+                result = _answer_chat_qa(session_id, message, db_type=qa_db_type,
+                                         context=chat_context,
+                                         egress_ticket=str(data.get('egress_ticket') or ''))
+            except Exception as _qa_err:
+                from modules.core.egress_consent import EgressApprovalRequired
+                if isinstance(_qa_err, EgressApprovalRequired):
+                    # 不是错误：需要用户批准外发，返回审批卡片数据
+                    return jsonify(dict(_qa_err.to_dict(), ok=True))
+                raise
             resp = {
                 'ok': True,
                 'type': 'qa',
@@ -11316,6 +12179,29 @@ def api_chat():
                 'intent': intent,
             })
         else:
+            # 全库巡检属任务类操作：非流式路径同样必须先取得用户授权，
+            # 否则 SSE 失败时的 fallback 就成了绕过授权的旁路。
+            _target_label = matched_name or ds.get('name') or db_name or ds.get('host', '')
+            _inspect_ok, _inspect_payload = _task_gate_payload(
+                session_id, _task_ticket, 'inspect', '巡检任务',
+                target='%s（%s %s:%s）' % (_target_label, db_type,
+                                          ds.get('host', ''), ds.get('port', '')),
+                plan={'kind': 'inspect', 'db_type': db_type,
+                      'host': str(ds.get('host', '')), 'port': str(ds.get('port', '')),
+                      'name': str(_target_label),
+                      'instance_id': str(ds.get('id') or ''),
+                      'scope': scope, 'need_report': bool(need_report)},
+                detail=('即将对 **%s** 执行%s，并%s生成巡检报告。'
+                        % (_target_label,
+                           {'all': '全库巡检'}.get(scope, '全库巡检'),
+                           '会' if need_report else '不会')),
+                impact=['会连接目标数据库执行完整巡检采集',
+                        '会产生一定数据库负载，建议避开业务高峰',
+                        '仅只读采集，不修改任何数据或配置'],
+            )
+            if not _inspect_ok:
+                return jsonify(dict(_inspect_payload, ok=True))
+
             # 全库巡检，启动任务
             task_id = str(uuid.uuid4())
 
@@ -11367,6 +12253,10 @@ def api_chat():
             })
 
     except Exception as e:
+        # 外发审批不是失败：任何路径漏出的审批异常都在此转成审批卡片
+        from modules.core.egress_consent import EgressApprovalRequired as _EAR2
+        if isinstance(e, _EAR2):
+            return jsonify(dict(e.to_dict(), ok=True))
         import traceback
         traceback.print_exc(file=sys.stdout)
         return jsonify({'ok': False, 'type': 'error', 'message': f'处理失败: {e}'})
@@ -12418,6 +13308,41 @@ def api_drivers_activate(driver_id):
         return jsonify({'ok': ok, 'msg': msg})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)[:200]})
+
+
+@app.route('/api/system/log-storage', methods=['GET'])
+def api_log_storage():
+    """日志存储概览：各日志族活跃/归档大小、总预算占用、磁盘余量与最近清理结果。"""
+    try:
+        from modules.core.log_manager import status as _log_status
+        if getattr(g, 'security_principal', None) is None:
+            if (request.remote_addr or '') not in ('127.0.0.1', '::1'):
+                return jsonify({'ok': False, 'error': '未登录'}), 401
+        return jsonify({'ok': True, 'data': _log_status()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/system/runtime-tuning', methods=['GET'])
+def api_runtime_tuning():
+    """当前生效的容量参数（巡检/监控并发与超时）。
+
+    服务化部署后用它核对环境变量与 data/runtime_tuning.json 是否真的生效。
+    不包含任何凭据；未登录时仅允许本机回环访问。
+    """
+    try:
+        from modules.core.runtime_tuning import snapshot, describe, CONFIG_FILE
+        if getattr(g, 'security_principal', None) is None:
+            if (request.remote_addr or '') not in ('127.0.0.1', '::1'):
+                return jsonify({'ok': False, 'error': '未登录'}), 401
+        return jsonify({
+            'ok': True,
+            'summary': describe(),
+            'data': snapshot(),
+            'config_file': str(CONFIG_FILE),
+        })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/api/system/shutdown', methods=['POST'])

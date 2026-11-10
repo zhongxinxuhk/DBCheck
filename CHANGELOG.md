@@ -1,5 +1,57 @@
 # Changelog
 
+## v26.11.6.0 (2026-11-09)
+
+### 修复：大规模监控的并发与任务连续性问题
+
+- **定时巡检不再强制串行**：执行名额按池拆分（原生驱动池 / JVM 池），容量由 `data/runtime_tuning.json` 或环境变量配置（默认保持 1 / 1，大规模部署按文档调至 2~4），排队上限、看门狗时限同样可配。
+- **看门狗不再提前释放名额**：超时先发中止信号，名额保留到巡检线程真正退出；仅当超过 `watchdog_grace` 仍未退出才强制回收并记 ERROR，修复「超时后实际并发超过配置」的隐性缺陷。
+- **监控采集改为按实例有界并发**：不再单线程顺序遍历，单个慢库/不可达库不再阻塞整轮；整轮带预算截止，超时实例下一轮重试，并输出「实例数 / 并发 / 耗时」日志，便于容量验收；采集循环改为固定周期（单轮耗时从间隔中扣除），不再出现「跑完再睡满间隔」造成的周期漂移。
+- 新增 `modules/core/runtime_tuning.py`（环境变量 > `data/runtime_tuning.json` > 默认值，取值钳制）与 `GET /api/system/runtime-tuning`，启动日志打印生效参数。
+- 新增 `deploy/service/`：systemd 单元、launchd 单元、Windows 服务/计划任务安装脚本，页面切换、关闭浏览器、断开会话均不影响后台巡检。
+- 文档：`docs/install/SERVICE_zh.md`（服务化运行）、`docs/install/SCALE_zh.md`（50–500 实例配置与验收清单）；新增单测 `modules/core/tests/`（17 例）。
+
+### 新增：专项巡检报告核心属性与补丁读取
+
+- 新增 `modules/inspection/basic_info.py`：在报告封面之后、正文之前输出「数据库基础信息（核心属性）」表，固定 16 项：配置项编号、数据库名称、实例名、字符集、数据库文件大小、归档路径、归档模式、主机型号、设备位置、OS 版本、存储平台、数据库版本及补丁号、存储模式、备份策略、容灾状态、集群属性。
+- **补丁读取落地**：Oracle 读 `dba_registry_history`（版本 + 补丁号/ID）+ `v$version` 兜底；SQL Server 读 `ProductUpdateLevel`（CU）；MySQL/TiDB/OceanBase 读版本串；PostgreSQL 族读 `server_version`；DM8 读 `V$VERSION`；DB2 读 `SERVICE_LEVEL`。只有版本、读不到补丁时明确标注「补丁级别未读取到」。
+- 自动判定存储模式（ASM/文件系统）、归档路径与模式、备份策略（Oracle RMAN 持久参数）、容灾状态（Data Guard / 主从 / 流复制 / AlwaysOn / DSC）与集群属性（RAC / MGR / 副本数）。
+- 宿主机采集补充 `host_model`（DMI `product_name`）与 `os_version`（`PRETTY_NAME`），SSH 模式取自目标库主机。
+- 静态登记项（配置项编号、设备位置、存储平台、备份策略等）由 `data/basic_info.json` 台账镜像补齐，按「实例主键 > host:port > host > 实例名」匹配，实例值优先于自动采集；缺失显式标注「未采集 / 未登记」，不臆造。
+- 文档：`docs/install/REPORT_CORE_ATTRIBUTES_zh.md`（字段来源矩阵、补丁口径、台账格式、权限要求、已知限制）；单测 `modules/inspection/tests/test_basic_info.py`（13 例，覆盖 Oracle/MySQL/PG/SQL Server/DM8、SQLPatch 兜底、台账覆盖与容错）。
+
+### 新增：日志生命周期管理（长期运行不撑爆磁盘）
+
+- 新增 `modules/core/log_manager.py`：写入侧按大小轮转（`RotatingLogHandler` / `append_line`）、归档 gzip 压缩、按份数/天数保留、全局总预算（默认 2GB，超限降到 80%）、磁盘余量不足时的紧急清理（默认 512MB），并用 `.rotate.lock` 保证多进程轮转安全；跨挂载点自动退化为复制+截断。
+- 接管全部落盘日志：`scheduler.log`、监控 `data/pro_data/monitor.log`、`inspection-YYYYMMDD.log`、`ai_guard_audit.jsonl`；清理线程随 Web 启动异步运行（默认 30 分钟一次）。
+- 新增 `GET /api/system/log-storage`（各族大小、预算占用、磁盘余量、最近清理结果）；策略可用 `data/log_policy.json` 与 `DBPULSE_LOG_BUDGET_MB` / `DBPULSE_LOG_MIN_FREE_MB` / `DBPULSE_LOG_SWEEP_SECONDS` 调整，取值统一钳制。
+- 平台侧同步限容：Docker `json-file` 10MB×3、NSSM `AppRotateBytes=20MB`、`start.sh`/`start.bat` 启动前归档超限控制台日志；新增 `deploy/service/dbpulse.newsyslog.conf` 供 launchd 场景安装。
+- 文档：`docs/install/LOG_LIFECYCLE_zh.md`（清单、轮转规则、预算、容量测算、运维与故障处理）；新增单测 `modules/core/tests/test_log_manager.py`（13 例）。
+
+### 变更：登录页移除演示账户
+
+- 登录页（`web_templates/user_management/login.html`）不再展示 `admin` / `viewer` / `operator` 演示账号与口令，同时删除对应 `login.demo_*` 文案与样式（9 个语言包同步移除）。
+- 登录卡进一步精简：移除「欢迎回来 / 登录以开始您的数据库巡检之旅」标题与副标题、卡片底部的版本号与 `Apache-2.0` 标识（同步删除 `login.welcome*` 文案、`login-version` 版本拉取脚本与相关样式）；页面底部授权信息（产品名与作者署名）保留不变。
+- 启动方式（Linux / Windows / macOS / Docker）与初始账号角色信息统一收敛到新增的 `docs/install/INITIALIZATION_zh.md`；`README`、`README_zh`、`docs/install/INSTALL_zh.md` 改为指向该文档。
+- 初始账号：`admin` / `admin123`（管理员）、`viewer` / `viewer123`（只读）、`operator` / `operator123`（运维）；文档同时说明当前版本管理员采用安装期随机初始口令（`DBPULSE_INITIAL_ADMIN_PASSWORD` 或 `data/bootstrap_admin_password`）。
+
+### 新增：对象存储备份（S3 兼容，Amazon S3 / MinIO / OSCA fgws3）
+
+- 新增 `modules/objstore`：把 DBCheck 自身的**引擎与规则、基线、报告、历史、配置密钥、用户权限**打包为单个 `tar.gz`，上传到 S3 兼容对象存储。
+- **零新增依赖**：`s3_client.py` 用标准库实现 AWS Signature V4（`hmac`/`hashlib`/`urllib`），支持 Path-Style 与 Virtual-Hosted 两种寻址、`ListObjectsV2` 翻页、>32MB 自动 16MB 分片上传，避免为「上传一个备份包」引入 boto3/botocore 约 30MB 依赖（PyInstaller 分发友好）。
+- **主要适配 OSCA 联盟云**（`https://fgws3-ocloud.ihep.ac.cn`）：UI 默认 Endpoint 即该网关，Path-Style 默认开启，Region 默认 `us-east-1`；文档给出与官方 `jcli`（`auth/list/stat/get`）及 `aws s3` 的等价校验命令。
+- **备份内容可选**：引擎与规则（`drivers.db` + `rules/overrides.yaml`）、基线（`fleet_baseline.db`）、报告（`data/reports/`）、历史（`history/server_history/inspection/monitor_history`）、配置与密钥、RBAC；清单集中在 `engine.CATEGORIES` 单一维护。
+- **可设备份间隔**：`interval_minutes`（5 分钟–30 天，UI 提供 1h/6h/12h/24h/7d 预设），进程内守护线程每 30s tick，「距上次执行满 N 分钟」触发，重启自动补跑；手动与定时不并发（非阻塞锁）。
+- **保留份数**：上传成功后仅清理「对象前缀/」下超出份数的 `*.tar.gz`，不触碰桶内其他数据。
+- **还原**：默认只补缺失文件，可选覆盖；覆盖前自动留 `.pre_restore_<时间戳>` 副本；逐文件校验 `sha256`；解包做越界防护 + `filter="data"`。
+- **备份包口令加密**：可设「压缩包密码」，产物变为 `.tar.gz.enc`——AES-256-GCM **分块流式**加密（1 MiB/块，每块独立 nonce + tag，GB 级报告也不整包进内存），密钥派生优先 scrypt(N=16384,r=8,p=1)、退化 PBKDF2-SHA256(600k)，参数写头部；密码错误/包被篡改在 GCM 校验即失败，不会产出半截数据。密码与 SecretKey 同一套 Fernet 加密落盘、API 只回掩码，留空保存=保持原值、需显式「清除压缩包密码」才关闭；提供 `python -m modules.objstore.crypto {info,encrypt,decrypt}` 脱离 Web 解密。
+- **凭据安全**：SecretKey 不出现在任何 API 响应（`••••••••` 掩码 + `secret_key_set`），落盘 Fernet 加密（密钥独立于通知模块，避免轮换互伤）；`cryptography` 缺失时降级并在 UI 显式告警。
+- **UI**：数据管理页新增「☁️ 对象存储备份（S3 兼容）」卡片——连接表单、内容勾选（含存在性与体积）、间隔/保留、测试连接、立即备份、云端对象列表（还原/删除）、执行历史。
+- **接口**：`/api/objstore/{config,categories,test,backup,objects,restore,delete,history,status}`；`backup` 为**异步触发**（返回 `job_id`，前端轮询 `status.job`），并在触发前做同步配置校验，未配置直接 400 而不是异步失败。
+- **错误语义统一**：可预期错误（参数/配置/凭据/口令/网络）回 400 + 可展示原因并以 warning 记录；未预期错误（NameError/AttributeError/TypeError 等编码缺陷）回 500 + `unexpected:true` 并 `logger.exception` 落完整 traceback，杜绝「异常被吞成业务错误、日志无线索」。
+- 文档 `docs/object-storage-backup.md`（含 OSCA 接入步骤、AWS/MinIO 差异、boto3 等价写法、错误语义、故障排查）；自测 `modules/objstore/tests/test_objstore.py`（41 例：假 S3 网关端到端往返、口令加密容器、路由缺名回归、错误语义）。
+- 打包 spec（macOS/Windows/Linux）同步登记 `modules.objstore`；i18n 中文/英文同步（其余语言回退中文）。
+
 ## v26.11.5.1 (2026-11-09)
 
 ### 新增：运维服务管理模块（资产 · 计划 · SLA · 审批 · 证据）

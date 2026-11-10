@@ -48,5 +48,8 @@ echo.
 echo   默认管理员: admin / admin123
 echo.
 
+REM 启动前归档超限的控制台日志（20MB），避免长期手动启动把单文件撑大
+powershell -NoProfile -Command "if ((Test-Path 'data\logs\web_service_restart.log') -and ((Get-Item 'data\logs\web_service_restart.log').Length -gt 20971520)) { New-Item -ItemType Directory -Force 'data\logs\_archive\console' | Out-Null; Move-Item 'data\logs\web_service_restart.log' ('data\logs\_archive\console\web_service_restart.' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log') -Force }"
+
 python web_ui.py >> data\logs\web_service_restart.log 2>&1
 pause

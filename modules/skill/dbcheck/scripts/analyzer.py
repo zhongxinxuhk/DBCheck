@@ -1726,8 +1726,10 @@ Format requirement (output Markdown directly, no prefixes like "Here are"):
                 {'role': 'user', 'content': prompt}
             ],
             'temperature': 0.3,
-            # 确保长诊断（慢查询 Top 5、整体路线图等）不被截断
-            'max_tokens': 4096,
+            # 确保长诊断（慢查询 Top 5、整体路线图等）不被截断。
+            # 推理模型的 reasoning_tokens 也计入 completion，4096 容易被思考吃光，
+            # 导致 content 为空 / finish_reason=length，故默认提到 8192。
+            'max_tokens': 8192,
         }
         # 统一入口会传入 response_format；OpenAI 协议支持 json_object / json_schema
         if response_format:
@@ -1783,11 +1785,23 @@ Format requirement (output Markdown directly, no prefixes like "Here are"):
         if not choices:
             raise RuntimeError(
                 "AI 服务返回空结果（choices 为空），请检查模型名称/API Key/网络或适当增大超时")
-        _content = choices[0].get('message', {}).get('content')
+        _choice = choices[0] or {}
+        _msg = _choice.get('message') or {}
+        _content = _msg.get('content')
+        _finish = _choice.get('finish_reason')
         if _content is None or str(_content).strip() == '':
+            # 推理模型把思考写在 reasoning_content，正文留空；回落到它而不是整段丢弃
+            _reasoning = (_msg.get('reasoning_content') or _msg.get('reasoning')
+                          or _msg.get('thinking') or '')
+            if str(_reasoning).strip():
+                print("[AI] 模型正文为空，已回落到 reasoning_content"
+                      f"（finish_reason={_finish}）")
+                return str(_reasoning).strip()
             raise RuntimeError(
-                "AI 返回内容为空（可能触发内容过滤或 max_tokens 不足），finish_reason=%s"
-                % choices[0].get('finish_reason'))
+                "AI 返回内容为空（可能触发内容过滤或 max_tokens 不足），"
+                f"finish_reason={_finish}, usage={data.get('usage') or {}}")
+        if _finish == 'length':
+            print("[AI] ⚠️ 模型输出达到 max_tokens 被截断，如需完整结论请调大上限")
         return str(_content).strip()
 
 

@@ -199,7 +199,13 @@ def _ct_oracle_pro(data):
     ssh_host = data.get('ssh_host', '')
     _tunnel = None
     try:
-        if ssh_host:
+        # 三个闸门缺一不可：
+        #  ① _tunnel_ready：上游（app.py 的 _conn_test_with_timeout / api.py /
+        #     jdbc_inspection_cli）已建好隧道并把 host/port 换成本机转发端口，
+        #     此处再建会指向 SSH 主机自身的该端口（远端无服务）→ 隧道套隧道必失败。
+        #  ② ssh_tunnel=False：用户只要 SSH 采主机指标，不要求数据库走隧道。
+        #  ③ ssh_host 为空：没有跳板可用。
+        if ssh_host and not data.get('_tunnel_ready') and data.get('ssh_tunnel', True):
             try:
                 from modules.ssh import SSHTunnel
                 _tunnel = SSHTunnel(
@@ -207,6 +213,7 @@ def _ct_oracle_pro(data):
                     ssh_port=int(data.get('ssh_port', 22)),
                     ssh_user=data.get('ssh_user', 'root'),
                     ssh_password=data.get('ssh_password', ''),
+                    ssh_key=data.get('ssh_key_file') or None,
                     remote_host=data['host'],
                     remote_port=int(data['port']),
                 )

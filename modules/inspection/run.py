@@ -93,11 +93,20 @@ def _record_inspection(db_type, db_info, ret, report_path):
         else:
             risk_level = 'critical'
 
-        # 生成实例ID
-        raw = f"{db_type}-{db_info.get('host')}-{db_info.get('port')}".encode()
-        instance_id = hashlib.md5(raw).hexdigest()[:12]
-
+        # 实例主键优先：按 (db_type, host, port) 反查已注册实例，保证巡检历史
+        # 与 instances 表同一套 ID（否则仪表盘统计不到、删除实例也清理不掉历史）。
+        # 未注册的临时巡检才退回 md5 端点指纹。
         im = get_instance_manager()
+        instance_id = None
+        try:
+            instance_id = im.resolve_instance_id_by_endpoint(
+                db_type, db_info.get('host'), db_info.get('port'))
+        except Exception:
+            instance_id = None
+        if not instance_id:
+            raw = f"{db_type}-{db_info.get('host')}-{db_info.get('port')}".encode()
+            instance_id = hashlib.md5(raw).hexdigest()[:12]
+
         im.record_inspection(
             instance_id=instance_id,
             instance_name=db_info.get('label', db_info.get('host', 'unknown')),
@@ -341,6 +350,11 @@ def run_oracle_full(db_info, inspector_name, ssh_info=None):
     if not args.sid and not args.servicename:
         args.sid = db_info.get('database', 'orcl')
     # SSH
+    # _db_tunnel_allowed：把「数据库连接走 SSH 隧道」与「经 SSH 采主机指标」
+    # 两件事分开。single_inspection 第 3088 行会拿 args.ssh_host 再建一条隧道，
+    # 若上游（modules/web/app.py、modules/web/api.py）已经建好并把 host/port
+    # 换成了本机转发端口，这里再建就会指向 SSH 主机自身的该端口（远端无服务）
+    # → 连接必失败（隧道套隧道）。同时尊重用户显式关闭 ssh_tunnel 的意图。
     if ssh_info:
         args.ssh_host = ssh_info.get('ssh_host', '')
         args.ssh_port = int(ssh_info.get('ssh_port', 22) or 22)
@@ -348,6 +362,9 @@ def run_oracle_full(db_info, inspector_name, ssh_info=None):
         args.ssh_pass = ssh_info.get('ssh_password', '')
         args.ssh_key  = ssh_info.get('ssh_key_file', '')
         args.ssh_key_password  = ssh_info.get('ssh_key_password', '')
+        args._db_tunnel_allowed = bool(args.ssh_host) \
+            and not ssh_info.get('_tunnel_ready') \
+            and ssh_info.get('ssh_tunnel', True)
     else:
         args.ssh_host = ''
         args.ssh_port = 22
@@ -355,6 +372,7 @@ def run_oracle_full(db_info, inspector_name, ssh_info=None):
         args.ssh_pass = ''
         args.ssh_key  = ''
         args.ssh_key_password = ''
+        args._db_tunnel_allowed = False
     # 输出目录
     args.output     = str(paths.REPORTS_DIR)
     args.zip        = False

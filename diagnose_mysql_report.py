@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
-#
-# MySQL 巡检报告生成诊断脚本（绕过 Web 界面，直接验证 generate_report 链路）
+
 import os
 import sys
 

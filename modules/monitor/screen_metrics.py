@@ -919,11 +919,20 @@ class ScreenCollector:
         with self._lock:
             if self._running:
                 return
+            # 容量参数以 data/runtime_tuning.json / DBPULSE_MONITOR_* 为准；
+            # 类属性仅作默认值，实例属性在此覆盖。
+            try:
+                from modules.core.runtime_tuning import get as _tg
+                self.INTERVAL = int(_tg('monitor', 'screen_interval'))
+                self.MAX_WORKERS = int(_tg('monitor', 'screen_workers'))
+            except Exception:
+                pass
             self._running = True
             self._thread = threading.Thread(target=self._loop, daemon=True,
                                             name='screen-collector')
             self._thread.start()
-            print('[screen] 大屏指标采样器已启动（间隔 %ds）' % self.INTERVAL, flush=True)
+            print('[screen] 大屏指标采样器已启动（间隔 %ds，并发 %d）'
+                  % (self.INTERVAL, self.MAX_WORKERS), flush=True)
 
     def stop(self):
         with self._lock:

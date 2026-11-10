@@ -89,4 +89,9 @@ cd dist
 ---
 ## 四、访问界面
 
-访问 **http://localhost:5003**，默认账号为 `admin`，密码为 `admin123`（首次登录后请在账户中心修改密码）。
+访问 **http://localhost:5003**，首次访问会跳转到登录页。
+
+初始账号与角色（管理员 `admin` / 只读 `viewer` / 运维 `operator`）的完整说明、各平台启动步骤
+以及管理员安装期口令的获取方式，见 **[初始化文档（INITIALIZATION_zh.md）](./INITIALIZATION_zh.md)**。
+
+> 首次登录后请立即在账户中心修改密码。

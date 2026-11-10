@@ -35,7 +35,7 @@ def coverage(catalog, overview):
     return output
 
 
-def sanitize_document(document):
+def sanitize_document(document, *, preserve_network=False):
     from docx.oxml.ns import qn
     for part in document.part.package.parts:
         element = getattr(part,'_element',None)
@@ -44,7 +44,7 @@ def sanitize_document(document):
         for paragraph in element.iter(qn('w:p')):
             nodes = list(paragraph.iter(qn('w:t')))
             original = ''.join(node.text or '' for node in nodes)
-            clean = redact(original,mask_identity=True)
+            clean = redact(original, mask_identity=True, preserve_network=preserve_network)
             if clean != original and nodes:
                 nodes[0].text = clean
                 for node in nodes[1:]:

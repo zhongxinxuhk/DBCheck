@@ -484,13 +484,40 @@ def _execute_inspect(db_type, host, port, user, password, inspector, body, ssh):
 
     ssh_info = None
     if ssh:
+        # 键名必须与 engine / app.py 的约定一致（ssh_host/ssh_user/ssh_password），
+        # 否则 SSH 段永远读不到配置：系统指标采集被静默跳过。
         ssh_info = {
-            'host': ssh.get('host', ''),
-            'port': ssh.get('port', 22),
-            'user': ssh.get('user', ''),
-            'password': ssh.get('password', ''),
-            'key_file': ssh.get('key_file', ''),
+            'ssh_host': ssh.get('host', ''),
+            'ssh_port': ssh.get('port', 22),
+            'ssh_user': ssh.get('user', ''),
+            'ssh_password': ssh.get('password', ''),
+            'ssh_key_file': ssh.get('key_file', ''),
+            'ssh_key_password': ssh.get('key_password', ''),
+            # 是否经 SSH 隧道连接数据库；缺省关闭（与 Web UI 开关默认一致）
+            'ssh_tunnel': bool(ssh.get('tunnel', False)),
         }
+
+    # SSH 跳板：数据库仅监听远端回环时，必须先把连接落到本地转发端口
+    _tunnel = None
+    if ssh_info and ssh_info.get('ssh_host') and ssh_info.get('ssh_tunnel', False):
+        try:
+            from modules.ssh import open_db_tunnel
+            _opened = open_db_tunnel({**db_info, **ssh_info})
+            if _opened:
+                _tunnel, _lh, _lp = _opened
+                db_info['ip'] = _lh
+                db_info['port'] = _lp
+                # 端点已是本机转发端口，标记「隧道已就绪」：
+                #  ① 下游连接层（compatibility.needs_own_tunnel）据此不得再建隧道；
+                #  ② 否则 sqlserver/gbase8a/clickhouse_jdbc 会把 127.0.0.1:转发端口
+                #     当成 SSH 主机上的真实地址，再建一条指向 SSH 主机自身该端口的
+                #     隧道（该端口在远端并无服务）→ 连接必失败（隧道套隧道）。
+                db_info['_tunnel_ready'] = True
+                # db_info 与 ssh_info 是两份独立字典，两者都要标记：连接层拿到的
+                # 是 ssh_info 融合后的参数（如 connect_sqlserver({**ssh_info, ...})）。
+                ssh_info['_tunnel_ready'] = True
+        except Exception as e:
+            raise RuntimeError(f'SSH 隧道建立失败: {e}')
 
     # 根据数据库类型路由
     runner_map = {
@@ -511,47 +538,54 @@ def _execute_inspect(db_type, host, port, user, password, inspector, body, ssh):
     runner = runner_map.get(db_type)
     
     # 插件数据库类型：尝试委托给插件
-    if not runner:
-        try:
-            from modules.pluginkit.loader import discover_plugins
-            plugins = discover_plugins()
-            plugin_meta = None
-            for p in plugins:
-                if p.get('enabled') and p.get('db_type') == db_type:
-                    plugin_meta = p
-                    break
-            
-            if plugin_meta:
-                # 加载插件并执行巡检
-                plugin_path = plugin_meta.get('path')
-                main_file = plugin_meta.get('main_file', 'main_plugin.py')
-                
-                import importlib.util
-                spec = importlib.util.spec_from_file_location(
-                    f"plugin_{db_type}",
-                    f"{plugin_path}/{main_file}"
-                )
-                if spec:
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                    
-                    # 查找引擎类
-                    engine_class = None
-                    for attr_name in dir(module):
-                        attr = getattr(module, attr_name)
-                        if isinstance(attr, type) and 'Engine' in attr_name:
-                            engine_class = attr
-                            break
-                    
-                    if engine_class:
-                        # 创建引擎实例并执行巡检
-                        engine = engine_class()
-                        result = engine.run(db_info, inspector, ssh_info)
-                        return result
-        except Exception as e:
-            raise ValueError(f'不支持的数据库类型: {db_type}')
-    
-    return runner(db_info, inspector, ssh_info)
+    try:
+        if not runner:
+            try:
+                from modules.pluginkit.loader import discover_plugins
+                plugins = discover_plugins()
+                plugin_meta = None
+                for p in plugins:
+                    if p.get('enabled') and p.get('db_type') == db_type:
+                        plugin_meta = p
+                        break
+
+                if plugin_meta:
+                    # 加载插件并执行巡检
+                    plugin_path = plugin_meta.get('path')
+                    main_file = plugin_meta.get('main_file', 'main_plugin.py')
+
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location(
+                        f"plugin_{db_type}",
+                        f"{plugin_path}/{main_file}"
+                    )
+                    if spec:
+                        module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(module)
+
+                        # 查找引擎类
+                        engine_class = None
+                        for attr_name in dir(module):
+                            attr = getattr(module, attr_name)
+                            if isinstance(attr, type) and 'Engine' in attr_name:
+                                engine_class = attr
+                                break
+
+                        if engine_class:
+                            # 创建引擎实例并执行巡检
+                            engine = engine_class()
+                            result = engine.run(db_info, inspector, ssh_info)
+                            return result
+            except Exception:
+                raise ValueError(f'不支持的数据库类型: {db_type}')
+
+        return runner(db_info, inspector, ssh_info)
+    finally:
+        if _tunnel is not None:
+            try:
+                _tunnel.close()
+            except Exception:
+                pass
 
 
 def _parse_inspect_result(db_type, host, port, raw_result, duration):
@@ -1283,3 +1317,16 @@ def register_disaster_recovery(app) -> None:
         get_runner().bootstrap()
     except Exception as exc:  # pragma: no cover
         print(f"  [WARN] 工作流任务调度器启动失败: {exc}")
+
+
+# ── 对象存储备份模块（S3 兼容，内置 SigV4 客户端）────────────────
+def register_object_storage(app) -> None:
+    """注册对象存储备份蓝图（/api/objstore）并拉起周期调度线程。
+
+    独立于容灾备份（autobackup）与数据库备份引擎：这里备份的是 DBCheck 自身的
+    引擎配置、基线、报告与历史数据，目标是 S3 兼容对象存储（AWS S3 / MinIO /
+    Ceph RGW / OSCA 联盟云 fgws3 等）。
+    """
+    from modules.objstore.routes import register_objstore
+
+    register_objstore(app)

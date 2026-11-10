@@ -76,8 +76,10 @@ def validate_sql_with_explain(db_info: Dict[str, Any], sql: str) -> Dict[str, An
 
 # ── 各类驱动连接 + 执行 ─────────────────────────────────────────────────────
 def _fetch(cur, limit: int) -> Tuple[List[str], List[List[Any]]]:
+    # 兼容层取数：JDBC 包装游标可能缺 fetchmany，统一走 fetch_rows 兜底
+    from modules.core.dbapi_compat import fetch_rows
     cols = [d[0] for d in cur.description] if cur.description else []
-    rows = cur.fetchmany(limit) if limit and limit > 0 else cur.fetchall()
+    rows = fetch_rows(cur, limit) if limit and limit > 0 else fetch_rows(cur, 0)
     out: List[List[Any]] = []
     for r in rows:
         out.append(list(r) if not isinstance(r, dict) else [r.get(c) for c in cols])

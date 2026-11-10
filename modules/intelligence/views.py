@@ -4,9 +4,15 @@
 
 """协同诊断中枢的 Web 接口。"""
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import json
+import copy
+import re
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
@@ -362,6 +368,30 @@ def schema_dict_delete():
     if not save_knowledge(kb):
         return jsonify({"ok": False, "msg": "保存失败"}), 500
     return jsonify({"ok": True, "msg": msg, "databases": kb.get("databases", {})})
+
+
+@intelligence_bp.route('/api/intelligence/report-fields', methods=['GET', 'PUT'])
+def report_fields():
+    """维护各数据库巡检报告共用的字段及查询别名中文说明。"""
+    from .schema_knowledge import get_knowledge, save_knowledge
+
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'fields': get_knowledge().get('report_fields', {}).get('fields', {})})
+    deny = _require_writer()
+    if deny:
+        return deny
+    data = request.get_json(silent=True) or {}
+    field = str(data.get('field') or '').strip().upper()
+    description = str(data.get('description') or '').strip()
+    if not field or len(field) > 160 or any(ord(c) < 32 for c in field):
+        return jsonify({'ok': False, 'msg': '请填写有效的原始字段名（最多 160 字符）'}), 400
+    if not re.search(r'[\u4e00-\u9fff]', description) or len(description) > 500:
+        return jsonify({'ok': False, 'msg': '字段说明须包含中文，最多 500 字符'}), 400
+    kb = copy.deepcopy(get_knowledge())
+    kb.setdefault('report_fields', {}).setdefault('fields', {})[field] = description
+    if not save_knowledge(kb):
+        return jsonify({'ok': False, 'msg': '保存失败'}), 500
+    return jsonify({'ok': True, 'field': field, 'description': description})
 
 
 # ── Workflow 编排（阶段 D：Workflow Builder UI 后端） ──────────────────────────

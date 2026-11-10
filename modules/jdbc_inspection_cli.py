@@ -192,11 +192,52 @@ def main(argv=None):
         'log': [],
     }
 
+    # ── SSH 跳板：必须在 TCP 预检之前建立 ────────────────────────────────
+    # 数据库只监听远端 127.0.0.1 时，用户按 Navicat 习惯填 127.0.0.1；
+    # 若不先建隧道，预检直接判死（Connection refused），而预检失败只发
+    # error/done 事件、不发 log 事件 —— 前端表现就是「巡检失败且没有日志」。
+    _tunnel = None
+    if db_info.get('ssh_host') and db_info.get('ssh_tunnel', False):
+        try:
+            from modules.ssh import open_db_tunnel
+            _opened = open_db_tunnel(
+                db_info, log=lambda m: _emit_line('log', {'msg': m}))
+            if _opened:
+                _tunnel, _lh, _lp = _opened
+                db_info['_conn_ip'] = _lh
+                db_info['_conn_port'] = _lp
+                db_info['_tunnel_ready'] = True
+                _emit_line('log', {'msg': f'✅ SSH 隧道就绪：远程 {db_info.get("ip")}:'
+                                           f'{db_info.get("port")} → 本地 {_lh}:{_lp}'})
+        except Exception as e:  # noqa: BLE001
+            _msg = (f'SSH 隧道建立失败（{db_info.get("ssh_host")}:'
+                    f'{db_info.get("ssh_port", 22)}）：{e}')
+            _emit_line('log', {'msg': '❌ ' + _msg})
+            _emit_line('error', {'msg': _msg})
+            _emit_line('done', {'msg': _msg, 'task_id': task_id})
+            try:
+                _write_stdout(DONE_PREFIX + json.dumps(
+                    {'status': 'error', 'task_id': task_id, 'error_msg': _msg},
+                    ensure_ascii=True) + '\n')
+            except Exception:
+                pass
+            return 0
+    elif db_info.get('ssh_host'):
+        # 隧道开关关闭：SSH 仅用于系统指标采集，数据库按第 2 步地址直连。
+        _emit_line('log', {'msg': f'ℹ️ 已关闭 SSH 隧道，数据库直连 '
+                                   f'{db_info.get("ip")}:{db_info.get("port")}'})
+        if str(db_info.get('ip') or '').strip().lower() in ('127.0.0.1', 'localhost', '::1'):
+            _emit_line('log', {'msg': '⚠️ 数据库主机为回环地址，关闭隧道后将连接本机回环；'
+                                       '堡垒机/内网映射场景请开启「通过 SSH 隧道连接数据库」。'})
+
     # TCP 预检：自定义 jdbc_url 可能指向多主机/故障转移，此时跳过预检
     _kw = db_info.get('jdbc_url') or db_info.get('ssh_info', {}).get('jdbc_url')
     if not _kw:
-        _preflight_err = _tcp_preflight(db_info.get('ip') or db_info.get('host'), db_info.get('port'))
+        _preflight_err = _tcp_preflight(db_info.get('_conn_ip') or db_info.get('ip'),
+                                        db_info.get('_conn_port') or db_info.get('port'))
         if _preflight_err:
+            # 同步发一条 log 事件：否则前端日志面板全空白，只剩一句「巡检失败」
+            _emit_line('log', {'msg': '❌ ' + _preflight_err})
             _emit_line('error', {'msg': _preflight_err})
             _emit_line('done', {'msg': _preflight_err, 'task_id': task_id})
             try:
@@ -267,6 +308,12 @@ def main(argv=None):
         _write_stdout(DONE_PREFIX + json.dumps(final_status, ensure_ascii=True) + '\n')
     except Exception:
         pass
+    # 关闭 SSH 隧道（进程即将退出，这里显式释放端口与连接）
+    if _tunnel is not None:
+        try:
+            _tunnel.close()
+        except Exception:
+            pass
     return 0
 
 

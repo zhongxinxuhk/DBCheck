@@ -2,7 +2,6 @@
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
-# 监控大屏矩阵视图改动验证：模板渲染 + 新词条注入 + 关键 DOM/JS 存在性
 import sys
 sys.path.insert(0, r'D:\DBCheck')
 from modules.web.app import app

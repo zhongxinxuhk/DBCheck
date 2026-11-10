@@ -41,11 +41,8 @@ logger = logging.getLogger('scheduler')
 logger.setLevel(logging.INFO)
 log_path = Path(LOG_FILE)
 log_path.parent.mkdir(parents=True, exist_ok=True)
-_handler = logging.FileHandler(LOG_FILE, encoding='utf-8', mode='a')
-_handler.setFormatter(logging.Formatter(
-    '%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-))
+from modules.core.log_manager import RotatingLogHandler
+_handler = RotatingLogHandler(LOG_FILE, family='scheduler', encoding='utf-8')
 logger.addHandler(_handler)
 
 
@@ -75,13 +72,39 @@ def _normalize_cron_expression(expr):
 # 加载入口模块等共享资源，并发时可能产生竞态甚至死锁，表现为“只打印开始、
 # 既不完成也不失败、也不生成报告”的黑洞。
 #
-# 这里用信号量把同时执行的巡检数限制为 1（严格串行），并配备看门狗超时，
-# 确保任何情况下都不会出现静默挂起、无任何结果日志的情况。
-# 如需允许 N 个并发，把 _INSPECTION_MAX_CONCURRENT 调大即可。
-_INSPECTION_MAX_CONCURRENT = 1        # 同时执行的巡检数上限（1 = 严格串行）
-_INSPECTION_ACQUIRE_TIMEOUT = 1800    # 排队等待执行名额的最长时间（秒）
-_INSPECTION_WATCHDOG_TIMEOUT = 1800  # 单次巡检执行的最长时限（秒），超时强制释放名额
+# 这里用信号量限制同时执行的巡检数（默认 2，可在 data/runtime_tuning.json 或
+# DBPULSE_INSPECTION_MAX_CONCURRENT 中调整），并配备看门狗超时，确保任何情况下
+# 都不会出现静默挂起、无任何结果日志的情况。
+#
+# 超大实例规模下的关键约束（2026-11 评估）：
+#  - 巡检并发不能无限调高：docx 渲染与目标库连接数会先撑不住，2~4 是安全区间；
+#  - JVM 类巡检（JDBC 驱动）单独限流，避免 JVM 抢 CPU 拖慢原生驱动巡检；
+#  - 原来的看门狗会在超时瞬间释放名额，线程却还在跑，实际并发会突破上限。
+#    现在改为：超时先请求中止，名额保留到线程真正退出；超过宽限期仍未退出
+#    才强制回收（并记 ERROR，提示此时可能超出配置并发）。
+from modules.core.runtime_tuning import get as _tuning_get
+
+_INSPECTION_MAX_CONCURRENT = int(_tuning_get('inspection', 'max_concurrent'))
+_INSPECTION_JVM_CONCURRENT = int(_tuning_get('inspection', 'jvm_concurrent'))
+_INSPECTION_ACQUIRE_TIMEOUT = int(_tuning_get('inspection', 'acquire_timeout'))
+_INSPECTION_WATCHDOG_TIMEOUT = int(_tuning_get('inspection', 'watchdog_timeout'))
+_INSPECTION_WATCHDOG_GRACE = int(_tuning_get('inspection', 'watchdog_grace'))
 _inspection_semaphore = threading.Semaphore(_INSPECTION_MAX_CONCURRENT)
+_inspection_jvm_semaphore = threading.Semaphore(_INSPECTION_JVM_CONCURRENT)
+
+# 会拉起 JVM/JDBC 驱动的巡检类型：单独一个执行名额池
+_JVM_ISOLATED_DB_TYPES = frozenset({
+    'hgdb', 'db2', 'sqlserver_jdbc', 'oracle_jdbc', 'gbase', 'clickhouse',
+})
+
+
+def _inspection_gate(db_info):
+    """按数据库类型返回执行名额池：JVM 类独占一池，其余共用原生池。"""
+    db_type = str((db_info or {}).get('db_type') or '').strip().lower()
+    if db_type in _JVM_ISOLATED_DB_TYPES:
+        return _inspection_jvm_semaphore
+    return _inspection_semaphore
+
 
 _scheduler = None  # 全局调度器实例（延迟初始化）
 
@@ -306,7 +329,8 @@ def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None):
     }
     for _k in ('connection_mode', 'jdbc_url', 'instance_name',
                'encrypt', 'trust_server_certificate',
-               'ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_file'):
+               'ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_file',
+               'ssh_key_password', 'ssh_tunnel'):
         if _k in db_info and db_info[_k] is not None:
             mapped[_k] = db_info[_k]
 
@@ -413,38 +437,68 @@ def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None):
     return final.get('report_path'), final
 
 
-def _on_watchdog_timeout(job_id, db_info, state, guard):
-    """看门狗触发：单次巡检超过时限，强制释放执行名额并记录超时失败。
+def _on_watchdog_timeout(job_id, db_type, state, guard, handle, gate):
+    """看门狗触发：单次巡检超过时限，先请求中止，名额保留到线程真正退出。
 
-    注意：线程无法被强制杀死，这里只负责把信号量名额释放出来，
-    让排队的其它巡检能够继续；当前卡住的线程会在其阻塞调用返回后自然结束
-    （daemon 线程，不会阻碍进程退出）。
+    历史问题：原实现超时即释放信号量，可卡住的线程仍在跑，实际并发突破上限，
+    排障时会出现「同时跑了两个巡检」的诡异现象。
+
+    现在的语义：
+      1. 标记超时、记 ERROR；
+      2. 向执行句柄发中止信号（JVM 子进程可立即杀进程树）；
+      3. 名额不立即释放；若线程在宽限期内仍未退出，才强制释放并明确记录
+         「此时可能超出配置并发」。
     """
-    db_type = db_info.get('db_type', 'unknown')
     with guard:
-        if state['released']:
+        if state['released'] or state.get('timed_out'):
             return
-        state['released'] = True
-    _inspection_semaphore.release()
-    logger.error('[%s] 巡检超时（超过 %ds，排除机制看门狗已强制释放执行名额）: %s',
-                 job_id, _INSPECTION_WATCHDOG_TIMEOUT, db_type)
+        state['timed_out'] = True
+
+    logger.error('[%s] 巡检超时（超过 %ds）：已请求中止，执行名额保留至线程退出（宽限 %ds）: %s',
+                 job_id, _INSPECTION_WATCHDOG_TIMEOUT, _INSPECTION_WATCHDOG_GRACE, db_type)
+    if handle is not None:
+        try:
+            if handle.cancel():
+                logger.info('[%s] 超时中止：巡检子进程已终止', job_id)
+        except Exception:
+            pass
+
+    def _force_release():
+        with guard:
+            if state['released']:
+                return
+            state['released'] = True
+        try:
+            gate.release()
+        except Exception:
+            pass
+        logger.error('[%s] 巡检线程在宽限期 %ds 内未退出，已强制释放执行名额（此时可能超出配置并发）',
+                     job_id, _INSPECTION_WATCHDOG_GRACE)
+
+    t = threading.Timer(_INSPECTION_WATCHDOG_GRACE, _force_release)
+    t.daemon = True
+    state['grace_timer'] = t
+    t.start()
 
 
 def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None):
     """
     并发巡检排除机制入口（在独立线程中运行）。
 
-    通过信号量把同时执行的巡检数限制为 _INSPECTION_MAX_CONCURRENT（默认 1，
-    即严格串行），避免多个定时任务同分钟并发触发时因共享资源竞态/死锁而
+    执行名额由两池信号量控制（原生池 / JVM 池），容量来自 runtime_tuning，
+    默认原生 2、JVM 1，避免多个定时任务同分钟触发时因共享资源竞态/死锁而
     出现“只打印开始、既不完成也不失败、也不生成报告”的黑洞。
 
-    若等待执行名额超过 _INSPECTION_ACQUIRE_TIMEOUT，则跳过本次巡检（不堆积）；
-    若单次巡检执行超过 _INSPECTION_WATCHDOG_TIMEOUT，看门狗会强制释放名额并
-    记录超时失败，保证任何情况下都有明确的结果日志，而不是静默挂起。
+    若等待执行名额超过 acquire_timeout（默认 1800s），则跳过本次巡检（不堆积）；
+    若单次巡检执行超过 watchdog_timeout，先请求中止，名额保留到线程退出，
+    宽限期后才强制回收，保证任何情况下都有明确的结果日志，而不是静默挂起。
 
     中止支持（#64）：排队等待名额期间改为分段获取，收到取消信号立即退出；
     执行阶段由 _run_inspection_core 在阶段边界检查信号并抛出 InspectionCancelled。
     """
+    db_type = str((db_info or {}).get('db_type') or 'unknown')
+    gate = _inspection_gate(db_info)
+
     # 排队等待：分段获取信号量，期间可被取消
     acquired = False
     _deadline = time.monotonic() + _INSPECTION_ACQUIRE_TIMEOUT
@@ -452,32 +506,34 @@ def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None
         if handle is not None and handle.cancel_event.is_set():
             logger.info('[%s] 巡检已中止（排队等待执行名额期间取消）', job_id)
             return
-        if _inspection_semaphore.acquire(timeout=0.5):
+        if gate.acquire(timeout=0.5):
             acquired = True
             break
         if time.monotonic() >= _deadline:
             break
     if not acquired:
         logger.warning(
-            '[%s] 巡检被跳过：并发排除机制，等待执行名额超时（%ds）',
+            '[%s] 巡检被跳过：等待执行名额超时（%ds；当前配置 原生=%d 并发、JVM=%d 并发）',
             job_id, _INSPECTION_ACQUIRE_TIMEOUT,
+            _INSPECTION_MAX_CONCURRENT, _INSPECTION_JVM_CONCURRENT,
         )
         return
 
     guard = threading.Lock()
-    state = {'released': False}
+    state = {'released': False, 'timed_out': False}
 
     def _release():
         with guard:
             if not state['released']:
                 state['released'] = True
-                _inspection_semaphore.release()
+                gate.release()
 
     timer = threading.Timer(
         _INSPECTION_WATCHDOG_TIMEOUT,
         _on_watchdog_timeout,
-        args=(job_id, db_info, state, guard),
+        args=(job_id, db_type, state, guard, handle, gate),
     )
+    timer.daemon = True
     timer.start()
     try:
         if handle is not None:
@@ -487,7 +543,12 @@ def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None
         logger.info('[%s] 巡检已中止: %s', job_id, ce)
     finally:
         timer.cancel()
+        _grace_timer = state.get('grace_timer')
+        if _grace_timer is not None:
+            _grace_timer.cancel()
         _release()
+        if state.get('timed_out'):
+            logger.error('[%s] 超时巡检线程已退出: %s', job_id, db_type)
         if handle is not None:
             handle.stage = 'finishing'
 

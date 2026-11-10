@@ -14,6 +14,10 @@
 - 环形缓冲区存储历史连接数数据（最近 72 条，每条记录所有数据源）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import time
 import os
 import sys
@@ -23,6 +27,9 @@ import logging
 from collections import deque
 from modules.pro.instance_manager import get_instance_manager
 from modules.core.paths import PROJECT_ROOT
+from modules.core.parallel import run_bounded, round_budget
+from modules.core.runtime_tuning import get as _tuning_get
+from modules.ssh import resolve_db_endpoint
 import modules.monitor.queries as mq
 from modules.monitor.screen_metrics import SCREEN_SQLS
 
@@ -124,7 +131,7 @@ class MonitorEngine:
     def start(self, interval=None):
         """启动后台采集线程"""
         if interval:
-            self._interval = max(5, min(interval, 60))
+            self._interval = max(5, min(interval, 300))
         with self._lock:
             if self._running:
                 return
@@ -140,7 +147,7 @@ class MonitorEngine:
 
     def set_interval(self, interval):
         """修改采集间隔（秒）"""
-        self._interval = max(5, min(interval, 60))
+        self._interval = max(5, min(interval, 300))
 
     @property
     def is_running(self):
@@ -194,15 +201,16 @@ class MonitorEngine:
 
     def _background_loop(self):
         while self._running:
+            _started = time.monotonic()
             try:
                 self._do_collect()
             except Exception:
                 pass
-            # 按 interval 分段 sleep，便于响应 stop
-            for _ in range(self._interval * 2):
-                if not self._running:
-                    break
-                time.sleep(0.5)
+            # 保持「固定周期」：单轮耗时从间隔里扣除，而不是「跑完再睡满间隔」。
+            # 否则实际采样周期 = 单轮耗时 + interval，大规模下会持续漂移。
+            _deadline = _started + max(1.0, float(self._interval))
+            while self._running and time.monotonic() < _deadline:
+                time.sleep(min(0.5, max(0.01, _deadline - time.monotonic())))
 
     def _do_collect(self):
         """执行一轮采集"""
@@ -219,48 +227,61 @@ class MonitorEngine:
             if not instances:
                 return
 
-            # 采集慢查询
+            # ── 超大实例规模：按实例并发采集，而非串行遍历 ──────────
+            # 历史问题：单线程 for 循环 + 每实例 2~3 次新建连接，任何一个慢库都会
+            # head-of-line 阻塞整轮采集，表现为「监控页停在上一轮、其它库不刷新」。
+            # 现在改为有界并发 + 整轮截止时间：单个库卡住只损失自己这一轮。
+            workers = int(_tuning_get('monitor', 'max_workers'))
+            item_timeout = float(_tuning_get('monitor', 'instance_timeout'))
+            budget = round_budget(len(instances), workers, item_timeout)
+            _t0 = time.time()
+            results, errors, timed_out = run_bounded(
+                instances, self._collect_instance, workers=workers,
+                round_timeout=budget, name='monitor',
+            )
+
             new_slow = {}
             new_conn = {}
             conn_history_items = []
 
-            for inst in instances:
+            for idx, inst in enumerate(instances):
                 iid = inst['id']
                 if not inst.get('host'):
                     _log.info("跳过空 host 实例: %s", iid)
                     continue
-                db_type = mq.normalize_db_type(inst.get('db_type', ''))
-                label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
-
-                # 慢查询
-                try:
-                    sq = self._collect_slow(iid, db_type, label)
-                    new_slow[iid] = sq
-                except Exception as e:
-                    _log.warning("慢查询采集失败 %s: %s", label, e)
+                entry = results.get(idx)
+                if entry is None:
+                    exc = errors.get(idx)
+                    reason = _friendly_db_error(exc) if exc else '采集超时'
+                    db_type = mq.normalize_db_type(inst.get('db_type', ''))
+                    label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
                     new_slow[iid] = {
-                        'data': [], 'error': _friendly_db_error(e),
+                        'data': [], 'error': reason,
                         'ts': time.time(), 'db_type': db_type, 'label': label,
                     }
-
-                # 连接
-                try:
-                    cn = self._collect_conn(iid, db_type, label)
-                    new_conn[iid] = cn
-                    conn_history_items.append({
-                        'id': iid,
-                        'label': label,
-                        'total': cn.get('total', 0),
-                        'max_conn': cn.get('max_conn', 0),
-                        'db_type': db_type,
-                    })
-                except Exception as e:
-                    _log.warning("连接采集失败 %s: %s", label, e)
                     new_conn[iid] = {
-                        'data': [], 'error': _friendly_db_error(e),
+                        'data': [], 'error': reason,
                         'ts': time.time(), 'total': 0, 'max_conn': 0,
                         'db_type': db_type, 'label': label,
                     }
+                    continue
+
+                db_type = entry['db_type']
+                label = entry['label']
+                new_slow[iid] = entry['slow']
+                cn = entry['conn']
+                new_conn[iid] = cn
+                try:
+                    _max_conn = max(0, int(cn.get('max_conn') or 0))
+                except (TypeError, ValueError):
+                    _max_conn = 0
+                conn_history_items.append({
+                    'id': iid,
+                    'label': label,
+                    'total': cn.get('total', 0),
+                    'max_conn': _max_conn,
+                    'db_type': db_type,
+                })
 
             ts = time.time()
             with self._lock:
@@ -271,8 +292,45 @@ class MonitorEngine:
                     'ts': ts,
                     'instances': conn_history_items,
                 })
+
+            _log.info(
+                "监控采集完成：%d/%d 实例，并发 %d，耗时 %.2fs%s",
+                len(conn_history_items), len(instances), workers, ts - _t0,
+                ('，超时 %d 个（下一轮重试）' % len(timed_out)) if timed_out else '',
+            )
         except Exception as e:
             _log.error("采集失败: %s", e)
+
+    def _collect_instance(self, inst):
+        """采集单个实例（慢查询 + 连接），供并发调度器调用。
+
+        任何单实例异常均在此层兜住并转成结构化错误，不影响同轮其它实例。
+        """
+        iid = inst['id']
+        db_type = mq.normalize_db_type(inst.get('db_type', ''))
+        label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
+
+        try:
+            slow = self._collect_slow(iid, db_type, label)
+        except Exception as e:
+            _log.warning("慢查询采集失败 %s: %s", label, e)
+            slow = {
+                'data': [], 'error': _friendly_db_error(e),
+                'ts': time.time(), 'db_type': db_type, 'label': label,
+            }
+
+        try:
+            conn = self._collect_conn(iid, db_type, label)
+        except Exception as e:
+            _log.warning("连接采集失败 %s: %s", label, e)
+            conn = {
+                'data': [], 'error': _friendly_db_error(e),
+                'ts': time.time(), 'total': 0, 'max_conn': 0,
+                'db_type': db_type, 'label': label,
+            }
+
+        return {'id': iid, 'db_type': db_type, 'label': label,
+                'slow': slow, 'conn': conn}
 
     # ═══════════════════════════════════════════════════════════
     #  采集实现
@@ -465,10 +523,13 @@ class MonitorEngine:
                 str(PROJECT_ROOT), 'modules', 'monitor', 'jdbc_collect_cli.py')]
 
         sqls = self._jdbc_batch_sqls(template_key or db_type)
+        # JDBC 子进程连接的是父进程隧道暴露出的本地端口：子进程本身不持有
+        # SSH 凭据，直接连 127.0.0.1:<local_port> 即可，由父进程完成转发。
+        _jdb_host, _jdb_port, _ = resolve_db_endpoint(inst)
         payload = {
             'db_type': db_type,
-            'host': inst.get('host'),
-            'port': inst.get('port'),
+            'host': _jdb_host,
+            'port': _jdb_port,
             'user': inst.get('user') or '',
             'password': inst.get('password') or '',
             'database': inst.get('database') or inst.get('service_name') or '',
@@ -635,6 +696,13 @@ class MonitorEngine:
             raise ValueError('主机地址不能为空')
         port = int(inst['port'])
         user = inst['user']
+
+        # SSH 隧道：配置了「经 SSH 隧道连接数据库」时把 host/port 换成本地转发
+        # 端点。缺此步，数据库仅监听 SSH 主机回环（host 填 127.0.0.1）的场景下
+        # 监控大屏会直连巡检机自身回环 → Connection refused → 误判宕机，
+        # 而巡检（app.py / api.py 显式 open_db_tunnel）却正常，形成
+        # 「巡检通过、大屏宕机」的分裂现象。
+        host, port, _tun = resolve_db_endpoint(inst)
 
         if db_type in ('mysql', 'mariadb', 'oceanbase', 'starrocks', 'doris'):
             # MariaDB / OceanBase MySQL 租户与 MySQL 协议/参数高度兼容，复用同款 pymysql 连接逻辑。

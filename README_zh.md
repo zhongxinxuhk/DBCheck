@@ -239,7 +239,7 @@ docker run -d -p 5003:5003 \
 http://localhost:5003
 ```
 
-默认账号为 `admin`，密码为 `admin123`（首次登录后请及时修改密码）。
+初始账号与角色（管理员 `admin` / 只读 `viewer` / 运维 `operator`）、各平台启动步骤与管理员安装期口令的获取方式，见 **[初始化文档](docs/install/INITIALIZATION_zh.md)**。首次登录后请及时修改密码。
 
 ### docker-compose
 
