@@ -26,11 +26,11 @@ import sqlite3
 import sys
 import collections
 
-sys.path.insert(0, '/Users/xuzhongxin/DBCheck')
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 import yaml
 from modules.pro.rule_engine import normalize_db_type, load_metrics, _derive_metrics
 
-ROOT = '/Users/xuzhongxin/DBCheck'
 INJECTED = {'system_info', 'version', '_long_queries', '_safe_errors',
             'cache_hit_ratio_pct', 'auto_analyze', 'issues', 'db_type', 'db_version'}
 

@@ -17,7 +17,8 @@
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import sys
-sys.path.insert(0, '/Users/xuzhongxin/DBCheck')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from modules.pro.rule_engine import (
     RuleEngine, normalize_db_type, load_metrics, fill_missing_metrics,
