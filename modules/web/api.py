@@ -16,6 +16,10 @@ DBCheck REST API v1
   - 结构化 JSON 输出（风险分数、检查项、修复建议）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from modules.core.paths import PROJECT_ROOT
 import os
 import json
@@ -1303,6 +1307,7 @@ def register_disaster_recovery(app) -> None:
     由 web_ui.py 在 app 创建后调用。任何异常都不应阻断主程序启动，
     因此 web_ui 端已用 try/except 包裹此调用。
     """
+    if os.environ.get('DBPULSE_INSPECTION_WORKER')=='1': return
     from modules.disaster_recovery import routes, scheduler_hook
 
     app.register_blueprint(routes.bp_dr)
@@ -1314,7 +1319,7 @@ def register_disaster_recovery(app) -> None:
     try:
         from modules.intelligence.task_runner import get_runner
 
-        get_runner().bootstrap()
+        get_runner().bootstrap(app)
     except Exception as exc:  # pragma: no cover
         print(f"  [WARN] 工作流任务调度器启动失败: {exc}")
 
@@ -1327,6 +1332,7 @@ def register_object_storage(app) -> None:
     引擎配置、基线、报告与历史数据，目标是 S3 兼容对象存储（AWS S3 / MinIO /
     Ceph RGW / OSCA 联盟云 fgws3 等）。
     """
+    if os.environ.get('DBPULSE_INSPECTION_WORKER')=='1': return
     from modules.objstore.routes import register_objstore
 
     register_objstore(app)

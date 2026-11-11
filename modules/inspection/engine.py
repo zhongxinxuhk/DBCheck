@@ -794,6 +794,9 @@ class BaseInspectionEngine:
         if self._template_id is None:
             self._template_id = self.get_template_id()
 
+        from modules.inspection.sql_safety import guarded_connection
+        self.conn = guarded_connection(self.conn,self.db_type)
+
         # 2. 加载 SQL 模板（从 inspection.db 或内置）
         sql_dict = {}  # {query_key: sql_text}
         cfg = None     # 兼容 configparser（仅当 sql_templates 非空时使用）
@@ -970,6 +973,8 @@ class BaseInspectionEngine:
             except Exception as _bi_err:
                 print('[WARN] 核心属性采集失败（报告将标注未采集）: %s' % _bi_err)
                 self.context['basic_info_db'] = {}
+            for warning in getattr(self.conn,'warnings',[]):
+                if warning not in self._safe_errors:self._safe_errors.append(warning)
             cursor.close()
         except Exception as e:
             print(self._t(f'{self.db_type}_query_loop_fail', default='dm8_query_loop_fail').format(e=e))
@@ -1842,6 +1847,11 @@ class BaseInspectionEngine:
             # 4. 执行基线配置检查
             self._check_baselines()
             
+            for warning in getattr(self.conn,'warnings',[]):
+                if warning not in self._safe_errors:self._safe_errors.append(warning)
+            if self._safe_errors:
+                self.context['collection_status']='incomplete'
+                self.context['health_status']='采集不完整，需复核SQL限制与未完成项'
             # 5. 调用 fallback 渲染
             return self._fallback_render(output_file, inspector_name)
         

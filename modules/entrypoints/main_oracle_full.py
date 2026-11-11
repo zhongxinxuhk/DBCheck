@@ -172,10 +172,11 @@ def _get_oracle_conn_thunk_first(dsn, user, password, mode=None,
             _tunnel = None
 
     def _do_connect():
+        from modules.inspection.sql_safety import guarded_connection
         if mode is not None:
-            return _odb.connect(user=user, password=password, dsn=_real_dsn, mode=mode)
+            return guarded_connection(_odb.connect(user=user, password=password, dsn=_real_dsn, mode=mode),"oracle")
         else:
-            return _odb.connect(user=user, password=password, dsn=_real_dsn)
+            return guarded_connection(_odb.connect(user=user, password=password, dsn=_real_dsn),"oracle")
 
     # ── 第一次尝试：thin mode ──
     try:
@@ -432,6 +433,8 @@ def load_oracle_chapter_structure(template_id):
 def execute_oracle_chapter_queries(conn, chapters):
     """执行所有章节的查询，返回 chapter_results
     格式: [{chapter_number, chapter_title_zh, queries_results: [{query_key, query_description_zh, columns, data}]}]"""
+    from modules.inspection.sql_safety import guarded_connection
+    conn=guarded_connection(conn,'oracle')
     chapter_results = []
     for chapter in chapters:
         query_results = []
@@ -2610,6 +2613,11 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
         doc.add_paragraph()
 
     # ═══════════════════════════════════════════════════════════════════════════
+    if check_results.get('_collection_warnings'):
+        doc.add_heading('巡检采集限制与未完成项',level=1)
+        for warning in check_results['_collection_warnings']:
+            doc.add_paragraph(str(warning))
+
     #  统一章节渲染：基于 build_unified_chapters() 输出
     #  支持模板驱动（chapter_results）和硬编码回退（check_results）
     # ═══════════════════════════════════════════════════════════════════════════
@@ -3440,6 +3448,7 @@ def single_inspection(args):
     except Exception as e:
         print(f"  ⚠  索引健康分析失败: {e}")
 
+    check_results['_collection_warnings'] = list(getattr(conn,'warnings',[]))
     conn.close()
     if ssh_tunnel:
         ssh_tunnel.close()  # 关闭数据库连接
@@ -3590,6 +3599,10 @@ def single_inspection(args):
         )
 
     # ── Web UI 模式：跳过报告生成和历史保存，由统一调度层处理 ──
+    if check_results.get('_collection_warnings'):
+        context['collection_status']='incomplete'
+        context['health_status']='采集不完整，需复核SQL限制与未完成项'
+
     if _web_ui_mode:
         elapsed = time.time() - t0
         if ssh_client:

@@ -18,6 +18,11 @@
 - 调用 collect_data() 采集数据
 - 调用 generate_report() 生成报告
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import sys
 import sqlite3
@@ -1305,6 +1310,11 @@ class BaseInspectionEngine:
             # 4. 执行基线配置检查
             self._check_baselines()
             
+            for warning in getattr(self.conn, 'warnings', []):
+                if warning not in self._safe_errors: self._safe_errors.append(warning)
+            if self._safe_errors:
+                self.context['collection_status'] = 'incomplete'
+                self.context['health_status'] = '采集不完整，需复核SQL限制与未完成项'
             # 5. 调用 fallback 渲染
             return self._fallback_render(output_file, inspector_name)
         

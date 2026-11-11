@@ -884,6 +884,8 @@ from modules.service_management.routes import bp as service_management_bp
 app.register_blueprint(service_management_bp)
 from modules.clusters.routes import bp as clusters_bp
 app.register_blueprint(clusters_bp)
+from modules.operations.routes import bp as operations_bp
+app.register_blueprint(operations_bp)
 
 def get_admin_token():
     return _ADMIN_TOKEN
@@ -1737,6 +1739,12 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
                 _kw['ssh_info'] = ssh_info
             data = mod.getData(*_pos, **_kw)
 
+            # 绑定调用者选择的数据源，避免同主机多库时台账和实例基线关联含糊。
+            _target = getattr(data, 'inspector', data)
+            _target_context = getattr(_target, 'context', None)
+            if isinstance(_target_context, dict) and (task or {}).get('datasource_id'):
+                _target_context['_instance_id'] = task['datasource_id']
+
             # 章节可选：将前端传入的 chapter_ids 注入到检查器实例（兼容所有内置/插件入口）。
             # 内置入口的 CompatWrapper.inspector 与插件引擎均暴露 chapter_ids 属性，
             # collect_data / _render_context / _load_chapters_from_db 已消费该字段：
@@ -1788,7 +1796,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
         ofile = os.path.join(reports_dir, file_name)
 
         from modules.core.data_security import redact
-        context = redact(context, mask_identity=True)
+        context = redact(context, mask_identity=True, preserve_network=True)
         if hasattr(data, 'context'):
             data.context = context
         if getattr(data, 'inspector', None) is not None:
@@ -3216,6 +3224,9 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
         'inspector_name': inspector_name,
         'template_id': template_id,
         'chapter_ids': chapter_ids,
+        'isolate_process': bool(tasks.get(task_id, {}).get('isolate_process')),
+        'task_metadata': {key: tasks.get(task_id, {}).get(key) for key in
+                          ('datasource_id', 'owner_user_id', 'owner_tenant_id')},
     }
 
     _in_fd, _in_path = _tf.mkstemp(prefix='dbc_jdbc_insp_in_', suffix='.json')
@@ -3392,6 +3403,8 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
         if proc is not None and proc.poll() is None:
             _kill_process_tree(proc)
     finally:
+        if task_id in tasks:
+            tasks[task_id]['execution_complete'] = True
         with _ACTIVE_PROCS_LOCK:
             if proc is not None:
                 _ACTIVE_PROCS.discard(proc)
@@ -5095,6 +5108,8 @@ def api_start_inspection():
             'db_type':       db_type,
             'db_info':       db_info,
             'datasource_id': data.get('datasource_id') or None,
+            'isolate_process': True,
+            'execution_complete': False,
             'template_id':   template_id,
             'chapter_ids':   chapter_ids,
             'inspector':     inspector_name,
@@ -5104,14 +5119,10 @@ def api_start_inspection():
         db_info['_db_type'] = db_type
         # JVM 类型（HGDB/DB2/SQL Server-JDBC/oracle_jdbc）必须隔离到子进程执行，
         # 否则进程内 JVM 会钉死 gevent hub，导致「开始巡检」后界面/控制台均无输出。
-        if db_type in JVM_INSPECTION_DB_TYPES:
-            t = threading.Thread(
-                target=_run_inspection_subprocess,
-                args=(task_id, db_type, db_info, inspector_name, template_id, chapter_ids))
-        else:
-            t = threading.Thread(
-                target=run_inspection_task,
-                args=(task_id, db_info, inspector_name, template_id, chapter_ids))
+        t = threading.Thread(
+            target=_run_inspection_subprocess,
+            args=(task_id, db_type, db_info, inspector_name, template_id, chapter_ids))
+
         t.daemon = True
         t.start()
         return jsonify({'ok': True, 'task_id': task_id})

@@ -28,6 +28,10 @@
 且执行前做写类语句拦截（与自治闭环 _WRITE_TOKENS 同源口径）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import re
@@ -260,7 +264,8 @@ def run_component(comp_id: str = "", instance_id: str = "",
     from modules.sqlaudit.plan_analyzer import connect_instance
 
     try:
-        conn = connect_instance(inst)
+        from modules.inspection.sql_safety import guarded_connection
+        conn = guarded_connection(connect_instance(inst),inst.get('db_type',''))
     except Exception as e:
         return {"ok": False, "error_code": "CONNECT_FAILED",
                 "error": "连接失败: %s" % e, "findings": [], "metrics": {}}
@@ -332,9 +337,16 @@ def run_component(comp_id: str = "", instance_id: str = "",
             "tags": [comp["id"], "inspect"],
         })
     findings.extend(data_findings)
+    errors=[key+': '+str(value['error']) for key,value in metrics.items() if value.get('error')]
+    warnings=list(getattr(conn,'warnings',[]))
+    if errors or warnings:
+        findings.append({'source':'inspect_component','category':'collection','severity':'warning',
+            'title':'巡检采集不完整','detail':'\n'.join(errors+warnings),
+            'suggestion':'复核SQL保护限制、驱动支持及未完成项','tags':[comp['id'],'inspect']})
 
     return {
-        "ok": True,
+        "ok": not errors and not warnings,
+        "collection_status":'incomplete' if errors or warnings else 'collected',
         "component": comp,
         "instance": {"id": instance_id, "name": inst.get("name"),
                      "db_type": inst.get("db_type")},

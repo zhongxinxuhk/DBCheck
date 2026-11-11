@@ -47,7 +47,7 @@ def supports_fetchmany(cursor: Any) -> bool:
     return callable(getattr(cursor, 'fetchmany', None))
 
 
-def fetch_rows(cursor: Any, limit: int = 0) -> List[Any]:
+def fetch_rows(cursor: Any, limit: int = 0, *, strict: bool = False) -> List[Any]:
     """按上限取行，兼容缺少 ``fetchmany`` 的游标实现。
 
     参数:
@@ -75,6 +75,18 @@ def fetch_rows(cursor: Any, limit: int = 0) -> List[Any]:
             # 驱动层真实报错（如 JDBC ResultSet 已关闭）交给上层处理，
             # 这里不吞，避免把「连接坏掉」误报成「没数据」。
             raise
+
+    if _limit > 0:
+        one = getattr(cursor,'fetchone',None)
+        if callable(one):
+            rows=[]
+            for _ in range(_limit):
+                row=one()
+                if row is None:break
+                rows.append(row)
+            return rows
+        if strict:
+            raise ValueError('巡检游标不支持有界取数，已停止该项采集')
 
     # 退化：一次性取全，再按上限切片
     try:

@@ -3313,3 +3313,11 @@ RU.update({
     "webui.system_info_opensource": "Открытый исходный код",
     "webui.system_info_check_update": "Проверить обновления",
 })
+
+RU.update({
+    "menu.inventory": "Реестр баз данных",
+    "menu.batch-inspection": "Комплексная проверка источников",
+    "menu.clusters": "Управление кластерами",
+    "menu.services": "Эксплуатационные услуги и приемка",
+    "menu.system-info": "Сведения о системе"
+})

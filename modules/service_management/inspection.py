@@ -142,6 +142,9 @@ def collect(instance, asset, factory=None, _worker=False):
     started = time.monotonic()
     try:
         conn = (factory or connect_secure)(instance, asset)
+        if factory is None:
+            from modules.inspection.sql_safety import guarded_connection
+            conn = guarded_connection(conn, family)
         results['client_connectivity'] = {'status':'collected','provenance':'authenticated_driver_connection','collected_at':datetime.now(timezone.utc).isoformat()}
         if factory is None:
             privileges = conn.cursor()
@@ -168,12 +171,15 @@ def collect(instance, asset, factory=None, _worker=False):
                     raise ValueError('本次采集已达到90秒预算')
                 assert_readonly_sql(sql)
                 cursor = conn.cursor()
+                warning_count = len(getattr(conn, 'warnings', []))
                 cursor.execute(sql)
                 columns = [str(c[0]).lower() for c in cursor.description or []]
                 rows = cursor.fetchmany(201)
                 data = [dict(zip(columns,[v if isinstance(v,(int,float,bool,type(None))) else str(v)[:512] for v in row])) for row in rows[:200]]
                 if key == 'version' and family == 'gbase8a' and not any('gbase' in str(value).lower() for row in data for value in row.values()):
                     raise ValueError('当前服务端未返回 GBase 身份证据，禁止按8a版本推断')
+                warnings = getattr(conn, 'warnings', [])[warning_count:]
+                if warnings: raise ValueError('; '.join(warnings))
                 truncated = len(rows)>200
                 while len(json.dumps(data,ensure_ascii=False).encode()) > 30000:
                     data.pop()

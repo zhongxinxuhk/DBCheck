@@ -8,7 +8,8 @@
 'use strict';
 (() => {
   const state = {clusters: [], kinds: {}, sources: [], selected: null, editing: null};
-  const $ = id => document.getElementById(id);
+  const root = document.getElementById('cluster-workspace');
+  const $ = id => root.querySelector('#' + CSS.escape(id));
   const labels = {healthy:'正常',warning:'关注',critical:'异常',incomplete:'采集不完整',stale:'样本过期',
     dispatching:'准备中',running:'执行中',done:'已完成',failed:'失败',error:'失败',partial_failed:'部分失败',
     interrupted:'已中断',not_started:'未启动',unconfirmed:'待复核',pending:'待执行',primary:'主库',standby:'备库',member:'成员',unknown:'未知'};
@@ -158,7 +159,7 @@
   $('cancel-cluster').onclick=()=>$('cluster-dialog').close();
   $('cluster-form').onsubmit=async event=>{
     event.preventDefault();$('save-cluster').disabled=true;$('form-message').textContent='';
-    const members=[...document.querySelectorAll('#member-options input[data-instance-id]:checked')].map(check=>{
+    const members=[...root.querySelectorAll('#member-options input[data-instance-id]:checked')].map(check=>{
       const id=check.dataset.instanceId;
       const row=check.closest('.toolbar');
       return {instance_id:id,expected_role:row.querySelector('select').value,enabled:row.querySelector('input[data-enabled-for]').checked};
@@ -184,6 +185,17 @@
       if(current) detail(current);else $('cluster-detail').innerHTML='<div class="panel">添加集群后查看成员、监控和巡检结果。</div>';
     }finally{loading=false;}
   }
-  loadOptions().then(load).catch(error=>message(error.message));
-  setInterval(()=>{if(!document.hidden) load().catch(error=>message(error.message));},5000);
+  let initialized = false;
+  window.initClusterPage = function() {
+    if (initialized) return load().catch(error=>message(error.message));
+    initialized = true;
+    loadOptions().then(load).catch(error=>{initialized=false;message(error.message);});
+  };
+  setInterval(()=>{
+    const page = root.closest('.page');
+    if (!document.hidden && initialized && (!page || page.classList.contains('active'))) {
+      load().catch(error=>message(error.message));
+    }
+  },5000);
+  if (root.dataset.embedded !== 'true') window.initClusterPage();
 })();

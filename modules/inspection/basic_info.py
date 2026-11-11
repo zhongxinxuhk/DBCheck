@@ -540,6 +540,11 @@ def load_overrides(engine):
             if isinstance(hit, dict):
                 merged.update({k: v for k, v in hit.items() if v not in (None, '')})
                 break
+    try:
+        from modules.operations.inventory import report_overrides
+        merged.update(report_overrides(engine))
+    except (OSError, ValueError, RuntimeError):
+        pass
     return merged
 
 

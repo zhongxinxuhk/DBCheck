@@ -1,0 +1,1173 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+-->
+{% set batch_view = request.args.get("tab") == "batch" %}
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{ "多数据源整体巡检" if batch_view else "数据库运维台账" }} · DBPulse</title>
+    <style>
+      :root {
+        font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: #23374d;
+        background: #f4f7fb;
+        font-size: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 1600px;
+        margin: auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 25px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 15px;
+        margin: 18px 0 12px;
+      }
+      p {
+        line-height: 1.7;
+        margin: 8px 0;
+      }
+      .muted {
+        color: #6c7d90;
+        font-size: 12px;
+      }
+      .toolbar,
+      .actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button,
+      a.button {
+        font: inherit;
+        border: 1px solid #c6d3e2;
+        background: white;
+        padding: 8px 13px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: #244363;
+        text-decoration: none;
+      }
+      button.primary {
+        background: #195db7;
+        border-color: #195db7;
+        color: white;
+      }
+      button.danger {
+        color: #b42735;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .card {
+        background: white;
+        border: 1px solid #dce5ef;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 18px;
+      }
+      .toolbar {
+        margin-bottom: 16px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      input,
+      select,
+      textarea {
+        font: inherit;
+        border: 1px solid #c6d3e2;
+        border-radius: 5px;
+        padding: 8px 10px;
+        max-width: 100%;
+        background: white;
+        color: #23374d;
+      }
+      input[type="checkbox"] {
+        width: auto;
+        accent-color: #195db7;
+      }
+      .search {
+        min-width: 280px;
+      }
+      .scroll {
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 11px 10px;
+        border-bottom: 1px solid #e5ebf2;
+      }
+      th {
+        background: #f1f5fa;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      td {
+        overflow-wrap: anywhere;
+      }
+      tr:hover td {
+        background: #f7faff;
+      }
+      .nowrap {
+        white-space: nowrap;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 12px;
+        background: #edf1f6;
+        font-size: 12px;
+      }
+      .done,
+      .completed {
+        background: #e4f4e9;
+        color: #23643e;
+      }
+      .error,
+      .failed,
+      .interrupted {
+        background: #ffe9e9;
+        color: #a92d38;
+      }
+      .partial,
+      .unconfirmed {
+        background: #fff1d2;
+        color: #865c0d;
+      }
+      .running,
+      .queued {
+        background: #e9f1ff;
+        color: #245ba8;
+      }
+      .stats {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+        padding: 14px 0;
+      }
+      .stat strong {
+        display: block;
+        font-size: 23px;
+        margin-top: 5px;
+      }
+      .hidden {
+        display: none !important;
+      }
+      #message {
+        min-height: 22px;
+        margin: 12px 0;
+        white-space: pre-wrap;
+        color: #b02d36;
+      }
+      #message.success {
+        color: #247343;
+      }
+      dialog {
+        width: min(1280px, 96vw);
+        max-height: 93vh;
+        overflow: auto;
+        border: 1px solid #c5d1df;
+        border-radius: 12px;
+        padding: 24px;
+      }
+      dialog::backdrop {
+        background: #172a4477;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+      label.field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        color: #52687e;
+      }
+      label.field input,
+      label.field select {
+        width: 100%;
+        font-size: 14px;
+        color: #23374d;
+      }
+      label.field:has(input[type="checkbox"]) {
+        flex-direction: row;
+        align-items: center;
+      }
+      label.field input[type="checkbox"] {
+        width: auto;
+      }
+      .section {
+        padding: 16px 0;
+        border-bottom: 1px solid #e6ecf3;
+      }
+      details summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 10px 0;
+      }
+      .editor-table {
+        min-width: 950px;
+      }
+      .editor-table input {
+        width: 100%;
+        min-width: 140px;
+      }
+      .dialog-footer {
+        position: sticky;
+        bottom: -24px;
+        background: white;
+        border-top: 1px solid #dae3ed;
+        padding: 16px 0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+      .cluster-list {
+        display: flex;
+        gap: 10px 20px;
+        flex-wrap: wrap;
+        padding: 10px 0;
+      }
+      .cluster-list label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .progress {
+        height: 7px;
+        background: #e5ecf6;
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .progress span {
+        height: 100%;
+        display: block;
+        background: #2971c9;
+      }
+      .history {
+        white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.7;
+      }
+      footer {
+        text-align: center;
+        color: #758395;
+        font-size: 11px;
+        padding: 22px;
+        line-height: 1.8;
+      }
+      @media (max-width: 850px) {
+        main {
+          padding: 16px;
+        }
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+        .search {
+          min-width: 180px;
+        }
+      }
+      @media (max-width: 550px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .toolbar input,
+        .toolbar select {
+          width: 100%;
+        }
+      }
+      #batch-sources [hidden] {display:none!important;}
+      #batch-sources {
+        max-height: 260px;
+        overflow: auto;
+      }
+      .credential-value {
+        font-family: ui-monospace, monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="message" role="status"></div>
+      <section id="inventory-panel" class="card{% if batch_view %} hidden{% endif %}">
+        <div class="toolbar">
+          <input
+            id="search"
+            class="search"
+            placeholder="搜索配置项编号、名称、地址、系统、集群"
+            aria-label="搜索台账"
+          /><select id="type-filter" aria-label="筛选数据库类型">
+            <option value="">全部数据库类型</option></select
+          ><select id="cluster-filter" aria-label="筛选集群">
+            <option value="">全部集群</option></select
+          ><span class="spacer"></span
+          ><button id="new-record" class="primary">新增台账及数据源</button
+          ><button id="inventory-history">台账变更总览</button
+          ><button id="export-records">导出台账 Excel</button
+          ><button id="inspect-selected">巡检所选数据源</button>
+        </div>
+        <div class="muted" id="inventory-count"></div>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    id="select-all"
+                    aria-label="全选当前筛选结果"
+                  />
+                </th>
+                <th>配置项编号 / 资产名称</th>
+                <th>数据库 / 地址</th>
+                <th>数据库账号 / 密码</th>
+                <th>系统归属 / 业务用途</th>
+                <th>集群 / 节点</th>
+                <th>责任人 / 运行状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="batch-panel" class="{{ '' if batch_view else 'hidden' }}">
+        <div class="card">
+          <h2>发起整体巡检</h2>
+          <p class="muted">
+            所选数据源与集群成员自动去重。各库采用当前默认巡检模板，也可按库型单独选择模板。任务结束后下载一份包含汇总与各库完整明细的
+            Word 报告。
+          </p>
+          <div class="grid">
+            <label class="field"
+              >任务名称<input id="batch-name" value="数据库整体巡检" /></label
+            ><label class="field"
+              >巡检人员<input
+                id="batch-inspector"
+                placeholder="留空使用当前登录用户" /></label
+            ><label class="field"
+              >并发数据源数<select id="batch-concurrency">
+                <option selected>1</option>
+                <option>2</option>
+                <option>3</option>
+                <option>4</option>
+                <option>6</option>
+                <option>8</option>
+              </select></label
+            >
+          </div>
+          <h3>已选数据源</h3>
+          <div id="selected-summary" class="muted"></div>
+          <div class="toolbar"><input id="batch-search" type="search" placeholder="搜索数据源名称、类型或地址" aria-label="搜索整体巡检数据源"><button id="batch-select-visible" type="button">选中搜索结果</button><button id="batch-clear-selected" type="button">清空选择</button></div>
+          <div id="batch-sources" class="cluster-list"></div>
+          <h3>按集群纳入成员</h3>
+          <div id="batch-clusters" class="cluster-list"></div>
+          <details>
+            <summary>按数据库类型指定模板</summary>
+            <div id="batch-templates" class="grid"></div>
+          </details>
+          <div class="actions" style="margin-top: 18px">
+            <button id="schedule-batch">设为定时任务</button><button id="start-batch" class="primary">开始整体巡检</button
+            ><span class="muted">单库异常会单独记录，其他数据源继续执行。</span>
+          </div>
+        </div>
+        <div class="card">
+          <h2>批量任务记录</h2>
+          <div id="batch-history"></div>
+        </div>
+        <div id="run-detail" class="card hidden">
+          <div class="toolbar">
+            <h2 id="run-title"></h2>
+            <span class="spacer"></span
+            ><a id="run-download" class="button hidden">下载整体巡检报告</a>
+          </div>
+          <div id="run-stats" class="stats"></div>
+          <div class="progress"><span id="run-progress"></span></div>
+          <p id="run-message" class="muted"></p>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>数据源 / 地址</th>
+                  <th>数据库类型</th>
+                  <th>集群</th>
+                  <th>执行状态</th>
+                  <th>风险与采集情况</th>
+                </tr>
+              </thead>
+              <tbody id="run-members"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+    <dialog id="editor">
+      <form id="editor-form">
+        <h2 id="editor-title">维护数据库台账</h2>
+        <p class="muted">
+          连接信息与数据源共用一条记录。密码留空时保留已存密码，Excel
+          导出包含已登记的完整连接值。
+        </p>
+        <div class="section">
+          <h3>资产连接</h3>
+          <div id="source-fields" class="grid"></div>
+          <details>
+            <summary>驱动、认证、TLS 与 SSH 连接选项</summary>
+            <div id="advanced-fields" class="grid"></div>
+          </details>
+        </div>
+        <div class="section">
+          <h3>资产与数据库基础属性</h3>
+          <div id="metadata-fields" class="grid"></div>
+        </div>
+        <div id="table-editors"></div>
+        <div
+          id="editor-error"
+          role="alert"
+          style="color: #b02d36; white-space: pre-wrap; margin: 12px 0"
+        ></div>
+        <div class="dialog-footer">
+          <button type="button" id="cancel-edit">取消</button
+          ><button type="submit" id="save-record" class="primary">
+            保存台账并同步数据源
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="history-dialog">
+      <h2>台账变更记录</h2>
+      <div id="history-content" class="history"></div>
+      <div class="dialog-footer"><button id="close-history">关闭</button></div>
+    </dialog>
+    <footer>
+      基于 DBCheck / RaccoonX · Copyright 2025-2026 fiyo (Jack Ge) ·
+      Apache-2.0<br />DBPulse 衍生维护 · sec.hn.cn (X.U zx)
+    </footer>
+    <script>
+      const canWrite = {{ can_write|tojson }};
+      const state = {
+        options: null,
+        records: [],
+        selected: new Set(),
+        clusters: new Set(),
+        editing: null,
+        tables: {},
+        run: null,
+        poll: null,
+        templates: [],
+      };
+      const $ = (id) => document.getElementById(id);
+      const esc = (value) =>
+        String(value ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const labels = {
+        queued: "待执行",
+        running: "执行中",
+        unconfirmed: "超时待核对",
+        done: "已生成报告",
+        error: "失败",
+        interrupted: "已中断",
+        cancelled: "已停止",
+        completed: "完成",
+        partial: "部分完成",
+        failed: "全部失败",
+      };
+      function message(text, success = false) {
+        $("message").textContent = text;
+        $("message").className = success ? "success" : "";
+      }
+      async function api(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {}),
+          },
+        });
+        const data = await response.json();
+        if (!response.ok || !(data.ok || data.success))
+          throw new Error(data.error || data.msg || "请求失败");
+        return data;
+      }
+      function clusterNames(record) {
+        return [
+          ...new Set(
+            [
+              record.metadata.cluster_id,
+              ...state.options.clusters
+                .filter((c) => c.instance_ids.includes(record.id))
+                .map((c) => c.name),
+            ].filter(Boolean),
+          ),
+        ];
+      }
+      function filtered() {
+        const q = $("search").value.trim().toLowerCase(),
+          kind = $("type-filter").value,
+          cluster = $("cluster-filter").value;
+        return state.records.filter(
+          (r) =>
+            (!kind || r.source.db_type === kind) &&
+            (!cluster || clusterNames(r).includes(cluster)) &&
+            (!q ||
+              JSON.stringify([
+                r.configuration_id,
+                r.source.name,
+                r.source.host,
+                r.metadata,
+              ])
+                .toLowerCase()
+                .includes(q)),
+        );
+      }
+      function renderRecords() {
+        const rows = filtered();
+        $("inventory-count").textContent =
+          `共 ${state.records.length} 个数据源，当前 ${rows.length} 条，已选择 ${state.selected.size} 条`;
+        $("inventory-body").innerHTML =
+          rows
+            .map((r) => {
+              const s = r.source,
+                m = r.metadata;
+              return `<tr><td><input type="checkbox" data-select="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""} aria-label="选择 ${esc(s.name)}"></td><td><strong>${esc(r.configuration_id)}</strong><br>${esc(s.name)}</td><td>${esc(s.db_type)}<br>${esc(s.host)}:${esc(s.port)}</td><td><div>${esc(s.user)}</div><div class="credential-value">${esc(s.password)}</div></td><td>${esc(m.system)}<br><span class="muted">${esc(m.business)}</span></td><td>${esc(clusterNames(r).join("、"))}<br><span class="muted">${esc(m.node_names)}</span></td><td>${esc(m.owner)}<br>${esc(m.lifecycle || "未登记")}</td><td class="nowrap"><button data-action="edit" data-id="${esc(r.id)}">${canWrite ? "维护" : "查看"}</button> <button data-action="history" data-id="${esc(r.id)}">变更记录</button>${canWrite ? ` <button class="danger" data-action="delete" data-id="${esc(r.id)}">删除</button>` : ""}</td></tr>`;
+            })
+            .join("") ||
+          '<tr><td colspan="8">暂无台账。已有数据源会自动出现在此处。</td></tr>';
+        const selected = rows.filter((r) => state.selected.has(r.id)).length;
+        $("select-all").checked = rows.length > 0 && selected === rows.length;
+        $("select-all").indeterminate = selected > 0 && selected < rows.length;
+      }
+      async function loadRecords() {
+        state.records = (await api("/api/operations/inventory")).records;
+        const missing = state.records.filter(
+          (record) => !Object.hasOwn(record.source, "password"),
+        );
+        let cursor = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(4, missing.length) }, async () => {
+            while (cursor < missing.length) {
+              const record = missing[cursor++];
+              const decrypted = await api(
+                "/api/pro/datasources/" +
+                  encodeURIComponent(record.id) +
+                  "/decrypt",
+              );
+              if (decrypted.password_decrypted === false)
+                throw new Error("数据库密码解密失败，请核对数据源密钥");
+              Object.assign(record.source, decrypted.datasource);
+            }
+          }),
+        );
+        const ids = new Set(state.records.map((r) => r.id));
+        state.selected = new Set(
+          [...state.selected].filter((id) => ids.has(id)),
+        );
+        const kinds = [
+          ...new Set(state.records.map((r) => r.source.db_type)),
+        ].sort();
+        const old = $("type-filter").value;
+        $("type-filter").innerHTML =
+          '<option value="">全部数据库类型</option>' +
+          kinds.map((k) => `<option>${esc(k)}</option>`).join("");
+        $("type-filter").value = old;
+        const clusters = [
+          ...new Set(state.records.flatMap((r) => clusterNames(r))),
+        ].sort();
+        const oldCluster = $("cluster-filter").value;
+        $("cluster-filter").innerHTML =
+          '<option value="">全部集群</option>' +
+          clusters.map((c) => `<option>${esc(c)}</option>`).join("");
+        $("cluster-filter").value = oldCluster;
+        renderRecords();
+      }
+      function inputField(key, label, value, scope) {
+        const id = scope + "-" + key;
+        label =
+          {
+            password: "数据库密码",
+            ssh_password: "SSH密码",
+            ssh_key_password: "SSH私钥密码",
+          }[key] || label;
+        let input;
+        if (scope === "source" && key === "db_type") {
+          const existingType =
+            value && !state.options.db_types.some((d) => d.key === value)
+              ? `<option value="${esc(value)}" selected>${esc(value)}（当前未启用）</option>`
+              : "";
+          input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${existingType}${state.options.db_types.map((d) => `<option value="${esc(d.key)}" ${d.key === value ? "selected" : ""}>${esc(d.name)} · ${esc(d.key)}</option>`).join("")}</select>`;
+        } else if (scope === "source" && state.options.secrets.includes(key)) {
+          input = `<textarea id="${id}" rows="1" data-scope="${scope}" data-key="${key}" autocomplete="off" spellcheck="false" autocapitalize="none">${esc(value ?? "")}</textarea>`;
+        } else if (
+          scope === "source" &&
+          state.options.boolean_fields.includes(key)
+        ) {
+          input = `<input id="${id}" type="checkbox" data-scope="${scope}" data-key="${key}" ${value ? "checked" : ""}>`;
+        } else {
+          let type = ["port", "ssh_port", "node_count"].includes(key)
+            ? "number"
+            : ["online_date", "inventory_date"].includes(key)
+              ? "date"
+              : "text";
+          const shown =
+            key === "tags" ? (value || []).join(", ") : (value ?? "");
+          input = `<input id="${id}" type="${type}" data-scope="${scope}" data-key="${key}" value="${esc(shown)}" ${["name", "host", "port"].includes(key) ? "required" : ""}>`;
+        }
+        return `<label class="field" for="${id}">${esc(label)}${input}</label>`;
+      }
+      function edit(record) {
+        state.editing = record || null;
+        const source = record?.source || {
+            db_type: "mysql",
+            port: 3306,
+            ssh_port: 22,
+            enabled: true,
+            trust_server_certificate: true,
+          },
+          metadata = record?.metadata || {};
+        const main = [
+          "name",
+          "db_type",
+          "host",
+          "port",
+          "user",
+          "password",
+          "database",
+          "service_name",
+          "group",
+        ];
+        $("source-fields").innerHTML = main
+          .map((k) =>
+            inputField(k, state.options.source_fields[k], source[k], "source"),
+          )
+          .join("");
+        $("advanced-fields").innerHTML = Object.entries(
+          state.options.source_fields,
+        )
+          .filter(([k]) => !main.includes(k))
+          .map(([k, v]) => inputField(k, v, source[k], "source"))
+          .join("");
+        for (const key of state.options.secrets) {
+          const field = $('source-' + key);
+          if (field) field.value = source[key] ?? '';
+        }
+        $("metadata-fields").innerHTML = Object.entries(state.options.fields)
+          .map(([k, v]) =>
+            inputField(
+              k,
+              v,
+              metadata[k] ||
+                (k === "configuration_id" ? record?.configuration_id : ""),
+              "metadata",
+            ),
+          )
+          .join("");
+        state.tables = JSON.parse(JSON.stringify(metadata.tables || {}));
+        $("table-editors").innerHTML = Object.entries(state.options.tables)
+          .map(
+            ([key, [title, columns]]) =>
+              `<details class="section"><summary>${esc(title)}</summary><div class="actions"><button type="button" data-add-row="${key}">新增明细行</button></div><div class="scroll"><table class="editor-table"><thead><tr>${Object.values(
+                columns,
+              )
+                .map((c) => `<th>${esc(c)}</th>`)
+                .join(
+                  "",
+                )}<th>操作</th></tr></thead><tbody id="table-${key}"></tbody></table></div></details>`,
+          )
+          .join("");
+        Object.keys(state.options.tables).forEach(renderTable);
+        $("editor-title").textContent = record
+          ? "维护台账 · " + record.source.name
+          : "新增台账及数据源";
+        $("editor-error").textContent = "";
+        $("save-record").classList.toggle("hidden", !canWrite);
+        $("editor-form")
+          .querySelectorAll("input,select,textarea")
+          .forEach((e) => (e.disabled = !canWrite));
+        $("editor").showModal();
+      }
+      function renderTable(key) {
+        const columns = state.options.tables[key][1];
+        $("table-" + key).innerHTML = (state.tables[key] || [])
+          .map(
+            (row, index) =>
+              `<tr>${Object.keys(columns)
+                .map(
+                  (column) =>
+                    `<td><input data-table="${key}" data-row="${index}" data-column="${column}" value="${esc(row[column])}" ${!canWrite ? "disabled" : ""}></td>`,
+                )
+                .join(
+                  "",
+                )}<td><button type="button" data-remove-table="${key}" data-row="${index}" ${!canWrite ? "disabled" : ""}>移除</button></td></tr>`,
+          )
+          .join("");
+      }
+      async function saveRecord(event) {
+        event.preventDefault();
+        const button = $("save-record");
+        button.disabled = true;
+        try {
+          const source = {},
+            metadata = {};
+          $("editor-form")
+            .querySelectorAll("[data-scope]")
+            .forEach((input) => {
+              const key = input.dataset.key;
+              let value =
+                input.type === "checkbox" ? input.checked : input.value;
+              if (input.type === "number" && value !== "")
+                value = Number(value);
+              if (key === "tags")
+                value = value
+                  .split(",")
+                  .map((v) => v.trim())
+                  .filter(Boolean);
+              if (input.dataset.scope === "source") {
+                if (
+                  state.options.secrets.includes(key) &&
+                  (value === "" ||
+                    (state.editing && value === state.editing.source[key]))
+                )
+                  return;
+                source[key] = value;
+              } else metadata[key] = value;
+            });
+          metadata.tables = Object.fromEntries(
+            Object.entries(state.tables).map(([key, rows]) => [
+              key,
+              rows.filter((row) =>
+                Object.values(row).some((v) => v !== "" && v !== null),
+              ),
+            ]),
+          );
+          const data = { source, metadata };
+          if (state.editing) data.revision = state.editing.revision;
+          await api(
+            "/api/operations/inventory" +
+              (state.editing ? "/" + state.editing.id : ""),
+            {
+              method: state.editing ? "PUT" : "POST",
+              body: JSON.stringify(data),
+            },
+          );
+          $("editor").close();
+          await loadRecords();
+          message("台账已保存，对应数据源已同步。", true);
+          if (window.parent !== window)
+            window.parent.postMessage(
+              { type: "operations-datasource-updated" },
+              location.origin,
+            );
+        } catch (error) {
+          $("editor-error").textContent = error.message;
+        } finally {
+          button.disabled = false;
+        }
+      }
+      async function deleteRecord(record) {
+        if (
+          !confirm(
+            `删除“${record.source.name}”的台账及对应数据源？历史报告和台账变更记录将保留。`,
+          )
+        )
+          return;
+        await api("/api/operations/inventory/" + record.id, {
+          method: "DELETE",
+          body: JSON.stringify({ revision: record.revision }),
+        });
+        state.selected.delete(record.id);
+        await loadRecords();
+        message("台账及数据源已删除。", true);
+        if (window.parent !== window)
+          window.parent.postMessage(
+            { type: "operations-datasource-updated" },
+            location.origin,
+          );
+      }
+      async function history(record = null) {
+        const data = await api(
+          record
+            ? "/api/operations/inventory/" + record.id + "/history"
+            : "/api/operations/inventory-history",
+        );
+        $("history-content").textContent =
+          data.records
+            .map(
+              (h) =>
+                `${h.created} · 操作人 ${h.actor} · ${h.action}\n${JSON.stringify(h.details, null, 2)}`,
+            )
+            .join("\n\n") || "暂无变更记录";
+        $("history-dialog").showModal();
+      }
+      function renderSelection() {
+        $("selected-summary").textContent =
+          `已选择 ${state.selected.size} 个数据源，也可在下方勾选其他数据源或集群。`;
+        $("batch-sources").innerHTML = state.records
+          .map(
+            (r) =>
+              `<label><input type="checkbox" data-batch-source="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""}>${esc(r.source.name)} <span class="muted">${esc(r.source.db_type)} · ${esc(r.source.host)}</span></label>`,
+          )
+          .join("");
+        $("batch-clusters").innerHTML =
+          state.options.clusters
+            .map(
+              (c) =>
+                `<label><input type="checkbox" data-batch-cluster="${esc(c.id)}" ${state.clusters.has(c.id) ? "checked" : ""}>${esc(c.name)}（${c.instance_ids.length}个数据源）</label>`,
+            )
+            .join("") ||
+          '<span class="muted">暂无已配置集群，可直接选择多个数据源。</span>';
+        const kinds = [...new Set(state.records.map((r) => r.source.db_type))];
+        const saved = Object.fromEntries(
+          [...$("batch-templates").querySelectorAll("select")].map((s) => [
+            s.dataset.templateType,
+            s.value,
+          ]),
+        );
+        $("batch-templates").innerHTML = kinds
+          .map(
+            (kind) =>
+              `<label class="field">${esc(kind)}<select data-template-type="${esc(kind)}"><option value="">使用默认模板</option>${state.templates
+                .filter(
+                  (t) =>
+                    (state.options.families[t.db_type] ||
+                      t.db_type.replace(/_jdbc$/, "")) ===
+                    (state.options.families[kind] ||
+                      kind.replace(/_jdbc$/, "")),
+                )
+                .map(
+                  (t) =>
+                    `<option value="${t.id}" ${String(t.id) === saved[kind] ? "selected" : ""}>${esc(t.template_name_zh || t.template_name || t.id)}</option>`,
+                )
+                .join("")}</select></label>`,
+          )
+          .join("");
+      }
+      function filterBatchSources() {
+        const query = $('batch-search').value.trim().toLowerCase();
+        $('batch-sources').querySelectorAll('label').forEach(label => {label.hidden = !label.textContent.toLowerCase().includes(query);});
+      }
+      $('batch-search').oninput = filterBatchSources;
+      $('batch-select-visible').onclick = () => {
+        $('batch-sources').querySelectorAll('label:not([hidden]) input').forEach(input => state.selected.add(input.dataset.batchSource));
+        renderSelection(); filterBatchSources();
+      };
+      $('batch-clear-selected').onclick = () => {state.selected.clear(); renderSelection(); filterBatchSources();};
+      $('schedule-batch').onclick = () => {
+        if (!state.selected.size && !state.clusters.size) return message('请先选择数据源或集群');
+        if (window.parent === window) return message('请从主界面进入整体巡检后设置定时任务');
+        const templates = Object.fromEntries([...$('batch-templates').querySelectorAll('select')].filter(select => select.value).map(select => [select.dataset.templateType,Number(select.value)]));
+        window.parent.postMessage({type:'operations-schedule',task:{name:$('batch-name').value,batch_spec:{instance_ids:[...state.selected],cluster_ids:[...state.clusters],concurrency:Number($('batch-concurrency').value),templates,inspector:$('batch-inspector').value}}},location.origin);
+      };
+      async function startBatch() {
+        const button = $("start-batch");
+        button.disabled = true;
+        const requestKey =
+          state.requestKey ||
+          (state.requestKey = crypto.randomUUID
+            ? crypto.randomUUID()
+            : Array.from(crypto.getRandomValues(new Uint8Array(16)), (n) =>
+                n.toString(16).padStart(2, "0"),
+              ).join(""));
+        try {
+          const templates = Object.fromEntries(
+            [...$("batch-templates").querySelectorAll("select")]
+              .filter((s) => s.value)
+              .map((s) => [s.dataset.templateType, Number(s.value)]),
+          );
+          const payload = {
+            name: $("batch-name").value,
+            inspector: $("batch-inspector").value,
+            concurrency: Number($("batch-concurrency").value),
+            instance_ids: [...state.selected],
+            cluster_ids: [...state.clusters],
+            templates,
+            request_key: requestKey,
+          };
+          const data = await api("/api/operations/batches", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          state.requestKey = null;
+          await showRun(data.run.id);
+          await loadRuns();
+          message("整体巡检任务已创建。", true);
+        } catch (error) {
+          message(error.message);
+        } finally {
+          button.disabled = false;
+        }
+      }
+      async function loadRuns() {
+        const data = await api("/api/operations/batches");
+        $("batch-history").innerHTML =
+          data.runs
+            .map(
+              (r) =>
+                `<div class="toolbar"><button data-run="${esc(r.id)}">${esc(r.payload.name)}</button><span class="pill ${esc(r.status)}">${esc(labels[r.status] || r.status)}</span><span class="muted">${new Date(r.created * 1000).toLocaleString()} · ${r.summary.done}/${r.summary.total} 个报告已生成</span></div>`,
+            )
+            .join("") || '<p class="muted">暂无批量巡检任务。</p>';
+      }
+      async function showRun(id) {
+        state.run = id;
+        clearTimeout(state.poll);
+        const data = await api("/api/operations/batches/" + id);
+        if (state.run !== id) return;
+        const r = data.run,
+          c = r.summary;
+        $("run-detail").classList.remove("hidden");
+        $("run-title").textContent = r.payload.name;
+        $("run-stats").innerHTML = [
+          ["纳入数据源", c.total],
+          ["报告已生成", c.done],
+          ["失败/中断", c.failed],
+          ["执行中", c.active],
+          ["待执行", c.queued],
+          ["采集缺项", c.incomplete],
+          ["已停止未执行", c.cancelled || 0],
+        ]
+          .map(
+            ([label, value]) =>
+              `<div class="stat"><span class="muted">${label}</span><strong>${value}</strong></div>`,
+          )
+          .join("");
+        $("run-progress").style.width =
+          ((c.done + c.failed + (c.cancelled || 0)) / c.total) * 100 + "%";
+        $("run-members").innerHTML = r.payload.members
+          .map(
+            (m) =>
+              `<tr><td><strong>${esc(m.name)}</strong><br>${esc(m.host)}:${esc(m.port)}</td><td>${esc(m.db_type)}</td><td>${esc(m.cluster_name || "独立实例")}</td><td><span class="pill ${esc(m.status)}">${esc(labels[m.status] || m.status)}</span></td><td>${m.status === "done" ? "风险数 " + esc(m.result?.risk_count ?? "未采集") : ""}${m.error ? "<p>" + esc(m.error) + "</p>" : ""}${(m.warnings || []).map((w) => "<p>" + esc(w) + "</p>").join("")}</td></tr>`,
+          )
+          .join("");
+        const terminal = [
+          "completed",
+          "partial",
+          "failed",
+          "interrupted",
+          "cancelled",
+        ].includes(r.status);
+        $("run-download").classList.toggle("hidden", !terminal);
+        $("run-download").href = "/api/operations/batches/" + id + "/report";
+        $("run-message").textContent = r.payload.report_error
+          ? "报告生成遇到问题，点击下载可重试。" + r.payload.report_error
+          : c.failed || c.incomplete || c.cancelled
+            ? "存在失败或采集缺项，整体报告会保留具体原因。"
+            : "";
+        if (terminal) await loadRuns();
+        if (!terminal)
+          state.poll = setTimeout(
+            () => showRun(id).catch((e) => message(e.message)),
+            2500,
+          );
+      }
+      document.addEventListener("click", (event) => {
+        const b = event.target.closest("button");
+        if (!b) return;
+        const d = b.dataset;
+        if (d.action) {
+          const r = state.records.find((r) => r.id === d.id);
+          Promise.resolve()
+            .then(
+              {
+                edit: () => edit(r),
+                delete: () => deleteRecord(r),
+                history: () => history(r),
+              }[d.action],
+            )
+            .catch((e) => message(e.message));
+        }
+        if (d.addRow) {
+          state.tables[d.addRow] = state.tables[d.addRow] || [];
+          state.tables[d.addRow].push({});
+          renderTable(d.addRow);
+        }
+        if (d.removeTable) {
+          state.tables[d.removeTable].splice(Number(d.row), 1);
+          renderTable(d.removeTable);
+        }
+        if (d.run) showRun(d.run).catch((e) => message(e.message));
+      });
+      document.addEventListener("change", (event) => {
+        const e = event.target,
+          d = e.dataset;
+        if (d.select || d.batchSource) {
+          const id = d.select || d.batchSource;
+          e.checked ? state.selected.add(id) : state.selected.delete(id);
+          renderRecords();
+          if (d.batchSource)
+            $("selected-summary").textContent =
+              `已选择 ${state.selected.size} 个数据源`;
+        }
+        if (d.batchCluster)
+          e.checked
+            ? state.clusters.add(d.batchCluster)
+            : state.clusters.delete(d.batchCluster);
+        if (d.table) state.tables[d.table][Number(d.row)][d.column] = e.value;
+        if (d.scope === "source" && d.key === "db_type" && !state.editing) {
+          const meta = state.options.db_types.find((m) => m.key === e.value);
+          if (meta) {
+            $("source-port").value = meta.port;
+            $("source-user").value = meta.user;
+            $("source-database").value = meta.database;
+          }
+        }
+      });
+      document.addEventListener("input", (event) => {
+        const d = event.target.dataset;
+        if (d.table)
+          state.tables[d.table][Number(d.row)][d.column] = event.target.value;
+      });
+      $("search").addEventListener("input", renderRecords);
+      $("type-filter").addEventListener("change", renderRecords);
+      $("cluster-filter").addEventListener("change", renderRecords);
+      $("select-all").addEventListener("change", (event) => {
+        filtered().forEach((r) =>
+          event.target.checked
+            ? state.selected.add(r.id)
+            : state.selected.delete(r.id),
+        );
+        renderRecords();
+      });
+      $("new-record").onclick = () => edit(null);
+      $("editor-form").onsubmit = saveRecord;
+      $("cancel-edit").onclick = () => $("editor").close();
+      $("close-history").onclick = () => $("history-dialog").close();
+      $("inventory-history").onclick = () =>
+        history().catch((error) => message(error.message));
+      $('inspect-selected').onclick = () => {
+        if (!state.selected.size) {message('请先选择需要巡检的数据源');return;}
+        if (window.parent !== window) {
+          window.parent.postMessage({type:'operations-open-batch',instance_ids:[...state.selected]},location.origin);
+        } else {
+          location.href='/operations/inventory?tab=batch&ids='+encodeURIComponent(JSON.stringify([...state.selected]));
+        }
+      };
+      $("start-batch").onclick = startBatch;
+      $("export-records").onclick = async () => {
+        const button = $("export-records");
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "正在生成 Excel…";
+        message("正在生成台账 Excel，请稍候。");
+        try {
+          const query = new URLSearchParams(
+            [...state.selected].map((id) => ["id", id]),
+          );
+          const response = await fetch(
+            "/api/operations/inventory/export?" + query,
+            { credentials: "same-origin", cache: "no-store" },
+          );
+          const contentType = response.headers.get("Content-Type") || "";
+          if (
+            !response.ok ||
+            !/spreadsheetml|octet-stream|application\/zip/i.test(contentType)
+          ) {
+            let reason = "导出失败，请刷新登录状态后重试";
+            if (contentType.includes("json")) {
+              const error = await response.json();
+              reason = error.error || error.msg || reason;
+            }
+            throw new Error(reason + "（HTTP " + response.status + "）");
+          }
+          const blob = await response.blob();
+          if (!blob.size) throw new Error("导出文件为空，请重试");
+          const url = URL.createObjectURL(blob);
+          const downloadDocument = window.parent.document;
+          const link = downloadDocument.createElement("a");
+          link.href = url;
+          link.download = "数据库运维台账.xlsx";
+          downloadDocument.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          message("台账 Excel 已生成，浏览器已开始下载。", true);
+        } catch (error) {
+          message("导出台账失败：" + error.message);
+        } finally {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      };
+      window.addEventListener('message', async event => {
+        if (event.origin !== location.origin || event.source !== window.parent) return;
+        try {
+          if (event.data?.type === 'operations-select-sources') {
+            const allowed = new Set(state.records.map(record=>record.id));
+            state.selected = new Set((event.data.instance_ids || []).filter(id=>allowed.has(id)));
+            renderSelection();
+          } else if (event.data?.type === 'operations-refresh') {
+            await loadRecords();
+            if (!$('batch-panel').classList.contains('hidden')) renderSelection();
+          }
+        } catch(error) {message(error.message);}
+      });
+      (async () => {
+        try {
+          state.options = await api("/api/operations/options");
+          try {
+            const t = await api("/api/inspection/templates");
+            state.templates = t.templates || t.data || [];
+          } catch (error) {
+            message("模板列表暂不可用，批量巡检将使用各数据库默认模板。");
+          }
+          await loadRecords();
+          const params = new URLSearchParams(location.search);
+          if (params.get('tab') === 'batch') {
+            if (params.get('ids')) state.selected = new Set(JSON.parse(params.get('ids')));
+            renderSelection();
+            await loadRuns();
+          }
+          if (window.parent !== window) window.parent.postMessage({type:'operations-ready'},location.origin);
+          $("new-record").disabled = !canWrite;
+          $("start-batch").disabled = !canWrite;
+          $("schedule-batch").disabled = !canWrite;
+          $("inspect-selected").disabled = !canWrite;
+        } catch (error) {
+          message(error.message);
+        }
+      })();
+    </script>
+  </body>
+</html>

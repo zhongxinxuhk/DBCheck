@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+// Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+// Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 /**
  * 巡检配置管理 - 前端逻辑
  * 功能：模板列表、模板编辑、章节管理、SQL 查询管理、导入/导出、拖拽排序
@@ -14,6 +21,50 @@ let currentInspectionIsPreset = false;  // 当前编辑的模板是否为预置�
 const IS_ADMIN = window._IS_ADMIN !== undefined;
 const IS_LOGGED_IN = window._IS_ADMIN !== undefined;  // 所有登录用户都可以操作
 
+
+// 搜索仅控制已加载条目的显示，保留内联编辑内容与完整列表顺序。
+function filterInspectionConfig(kind) {
+    const settings = {
+        template: ['inspection-template-search', 'inspection-template-list', '.inspection-template-card'],
+        chapter: ['inspection-chapter-search', 'inspection-chapter-list', '.chapter-item'],
+        query: ['inspection-query-search', 'inspection-query-list', '.query-item']
+    };
+    const [inputId, containerId, selector] = settings[kind];
+    const input = document.getElementById(inputId);
+    const container = document.getElementById(containerId);
+    if (!input || !container) return;
+    const words = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const rows = [...container.querySelectorAll(selector)];
+    let count = 0;
+    rows.forEach(row => {
+        const text = (row.dataset.searchText || row.textContent).toLocaleLowerCase();
+        row.hidden = !words.every(word => text.includes(word));
+        if (!row.hidden) count++;
+    });
+    const status = document.getElementById('inspection-' + kind + '-search-status');
+    if (status) status.textContent = rows.length ? (count ? `显示 ${count} / ${rows.length} 项` : '没有匹配项，请更换关键词或清空搜索') : '';
+    if (kind === 'chapter' && window._inspectionChapterSortable) {
+        window._inspectionChapterSortable.option('disabled', words.length > 0);
+    }
+}
+
+function clearInspectionConfigSearch(kind) {
+    const input = document.getElementById('inspection-' + kind + '-search');
+    if (input) { input.value = ''; filterInspectionConfig(kind); input.focus(); }
+}
+
+function indexInspectionConfigRows(kind, records, fields) {
+    const config = {
+        template: ['inspection-template-list', '.inspection-template-card'],
+        chapter: ['inspection-chapter-list', '.chapter-item'],
+        query: ['inspection-query-list', '.query-item']
+    };
+    const [containerId, selector] = config[kind];
+    document.getElementById(containerId).querySelectorAll(selector).forEach((row, index) => {
+        row.dataset.searchText = fields.map(field => records[index][field] ?? '').join(' ');
+    });
+    filterInspectionConfig(kind);
+}
 
 // ==================== 页面初始化 ====================
 
@@ -70,6 +121,7 @@ function renderInspectionTemplateList(templates) {
     if (!container) return;
     if (!templates || templates.length === 0) {
         container.innerHTML = '<div class="empty-state">暂无巡检模板，请点击"创建模板"按钮添加。</div>';
+        filterInspectionConfig('template');
         return;
     }
     let html = '';
@@ -117,6 +169,7 @@ function renderInspectionTemplateList(templates) {
         </div>`;
     });
     container.innerHTML = html;
+    indexInspectionConfigRows('template', templates, ['template_name','template_name_zh','template_name_en','db_type','version','description','description_zh','description_en']);
 }
 
 
@@ -306,6 +359,7 @@ function renderInspectionChapters(chapters) {
     const isPreset = currentInspectionIsPreset === true;
     if (!chapters || chapters.length === 0) {
         container.innerHTML = '<div class="empty-state">暂无章节，请点击顶部"添加章节"按钮添加。</div>';
+        filterInspectionConfig('chapter');
         return;
     }
     let html = '<ul class="chapter-sortable">';
@@ -331,6 +385,7 @@ function renderInspectionChapters(chapters) {
     });
     html += '</ul>';
     container.innerHTML = html;
+    indexInspectionConfigRows('chapter', chapters, ['chapter_number','chapter_title_zh','chapter_title_en','description']);
 
     // 预置模板也启用拖拽排序
     if (IS_LOGGED_IN) {
@@ -340,6 +395,7 @@ function renderInspectionChapters(chapters) {
                 try {
                     window._inspectionChapterSortable = new Sortable(listEl, {
                         animation: 150,
+                        disabled: Boolean(document.getElementById('inspection-chapter-search')?.value.trim()),
                         ghostClass: 'chapter-sortable-ghost',
                         onEnd: function() {
                             if (!IS_LOGGED_IN) return;  // 拖拽排序属写操作
@@ -554,6 +610,8 @@ async function loadInspectionQueries(chapterId) {
 function renderInspectionQueries(queries) {
     const container = document.getElementById('inspection-query-list');
     if (!container) return;
+    const searchValue = document.getElementById('inspection-query-search')?.value || '';
+    const searchControls = `<div class="inspection-search-bar"><input id="inspection-query-search" class="form-input" type="search" aria-label="搜索 SQL 查询" placeholder="搜索查询名称、说明或完整 SQL" value="${escapeHtml(searchValue)}" oninput="filterInspectionConfig('query')"><button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('query')">清空</button><span id="inspection-query-search-status" role="status"></span></div>`;
     // 预置模板也可以编辑
     const isPreset = currentInspectionIsPreset === true;
     if (!queries || queries.length === 0) {
@@ -561,16 +619,17 @@ function renderInspectionQueries(queries) {
         if (IS_LOGGED_IN) {
             html += '<button class="btn btn-xs btn-primary" style="margin-top:8px;" onclick="addInspectionQuery()">添加查询</button>';
         }
-        container.innerHTML = html;
+        container.innerHTML = searchControls + html;
+        filterInspectionConfig('query');
         return;
     }
-    let html = '<h4>SQL 查询列表</h4>';
+    let html = '<h4>SQL 查询列表</h4>' + searchControls;
     if (IS_LOGGED_IN) {
         html += '<button class="btn btn-xs btn-primary" onclick="addInspectionQuery()">添加查询</button>';
     }
     html += '<ul class="query-list">';
     queries.forEach(q => {
-        const sqlPreview = escapeHtmlForTemplate(q.query_sql.substring(0, 100)) + (q.query_sql.length > 100 ? '...' : '');
+        const sqlPreview = escapeHtmlForTemplate((q.query_sql || '').substring(0, 100)) + ((q.query_sql || '').length > 100 ? '...' : '');
         let actionsHtml = '';
         // 预置模板也可以编辑
         if (IS_LOGGED_IN) {
@@ -591,6 +650,7 @@ function renderInspectionQueries(queries) {
     });
     html += '</ul>';
     container.innerHTML = html;
+    indexInspectionConfigRows('query', queries, ['query_key','query_sql','query_description_zh','query_description_en','description']);
 }
 
 function addInspectionQuery() {

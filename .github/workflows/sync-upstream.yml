@@ -58,6 +58,8 @@ jobs:
           python scripts/check_license_headers.py
           python scripts/verify_dbpulse.py
           python scripts/verify_service_management.py
+          python scripts/verify_operations.py
+          python scripts/verify_scheduled_inspection.py
           python -m compileall -q modules plugins scripts i18n web_ui.py
           git diff --check
 

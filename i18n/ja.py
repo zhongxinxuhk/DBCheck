@@ -3363,3 +3363,11 @@ JA.update({
     "webui.system_info_opensource": "オープンソース情報",
     "webui.system_info_check_update": "更新を確認",
 })
+
+JA.update({
+    "menu.inventory": "データベース運用台帳",
+    "menu.batch-inspection": "複数データソースの一括点検",
+    "menu.clusters": "クラスタ管理",
+    "menu.services": "運用サービスと検収",
+    "menu.system-info": "システム情報"
+})

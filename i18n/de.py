@@ -3313,3 +3313,11 @@ DE.update({
     "webui.system_info_opensource": "Open Source",
     "webui.system_info_check_update": "Updates prüfen",
 })
+
+DE.update({
+    "menu.inventory": "Datenbankinventar",
+    "menu.batch-inspection": "Mehrquellen-Inspektion",
+    "menu.clusters": "Clusterverwaltung",
+    "menu.services": "Betriebsdienste und Abnahme",
+    "menu.system-info": "Systeminformationen"
+})

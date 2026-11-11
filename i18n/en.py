@@ -3421,7 +3421,7 @@ EN.update({
     "menu.dev": "In Dev",
     "wf_task.empty_title": "No Workflow Tasks Yet",
     "wf_task.empty_sub": "Once you bind a workflow to a data source as a task, you can run it manually or on a Cron schedule and view live status and history here.",
-    "wf_task.page_sub": "Bind an orchestrated workflow to a data source and save it as a reusable task. Trigger manually or on a Cron schedule, and monitor live status and run history.",
+    "wf_task.page_sub": "Create workflow tasks or inspections across multiple data sources. Run manually or on a Cron schedule, and view execution history and aggregate reports.",
     "wf_task.new_title": "New Workflow Task",
     "wf_task.edit_title": "Edit Workflow Task",
     "wf_task.btn_new": "New Task",
@@ -3730,3 +3730,13 @@ EN.update({
     "webui.system_info_opensource": "Open Source",
     "webui.system_info_check_update": "Check for Updates",
 })
+
+EN.update({
+    "menu.inventory": "Database Inventory",
+    "menu.batch-inspection": "Multi-source Inspection",
+    "menu.clusters": "Cluster Management",
+    "menu.services": "Operations Services and Acceptance",
+    "menu.system-info": "System Information"
+})
+
+EN.update({"menu.workflow_task":"Work Tasks","wf_task.new_title":"New Work Task","wf_task.edit_title":"Edit Work Task"})

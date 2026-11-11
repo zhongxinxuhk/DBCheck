@@ -37,19 +37,8 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 .sysinfo-row:last-child { border-bottom: none; }
 .sysinfo-row .k { color: var(--text-muted); flex: 0 0 auto; }
 .sysinfo-row .v { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
-.sysinfo-row a, .sysinfo-note a { color: var(--accent); text-decoration: none; }
-.sysinfo-row a:hover, .sysinfo-note a:hover { text-decoration: underline; }
-.sysinfo-note { font-size: 12px; color: var(--text-muted); line-height: 1.75; }
-.sysinfo-note strong { color: var(--text); font-weight: 600; }
-.sysinfo-announce-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.sysinfo-announce-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); font-size: 12.5px; color: var(--text); }
-.sysinfo-brand-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
-.sysinfo-brand-box { background: #fff; border-radius: 12px; padding: 12px; text-align: center; }
-.sysinfo-brand-box img { display: block; width: 220px; max-width: 100%; height: auto; }
-.sysinfo-brand-box--icon img { width: 96px; height: 96px; object-fit: contain; }
-.sysinfo-brand-box span { display: block; margin-top: 8px; font-size: 11px; color: #64748B; }
-.sysinfo-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-.sysinfo-btn-row .btn { padding: 7px 16px; font-size: 12.5px; text-decoration: none; }
+.sysinfo-row a { color: var(--accent); text-decoration: none; }
+.sysinfo-row a:hover { text-decoration: underline; }
 </style>
 <style>
 /* ─── Reset & Base ─── */
@@ -4133,6 +4122,7 @@ async function executeFixSql(taskId, sql) {
     }
     </style>
 
+<link rel="stylesheet" href="/static/css/workspace_usability.css?v=1">
 </head>
 <body data-page-node-id="Z8wXYH3Kq2Lmo04jsdprwJ">
 <div class="app-layout" data-page-node-id="jyhASvy4sIJW4QwFDK2QUg">
@@ -7863,17 +7853,21 @@ let __wfTaskPoll = null;
 let __wfTaskDatasources = [];
 let __wfTasksCache = [];
 let __wfCurrentFilter = '';
+let __wfTaskClusters = [];
 
 async function loadWorkflowTaskPage() {
   try {
-    const [tres, wres, dres] = await Promise.all([
+    const [tres, wres, dres, ores] = await Promise.all([
       fetch('/api/intelligence/workflow-tasks'),
       fetch('/api/intelligence/workflows'),
-      fetch('/api/pro/datasources')
+      fetch('/api/pro/datasources'),
+      fetch('/api/operations/options')
     ]);
     const tdata = await tres.json();
     const wdata = await wres.json();
     const ddata = await dres.json();
+    const odata = await ores.json();
+    __wfTaskClusters = odata.ok ? (odata.clusters || []) : [];
     __wfTaskDatasources = (ddata.ok && ddata.datasources) ? ddata.datasources : [];
     const wfMap = {};
     ((wdata.workflows) || []).forEach(w => { wfMap[w.id] = w.name; });
@@ -7934,8 +7928,10 @@ function wfRenderTaskGrid() {
     catch(e){ return t.last_run_at; }
   };
   grid.innerHTML = list.map(t => {
-    const wfName = wfMap[t.workflow_id] || ('#' + t.workflow_id);
-    const dsName = wfDsName(t.instance_id);
+    const batch = t.task_type === 'batch_inspection';
+    const wfName = batch ? '整体巡检' : (wfMap[t.workflow_id] || ('#' + t.workflow_id));
+    const spec = t.batch_spec || {};
+    const dsName = batch ? `${(spec.instance_ids || []).length}个数据源 / ${(spec.cluster_ids || []).length}个集群` : wfDsName(t.instance_id);
     const cronIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     return `<div class="wf-task-card ${t.status}" onclick="wfOpenRunDrawer(${t.id})">
       <div class="wf-tc-strip ${t.status}"></div>
@@ -7951,10 +7947,12 @@ function wfRenderTaskGrid() {
           <div class="wf-tc-wf"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>${wfEscape(wfName)}</div>
         </div>
         <div class="wf-tc-meta-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>${wfEscape(dsName)}</div>
-        ${t.cron ? `<div class="wf-tc-meta-row">${cronIcon}${wfEscape(t.cron)}</div>` : ''}
+        ${t.cron ? `<div class="wf-tc-meta-row">${cronIcon}${wfEscape(t.cron)} · ${t.schedule_enabled ? '定时已启用' : '定时已暂停'}</div>` : ''}
+        ${t.next_run_at ? `<div class="wf-tc-meta-row">下次运行 ${wfEscape(new Date(t.next_run_at).toLocaleString('zh-CN'))}</div>` : ''}
       </div>
+      <div class="wf-direct-actions" onclick="event.stopPropagation()"><button class="btn btn-primary" onclick="${t.status === 'running' ? 'wfTaskStop' : 'wfTaskStart'}(${t.id})">${t.status === 'running' ? '停止本次并暂停定时' : '立即运行'}</button><button class="btn btn-ghost" onclick="wfTaskEdit(${t.id})">编辑</button><button class="btn btn-ghost" onclick="wfOpenRunDrawer(${t.id})">运行记录</button></div>
       <div class="wf-tc-footer">
-        <div class="wf-tc-status ${t.status}"><span class="wf-tc-dot ${t.status}"></span>${statusText[t.status] || t.status}</div>
+        <div class="wf-tc-status ${t.status}"><span class="wf-tc-dot ${t.status}"></span>${t.status === 'stopped' && t.schedule_enabled ? '等待定时运行' : (statusText[t.status] || t.status)}</div>
         <div class="wf-tc-time">${t.status === 'running' ? '正在运行' : (lastAt(t) || '未运行')}</div>
       </div>
     </div>`;
@@ -7980,6 +7978,7 @@ function wfTaskMenu(taskId, el) {
     : `<button onclick="wfTaskStart(${taskId})">${_wfMenuIcons.start}启动</button>`
       + `<button onclick="wfTaskEdit(${taskId})">${_wfMenuIcons.edit}编辑</button>`
       + `<hr><button class="danger" onclick="wfTaskDelete(${taskId})">${_wfMenuIcons.del}删除</button>`;
+  if (!running && t.schedule_enabled) menu.innerHTML = `<button onclick="wfTaskStop(${taskId})">${_wfMenuIcons.stop}暂停定时</button>` + menu.innerHTML;
   const rect = el.getBoundingClientRect();
   menu.style.display = 'block';
   menu.style.top = (rect.bottom + 6) + 'px';
@@ -8004,7 +8003,7 @@ async function wfTaskStop(taskId) {
   try {
     const r = await fetch('/api/intelligence/workflow-tasks/' + taskId + '/stop', {method: 'POST'});
     const d = await r.json();
-    if (d.ok) toastSuccess('任务已停止'); else toastError(d.msg || '停止失败');
+    if (d.ok) toastSuccess('已停止后续调度，当前任务完成后结束'); else toastError(d.msg || '停止失败');
   } catch (e) { toastError(e.message); }
 }
 async function wfTaskDelete(taskId) {
@@ -8026,15 +8025,18 @@ function wfTaskEdit(taskId) {
 function wfSetCron(expr) {
   const el = document.getElementById('wf-task-cron');
   if (el) el.value = expr;
+  document.getElementById('wf-task-schedule-enabled').checked = true;
+  window.DBPulseUX?.prepareTaskForm();
 }
 
 function wfOpenTaskModal(task) {
   const modal = document.getElementById('wf-task-modal');
-  document.getElementById('wf-task-modal-title').textContent = task ? (i18n('wf_task.edit_title') || '编辑工作流任务') : (i18n('wf_task.new_title') || '新建工作流任务');
+  document.getElementById('wf-task-modal-title').textContent = task?.id ? (i18n('wf_task.edit_title') || '编辑工作流任务') : (i18n('wf_task.new_title') || '新建工作流任务');
   document.getElementById('wf-task-name').value = task ? task.name : '';
   document.getElementById('wf-task-goal').value = task ? (task.goal || '') : '';
   document.getElementById('wf-task-cron').value = task ? (task.cron || '') : '';
-  modal.dataset.taskId = task ? task.id : '';
+  modal.dataset.taskId = task?.id || '';
+  modal.dataset.batchSpec = JSON.stringify(task?.batch_spec || {});
   const wfMap = window.__wfTaskWfMap || {};
   const wfList = Object.keys(wfMap).map(id => ({id: id, name: wfMap[id]}));
   const wfSel = document.getElementById('wf-task-workflow');
@@ -8043,7 +8045,23 @@ function wfOpenTaskModal(task) {
   const dsSel = document.getElementById('wf-task-instance');
   dsSel.innerHTML = '<option value="">请选择数据源</option>' + __wfTaskDatasources.map(d => `<option value="${wfEscape(d.id)}">${wfEscape(d.name || (d.host + ':' + d.port))}</option>`).join('');
   dsSel.value = task ? task.instance_id : '';
+  const spec = task?.batch_spec || {};
+  document.getElementById('wf-task-type').value = task?.task_type || 'workflow';
+  document.getElementById('wf-task-schedule-enabled').checked = task ? !!task.schedule_enabled : false;
+  document.getElementById('wf-task-concurrency').value = spec.concurrency || 1;
+  const selectedSources = new Set(spec.instance_ids || []);
+  document.getElementById('wf-task-batch-sources').innerHTML = __wfTaskDatasources.map(source => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${wfEscape(source.id)}" ${selectedSources.has(source.id)?'checked':''}>${wfEscape(source.name || source.host)}</label>`).join('');
+  const selectedClusters = new Set(spec.cluster_ids || []);
+  document.getElementById('wf-task-batch-clusters').innerHTML = __wfTaskClusters.map(cluster=>`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${wfEscape(cluster.id)}" ${selectedClusters.has(cluster.id)?'checked':''}>${wfEscape(cluster.name)}</label>`).join('') || '<span>暂无可选择的集群</span>';
+  wfTaskTypeChanged();
   modal.style.display = 'flex';
+  window.DBPulseUX?.prepareTaskForm();
+}
+function wfTaskTypeChanged() {
+  const batch = document.getElementById('wf-task-type').value === 'batch_inspection';
+  document.getElementById('wf-task-workflow-fields').style.display = batch ? 'none' : '';
+  document.getElementById('wf-task-goal-field').style.display = batch ? 'none' : '';
+  document.getElementById('wf-task-batch-fields').style.display = batch ? '' : 'none';
 }
 function wfCloseTaskModal() { document.getElementById('wf-task-modal').style.display = 'none'; }
 async function wfSaveTask() {
@@ -8055,9 +8073,22 @@ async function wfSaveTask() {
   const goal = document.getElementById('wf-task-goal').value;
   const cron = document.getElementById('wf-task-cron').value.trim();
   if (!name) { toastError('请填写任务名称'); return; }
-  if (!workflow_id) { toastError('请选择工作流'); return; }
-  if (!instance_id) { toastError('请选择数据源'); return; }
-  const body = JSON.stringify({name, workflow_id, instance_id, goal, cron});
+  const task_type = document.getElementById('wf-task-type').value;
+  const schedule_enabled = document.getElementById('wf-task-schedule-enabled').checked;
+  const batch_spec = {
+    ...JSON.parse(modal.dataset.batchSpec || '{}'),
+    instance_ids:[...document.querySelectorAll('#wf-task-batch-sources input:checked')].map(input=>input.value),
+    cluster_ids:[...document.querySelectorAll('#wf-task-batch-clusters input:checked')].map(input=>input.value),
+    concurrency:Number(document.getElementById('wf-task-concurrency').value)
+  };
+  if (task_type === 'workflow' && !workflow_id) {toastError('请选择工作流');return;}
+  if (task_type === 'workflow' && !instance_id) {toastError('请选择数据源');return;}
+  if (task_type === 'batch_inspection' && !batch_spec.instance_ids.length && !batch_spec.cluster_ids.length) {toastError('请选择数据源或集群');return;}
+  if (schedule_enabled && !cron) {toastError('启用定时运行须填写Cron');return;}
+  const saveButton = document.getElementById('wf-task-save');
+  if (saveButton.disabled) return;
+  saveButton.disabled = true; saveButton.textContent = '保存中…';
+  const body = JSON.stringify({name, workflow_id, instance_id, goal, cron,task_type,schedule_enabled,batch_spec:task_type==='batch_inspection'?batch_spec:{}});
   try {
     const url = taskId ? ('/api/intelligence/workflow-tasks/' + taskId) : '/api/intelligence/workflow-tasks';
     const r = await fetch(url, {method: taskId ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body});
@@ -8065,6 +8096,7 @@ async function wfSaveTask() {
     if (d.ok) { toastSuccess('已保存'); wfCloseTaskModal(); loadWorkflowTaskPage(); }
     else toastError(d.msg || '保存失败');
   } catch (e) { toastError(e.message); }
+  finally {saveButton.disabled = false; saveButton.textContent = '保存';}
 }
 
 async function wfOpenRunDrawer(taskId) {
@@ -8075,7 +8107,7 @@ async function wfOpenRunDrawer(taskId) {
   const titleEl = document.getElementById('wf-run-drawer-title');
   const subEl = document.getElementById('wf-run-drawer-sub');
   if (titleEl) titleEl.innerHTML = `<span class="wf-dot" style="background:var(--accent)"></span>${t ? wfEscape(t.name) : '运行历史'}`;
-  if (subEl) subEl.textContent = t ? `${wfEscape(window.__wfTaskWfMap[t.workflow_id] || '')} · ${wfEscape(wfDsName(t.instance_id))}` : '查看每次运行结果、产出与耗时';
+  if (subEl) subEl.textContent = t?.task_type === 'batch_inspection' ? '整体巡检 · 每次运行生成一份汇总报告' : t ? `${window.__wfTaskWfMap[t.workflow_id] || ''} · ${wfDsName(t.instance_id)}` : '查看每次运行结果、产出与耗时';
   body.innerHTML = '<div class="wf-run-empty">加载中…</div>';
   const aiPanel = document.getElementById('ai-chat-sidebar');
   const aiOpen = aiPanel && (aiPanel.classList.contains('open') || !aiPanel.classList.contains('collapsed'));
@@ -8090,7 +8122,7 @@ async function wfOpenRunDrawer(taskId) {
     const statusText = {running: '运行中', done: '完成', error: '失败', cancelled: '已取消'};
     const triggerText = {manual: '手动', cron: '定时', api: 'API'};
     body.innerHTML = '<div class="wf-run-timeline">' + runs.map(rn => {
-      const outs = (rn.outputs || []).map(o => {
+      const outs = (rn.outputs || []).filter(o => o.type !== 'batch_inspection').map(o => {
         let line = `<div class="wf-run-out">${wfEscape(o.label || o.id || '')}（${wfEscape(o.action || '')}）：${wfEscape(o.summary || '')}`;
         if (o.report_path) {
           const _rb = encodeURIComponent(String(o.report_path).split(/[\\/]/).pop());
@@ -8110,6 +8142,7 @@ async function wfOpenRunDrawer(taskId) {
           <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>发现 ${rn.findings_count || 0}</span>
           <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>方案 ${rn.plan_count || 0}</span>
         </div>
+        ${(rn.outputs || []).filter(output=>output.type==='batch_inspection' && /^[0-9a-f-]{36}$/.test(output.batch_run_id || '')).map(output=>`<div class="wf-run-outs"><a href="/api/operations/batches/${encodeURIComponent(output.batch_run_id)}/report" target="_blank" rel="noopener">下载本次整体巡检报告</a></div>`).join('')}
         ${rn.error ? `<div class="wf-ri-error">${wfEscape(rn.error)}</div>` : ''}
         ${outs || (rn.summary ? `<div class="wf-run-outs"><div class="wf-run-out">${wfEscape(rn.summary)}</div></div>` : '')}
       </div>`;
@@ -8132,10 +8165,27 @@ function wfCloseRunDrawer() {
       <img src="/dbcheck_logo_icon.png" alt="" aria-hidden="true" class="sidebar-brand-logo-collapsed" data-page-node-id="sysBrandCollapsedX1">
     </div>
 
+    <div class="navigation-search"><input id="navigation-search" type="search" placeholder="查找功能 · ⌘/Ctrl K" aria-label="查找功能"><button id="navigation-clear" type="button" aria-label="清除功能搜索" hidden>清除</button></div>
+    <p id="navigation-empty" role="status" hidden>未找到可用功能</p>
     <div class="sidebar-nav" data-page-node-id="nJfdiOGgREz2KCCFAOfG5M">
     <!-- ── 首页 ── -->
     <div class="nav-item active" onclick="showPage('home')" id="nav-home" data-page-node-id="nm2tRs0IXyHb0pb4iozP8t">
       <span class="icon" data-page-node-id="D9WFjCkwVrMbXr3POrU0VK"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="Tg2J4xerNNb6UxixaML2sv"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" data-page-node-id="sfenDWBJJHd7LVaSV90fbD"/></svg></span> <span data-i18n="webui.nav_home" data-page-node-id="hbN3Rx7qpLtd3syyDMMlG2">首页</span>
+    </div>
+
+    <!-- ── 运维中台 ── -->
+    <div class="nav-section">运维中台</div>
+    <div class="nav-item" onclick="showPage('inventory')" id="nav-inventory">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>数据库运维台账</span>
+    </div>
+    <div class="nav-item" onclick="showPage('batch-inspection')" id="nav-batch-inspection">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><path d="m17 16 4 3-4 3"/></svg></span><span>多数据源整体巡检</span>
+    </div>
+    <div class="nav-item" onclick="showPage('clusters')" id="nav-clusters">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="m10 8-4 8m8-8 4 8M8 19h8"/></svg></span><span>集群管理</span>
+    </div>
+    <div class="nav-item" onclick="showPage('services')" id="nav-services">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 5V3h8v2M7 10h10M7 15h10"/></svg></span><span>运维服务与需求验收</span>
     </div>
 
     <!-- ── 智能巡检 ── -->
@@ -8220,7 +8270,7 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('monitor-conn')" id="nav-monitor-conn" data-page-node-id="WdCbp1T6zypdwAbqufdcxA">
       <span class="icon" data-page-node-id="OWE9CHM7Ha7i8e9MGiWHSS"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="IpFrMmsMEARB6OOH7FBaBJ"><path d="M12 22v-5" data-page-node-id="N9xTPRHHlDu3x3MIFuFhf1"/><path d="M9 8V2" data-page-node-id="JPEWgLzTML3VSnB8Blirnf"/><path d="M15 8V2" data-page-node-id="GT9A8a9sN4QwgMP5CNZFfD"/><path d="M18 8v5a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V8Z" data-page-node-id="3VASqfWubRzXV8vg2F5Eny"/></svg></span> <span data-i18n="webui.nav_monitor_conn" data-page-node-id="qlZIOMxoEt51YyEOYc3oZd">活跃连接监控</span>
     </div>
-    <div class="nav-item" onclick="window.open('/monitor-screen', '_blank')" id="nav-monitor-screen" data-page-node-id="scrNavMenu1">
+    <div class="nav-item" onclick="showPage('monitor-screen')" id="nav-monitor-screen" data-page-node-id="scrNavMenu1">
       <span class="icon" data-page-node-id="scrNavMenu2"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="scrNavMenu3"><rect x="2" y="4" width="20" height="13" rx="2" data-page-node-id="scrNavMenu4"/><path d="M8 21h8M12 17v4" data-page-node-id="scrNavMenu5"/></svg></span> <span data-i18n="webui.nav_monitor_screen">监控大屏</span>
     </div>
     <div class="nav-item" onclick="showPage('fleet')" id="nav-fleet" data-page-node-id="fLeEt1nav">
@@ -8285,11 +8335,10 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('shares')" id="nav-shares" data-page-node-id="Px3726GOxyVCfjBfWAfsvk">
       <span class="icon" data-page-node-id="MclWyqKqLGuxXU1N6295yu"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="xIwT1ykqxwgkPYxPkDNfEO"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" data-page-node-id="yn71KpZYGY2EC4Acc8BZPF"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" data-page-node-id="LqnylOxn1E8flMUZypbDSz"/></svg></span> <span data-i18n="webui.nav_shares" data-page-node-id="7OrFgQlS6iEjA2rol5hwJX">分享管理</span>
     </div>
-    <a class="nav-item" href="/services" id="nav-services">运维服务与需求验收</a>
     <div class="nav-item" onclick="showPage('license')" id="nav-license" style="display:none;" data-page-node-id="O0GnruyLVpTBbtmKVZGO5l">
       <span class="icon" data-page-node-id="LT1VAIiQcgMtIEkePOTPU3"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="QnafWCKfjK66Qj3iSzygLe"><circle cx="12" cy="8" r="7" data-page-node-id="JEm0Q9k3zKbihz3PkPvd9J"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" data-page-node-id="bWmd6C2dOgnLFW3ASb9Yps"/></svg></span> <span data-i18n="webui.nav_license" data-page-node-id="aS1CJku9U6WosKyQVcni1P">许可证</span>
     </div>
-    <!-- ── 系统信息：版本 / 更新提醒 / 系统 Logo / 开源署名 ── -->
+    <!-- ── 系统信息：版本与运行信息 ── -->
     <div class="nav-item" onclick="showPage('system-info')" id="nav-system-info" data-page-node-id="sysInfoNavX1">
       <span class="icon" data-page-node-id="sysInfoNavIconX1"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="sysInfoNavSvgX1"><circle cx="12" cy="12" r="9" data-page-node-id="sysInfoNavCircleX1"/><line x1="12" y1="11" x2="12" y2="16" data-page-node-id="sysInfoNavLineX1"/><path d="M12 8h.01" data-page-node-id="sysInfoNavDotX1"/></svg></span> <span data-i18n="webui.nav_system_info" data-page-node-id="sysInfoNavTxtX1">系统信息</span>
     </div>
@@ -8365,7 +8414,7 @@ function wfCloseRunDrawer() {
             <div class="hero-actions" data-page-node-id="IRMtJnJvJKe0luBUI3YITG">
               <button class="hero-btn hero-btn--primary" onclick="showPage('wizard')" data-i18n="webui.home_quick_inspect" data-page-node-id="DJXlpyYVGBWwqfV44AD4tb">立即巡检</button>
               <button class="hero-btn hero-btn--ghost" onclick="showPage('intelligence')" data-i18n="webui.home_quick_diagnose" data-page-node-id="tdFAFMfubG76bEYAPALy0J">智能诊断</button>
-              <button class="hero-btn hero-btn--screen" onclick="window.open('/monitor-screen', '_blank')" title="监控大屏（新窗口打开）">
+              <button class="hero-btn hero-btn--screen" onclick="showPage('monitor-screen')" title="监控大屏">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                 <span data-i18n="webui.home_quick_screen">监控大屏</span>
                 <span class="screen-live-dot" title="实时"></span>
@@ -8707,6 +8756,11 @@ function wfCloseRunDrawer() {
       <!-- ══ Page: Wizard ══ -->
       <div class="page" id="page-wizard" data-page-node-id="IahAxH5Drwl9c0IdknCj9f">
 
+        <section id="quick-inspection" class="card">
+          <div class="card-title">使用已有数据源巡检</div>
+          <div class="workspace-toolbar"><select id="quick-inspection-source" class="input" aria-label="已有巡检数据源"><option value="">加载中…</option></select><button id="quick-inspection-open" class="btn btn-primary">使用此数据源</button><button id="quick-inspection-test" class="btn btn-ghost">测试连接与版本</button><button id="quick-inspection-refresh" class="btn btn-ghost">刷新</button><button class="btn btn-ghost" onclick="showPage('batch-inspection')">巡检多个数据源</button></div>
+          <p id="quick-inspection-hint" role="status" class="hint"></p>
+        </section>
         <!-- 步骤指示器 -->
         <div class="steps" id="wizard-steps" data-page-node-id="uSFD7nARqYfInalR2ELu4R">
           <div class="step active" id="s1" data-page-node-id="QUD09VLQyQAOKC3rB8sn32"><div class="dot" data-page-node-id="Rw8KTtI8GaTiCPBEJUvE9v">1</div><span data-i18n="webui.wizard_step1" data-page-node-id="PuZrBlxDHSFOAih3IdnBnJ">数据库类型</span></div>
@@ -9709,7 +9763,7 @@ function wfCloseRunDrawer() {
         </div>
       </div>
 
-      <!-- ══ Page: 系统信息（版本 / 更新提醒 / 系统 Logo / 开源署名）══ -->
+      <!-- ══ Page: 系统信息（版本与运行信息）══ -->
       <div class="page" id="page-system-info" data-page-node-id="sysInfoPageX1">
         <div class="sysinfo-wrap" data-page-node-id="sysInfoWrapX1">
 
@@ -9724,7 +9778,6 @@ function wfCloseRunDrawer() {
               <div class="sysinfo-pills" data-page-node-id="sysInfoHeroPillsX1">
                 <span class="sysinfo-pill" data-page-node-id="sysInfoPillVerX1">{{ version }}</span>
                 <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillEditionX1">{% if edition == 'professional' %}专业版 / Professional{% else %}社区版 / Community{% endif %}</span>
-                <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillLicenseX1">Apache-2.0</span>
               </div>
             </div>
           </div>
@@ -9741,96 +9794,20 @@ function wfCloseRunDrawer() {
               <div class="sysinfo-row"><span class="k">发行版本 / Edition</span><span class="v">{% if edition == 'professional' %}专业版 · Professional{% else %}社区版 · Community{% endif %}</span></div>
               <div class="sysinfo-row"><span class="k">界面语言 / UI Language</span><span class="v" id="sysinfo-lang">--</span></div>
               <div class="sysinfo-row"><span class="k">访问地址 / Host</span><span class="v" id="sysinfo-host">--</span></div>
-              <div class="sysinfo-row"><span class="k">开源协议 / License</span><span class="v">Apache License 2.0</span></div>
             </div>
 
-            <!-- 更新提醒 -->
-            <div class="card" data-page-node-id="sysInfoUpdCardX1">
-              <div class="card-title" data-page-node-id="sysInfoUpdTitleX1"><span data-page-node-id="sysInfoUpdIconX1">🔔</span> <span data-i18n="webui.system_info_update" data-page-node-id="sysInfoUpdTitleTxtX1">更新提醒</span> / Updates</div>
-              <p class="sysinfo-note" data-page-node-id="sysInfoUpdNoteX1">公告由后端定时从预置地址 <strong>https://dbcheck.top/announcement.json</strong> 拉取并缓存；本页直接请求本地 <strong>/api/announcement</strong>，不依赖 GitHub 直连，断网时展示最近一次缓存。版本发布信息以官方公告为准。</p>
-              <div class="sysinfo-row"><span class="k">当前版本 / Running</span><span class="v">{{ version }}</span></div>
-              <div class="sysinfo-row"><span class="k">预置公告源 / Source</span><span class="v"><button class="btn btn-ghost" id="system-update-link" onclick="refreshSystemInfo()" style="padding:3px 10px;font-size:12px;text-decoration:none;" title="直接请求预置 URL（经后端缓存）" data-page-node-id="sysInfoUpdSourceX1">dbcheck.top/announcement.json ↻</button></span></div>
-              <div class="sysinfo-row"><span class="k">最近检查 / Last Check</span><span class="v" id="sysinfo-last-check">--</span></div>
-              <div class="sysinfo-announce-list" id="sysinfo-announce-list" data-page-node-id="sysInfoUpdListX1">
-                <div class="sysinfo-note">正在读取官方公告…</div>
-              </div>
-              <div class="sysinfo-btn-row" data-page-node-id="sysInfoUpdBtnsX1">
-                <button class="btn btn-primary" onclick="refreshSystemInfo()" data-page-node-id="sysInfoUpdRefreshX1">🔄 直接请求预置 URL</button>
-              </div>
-            </div>
-
-            <!-- 系统 Logo -->
-            <div class="card" data-page-node-id="sysInfoLogoCardX1">
-              <div class="card-title" data-page-node-id="sysInfoLogoTitleX1"><span data-page-node-id="sysInfoLogoIconX1">🎨</span> <span data-i18n="webui.system_info_brand" data-page-node-id="sysInfoLogoTitleTxtX1">系统标志</span> / Brand Assets</div>
-              <div class="sysinfo-brand-row" data-page-node-id="sysInfoBrandRowX1">
-                <div class="sysinfo-brand-box" data-page-node-id="sysInfoBrandMainX1">
-                  <img src="/dbpulse_logo.png" alt="{{ product_name }} Logo">
-                  <span>系统主标志 · /dbpulse_logo.png</span>
-                </div>
-                <div class="sysinfo-brand-box sysinfo-brand-box--icon" data-page-node-id="sysInfoBrandIconX1">
-                  <img src="/dbcheck_logo_icon.png" alt="{{ product_name }} Icon">
-                  <span>应用图标 · /dbcheck_logo_icon.png</span>
-                </div>
-                <div class="sysinfo-brand-box sysinfo-brand-box--icon" data-page-node-id="sysInfoBrandFavX1">
-                  <img src="/favicon.png" alt="{{ product_name }} Favicon">
-                  <span>标签图标 · /favicon.png</span>
-                </div>
-              </div>
-              <p class="sysinfo-note" style="margin-top:12px;" data-page-node-id="sysInfoBrandNoteX1">主标志用于关于页、巡检报告与系统信息页；应用图标用于侧栏与登录页；标签图标用于浏览器标签页。</p>
-            </div>
-
-            <!-- 开源与署名 -->
-            <div class="card" data-page-node-id="sysInfoOssCardX1">
-              <div class="card-title" data-page-node-id="sysInfoOssTitleX1"><span data-page-node-id="sysInfoOssIconX1">📜</span> <span data-i18n="webui.system_info_opensource" data-page-node-id="sysInfoOssTitleTxtX1">开源信息</span> / Open Source</div>
-              <div class="sysinfo-row"><span class="k">上游开源项目 / Upstream</span><span class="v">RaccoonX / DBCheck</span></div>
-              <div class="sysinfo-row"><span class="k">作者 / Author</span><span class="v">fiyo (Jack Ge)</span></div>
-              <div class="sysinfo-row"><span class="k">联系邮箱 / Contact</span><span class="v"><a href="mailto:sdfiyon@gmail.com">sdfiyon@gmail.com</a></span></div>
-              <div class="sysinfo-row"><span class="k">项目仓库 / Repository</span><span class="v"><a href="{{ project_url }}" target="_blank" rel="noopener noreferrer">github.com/fiyo/DBCheck →</a></span></div>
-              <div class="sysinfo-row"><span class="k">官网 / Website</span><span class="v"><a href="https://dbcheck.top" target="_blank" rel="noopener noreferrer">dbcheck.top →</a></span></div>
-              <div class="sysinfo-row"><span class="k">开源协议 / License</span><span class="v">Apache License 2.0</span></div>
-              <div class="sysinfo-row"><span class="k">版权 / Copyright</span><span class="v">© 2025-2026 fiyo (Jack Ge)</span></div>
-              <div class="sysinfo-row"><span class="k">品牌署名 / Credit</span><span class="v">{{ product_name }} · RaccoonX / DBCheck · fiyo</span></div>
-              <p class="sysinfo-note" style="margin-top:12px;" data-page-node-id="sysInfoOssNoteX1">以上署名、品牌与许可证信息依据 Apache License 2.0 及项目 NOTICE 保留，请勿移除、改写或隐藏。<a href="#" onclick="showAboutModal();return false;">查看关于本系统 →</a></p>
-            </div>
 
           </div>
         </div>
       </div>
 
       <script>
-      // 系统信息页：读取运行态信息与官方公告（只读取公开接口，不改服务端状态）
-      function _sysInfoEsc(s) {
-        return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-          .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      function loadSystemInfo() {
+        const language = document.getElementById('sysinfo-lang');
+        if (language) language.textContent = document.documentElement.lang || '--';
+        const host = document.getElementById('sysinfo-host');
+        if (host) host.textContent = location.host;
       }
-      async function loadSystemInfo() {
-        var langEl = document.getElementById('sysinfo-lang');
-        if (langEl) langEl.textContent = document.documentElement.lang || '--';
-        var hostEl = document.getElementById('sysinfo-host');
-        if (hostEl) hostEl.textContent = location.host;
-        var listEl = document.getElementById('sysinfo-announce-list');
-        if (!listEl) return;
-        try {
-          var r = await fetch('/api/announcement', { cache: 'no-store' });
-          var d = await r.json();
-          var items = (d && d.enabled && d.items) || [];
-          if (!items.length) {
-            listEl.innerHTML = '<div class="sysinfo-note">暂无官方公告 / No announcements.</div>';
-          } else {
-            listEl.innerHTML = items.map(function (it) {
-              var link = it.link ? ' <a href="' + _sysInfoEsc(it.link) + '" target="_blank" rel="noopener noreferrer">' +
-                _sysInfoEsc(it.link_text || '了解详情') + ' →</a>' : '';
-              return '<div class="sysinfo-announce-item">' + (it.icon ? _sysInfoEsc(it.icon) + ' ' : '') +
-                _sysInfoEsc(it.text) + link + '</div>';
-            }).join('');
-          }
-        } catch (e) {
-          listEl.innerHTML = '<div class="sysinfo-note">预置公告源暂不可达，请稍后点击「直接请求预置 URL」重试（不依赖 GitHub）。</div>';
-        }
-        var tEl = document.getElementById('sysinfo-last-check');
-        if (tEl) tEl.textContent = new Date().toLocaleString();
-      }
-      function refreshSystemInfo() { loadSystemInfo(); }
       </script>
 
       <!-- ══ Page: Account ══ -->
@@ -10758,6 +10735,25 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
         </div>
       </div><!-- /page-doc-kb -->
 
+      <div class="page" id="page-clusters" style="display:none">
+        {% with embedded=true %}{% include 'clusters.html' %}{% endwith %}
+      </div>
+      <div class="page" id="page-services" style="display:none">
+        {% with embedded=true %}{% include 'service_management.html' %}{% endwith %}
+      </div>
+
+      <div class="page" id="page-monitor-screen" style="display:none">
+        <div class="workspace-toolbar"><button class="btn btn-ghost" onclick="window.open('/monitor-screen', '_blank', 'noopener')">全屏窗口打开</button></div>
+        <iframe id="monitor-screen-frame" title="监控大屏" allowfullscreen style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0"></iframe>
+      </div>
+      <div class="page" id="page-batch-inspection" style="display:none">
+        <iframe id="batch-operations-frame" title="多数据源整体巡检" style="width:100%;height:calc(100vh - 115px);min-height:700px;border:0;border-radius:10px"></iframe>
+      </div>
+
+      <div class="page" id="page-inventory" style="display:none">
+        <iframe id="operations-frame" title="数据库运维台账" style="width:100%;height:calc(100vh - 115px);min-height:700px;border:0;border-radius:10px"></iframe>
+      </div>
+
       <!-- ══ Page: Schema Dict (系统字典表维护) ══ -->
       <div class="page" id="page-schema-dict" style="display:none;" data-page-node-id="QBsD7VZj5K3oYbu2NLcGI7">
         <!-- 概览卡 -->
@@ -11288,6 +11284,11 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <button class="btn btn-sm" onclick="importInspectionTemplate()" data-i18n="webui.inspection_import" data-page-node-id="mUHWBc85LoCAVs7i9BVEzS">导入</button>
               {% endif %}
             </div>
+            <div class="inspection-search-bar">
+              <input id="inspection-template-search" class="form-input" type="search" aria-label="搜索巡检模板" placeholder="搜索模板名称、数据库类型、版本或说明" oninput="filterInspectionConfig('template')">
+              <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('template')">清空</button>
+              <span id="inspection-template-search-status" role="status"></span>
+            </div>
             <div id="inspection-template-list" class="inspection-template-list" data-page-node-id="TYLXMlkGhxQcNNAzPzrl15">
               <!-- 动态加载模板列表 -->
             </div>
@@ -11344,6 +11345,11 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <div class="inspection-chapter-list-panel" data-page-node-id="gtbjX3TMP4RzQI8oj9p8qx">
                 <div class="panel-header" data-page-node-id="S5ISLjUbFevNLpE9SgeIl1">
                   <h3 data-i18n="webui.inspection_chapters" data-page-node-id="CBH2nUjN0OyQ9ReZy4NvU2">章节列表</h3>
+                </div>
+                <div class="inspection-search-bar">
+                  <input id="inspection-chapter-search" class="form-input" type="search" aria-label="搜索巡检章节" placeholder="搜索章节编号或名称" oninput="filterInspectionConfig('chapter')">
+                  <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('chapter')">清空</button>
+                  <span id="inspection-chapter-search-status" role="status"></span>
                 </div>
                 <div id="inspection-chapter-list" class="chapter-list" data-page-node-id="SjuLVb12mJcUSwpBdnmBYe">
                   <!-- 动态加载章节列表 -->
@@ -12326,7 +12332,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                 <span class="wf-title-icon" data-page-node-id="HWB27d3D2CEFr7gmd3rJL1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="LFU6cpzl330FZj6TQ2Q197"><rect x="3" y="3" width="7" height="7" rx="1.5" data-page-node-id="gNJFTmTcb8xSajYNZc8ueV"/><rect x="14" y="14" width="7" height="7" rx="1.5" data-page-node-id="JW9wvm7g5CFXm78dCMWN4P"/><path d="M10 6.5h4a3 3 0 0 1 3 3v4.5" data-page-node-id="VwKylzinUBNqD9eROKyTkn"/></svg></span>
                 <span data-i18n="menu.workflow_task" data-page-node-id="z7fBrhTH4gbLS1VdE11LnL">工作流任务</span>
               </h2>
-              <div class="wf-task-subtitle" data-i18n="wf_task.page_sub" data-page-node-id="tKWOWi8gMvSUCHlx1WnSes">将已编排的工作流绑定数据源并保存为可复用任务，支持手动触发与 Cron 周期调度，实时查看运行状态与历史结果。</div>
+              <div class="wf-task-subtitle" data-i18n="wf_task.page_sub" data-page-node-id="tKWOWi8gMvSUCHlx1WnSes">创建工作流任务或多数据源整体巡检任务，支持手动运行与 Cron 定时运行，查看执行状态、历史结果与整体报告。</div>
             </div>
             <div class="wf-task-actions" data-page-node-id="xK03xBjg8zicafYJ2ogDZr">
               <button class="btn btn-primary" onclick="wfOpenTaskModal(null)" data-page-node-id="MC4zRmfSB8J5TaKB1slxwv">
@@ -12374,15 +12380,19 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <div class="wf-ico" data-page-node-id="qCVhGUCo72bsWAAG7mfR51"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" data-page-node-id="1LdfXGOTSRp7R8vnDF4JUC"><rect x="3" y="3" width="7" height="7" rx="1.5" data-page-node-id="XqCK9RTsSPwuFLBhsmomTh"/><rect x="14" y="14" width="7" height="7" rx="1.5" data-page-node-id="miHBCdGpnRCX1VWkcrSWEY"/><path d="M10 6.5h4a3 3 0 0 1 3 3v4.5" data-page-node-id="CW74GCg7wTFeDiI0UXzuke"/></svg></div>
               <div data-page-node-id="1ahDeIFzFHyGEn2cLTVu01">
                 <div class="wf-modal-title" id="wf-task-modal-title" data-page-node-id="rvOBQ65UxB5m491vK1yDJW">新建工作流任务</div>
-                <div class="wf-modal-sub" data-page-node-id="cYr8CIjGpvNZ4zoDeMlYh6">选择工作流与数据源，保存后即可手动或按计划运行。</div>
+                <div class="wf-modal-sub" data-page-node-id="cYr8CIjGpvNZ4zoDeMlYh6">选择任务类型和巡检范围，保存后可手动运行或启用定时。</div>
               </div>
             </div>
             <div class="wf-form" data-page-node-id="YlUp552KPuRWFMrsViBqZF">
+              <div class="wf-form-group full">
+                <label class="wf-form-label" for="wf-task-type">任务类型</label>
+                <select id="wf-task-type" class="wf-form-input" onchange="wfTaskTypeChanged()"><option value="workflow">工作流任务</option><option value="batch_inspection">整体巡检任务</option></select>
+              </div>
               <div class="wf-form-group full" data-page-node-id="KilAzRQiOyStSdysILS48i">
                 <label class="wf-form-label" data-page-node-id="wFjBP4WxfsqViQSiMAPyVO">任务名称</label>
                 <input id="wf-task-name" class="wf-form-input" placeholder="例如：每日生产库深度巡检" data-page-node-id="rLmkyvayJX48zCOnfnd3jt">
               </div>
-              <div class="wf-form-row" data-page-node-id="CBCwdZbaQsn0QQFTXb8TgN">
+              <div class="wf-form-row" id="wf-task-workflow-fields" data-page-node-id="CBCwdZbaQsn0QQFTXb8TgN">
                 <div class="wf-form-group" data-page-node-id="mHCfekarIwFuteO4xolK4V">
                   <label class="wf-form-label" data-page-node-id="ZTXUSq3SFwCAhTiFyhiesA">选择工作流</label>
                   <select id="wf-task-workflow" class="wf-form-input" data-page-node-id="cq2uaNc9YEsFEbd49U85eY"></select>
@@ -12392,25 +12402,35 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                   <select id="wf-task-instance" class="wf-form-input" data-page-node-id="5L9sMEhtXAGEK6F2BJcfj1"></select>
                 </div>
               </div>
-              <div class="wf-form-group full" data-page-node-id="ESjAubV1jRF68sw5pzfJYM">
+              <div class="wf-form-group full" id="wf-task-goal-field" data-page-node-id="ESjAubV1jRF68sw5pzfJYM">
                 <label class="wf-form-label" data-page-node-id="9ISL8shUFRhihBT6FfCJYT">诊断目标 <span class="opt" data-page-node-id="NrJXkHtiKyrdO8lhayqykS">（可选）</span></label>
                 <input id="wf-task-goal" class="wf-form-input" placeholder="留空则使用工作流默认目标" data-page-node-id="KqWAh5QZHx9KDJ9k74tXMB">
               </div>
+              <div id="wf-task-batch-fields" class="wf-form-group full" style="display:none">
+                <label class="wf-form-label">巡检数据源</label><div class="workspace-toolbar"><input id="wf-task-source-search" type="search" class="wf-form-input" placeholder="搜索数据源" aria-label="搜索任务数据源"><button type="button" id="wf-task-select-visible" class="btn btn-ghost">选中搜索结果</button><button type="button" id="wf-task-clear-sources" class="btn btn-ghost">清空选择</button><span id="wf-task-selected-count" role="status"></span></div><div id="wf-task-batch-sources" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:190px;overflow:auto"></div>
+                <label class="wf-form-label">按集群纳入成员</label><div id="wf-task-batch-clusters" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:140px;overflow:auto"></div>
+                <label class="wf-form-label" for="wf-task-concurrency">并发数据源数（同一端点顺序执行）</label><select id="wf-task-concurrency" class="wf-form-input"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select>
+                <div class="wf-form-hint">每次执行生成一份整体报告。集群成员在运行时重新核对，重复数据源自动去重。</div>
+              </div>
               <div class="wf-form-group full" data-page-node-id="qsSeYIzlFwULQFGNugVKCH">
-                <label class="wf-form-label" data-page-node-id="OOZ6kGfFow8z9e7DJgJuZG">周期调度 <span class="opt" data-page-node-id="5NAAvETAD7FlTsh8F0AVhb">（Cron，可选）</span></label>
+                <label class="wf-form-label" for="wf-schedule-mode">运行计划</label>
+                <div class="workspace-toolbar"><select id="wf-schedule-mode" class="wf-form-input"><option value="manual">手动运行</option><option value="hourly">每小时</option><option value="daily">每天</option><option value="weekly">每周</option><option value="monthly">每月</option><option value="custom">自定义 Cron</option></select><label id="wf-schedule-time-label">时间<input id="wf-schedule-time" class="wf-form-input" type="time" value="02:00"></label><label id="wf-schedule-weekday-label">星期<select id="wf-schedule-weekday" class="wf-form-input"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option></select></label><label id="wf-schedule-day-label">每月日期<input id="wf-schedule-day" class="wf-form-input" type="number" min="1" max="31" value="1"></label></div>
+                <div class="wf-form-hint">时区 Asia/Shanghai。每月选择 29～31 日时，仅在存在该日期的月份执行。</div>
+                <details id="wf-schedule-advanced"><summary>高级定时配置</summary>                <label class="wf-form-label" data-page-node-id="OOZ6kGfFow8z9e7DJgJuZG">周期调度 <span class="opt" data-page-node-id="5NAAvETAD7FlTsh8F0AVhb">（Cron，可选）</span></label>
+                <label style="display:flex;gap:8px;align-items:center"><input id="wf-task-schedule-enabled" type="checkbox">启用定时运行</label>
                 <input id="wf-task-cron" class="wf-form-input" placeholder="例如 0 2 * * *（每天 02:00）" data-page-node-id="mrCgwDTD6t4RtCkGS8zo2p">
-                <div class="wf-form-hint" data-page-node-id="uv9ScoypgLg9wur1rUonhq">留空表示不启用定时调度，仅手动启动。Cron 格式：分 时 日 月 周。</div>
+                <div class="wf-form-hint" data-page-node-id="uv9ScoypgLg9wur1rUonhq">留空表示不启用定时调度，仅手动启动。使用五段 Cron（分 时 日 月 周），时区 Asia/Shanghai。</div>
                 <div class="wf-cron-presets" data-page-node-id="ACjUtBLInztsdEj0dAD8mS">
                   <span class="wf-cron-chip" onclick="wfSetCron('0 * * * *')" data-page-node-id="BLkvGqjDedxVKN9ftvSqq6">每小时</span>
                   <span class="wf-cron-chip" onclick="wfSetCron('0 2 * * *')" data-page-node-id="QnQE210uYh449q3jdI319l">每天 02:00</span>
                   <span class="wf-cron-chip" onclick="wfSetCron('0 2 * * 1')" data-page-node-id="W9Ur4iHWoAcF01vdLlSRFy">每周一 02:00</span>
                   <span class="wf-cron-chip" onclick="wfSetCron('0 2 1 * *')" data-page-node-id="Xae4RRGjDylM6dsH0GekGo">每月 1 日 02:00</span>
-                </div>
+                </div></details>
               </div>
             </div>
             <div class="wf-modal-foot" data-page-node-id="FsxA6tQ7nlqS34OQnfVDVu">
               <button class="btn btn-ghost" onclick="wfCloseTaskModal()" data-page-node-id="Xgm59JwUT0IGbde3b4CxXU">取消</button>
-              <button class="btn btn-primary" onclick="wfSaveTask()" data-page-node-id="FCwXL8Ll5NzYGQMwFDXbcc">保存</button>
+              <button class="btn btn-primary" id="wf-task-save" onclick="wfSaveTask()" data-page-node-id="FCwXL8Ll5NzYGQMwFDXbcc">保存</button>
             </div>
           </div>
         </div>
@@ -13726,12 +13746,18 @@ function showPage(name) {
     'flow': [i18n('webui.flow_title') || '巡检编排', i18n('webui.flow_desc') || ''],
     'sql-audit': ['SQL 审核', '提交 SQL 变更前的安全审计：解析、规则校验、风险评分（MVP1 仅只读分析，不执行）'],
     'autonomy': ['安全自治 DBA 闭环', '检测→诊断→提议→审批闸门→执行→复检 的可审计自治闭环（P0-c 看板）'],
+    'clusters': ['集群管理', '集群成员、运行状态与节点巡检'],
+    'services': ['运维服务与需求验收', '需求覆盖、资产证据与运维闭环'],
+    'inventory': ['数据库运维台账', '资产统一维护、数据源同步与规范台账导出'],
+    'workflow-task': [i18n('menu.workflow_task') || '工作任务', '管理工作流与整体巡检的手动运行、定时计划及运行报告'],
+    'batch-inspection': ['多数据源整体巡检', '选择多个数据源或集群，一次执行并生成整体巡检报告'],
     'fleet': ['智能基线 · Smart Baseline', '无监督基线学习 + 漂移检测 + 容量预测：从单点巡检到全库智能（P1）'],
     'xinchuang': [i18n('menu.xinchuang') || '信创合规', i18n('webui.xinchuang_subtitle') || '对纳管实例做信创化程度盘点：国产（信创）占比、国外数据库待替换清单、库型分布。'],
     'run-log': [i18n('menu.run-log') || '运行日志', i18n('webui.run_log_subtitle') || '统一汇聚巡检 / 定时巡检 / 智能诊断 / 监控 的运行日志，可按分类过滤。'],
-    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本 / 更新提醒 / 系统标志 / 开源与署名信息'],
+    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本、发行版本与运行信息'],
   };
-  const t = titles[name] || [name, ''];
+  const menuLabel = document.querySelector('#nav-' + CSS.escape(name) + ' span:not(.icon)')?.textContent.trim();
+  const t = titles[name] || [menuLabel || name, ''];
   document.getElementById('topbar-title').textContent = t[0];
   document.getElementById('topbar-sub').textContent  = t[1];
   if (name === 'reports') loadReports();
@@ -13745,6 +13771,20 @@ function showPage(name) {
   if (name === 'ai') loadAIConfig();
   if (name === 'rag') showRagPage();
   if (name === 'doc-kb') loadDocKb();
+  if (name === 'clusters') window.initClusterPage();
+  if (name === 'services') window.initServiceManagementPage();
+  if (name === 'monitor-screen') {
+    const frame = document.getElementById('monitor-screen-frame');
+    if (!frame.getAttribute('src')) frame.src = '/monitor-screen';
+  }
+  if (name === 'batch-inspection') {
+    const frame = document.getElementById('batch-operations-frame');
+    if (!frame.getAttribute('src')) frame.src = '/operations/inventory?tab=batch';
+  }
+  if (name === 'inventory') {
+    const frame = document.getElementById('operations-frame');
+    if (!frame.getAttribute('src')) frame.src = '/operations/inventory';
+  }
   if (name === 'schema-dict') loadSchemaDict();
   if (name === 'home') { loadHomeStats(); startHomeRefresh(); } else { stopHomeRefresh(); }
   if (name === 'shares') loadShares();
@@ -14531,6 +14571,7 @@ async function loadDatasourcesForSelect() {
     const res = await fetch('/api/pro/datasources');
     const data = await res.json();
     const sel = document.getElementById('f-datasource');
+    const previous = sel.value;
     sel.innerHTML = '<option value="">-- 手动输入连接信息 --</option>';
     if (data.ok && data.datasources) {
       // 按当前选中的数据库类型过滤已保存数据源
@@ -14553,6 +14594,7 @@ async function loadDatasourcesForSelect() {
         sel.appendChild(opt);
       }
     }
+    if ([...sel.options].some(option => option.value === previous)) sel.value = previous;
   } catch (e) { console.error('loadDatasourcesForSelect failed', e); }
 }
 
@@ -14629,6 +14671,7 @@ async function onDatasourceChange() {
     const data = await res.json();
     if (data.ok && data.datasource) {
       const ds = data.datasource;
+      resetFormFromDatasource();
       // 切换数据库类型（await 确保模板加载完成后才执行版本检测）
       if (ds.db_type) await selectDbType(ds.db_type, true);
       document.getElementById('f-name').value = ds.name || '';
@@ -14665,33 +14708,11 @@ async function onDatasourceChange() {
         document.getElementById('f-trust-server-cert').checked = ds.trust_server_certificate !== false && ds.trust_server_certificate !== 0 && ds.trust_server_certificate !== '0';
       }
       if (ds.db_type === 'oracle' || ds.db_type === 'oracle_jdbc') {
-        console.log('[Oracle模板] onDatasourceChange: oracle branch entered, ds:', ds);
         document.getElementById('f-service-name').value = ds.service_name || '';
         document.getElementById('f-sysdba').checked = !!ds.sysdba;
         document.getElementById('f-use-sid').checked = !!ds.use_sid;
-        // 静默检测 Oracle 版本，自动选择对应模板
-        try {
-          console.log('[Oracle模板] Sending version detection request...');
-          const tRes = await fetch('/api/test_db', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-              db_type: ds.db_type,
-              host: ds.host, port: ds.port, user: ds.user, password: ds.password,
-              service_name: ds.service_name || null,
-              sysdba: !!ds.sysdba,
-            })
-          });
-          const tdata = await tRes.json();
-          console.log('[Oracle模板] Version detection response:', tdata);
-          if (tdata.ok && tdata.oracle_major_version) {
-            autoSelectOracleTemplate(tdata.oracle_major_version, 'f-template');
-          } else {
-            console.warn('[Oracle模板] tdata.ok:', tdata.ok, 'oracle_major_version:', tdata.oracle_major_version);
-          }
-        } catch(e) { console.warn('[Oracle模板] Version detection error:', e); }
-      } else {
-        console.log('[Oracle模板] onDatasourceChange: db_type is', ds.db_type, ', not oracle/oracle_jdbc');
+        const version = parseInt(ds.version || '', 10);
+        if (version) autoSelectOracleTemplate(version, 'f-template');
       }
       // JDBC 驱动管理：数据源回填 驱动版本（driver_version）；Oracle 额外回填 use_sid
       if (isJdbcType(ds.db_type)) {
@@ -14718,26 +14739,30 @@ async function onDatasourceChange() {
         // 自动启用 SSH
         if (!sshEnabled) toggleSsh();
       }
+      return true;
     } else {
       document.getElementById('f-name').value = '';
       toastError(i18n('webui.ds_load_fail'));
+      return false;
     }
   } catch(e) {
     document.getElementById('f-name').value = '';
     toastError('加载数据源失败: ' + e.message);
+    return false;
   }
 }
 
 function resetFormFromDatasource() {
   // 清除自动填充的内容，让用户手动输入
   ['f-name','f-host','f-port','f-user','f-password','f-database','f-service-name','f-tenant',
-   'f-ssh-host','f-ssh-port','f-ssh-user','f-ssh-password','f-ssh-key'].forEach(id => {
+   'f-ssh-host','f-ssh-port','f-ssh-user','f-ssh-password','f-ssh-key','f-ssh-key-password'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   document.getElementById('f-password').placeholder = '数据库密码';
   document.getElementById('f-encrypt').checked = false;
   document.getElementById('f-trust-server-cert').checked = true;
+  _inspSshPassword = '';
   sshTunnelEnabled = false;   // 复位为默认关闭
   _syncSshTunnelUi();
   if (sshEnabled) toggleSsh();
@@ -22597,7 +22622,6 @@ function toggleTheme() {
 // ─── 前端每 30 分钟重查一次，官网内容更新后自动重新弹出（即使旧内容已被关闭）；
 // ─── 内容签名未变化时不动 DOM（定时重查对用户零感知）；多条轮播；可关闭 ───
 // 顶部公告条已按产品要求停用：不再向 .main 注入 DOM，🦝 / 版本播报条不再出现。
-// 公告数据仍由「系统配置 → 系统信息 → 更新提醒」读取 /api/announcement 展示。
 // 需要恢复顶部公告条时，把该开关置 true 即可（渲染逻辑原样保留）。
 var ANNOUNCEMENT_BAR_ENABLED = false;
 var _announceTimer = null;      // 轮播定时器
@@ -22702,6 +22726,8 @@ async function initApp() {
   // 初始加载 Pro 状态，更新侧边栏徽章
   await loadProStatus();
   showPage('home');
+  window.__workspaceAppReady = true;
+  document.dispatchEvent(new Event('workspace-app-ready'));
 }
 initApp();
 
@@ -29880,6 +29906,8 @@ function mkdirRemote() {
         }
         sec.style.display = hasVisible ? '' : 'none';
       });
+      window.__workspaceMenusReady = true;
+      document.dispatchEvent(new Event('workspace-menus-ready'));
     } catch(e) { console.warn('[MenuPerm] load failed:', e); }
   }
   // 页面加载后立即执行
@@ -30297,6 +30325,40 @@ document.addEventListener('keydown', function(e) {
   <div class="sweep-veil"></div>
 </div>
 
+<script>
+window.addEventListener('message', function(event) {
+  const frames = ['operations-frame', 'batch-operations-frame'].map(id => document.getElementById(id));
+  if (event.origin !== window.location.origin || !frames.some(frame => frame?.contentWindow === event.source)) return;
+  if (event.data?.type === 'operations-open-batch') {
+    window.__operationsBatchSelection = event.data.instance_ids || [];
+    showPage('batch-inspection');
+    const frame = document.getElementById('batch-operations-frame');
+    if (frame.dataset.ready === 'true') {
+      frame.contentWindow.postMessage({type:'operations-select-sources',instance_ids:window.__operationsBatchSelection},window.location.origin);
+      window.__operationsBatchSelection = null;
+    }
+  }
+  if (event.data?.type === 'operations-ready') {
+    const frame = frames.find(frame=>frame?.contentWindow === event.source);
+    frame.dataset.ready = 'true';
+    if (frame.id === 'batch-operations-frame' && window.__operationsBatchSelection) {
+      frame.contentWindow.postMessage({type:'operations-select-sources',instance_ids:window.__operationsBatchSelection},window.location.origin);
+      window.__operationsBatchSelection = null;
+    }
+  }
+  if (event.data?.type === 'operations-datasource-updated') {
+    document.dispatchEvent(new Event('workspace-datasources-updated'));
+    if (typeof loadDataSources === 'function') loadDataSources();
+    frames.forEach(frame => {
+      if (frame?.getAttribute('src') && frame.contentWindow !== event.source) {
+        frame.contentWindow.postMessage({type:'operations-refresh'},window.location.origin);
+      }
+    });
+  }
+});
+</script>
+
+<script src="/static/js/workspace_usability.js?v=1"></script>
 </body>
 </html>
 

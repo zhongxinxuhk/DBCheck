@@ -9,10 +9,16 @@ Usage: python package_windows.py <distpath> <version>
   distpath  - path to 'dist' directory (contains DBPulse-Windows folder)
   version   - version string, e.g. v26.11.5.1
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import shutil
 import zipfile
 import sys
+from datetime import datetime
 
 
 def main():
@@ -24,7 +30,12 @@ def main():
     version = sys.argv[2]
 
     src = os.path.join(distpath, "DBPulse-Windows")
-    dst_name = "DBPulse-Windows-x86_64-" + version
+    dst_name = (
+        "DBPulse-Windows-x86_64-"
+        + version
+        + "-"
+        + datetime.now().strftime("%Y%m%d-%H%M%S")
+    )
     dst = os.path.join(distpath, dst_name)
     zip_path = dst + ".zip"
 
@@ -33,23 +44,21 @@ def main():
         sys.exit(1)
 
     # Copy source to versioned folder
-    shutil.copytree(src, dst, dirs_exist_ok=True)
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns(
+            "data", "__pycache__", ".dbcheck.lock", ".DS_Store"
+        ),
+    )
     print("[OK] Copied files to " + dst_name)
 
     # Write start.bat
     start_bat = (
         "@echo off\r\n"
-        "title DBPulse Web UI\r\n"
         'cd /d "%~dp0"\r\n'
-        "echo ==========================================\r\n"
-        "echo   DBPulse Database Inspection Tool\r\n"
-        "echo ==========================================\r\n"
-        "echo Starting Web UI server...\r\n"
-        "echo Open browser: http://localhost:5003\r\n"
-        "echo Press Ctrl+C to stop.\r\n"
-        "echo ==========================================\r\n"
-        '\r\n'
-        'dbcheck.exe web\r\n'
+        'start "" "%~dp0DBPulse.exe"\r\n'
+        "exit /b 0\r\n"
     )
     with open(os.path.join(dst, "start.bat"), "w", encoding="utf-8") as f:
         f.write(start_bat)
@@ -59,10 +68,10 @@ def main():
         "#!/bin/bash\n"
         'cd "$(dirname "$0")"\n'
         "echo ==========================================\n"
-        "echo \"  DBPulse Database Inspection Tool\"\n"
+        'echo "  DBPulse Database Inspection Tool"\n'
         "echo ==========================================\n"
-        "echo \"Starting Web UI server...\"\n"
-        "echo \"Open browser: http://localhost:5003\"\n"
+        'echo "Starting Web UI server..."\n'
+        'echo "Open browser: http://localhost:5003"\n'
         "exec ./dbcheck.exe web\n"
     )
     with open(os.path.join(dst, "start.sh"), "w", encoding="utf-8") as f:
@@ -74,7 +83,7 @@ def main():
         "=============================\r\n"
         "\r\n"
         "To start: double-click start.bat\r\n"
-        "Then open http://localhost:5003 in your browser.\r\n"
+        "Then open http://localhost:5003 in your browser.\r\nInitial login: admin / admin123\r\nClosing the status window keeps DBPulse running in the system tray.\r\nUse the tray menu to stop or exit.\r\n"
         "\r\n"
         "Version: " + version + "\r\n"
     )

@@ -104,14 +104,13 @@ def install_security(app):
         # 用响应头告知前端清理 localStorage 中的残留 token，避免每轮请求都被降级。
         if getattr(g,'auth_identity_adjusted',False):
             response.headers['X-Auth-Identity-Adjusted']='1'
-        # 系统管理以同源 iframe（/um/admin?embed=1）内嵌于主界面。若一律 DENY，
-        # 浏览器会拒绝渲染该 iframe，弹窗只剩空白。仅对这一条内嵌路径放宽为
-        # SAMEORIGIN；其余响应保持 DENY，跨域站点依旧无法 frame 本系统。
+        # 系统管理、运维台账及监控大屏使用主界面的同源工作区。
         _um_embed = (request.path.startswith('/um/')
                      and request.args.get('embed') == '1')
-        response.headers['X-Frame-Options']='SAMEORIGIN' if _um_embed else 'DENY'
+        _operations_embed = request.path in {'/operations/inventory', '/monitor-screen'}
+        response.headers['X-Frame-Options']='SAMEORIGIN' if (_um_embed or _operations_embed) else 'DENY'
         response.headers['Referrer-Policy']='same-origin'
-        if request.path.startswith(('/api/','/services','/share/')):
+        if request.path.startswith(('/api/','/services','/operations/','/share/')):
             response.headers['Cache-Control']='no-store, private'
         if response.mimetype == 'text/html' and not response.is_streamed and request.path!='/api/services/report':
             token = session.setdefault('_csrf',secrets.token_hex(32))

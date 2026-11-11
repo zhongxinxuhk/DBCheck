@@ -6,14 +6,72 @@ SPDX-License-Identifier: Apache-2.0
 Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 -->
+{% set is_embedded = embedded|default(false) %}
+{% if not is_embedded %}
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>集群管理 · DBPulse</title>
+{% endif %}
 <style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#24344a;background:#f3f6fa;font-size:14px}
-*{box-sizing:border-box}body{margin:0}header{background:#152c49;color:white;padding:22px 4vw;display:flex;align-items:center;justify-content:space-between}h1{font-size:23px;margin:0 0 6px}header p{margin:0;color:#c3d2e5}header a{color:white}main{max-width:1440px;margin:24px auto;padding:0 24px}.toolbar{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:18px}button,.button{font:inherit;border:1px solid #b7c6d8;border-radius:6px;padding:8px 13px;background:white;color:#234569;cursor:pointer;text-decoration:none;display:inline-block}button.primary{background:#175ac5;color:white;border-color:#175ac5}button:disabled{opacity:.5;cursor:wait}button.danger{color:#ad2633}.layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:20px}.panel{background:white;border:1px solid #d9e2ed;border-radius:10px;padding:20px;margin-bottom:18px}.cluster-card{display:block;width:100%;text-align:left;margin-bottom:10px;padding:14px}.cluster-card.selected{border-color:#175ac5;background:#eef5ff}.muted{color:#65758b;font-size:12px;line-height:1.7}.pill{display:inline-block;border-radius:12px;padding:3px 10px;font-size:12px;background:#eef1f6;color:#536580}.healthy{background:#e1f4e8;color:#146b3c}.warning,.incomplete,.stale{background:#fff1cf;color:#845704}.critical,.failed,.error{background:#ffe3e5;color:#a92032}.done{background:#e1f4e8;color:#146b3c}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.metric{background:#f3f6fb;border-radius:7px;padding:14px}.metric strong{display:block;font-size:24px;margin-top:5px}.actions{display:flex;flex-wrap:wrap;gap:8px}h2{font-size:18px;margin:0 0 12px}h3{font-size:15px;margin:18px 0 10px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 9px;border-bottom:1px solid #e2e8f1;text-align:left;vertical-align:top}th{color:#5c6c83;background:#f7f9fc}td{overflow-wrap:anywhere}.scroll{overflow:auto}.issues{margin:12px 0;padding-left:20px;line-height:1.9}.message{white-space:pre-wrap;padding:10px 0;min-height:35px;color:#a52030}.message.success{color:#146b3c}dialog{border:1px solid #c3cfdf;border-radius:10px;padding:24px;width:min(900px,94vw);max-height:90vh;overflow:auto}dialog::backdrop{background:#13243e88}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:500}input,select{font:inherit;padding:8px;border:1px solid #bdcadd;border-radius:5px;max-width:100%;width:100%;margin-top:5px}input[type=checkbox]{width:auto;margin-right:7px}.full{grid-column:1/-1}.form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}pre{white-space:pre-wrap;font-size:12px;max-height:400px;overflow:auto}.trend{display:flex;gap:3px;align-items:end;height:54px;margin-top:12px}.trend span{min-width:4px;flex:1;background:#558aca}.event{border-left:3px solid #b4c8e6;padding:5px 12px;margin:8px 0}footer{text-align:center;color:#718097;font-size:12px;padding:26px;line-height:1.9}@media(max-width:900px){.layout{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.toolbar,header{align-items:flex-start;gap:12px;flex-wrap:wrap}}
-</style></head><body>
-<header><div><h1>DBPulse 集群管理</h1><p>Oracle RAC / Data Guard · 达梦 DMDSC / 数据守护</p></div><a href="/">返回数据库管理</a></header>
+#cluster-workspace{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#24344a;background:#f3f6fa;font-size:14px}
+#cluster-workspace *{box-sizing:border-box}
+#cluster-workspace{margin:0}
+#cluster-workspace header{background:#152c49;color:white;padding:22px 4vw;display:flex;align-items:center;justify-content:space-between}
+#cluster-workspace h1{font-size:23px;margin:0 0 6px}
+#cluster-workspace header p{margin:0;color:#c3d2e5}
+#cluster-workspace header a{color:white}
+#cluster-workspace main{max-width:1440px;margin:24px auto;padding:0 24px}
+#cluster-workspace .toolbar{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:18px}
+#cluster-workspace button,#cluster-workspace .button{font:inherit;border:1px solid #b7c6d8;border-radius:6px;padding:8px 13px;background:white;color:#234569;cursor:pointer;text-decoration:none;display:inline-block}
+#cluster-workspace button.primary{background:#175ac5;color:white;border-color:#175ac5}
+#cluster-workspace button:disabled{opacity:.5;cursor:wait}
+#cluster-workspace button.danger{color:#ad2633}
+#cluster-workspace .layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:20px}
+#cluster-workspace .panel{background:white;border:1px solid #d9e2ed;border-radius:10px;padding:20px;margin-bottom:18px}
+#cluster-workspace .cluster-card{display:block;width:100%;text-align:left;margin-bottom:10px;padding:14px}
+#cluster-workspace .cluster-card.selected{border-color:#175ac5;background:#eef5ff}
+#cluster-workspace .muted{color:#65758b;font-size:12px;line-height:1.7}
+#cluster-workspace .pill{display:inline-block;border-radius:12px;padding:3px 10px;font-size:12px;background:#eef1f6;color:#536580}
+#cluster-workspace .healthy{background:#e1f4e8;color:#146b3c}
+#cluster-workspace .warning,#cluster-workspace .incomplete,#cluster-workspace .stale{background:#fff1cf;color:#845704}
+#cluster-workspace .critical,#cluster-workspace .failed,#cluster-workspace .error{background:#ffe3e5;color:#a92032}
+#cluster-workspace .done{background:#e1f4e8;color:#146b3c}
+#cluster-workspace .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+#cluster-workspace .metric{background:#f3f6fb;border-radius:7px;padding:14px}
+#cluster-workspace .metric strong{display:block;font-size:24px;margin-top:5px}
+#cluster-workspace .actions{display:flex;flex-wrap:wrap;gap:8px}
+#cluster-workspace h2{font-size:18px;margin:0 0 12px}
+#cluster-workspace h3{font-size:15px;margin:18px 0 10px}
+#cluster-workspace table{border-collapse:collapse;width:100%;font-size:13px}
+#cluster-workspace th,#cluster-workspace td{padding:10px 9px;border-bottom:1px solid #e2e8f1;text-align:left;vertical-align:top}
+#cluster-workspace th{color:#5c6c83;background:#f7f9fc}
+#cluster-workspace td{overflow-wrap:anywhere}
+#cluster-workspace .scroll{overflow:auto}
+#cluster-workspace .issues{margin:12px 0;padding-left:20px;line-height:1.9}
+#cluster-workspace .message{white-space:pre-wrap;padding:10px 0;min-height:35px;color:#a52030}
+#cluster-workspace .message.success{color:#146b3c}
+#cluster-workspace dialog{border:1px solid #c3cfdf;border-radius:10px;padding:24px;width:min(900px,94vw);max-height:90vh;overflow:auto}
+#cluster-workspace dialog::backdrop{background:#13243e88}
+#cluster-workspace .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#cluster-workspace label{display:block;font-weight:500}
+#cluster-workspace input,#cluster-workspace select{font:inherit;padding:8px;border:1px solid #bdcadd;border-radius:5px;max-width:100%;width:100%;margin-top:5px}
+#cluster-workspace input[type=checkbox]{width:auto;margin-right:7px}
+#cluster-workspace .full{grid-column:1/-1}
+#cluster-workspace .form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+#cluster-workspace pre{white-space:pre-wrap;font-size:12px;max-height:400px;overflow:auto}
+#cluster-workspace .trend{display:flex;gap:3px;align-items:end;height:54px;margin-top:12px}
+#cluster-workspace .trend span{min-width:4px;flex:1;background:#558aca}
+#cluster-workspace .event{border-left:3px solid #b4c8e6;padding:5px 12px;margin:8px 0}
+#cluster-workspace footer{text-align:center;color:#718097;font-size:12px;padding:26px;line-height:1.9}@media(max-width:900px){
+#cluster-workspace .layout{grid-template-columns:1fr}
+#cluster-workspace .metrics{grid-template-columns:1fr 1fr}
+#cluster-workspace .form-grid{grid-template-columns:1fr}
+#cluster-workspace .toolbar,#cluster-workspace header{align-items:flex-start;gap:12px;flex-wrap:wrap}}
+#cluster-workspace[data-embedded="true"] main {max-width:none;margin:0;padding:0;}
+</style>
+{% if not is_embedded %}</head><body style="margin:0">{% endif %}
+<div id="cluster-workspace" data-embedded="{{ 'true' if is_embedded else 'false' }}">
+{% if not is_embedded %}<header><div><h1>DBPulse 集群管理</h1><p>Oracle RAC / Data Guard · 达梦 DMDSC / 数据守护</p></div><a href="/">返回数据库管理</a></header>{% endif %}
 <main><div class="toolbar"><p class="muted">集群引用已有数据源。每个节点保留独立连接和权限，预期节点数用于核对采集覆盖率。</p><button id="new-cluster" class="primary">添加集群</button></div>
 <div id="page-message" class="message" role="status"></div><div class="layout"><aside id="cluster-list" aria-label="集群列表"></aside><section id="cluster-detail" aria-live="polite"><div class="panel">选择一个集群查看成员、监控和巡检结果。</div></section></div></main>
 <dialog id="cluster-dialog"><form id="cluster-form"><h2 id="form-title">添加集群</h2><div class="form-grid">
@@ -27,4 +85,6 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 <div class="full"><h3>集群成员</h3><p class="muted">选择节点对应的数据源。Oracle RAC 使用节点 VIP / SID 对应的数据源，SCAN 或服务地址可以作为业务入口。预期节点尚未全部登记时，监控会显示覆盖不足。</p><div id="member-options" class="scroll"></div></div>
 </div><div id="form-message" class="message" role="alert"></div><div class="form-actions"><button id="cancel-cluster" type="button">取消</button><button id="save-cluster" type="submit" class="primary">保存集群</button></div></form></dialog>
 <footer>DBCheck / RaccoonX © 2025–2026 fiyo (Jack Ge) · sdfiyon@gmail.com<br>DBPulse 衍生创作 © 2025–2026 sec.hn.cn (X.U zx) · xuzhongxin@sec.hn.cn</footer>
-<script src="/static/js/clusters.js"></script></body></html>
+</div>
+<script src="/static/js/clusters.js?v=workspace-1"></script>
+{% if not is_embedded %}</body></html>{% endif %}

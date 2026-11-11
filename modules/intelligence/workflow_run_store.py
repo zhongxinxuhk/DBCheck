@@ -10,6 +10,10 @@
 存储路径一律以 ``modules.core.paths.DATA_DIR`` 为准。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import json
@@ -43,8 +47,7 @@ def _init_db() -> None:
             return
         try:
             conn = sqlite3.connect(_DB_PATH)
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_runs (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
                     task_id         INTEGER NOT NULL,
@@ -60,8 +63,7 @@ def _init_db() -> None:
                     outputs_json    TEXT,
                     trigger         TEXT NOT NULL DEFAULT 'manual'
                 )
-                """
-            )
+                """)
             conn.commit()
             conn.close()
         finally:
@@ -105,7 +107,9 @@ def add_run(task_id: int, trigger: str = "manual") -> Dict[str, Any]:
             conn.commit()
             rid = cur.lastrowid
             conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM workflow_runs WHERE id=?", (rid,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM workflow_runs WHERE id=?", (rid,)
+            ).fetchone()
             return _row_to_dict(row)
         finally:
             conn.close()
@@ -133,7 +137,7 @@ def update_run(
             if finished_at is not None:
                 sets.append("finished_at=?")
                 params.append(finished_at)
-            else:
+            elif status != RUN_RUNNING:
                 sets.append("finished_at=?")
                 params.append(_now())
             if duration_ms is not None:

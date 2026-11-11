@@ -42,6 +42,11 @@ modules/monitor/jdbc_collect_cli.py — 监控大屏 JDBC 批量采集子进程
     {"fatal": "连接失败原因"}        # 建连失败时全部查询共用该错误
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import sys
 import os
 import json
@@ -106,8 +111,12 @@ def _collect(payload):
         err = (meta or {}).get('error') or 'JDBC 连接失败'
         return {'q%d' % i: {'rows': [], 'error': err} for i in range(len(queries))}
 
+    if payload.get('inspection_safe'):
+        from modules.inspection.sql_safety import guarded_connection
+        conn = guarded_connection(conn, db_type)
     try:
         for i, sql in enumerate(queries):
+            warning_count = len(getattr(conn, 'warnings', []))
             try:
                 cur = conn.cursor()
                 try:
@@ -138,7 +147,7 @@ def _collect(payload):
                         (cols[j] if cols and j < len(cols) else 'c%d' % j): _cell(v)
                         for j, v in enumerate(vals)
                     })
-                out['q%d' % i] = {'rows': rows, 'error': None}
+                out['q%d' % i] = {'rows': rows, 'error': '; '.join(getattr(conn, 'warnings', [])[warning_count:]) or None}
             except Exception as e:  # noqa: BLE001 — 单条 SQL 失败只降级该项
                 out['q%d' % i] = {'rows': [], 'error': str(e)[:300]}
     finally:

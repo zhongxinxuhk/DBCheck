@@ -198,5 +198,5 @@ def append_to_existing(path,tenant_id=None,user_id=None):
             if principal and principal.tenant_id==tenant_id:
                 actor={'id':principal.id,'tenant_id':tenant_id,'admin':principal.is_admin}
                 snapshot=overview(ServiceStore(database,paths.DB_KEY_PATH.read_bytes()),actor,catalog)
-        append_coverage(document,catalog,redact(snapshot,mask_identity=True))
-    sanitize_document(document).save(path)
+        append_coverage(document,catalog,redact(snapshot,mask_identity=True,preserve_network=True))
+    sanitize_document(document,preserve_network=True).save(path)

@@ -3312,3 +3312,11 @@ ES.update({
     "webui.system_info_opensource": "Código abierto",
     "webui.system_info_check_update": "Ver actualizaciones",
 })
+
+ES.update({
+    "menu.inventory": "Inventario de bases de datos",
+    "menu.batch-inspection": "Inspección de múltiples fuentes",
+    "menu.clusters": "Gestión de clústeres",
+    "menu.services": "Servicios operativos y aceptación",
+    "menu.system-info": "Información del sistema"
+})

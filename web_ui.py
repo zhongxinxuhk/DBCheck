@@ -14,6 +14,12 @@
 import os
 import sys
 
+if os.name == "nt":
+    for _stream in (sys.stdout, sys.stderr):
+        if _stream is not None and hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 # ── OpenBLAS/NumPy 线程池护栏（必须在任何 numpy/openpyxl 导入之前）─────────
 # numpy 1.26（内置 OpenBLAS 0.3.2x）在 import 时按宿主机 CPU 数预建 BLAS 线程池，
 # 每建一个线程都要 clone() 系统调用。受限容器（企业安全容器 / 定制 seccomp / LXC
@@ -26,6 +32,16 @@ for _blas_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS",
                   "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_blas_var, "1")
 del _blas_var
+
+if getattr(sys, 'frozen', False):
+    _packaged_java = os.path.join(os.path.dirname(sys.executable), 'runtime', 'java')
+    if os.path.isdir(_packaged_java):
+        os.environ.setdefault('JAVA_HOME', _packaged_java)
+
+if '--package-self-test' in sys.argv[1:]:
+    from modules.core.package_check import main as _package_check
+    sys.exit(_package_check())
+
 
 # ── JDBC 连接测试隔离子进程入口（必须在单实例守卫之前）────────────────
 # HGDB / DB2 / SQL Server(JDBC) 依赖 JPype 在进程内启动 JVM。Web 主进程跑在

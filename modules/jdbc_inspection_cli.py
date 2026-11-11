@@ -164,11 +164,15 @@ def main(argv=None):
         _emit_line('done', {'msg': '巡检子进程缺少 task_id', 'task_id': task_id})
         return 2
 
-    if db_type not in JVM_INSPECTION_DB_TYPES:
+    from modules.db_types.dbtype_registry import get_db_meta
+    supports_isolation = db_type in JVM_INSPECTION_DB_TYPES or (
+        payload.get('isolate_process') is True and get_db_meta(db_type) is not None)
+    if not supports_isolation:
         _emit_line('error', {'msg': f'巡检子进程暂不支持的数据库类型: {db_type}'})
         _emit_line('done', {'msg': f'不支持的数据库类型: {db_type}', 'task_id': task_id})
         return 2
 
+    os.environ['DBPULSE_INSPECTION_WORKER']='1'
     # 导入主应用模块（会初始化 Flask/SocketIO，但在子进程里不会被 patch）
     try:
         import modules.web.app as app
@@ -181,7 +185,9 @@ def main(argv=None):
     app.socketio.emit = _make_emitter(task_id)
 
     # 初始化任务记录（与主进程 tasks 结构保持一致）
+    task_metadata = payload.get('task_metadata') or {}
     app.tasks[task_id] = {
+        **{key: task_metadata.get(key) for key in ('datasource_id','owner_user_id','owner_tenant_id')},
         'id': task_id,
         'db_type': db_type,
         'db_info': db_info,
@@ -232,7 +238,7 @@ def main(argv=None):
 
     # TCP 预检：自定义 jdbc_url 可能指向多主机/故障转移，此时跳过预检
     _kw = db_info.get('jdbc_url') or db_info.get('ssh_info', {}).get('jdbc_url')
-    if not _kw:
+    if not _kw and db_type in JVM_INSPECTION_DB_TYPES:
         _preflight_err = _tcp_preflight(db_info.get('_conn_ip') or db_info.get('ip'),
                                         db_info.get('_conn_port') or db_info.get('port'))
         if _preflight_err:
@@ -279,13 +285,11 @@ def main(argv=None):
 
     final_status = {'status': 'error', 'task_id': task_id}
     try:
-        app.run_inspection_task(
-            task_id,
-            db_info,
-            payload.get('inspector_name', 'Jack'),
-            payload.get('template_id'),
-            payload.get('chapter_ids'),
-        )
+        from modules.inspection.sql_safety import inspection_lease
+        with inspection_lease(db_info,db_type):
+            app.run_inspection_task(
+                task_id,db_info,payload.get('inspector_name','Jack'),
+                payload.get('template_id'),payload.get('chapter_ids'))
         task = app.tasks.get(task_id, {})
         final_status = _task_snapshot(task)
     except SystemExit:

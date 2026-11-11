@@ -16,6 +16,11 @@ Db2 JDBC 巡检插件 —— 通过 JPype + db2jcc4.jar + 共享 jdbc_jvm 连接
 - 智能分析接入铁律：get_task_config() 必须返回 'smart_analyze': 'smart_analyze_db2'。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import json
@@ -294,7 +299,8 @@ class Db2JdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             self.raw_jdbc_conn = conn
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'db2')
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本

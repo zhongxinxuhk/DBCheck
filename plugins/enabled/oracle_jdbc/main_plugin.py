@@ -281,7 +281,8 @@ class OracleJdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             # 2. 包装 JDBC 连接（兼容 Python DB-API 2.0）
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'oracle')
             self.raw_jdbc_conn = conn  # 保存原始连接（用于关闭）
             self.cursor = self.conn.cursor()  # 创建游标
 

@@ -19,6 +19,11 @@ UXDB JDBC 巡检插件 —— 通过 JPype + uxdbjdbc.jar + 共享 jdbc_jvm 连�
   （UXDB 兼容 PG，优先复用 PG 兼容分析器，与 ivorysql/kingbase 同策略）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import json
@@ -337,7 +342,8 @@ class UxdbJdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             self.raw_jdbc_conn = conn
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'uxdb')
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本

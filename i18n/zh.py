@@ -3451,7 +3451,7 @@ ZI.update({
     "menu.dev": "开发中",
     "wf_task.empty_title": "还没有工作流任务",
     "wf_task.empty_sub": "把工作流和数据源绑定成任务后，就能手动运行或设置 Cron 周期调度，并在这里查看实时状态与历史结果。",
-    "wf_task.page_sub": "将已编排的工作流绑定数据源并保存为可复用任务，支持手动触发与 Cron 周期调度，实时查看运行状态与历史结果。",
+    "wf_task.page_sub": "创建工作流任务或多数据源整体巡检任务，支持手动运行与 Cron 定时运行，查看执行状态、历史结果与整体报告。",
     "wf_task.new_title": "新建工作流任务",
     "wf_task.edit_title": "编辑工作流任务",
     "wf_task.btn_new": "新建任务",
@@ -3731,3 +3731,13 @@ ZI.update({
     "webui.system_info_opensource": "开源信息",
     "webui.system_info_check_update": "查看更新",
 })
+
+ZI.update({
+    "menu.inventory": "数据库运维台账",
+    "menu.batch-inspection": "多数据源整体巡检",
+    "menu.clusters": "集群管理",
+    "menu.services": "运维服务与需求验收",
+    "menu.system-info": "系统信息"
+})
+
+ZI.update({"menu.workflow_task":"工作任务","wf_task.new_title":"新建工作任务","wf_task.edit_title":"编辑工作任务","wf_task.empty_title":"还没有工作任务","wf_task.empty_sub":"可以创建工作流任务或整体巡检任务，选择数据源与集群并配置运行计划。"})

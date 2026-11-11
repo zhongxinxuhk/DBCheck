@@ -3743,3 +3743,11 @@ ZH_TW.update({
     "webui.system_info_opensource": "開源資訊",
     "webui.system_info_check_update": "查看更新",
 })
+
+ZH_TW.update({
+    "menu.inventory": "資料庫運維台帳",
+    "menu.batch-inspection": "多資料源整體巡檢",
+    "menu.clusters": "叢集管理",
+    "menu.services": "運維服務與需求驗收",
+    "menu.system-info": "系統資訊"
+})

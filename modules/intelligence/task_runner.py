@@ -14,9 +14,15 @@
   后续节点（已落库的动作不可回滚）。UI 应提示「停止 = 不再执行后续节点」。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import threading
+import os
+from zoneinfo import ZoneInfo
 import time
 import traceback
 from datetime import datetime
@@ -24,6 +30,7 @@ from typing import Any, Dict, Optional
 
 try:
     from croniter import croniter
+
     _HAS_CRONITER = True
 except Exception:  # croniter 缺失时仅禁用调度，不影响手动启停
     croniter = None  # type: ignore
@@ -39,8 +46,12 @@ from .workflow_task_store import (
     get_task,
     list_tasks,
     update_status,
+    claim_task,
+    runtime_alive,
+    request_stop,
 )
 from .workflow_run_store import (
+    RUN_RUNNING,
     RUN_CANCELLED,
     RUN_DONE,
     RUN_ERROR,
@@ -65,8 +76,12 @@ class TaskRunner:
         return cls._instance
 
     def _init(self) -> None:
+        self.app = None
+        self._sched_last_cron = {}
         self._lock = threading.RLock()
-        self._active: Dict[int, Dict[str, Any]] = {}  # task_id -> {thread, cancel, run_id}
+        self._active: Dict[int, Dict[str, Any]] = (
+            {}
+        )  # task_id -> {thread, cancel, run_id}
         self._sem = threading.Semaphore(DEFAULT_CONCURRENCY)
         self._bootstrapped = False
         self._sched_thread: Optional[threading.Thread] = None
@@ -74,8 +89,12 @@ class TaskRunner:
         self._sched_last_tick: Dict[int, datetime] = {}
 
     # ── 启动挂接 ───────────────────────────────────────
-    def bootstrap(self) -> None:
+    def bootstrap(self, app=None) -> None:
         """应用启动时调用一次：恢复残留状态并拉起调度守护线程。幂等。"""
+        if app is not None:
+            self.app = app
+        if os.environ.get("DBPULSE_INSPECTION_WORKER") == "1":
+            return
         with self._lock:
             if self._bootstrapped:
                 return
@@ -83,8 +102,19 @@ class TaskRunner:
         # 重启恢复：把残留 running 的任务置为 stopped（内存 handle 已丢失）
         try:
             for t in list_tasks():
-                if t["status"] == STATUS_RUNNING:
-                    update_status(t["id"], STATUS_STOPPED)
+                if t["status"] == STATUS_RUNNING and not runtime_alive(t):
+                    update_status(
+                        t["id"],
+                        STATUS_ERROR,
+                        last_error="执行进程已退出，请复核上次任务结果",
+                    )
+                    from .workflow_run_store import list_runs
+
+                    for run in list_runs(t["id"]):
+                        if run["status"] == RUN_RUNNING:
+                            update_run(
+                                run["id"], RUN_ERROR, error="执行进程已退出，任务中断"
+                            )
         except Exception:
             pass
         # 拉起调度守护线程
@@ -104,8 +134,7 @@ class TaskRunner:
             task = get_task(task_id)
             if not task or task["status"] == STATUS_RUNNING:
                 return False
-            self._spawn_locked(task_id, "manual")
-        return True
+            return self._spawn_locked(task_id, "manual")
 
     def run_once(self, task_id: int, trigger: str = "cron") -> bool:
         """供调度器调用：仅当未运行才触发。"""
@@ -115,31 +144,54 @@ class TaskRunner:
             task = get_task(task_id)
             if not task:
                 return False
-            self._spawn_locked(task_id, trigger)
-        return True
+            return self._spawn_locked(task_id, trigger)
 
-    def _spawn_locked(self, task_id: int, trigger: str) -> None:
-        """调用方必须已持 ``_lock``。登记活跃记录、申请并发额度、启动线程。"""
-        cancel = threading.Event()
-        run = add_run(task_id, trigger)
-        update_status(task_id, STATUS_RUNNING, last_run_at=run["started_at"])
-        t = threading.Thread(
-            target=self._run_thread,
-            args=(task_id, run["id"], cancel, trigger),
-            name="wf-task-%d" % task_id,
-            daemon=True,
-        )
-        self._active[task_id] = {
-            "thread": t,
-            "cancel": cancel,
-            "run_id": run["id"],
-        }
-        self._sem.acquire()  # 阻塞直到有并发额度（排队中状态已写 running）
-        t.start()
+    def _spawn_locked(self, task_id: int, trigger: str) -> bool:
+        if not self._sem.acquire(blocking=False):
+            return False
+        run = None
+        claimed = False
+        started = False
+        try:
+            claimed = claim_task(task_id)
+            if not claimed:
+                return False
+            cancel = threading.Event()
+            run = add_run(task_id, trigger)
+            update_status(task_id, STATUS_RUNNING, last_run_at=run["started_at"])
+            thread = threading.Thread(
+                target=self._run_thread,
+                args=(task_id, run["id"], cancel, trigger),
+                name="wf-task-" + str(task_id),
+                daemon=True,
+            )
+            self._active[task_id] = {
+                "thread": thread,
+                "cancel": cancel,
+                "run_id": run["id"],
+            }
+            thread.start()
+            started = True
+            return True
+        except Exception as error:
+            self._active.pop(task_id, None)
+            if claimed:
+                update_status(task_id, STATUS_ERROR, last_error=str(error))
+            if run:
+                update_run(run["id"], RUN_ERROR, error=str(error))
+            raise
+        finally:
+            if not started:
+                self._sem.release()
 
-    def _run_thread(self, task_id: int, run_id: int, cancel: threading.Event, trigger: str) -> None:
+    def _run_thread(
+        self, task_id: int, run_id: int, cancel: threading.Event, trigger: str
+    ) -> None:
         try:
             self._execute(task_id, run_id, cancel)
+        except Exception as error:
+            update_status(task_id, STATUS_ERROR, last_error=str(error))
+            update_run(run_id, RUN_ERROR, error=str(error))
         finally:
             self._sem.release()
             with self._lock:
@@ -150,6 +202,8 @@ class TaskRunner:
         task = get_task(task_id)
         if not task:
             return
+        if task.get("task_type") == "batch_inspection":
+            return self._execute_batch(task, run_id, cancel, started)
         wf = get_workflow(task["workflow_id"])
         if not wf:
             update_status(task_id, STATUS_ERROR, last_error="工作流不存在")
@@ -189,16 +243,24 @@ class TaskRunner:
             if cancelled:
                 update_status(task_id, STATUS_STOPPED)
                 update_run(
-                    run_id, RUN_CANCELLED, duration_ms=dur,
-                    findings_count=findings_count, plan_count=plan_count,
-                    summary=summary, outputs=result.get("outputs", []),
+                    run_id,
+                    RUN_CANCELLED,
+                    duration_ms=dur,
+                    findings_count=findings_count,
+                    plan_count=plan_count,
+                    summary=summary,
+                    outputs=result.get("outputs", []),
                 )
             else:
                 update_status(task_id, STATUS_STOPPED, last_duration_ms=dur)
                 update_run(
-                    run_id, RUN_DONE, duration_ms=dur,
-                    findings_count=findings_count, plan_count=plan_count,
-                    summary=summary, outputs=result.get("outputs", []),
+                    run_id,
+                    RUN_DONE,
+                    duration_ms=dur,
+                    findings_count=findings_count,
+                    plan_count=plan_count,
+                    summary=summary,
+                    outputs=result.get("outputs", []),
                 )
         except Exception as e:  # 引擎级异常 → 任务置 error，运行记录置 error
             dur = int((time.time() - started) * 1000)
@@ -213,26 +275,106 @@ class TaskRunner:
             if isinstance(f, dict):
                 items.append("[%s] %s" % (f.get("severity", ""), f.get("title", "")))
             elif hasattr(f, "severity"):
-                items.append("[%s] %s" % (getattr(f, "severity", ""), getattr(f, "title", "")))
+                items.append(
+                    "[%s] %s" % (getattr(f, "severity", ""), getattr(f, "title", ""))
+                )
         return "；".join(items) or "无发现"
 
-    # ── 停止 ───────────────────────────────────────────
+    def _execute_batch(self, task, run_id, cancel, started):
+        from modules.access import get_principal
+        from modules.operations.routes import submit_batch, resources
+        from modules.operations.batch import TERMINAL, summary
+
+        if self.app is None:
+            raise RuntimeError("整体巡检调度尚未绑定应用")
+        principal = get_principal(task.get("owner_id"))
+        if (
+            principal is None
+            or principal.tenant_id != task["tenant_id"]
+            or not (principal.is_admin or "operator" in principal.roles)
+        ):
+            raise PermissionError("任务所属运维用户或权限已失效")
+        if cancel.is_set():
+            update_status(task["id"], STATUS_STOPPED)
+            update_run(run_id, RUN_CANCELLED, summary="启动前已停止")
+            return
+        with self.app.app_context():
+            spec = dict(
+                task["batch_spec"],
+                name=task["name"],
+                request_key=f'work-task-{task["id"]}-run-{run_id}',
+            )
+            run = submit_batch(principal, spec)
+            service = resources()[1]
+            outputs = [
+                {
+                    "type": "batch_inspection",
+                    "batch_run_id": run["id"],
+                    "report_url": "/api/operations/batches/" + run["id"] + "/report",
+                }
+            ]
+            update_run(run_id, RUN_RUNNING, outputs=outputs, summary="整体巡检执行中")
+            while run["status"] not in TERMINAL:
+                latest_task = get_task(task["id"])
+                if cancel.is_set() or (latest_task or {}).get("stop_requested"):
+                    service.store.request_cancel(run["id"])
+                time.sleep(0.5)
+                run = service.store.get(run["id"])
+            counts = summary(run)
+            report = service.ensure_report(run)
+            message = f"纳入{counts['total']}个数据源，生成报告{counts['done']}个，失败{counts['failed']}个，采集缺项{counts['incomplete']}个"
+            status = (
+                RUN_CANCELLED
+                if run["status"] == "cancelled"
+                else (
+                    RUN_DONE
+                    if run["status"] == "completed" and not counts["incomplete"]
+                    else RUN_ERROR
+                )
+            )
+            outputs[0].update(status=run["status"], summary=counts)
+            duration = int((time.time() - started) * 1000)
+            update_status(
+                task["id"],
+                STATUS_ERROR if status == RUN_ERROR else STATUS_STOPPED,
+                last_error=message if status == RUN_ERROR else "",
+                last_duration_ms=duration,
+            )
+            update_run(
+                run_id,
+                status,
+                duration_ms=duration,
+                findings_count=sum(
+                    (m.get("result") or {}).get("risk_count") or 0
+                    for m in run["payload"]["members"]
+                ),
+                summary=message,
+                report_path=str(report),
+                outputs=outputs,
+                error=message if status == RUN_ERROR else "",
+            )
+
+    # ── 停止 ───────────────────────────────────────
     def stop(self, task_id: int) -> bool:
+        task = get_task(task_id)
+        if not task:
+            return False
+        request_stop(task_id)
         with self._lock:
-            rec = self._active.get(task_id)
-            if not rec:
-                # 无活跃线程：若状态机残留 running（如异常残留），置 stopped
-                t = get_task(task_id)
-                if t and t["status"] == STATUS_RUNNING:
-                    update_status(task_id, STATUS_STOPPED)
-                    return True
-                return False
-            cancel = rec["cancel"]
-            thread = rec["thread"]
-        cancel.set()  # 协作式取消：当前节点完成后中止后续
-        thread.join(timeout=_STOP_JOIN_TIMEOUT)
-        with self._lock:
-            self._active.pop(task_id, None)
+            record = self._active.get(task_id)
+            if record:
+                record["cancel"].set()
+        if self.app is not None and task.get("task_type") == "batch_inspection":
+            from .workflow_run_store import list_runs
+            from modules.operations.routes import resources
+
+            with self.app.app_context():
+                for run in list_runs(task_id):
+                    if run["status"] != RUN_RUNNING:
+                        continue
+                    for output in run.get("outputs") or []:
+                        if output.get("batch_run_id"):
+                            resources()[1].store.request_cancel(output["batch_run_id"])
         return True
 
     # ── 调度循环 ───────────────────────────────────────
@@ -244,19 +386,29 @@ class TaskRunner:
                 pass
             self._sched_stop.wait(_SCHED_INTERVAL_SEC)
 
-    def _sched_tick(self) -> None:
+    def _sched_tick(self, now=None) -> None:
         if not _HAS_CRONITER:
             return
-        now = datetime.now()
+        now = now or datetime.now(ZoneInfo("Asia/Shanghai"))
         try:
             tasks = list_tasks()
         except Exception:
             return
         for t in tasks:
             cron = (t.get("cron") or "").strip()
-            if not cron:
-                continue
             tid = t["id"]
+            if t.get("stop_requested"):
+                with self._lock:
+                    if tid in self._active:
+                        self._active[tid]["cancel"].set()
+            if not cron or not t.get("schedule_enabled", True):
+                self._sched_last_tick.pop(tid, None)
+                self._sched_last_cron.pop(tid, None)
+                continue
+            if self._sched_last_cron.get(tid) != cron:
+                self._sched_last_cron[tid] = cron
+                self._sched_last_tick[tid] = now
+                continue
             last = self._sched_last_tick.get(tid)
             if last is None:
                 # 首次只记录基准时刻，避免启动瞬间集中触发
@@ -265,8 +417,8 @@ class TaskRunner:
             try:
                 nxt = croniter(cron, last).get_next(datetime)  # type: ignore[arg-type]
                 if nxt <= now:
-                    self.run_once(tid, "cron")
-                    self._sched_last_tick[tid] = now
+                    if self.run_once(tid, "cron"):
+                        self._sched_last_tick[tid] = now
                 else:
                     self._sched_last_tick[tid] = last
             except Exception:

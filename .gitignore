@@ -227,3 +227,9 @@ build/core-missing.txt
 
 # Generic business inspection compatibility documentation
 !/docs/business-inspection-compatibility.md
+
+# Generated clean release configuration
+/build_pyinstaller_inputs/
+
+# macOS Finder metadata
+.DS_Store

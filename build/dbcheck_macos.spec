@@ -4,9 +4,14 @@
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 # RaccoonX macOS 打包配置
 
-import os
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
-from PyInstaller.utils.hooks import collect_submodules
+import os
+import sys
+
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
 
@@ -19,7 +24,7 @@ PROJECT_DIR = os.getcwd()
 data_dirs = [
     'web_templates', 'i18n', 'templates',
     'assets',           # 静态资源(web/品牌logo/db_logos)随包复制，static_folder 依赖
-    'modules/rag', 'modules/pro', 'data/pro_data',
+    'modules/rag', 'modules/pro',
     'drivers',
     'plugins',          # oracle_jdbc 等插件由 plugin_loader 动态加载，需随包复制
     'modules/user_management',  # RBAC 蓝图模板(html)与初始化库(schema)需随包复制
@@ -27,39 +32,15 @@ data_dirs = [
     'db',               # user_management_schema.sql 建表脚本需随包复制
 ]
 
-# JSON config files
-data_files = [
-    'dbc_config.json',
-    ('modules/config/version.json', 'version.json'),  # 重定向到 exe 同目录（frozen 模式 /version.json 路由读 base/version.json）
-    # builtin_registry.json / dbcheck-quotes.json 位于 modules/config/ 下，
-    # 已随上面的 data_dirs 整体打包，此处无需重复列出（根目录原本就没有这两个文件）。
-]
+# Build from clean defaults and collect dynamically loaded first-party modules.
+sys.path.insert(0, os.path.join(PROJECT_DIR, 'build'))
+from release_inputs import release_datas, dynamic_modules
 
-# Build datas list with absolute paths
-# 注意：data/pro_data 这类运行时目录是空目录，git 不跟踪，CI 全新 checkout 下不存在。
-# 这里对 data/ 开头的目录自动创建，其余缺失目录降级为 WARN 跳过，
-# 避免 PyInstaller 报 "ERROR: Unable to find '<dir>' when adding binary and data files"。
-datas = []
-for d in data_dirs:
-    src = os.path.join(PROJECT_DIR, d)
-    if not os.path.exists(src):
-        if d.replace('\\', '/').startswith('data/'):
-            os.makedirs(src, exist_ok=True)
-            print(f"[spec] created runtime dir: {d}")
-        else:
-            print(f"[WARN] data dir not found, skipped: {src}")
-            continue
-    datas.append((src, d))
-for item in data_files:
-    if isinstance(item, tuple):
-        f, dst = item
-    else:
-        f, dst = item, item
-    src = os.path.join(PROJECT_DIR, f)
-    if os.path.exists(src):
-        datas.append((src, dst))
-    else:
-        print(f"[WARN] data file not found, skipped: {src}")
+datas = release_datas(PROJECT_DIR, data_dirs)
+datas += collect_data_files('docxcompose')
+datas += collect_data_files('tzdata')
+datas += collect_data_files('babel')
+release_modules = dynamic_modules(PROJECT_DIR)
 
 a = Analysis(
     [os.path.join(PROJECT_DIR, 'web_ui.py')],
@@ -67,7 +48,13 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
+        *release_modules,
+        'croniter', 'tzdata', 'jpype', '_jpype', 'pymongo',
+        'babel.numbers', 'babel.dates',
+        'numpy', 'pandas', 'docxtpl',
         *collect_submodules('modules.service_management'),
+        *collect_submodules('modules.operations'),
+        *collect_submodules('docxcompose'),
         'modules.entrypoints.main_gbase8a',
         'modules.db_types.compatibility',
         *collect_submodules('pytds'),

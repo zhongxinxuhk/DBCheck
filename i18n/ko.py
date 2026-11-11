@@ -3311,3 +3311,11 @@ KO.update({
     "webui.system_info_opensource": "오픈 소스 정보",
     "webui.system_info_check_update": "업데이트 확인",
 })
+
+KO.update({
+    "menu.inventory": "데이터베이스 운영 대장",
+    "menu.batch-inspection": "다중 데이터 소스 통합 점검",
+    "menu.clusters": "클러스터 관리",
+    "menu.services": "운영 서비스 및 검수",
+    "menu.system-info": "시스템 정보"
+})

@@ -20,6 +20,11 @@ jdbc_jvm 连接 Microsoft SQL Server 2017/2019/2022/2025。
   'smart_analyze_sqlserver'（复用现有函数）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import json
@@ -397,7 +402,8 @@ class MssqlJdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             self.raw_jdbc_conn = conn
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'sqlserver')
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本
