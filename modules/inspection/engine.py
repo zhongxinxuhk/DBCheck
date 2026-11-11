@@ -254,9 +254,15 @@ class RemoteSystemInfoCollector:
                 # fallback：使用 uname -a 前3个字段
                 parts = os_release_out.strip().split(maxsplit=3)
                 platform_text = ' '.join(parts[:3]) if len(parts) >= 3 else os_release_out.strip()
+        host_model_out, _ = self._run(
+            "cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null "
+            "|| dmidecode -s system-product-name 2>/dev/null")
         info = {
             'platform': platform_out.strip() if platform_out.strip() else 'Linux',
             'platform_text': platform_text,
+            # 核心属性表「OS 版本」直接取发行版 PRETTY_NAME
+            'os_version': platform_text,
+            'host_model': host_model_out.strip() if host_model_out.strip() else '未知',
             'boot_time': boot_out.strip() if boot_out.strip() else '未知',
             'cpu': self.get_cpu_info(),
             'memory': self.get_memory_info(),
@@ -338,9 +344,24 @@ class LocalSystemInfoCollector:
             if psutil:
                 boot_time = datetime.fromtimestamp(psutil.boot_time()).strftime('%Y-%m-%d %H:%M:%S')
         except: pass
+        host_model = ''
+        try:
+            for _p in ('/sys/devices/virtual/dmi/id/product_name',
+                       '/sys/firmware/devicetree/base/model'):
+                try:
+                    with open(_p, encoding='utf-8', errors='ignore') as _fh:
+                        host_model = _fh.read().strip().strip('\x00')
+                except OSError:
+                    continue
+                if host_model:
+                    break
+        except Exception:
+            host_model = ''
         return {
             'platform': f"{_pf.system()} {_pf.release()} {_pf.machine()}",
             'platform_text': f"{_pf.system()} {_pf.release()} ({_pf.machine()})",
+            'os_version': _pf.platform(),
+            'host_model': host_model or '未知',
             'boot_time': boot_time,
             'cpu': self.get_cpu_info(),
             'memory': self.get_memory_info(),
@@ -773,6 +794,9 @@ class BaseInspectionEngine:
         if self._template_id is None:
             self._template_id = self.get_template_id()
 
+        from modules.inspection.sql_safety import guarded_connection
+        self.conn = guarded_connection(self.conn,self.db_type)
+
         # 2. 加载 SQL 模板（从 inspection.db 或内置）
         sql_dict = {}  # {query_key: sql_text}
         cfg = None     # 兼容 configparser（仅当 sql_templates 非空时使用）
@@ -939,6 +963,18 @@ class BaseInspectionEngine:
                 result = self._execute_query_safe(cursor, clean_sql, item_name=name)
                 self.context[name] = result.get('data', [])
                 time.sleep(0.03)
+            # 核心属性（含版本/补丁号、字符集、库大小、归档路径/模式）：
+            # 复用当前游标，单条失败只丢该字段，不影响巡检结果。
+            try:
+                from modules.inspection.basic_info import collect_db
+                self.context['basic_info_db'] = collect_db(
+                    cursor, self.db_type, getattr(self, 'database', None))
+                print('[INFO] 核心属性采集: %d 项' % len(self.context['basic_info_db']))
+            except Exception as _bi_err:
+                print('[WARN] 核心属性采集失败（报告将标注未采集）: %s' % _bi_err)
+                self.context['basic_info_db'] = {}
+            for warning in getattr(self.conn,'warnings',[]):
+                if warning not in self._safe_errors:self._safe_errors.append(warning)
             cursor.close()
         except Exception as e:
             print(self._t(f'{self.db_type}_query_loop_fail', default='dm8_query_loop_fail').format(e=e))
@@ -1011,6 +1047,14 @@ class BaseInspectionEngine:
             # 异常时同样不写入任何本机磁盘数据，避免误报告警
             self.context.update({"system_info": {}})
         
+        # 6.4 核心属性合并：库内探测 + 宿主机 + 资产台账镜像（data/basic_info.json）
+        try:
+            from modules.inspection.basic_info import build as _build_basic_info
+            self.context['basic_info'] = _build_basic_info(self)
+            print('[INFO] 核心属性表就绪: %d 字段' % len(self.context['basic_info']))
+        except Exception as _bi_err:
+            print('[WARN] 核心属性表生成失败: %s' % _bi_err)
+
         # 6.5 规则引擎取数补齐（metrics 层）
         # 规则 params 引用的 context 键与模板 query_key 是两套命名；此处把模板
         # 未提供的键补齐（只读、缺啥补啥），使规则引擎对任何模板都能取到数。
@@ -1178,7 +1222,7 @@ class BaseInspectionEngine:
     def generate_report(self, output_file, inspector_name="Jack"):
         """生成报告 - 通用逻辑！"""
         from modules.core.data_security import redact
-        self.context = redact(self.context, mask_identity=True)
+        self.context = redact(self.context, mask_identity=True, preserve_network=True)
         # ── 内存监控（防止 Docker OOM）────────────────────
         if psutil:
             try:
@@ -1222,7 +1266,7 @@ class BaseInspectionEngine:
                 )
             from docx import Document
             from modules.service_management.report import sanitize_document
-            sanitize_document(Document(output_file)).save(output_file)
+            sanitize_document(Document(output_file), preserve_network=True).save(output_file)
             return output_file
         except MemoryError as e:
             print(f"[ERROR] 内存不足，报告生成失败: {e}")
@@ -1743,6 +1787,7 @@ class BaseInspectionEngine:
                     chapter_queries.append({
                         'key': q_key,
                         'query_key': q_key,
+                        'query_sql': sql,
                         'query_name_zh': name_zh,
                         'query_name_en': name_en,
                         'query_description_zh': desc_zh,
@@ -1802,6 +1847,11 @@ class BaseInspectionEngine:
             # 4. 执行基线配置检查
             self._check_baselines()
             
+            for warning in getattr(self.conn,'warnings',[]):
+                if warning not in self._safe_errors:self._safe_errors.append(warning)
+            if self._safe_errors:
+                self.context['collection_status']='incomplete'
+                self.context['health_status']='采集不完整，需复核SQL限制与未完成项'
             # 5. 调用 fallback 渲染
             return self._fallback_render(output_file, inspector_name)
         
@@ -2512,6 +2562,7 @@ class BaseInspectionEngine:
         try:
             # 延迟导入 docx 相关模块
             from docx import Document
+            from modules.intelligence.schema_knowledge import report_field_labels
             from docx.shared import Pt, RGBColor, Inches, Cm
             from docx.enum.text import WD_ALIGN_PARAGRAPH
             from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -2745,9 +2796,40 @@ class BaseInspectionEngine:
             cover_tbl = _docx_build_grid_table(doc, ['', ''], cover_rows, header=False,
                                               font_size_pt=10.5, cell_styler=_cover_styler)
             cover_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-            
+
             doc.add_page_break()
-            
+
+            # ── 数据库基础信息（16 项核心属性，台账核对依据）──────
+            # 含版本/补丁号、字符集、库大小、归档路径/模式、存储模式、备份策略、
+            # 容灾状态、集群属性；静态登记项来自 data/basic_info.json。
+            _bi = self.context.get('basic_info') or {}
+            if isinstance(_bi, dict) and _bi:
+                from modules.inspection.basic_info import to_rows as _bi_rows
+                _fmt_heading('数据库基础信息（核心属性）' if is_zh
+                             else 'Database Basic Information (Core Attributes)', level=1)
+                _note = doc.add_paragraph(
+                    '数据来源：数据库实时探测 + 宿主机采集 + 资产台账镜像'
+                    '（data/basic_info.json）。采集不到时明确标注「未采集 / 未登记」，'
+                    '不臆造取值。' if is_zh else
+                    'Sources: live database probes + host collection + asset registry '
+                    'mirror (data/basic_info.json). Missing values are marked explicitly.')
+                for _r in _note.runs:
+                    _r.font.size = Pt(9)
+                    _r.font.name = '微软雅黑'
+                    _r.font.color.rgb = RGBColor(90, 90, 90)
+
+                def _bi_styler(i, j, val):
+                    if j == 0:
+                        return {'bg': 'DCE6F1', 'bold': True, 'size_pt': 9.5}
+                    return {'size_pt': 9.5}
+
+                _docx_build_grid_table(
+                    doc, ['属性', '取值'] if is_zh else ['Attribute', 'Value'],
+                    _bi_rows(_bi, 'zh' if is_zh else 'en'),
+                    header=True, header_bg='336699', font_size_pt=9.5,
+                    cell_styler=_bi_styler, col_widths=[4.2, 11.8])
+                doc.add_page_break()
+
             # ── 章节内容 ────────────────────────────────────
             chapters = self.context.get('_chapters', [])
             if chapters:
@@ -2785,6 +2867,9 @@ class BaseInspectionEngine:
                         if q_data and isinstance(q_data, list) and len(q_data) > 0:
                             if isinstance(q_data[0], dict):
                                 headers = list(q_data[0].keys())
+                                display_headers = report_field_labels(
+                                    self.db_type, q.get('query_sql', ''), headers
+                                ) if is_zh else headers
                                 # 宽表（>8列）默认采用卡片式垂直布局；指定章节强制横向表格
                                 if len(headers) > 12 and q_key not in force_horizontal_table_keys:
                                     def _card_styler(i, j, val):
@@ -2799,9 +2884,9 @@ class BaseInspectionEngine:
                                         cr.font.name = '微软雅黑'
                                         cr.font.bold = True
                                         cr.font.color.rgb = RGBColor(0, 51, 102)
-                                        card_pairs = [[self._clean_xml_str(h, max_len=100),
+                                        card_pairs = [[self._clean_xml_str(label, max_len=200),
                                                        self._clean_xml_str(row_data.get(h, ''), max_len=500)]
-                                                      for h in headers]
+                                                      for h, label in zip(headers, display_headers)]
                                         _docx_build_grid_table(doc, ['', ''], card_pairs,
                                                                header=False, font_size_pt=9,
                                                                cell_styler=_card_styler)
@@ -2817,7 +2902,7 @@ class BaseInspectionEngine:
                                     #     col_widths = _calc_pg_settings_widths(headers)  # 禁用固定列宽，使用自动调整
                                     # elif is_wide:
                                     #     col_widths = _calc_compact_widths(headers, q_data[:5])  # 禁用固定列宽，使用自动调整
-                                    _docx_build_grid_table(doc, headers, q_rows,
+                                    _docx_build_grid_table(doc, display_headers, q_rows,
                                                            header_bg='336699', header_white=True,
                                                            font_size_pt=font_size, col_widths=col_widths)
                                     doc.add_paragraph()
@@ -2850,20 +2935,22 @@ class BaseInspectionEngine:
                 # 如果没有章节结构，直接渲染所有列表数据
                 _fmt_heading(self._t(f'report.{self.db_type}_ch_data', default='巡检数据' if is_zh else 'Inspection Data'), level=1)
                 for key in sorted(self.context.keys()):
-                    if key.startswith('_') or key in ('auto_analyze', 'baseline_results', 'system_info', 'health_analysis', 'report_time', 'inspector_name', 'problem_count', 'health_status', 'co_name', 'version'):
+                    if key.startswith('_') or key in ('auto_analyze', 'baseline_results', 'system_info', 'health_analysis', 'report_time', 'inspector_name', 'problem_count', 'health_status', 'co_name', 'version', 'basic_info', 'basic_info_db'):
                         continue
                     val = self.context.get(key)
                     if val and isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
                         _heading_key = _mongo_section_title(key) if key.startswith('mongodb_') else key
                         _fmt_para(_heading_key, bold=True, size=11)
                         headers = list(val[0].keys())
+                        display_headers = report_field_labels(
+                            self.db_type, '', headers) if is_zh else headers
                         is_wide = len(headers) > 6
                         font_size = 8 if is_wide else 9
                         m_rows = [[self._clean_xml_str(row_data.get(h, ''), max_len=500)
                                    for h in headers] for row_data in val]
                         # 统一使用自动调整宽度，不再计算固定列宽，确保表格根据窗口自动调整
                         col_widths = None  # _calc_compact_widths 禁用，使用自动调整
-                        _docx_build_grid_table(doc, headers, m_rows,
+                        _docx_build_grid_table(doc, display_headers, m_rows,
                                                header_bg='336699', header_white=True,
                                                font_size_pt=font_size, col_widths=col_widths)
                         doc.add_paragraph()

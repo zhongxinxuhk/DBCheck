@@ -299,11 +299,11 @@ class DatabaseInstance:
 class InstanceGroup:
     """实例分组"""
 
-    def __init__(self, name: str, description: str = "", color: str = "#378ADD"):
+    def __init__(self, name: str, description: str = "", color: str = "#378ADD", created_at: str = ""):
         self.name = name
         self.description = description
         self.color = color
-        self.created_at = datetime.now().isoformat()
+        self.created_at = created_at or datetime.now().isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
         return {

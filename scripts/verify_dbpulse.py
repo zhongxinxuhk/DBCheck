@@ -37,8 +37,10 @@ def main():
         assert data['webui.license_key_placeholder'] == _LANGS[lang]['webui.license_key_placeholder'], lang
     assert 'DBCheck/drivers/' in t('webui.yashandb_driver_desc', 'en')
     template = (ROOT / 'web_templates/index.html').read_text(encoding='utf-8-sig')
-    # 更新入口不再是 GitHub 跳转链接，而是直接请求后端缓存的预置公告源。
-    assert 'id="system-update-link"' in template and '/api/announcement' in template
+    # 系统信息页只展示版本及运行信息。
+    for removed in ('sysInfoUpdCardX1', 'sysInfoLogoCardX1', 'sysInfoOssCardX1', 'system-update-link', 'sysinfo-announce-list'):
+        assert removed not in template, removed
+    assert 'id="sysinfo-lang"' in template and 'id="sysinfo-host"' in template
     assert 'GitHub Releases →' not in template
     assert 'RaccoonX / DBCheck' in template and 'sdfiyon@gmail.com' in template
     assert 'https://github.com/fiyo/DBCheck' in template

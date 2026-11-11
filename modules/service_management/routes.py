@@ -11,7 +11,7 @@
 
 import io
 from pathlib import Path
-from flask import Blueprint, g, jsonify, render_template, request, send_file, current_app
+from flask import Blueprint, g, jsonify, request, send_file, current_app, redirect
 from modules.core import paths
 from modules.core.data_security import redact
 from .catalog import all_items, load_catalog
@@ -62,7 +62,7 @@ def invalid(error):
 @bp.route('/services')
 def page():
     actor()
-    return render_template('service_management.html')
+    return redirect('/#services')
 
 
 @bp.route('/api/services/catalog')

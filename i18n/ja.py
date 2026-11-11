@@ -2936,8 +2936,6 @@ JA.update({
     # ══ ログインページ ══
     "login.title": "RaccoonX",
     "login.subtitle": "インテリジェントデータベース巡回点検・パフォーマンス分析プラットフォーム",
-    "login.welcome": "おかえりなさい",
-    "login.welcome_desc": "サインインしてデータベース巡回点検を始めましょう",
     "login.slogan": "データベース運用：可視・制御・予防",
     "login.feature_1": "スマート巡回点検",
     "login.feature_1_desc": "ワンクリックでデータベース健全性チェック",
@@ -2954,10 +2952,6 @@ JA.update({
     "login.error_empty": "ユーザー名とパスワードを入力してください",
     "login.error_failed": "サインイン失敗",
     "login.error_network": "ネットワークエラー、後でもう一度お試しください",
-    "login.demo_title": "デモアカウント",
-    "login.demo_admin": "管理者",
-    "login.demo_viewer": "閲覧",
-    "login.demo_operator": "運用",
     "login.theme_toggle": "テーマ切替",
     "login.copyright": "RaccoonX © 2026",
     "login.show_password": "パスワードを表示",
@@ -3368,4 +3362,12 @@ JA.update({
     "webui.system_info_brand": "ブランドロゴ",
     "webui.system_info_opensource": "オープンソース情報",
     "webui.system_info_check_update": "更新を確認",
+})
+
+JA.update({
+    "menu.inventory": "データベース運用台帳",
+    "menu.batch-inspection": "複数データソースの一括点検",
+    "menu.clusters": "クラスタ管理",
+    "menu.services": "運用サービスと検収",
+    "menu.system-info": "システム情報"
 })

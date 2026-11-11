@@ -239,14 +239,7 @@ Open:
 http://localhost:5003
 ```
 
-Default credentials:
-
-```text
-Username: admin
-Password: admin123
-```
-
-Please change the password after the first login.
+Initial accounts and roles (admin / viewer / operator), per-platform startup steps and how to obtain the installation-time admin password are documented in the **[initialization guide](docs/install/INITIALIZATION_zh.md)** (Chinese). Please change passwords after the first login.
 
 ---
 

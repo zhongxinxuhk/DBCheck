@@ -35,7 +35,7 @@ def coverage(catalog, overview):
     return output
 
 
-def sanitize_document(document):
+def sanitize_document(document, *, preserve_network=False):
     from docx.oxml.ns import qn
     for part in document.part.package.parts:
         element = getattr(part,'_element',None)
@@ -44,7 +44,7 @@ def sanitize_document(document):
         for paragraph in element.iter(qn('w:p')):
             nodes = list(paragraph.iter(qn('w:t')))
             original = ''.join(node.text or '' for node in nodes)
-            clean = redact(original,mask_identity=True)
+            clean = redact(original, mask_identity=True, preserve_network=preserve_network)
             if clean != original and nodes:
                 nodes[0].text = clean
                 for node in nodes[1:]:
@@ -198,5 +198,5 @@ def append_to_existing(path,tenant_id=None,user_id=None):
             if principal and principal.tenant_id==tenant_id:
                 actor={'id':principal.id,'tenant_id':tenant_id,'admin':principal.is_admin}
                 snapshot=overview(ServiceStore(database,paths.DB_KEY_PATH.read_bytes()),actor,catalog)
-        append_coverage(document,catalog,redact(snapshot,mask_identity=True))
-    sanitize_document(document).save(path)
+        append_coverage(document,catalog,redact(snapshot,mask_identity=True,preserve_network=True))
+    sanitize_document(document,preserve_network=True).save(path)

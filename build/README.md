@@ -39,7 +39,11 @@ The script will:
 ```
 dist/DBCheck-Windows-x86_64.zip
 ```
-Extract and run `start.bat` or `dbcheck.exe`.
+Extract and run `DBPulse.exe` or `start.bat`. The status window shows running in green and stopped in red. Closing or minimizing the window keeps the application in the Windows notification area. Use the tray menu to reopen, start, stop or exit.
+
+Initial login is `admin` / `admin123`.
+
+PyCharm provides `DBPulse - Windows 打包`. It runs `build/build_release.py --platform windows`, verifies the frozen application and status window, and creates a ZIP plus SHA-256 checksum under `dist/`. On this Mac the configuration uses the configured Docker/Wine Windows build host.
 
 ---
 

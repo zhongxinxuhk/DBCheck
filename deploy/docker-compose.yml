@@ -39,6 +39,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    # 容器标准输出交给日志驱动管理：10MB × 3 份后自动轮转，避免 docker 日志撑爆宿主盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - dbcheck_net
 

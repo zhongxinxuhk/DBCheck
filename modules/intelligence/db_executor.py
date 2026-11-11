@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Tuple
 
 # ── 只读 SQL 校验 ───────────────────────────────────────────────────────────
 from modules.core.data_security import assert_readonly_sql
+from modules.inspection.sql_safety import InspectionConnection
 
 
 # ── SQL 执行计划验证 ─────────────────────────────────────────────────────────
@@ -76,8 +77,10 @@ def validate_sql_with_explain(db_info: Dict[str, Any], sql: str) -> Dict[str, An
 
 # ── 各类驱动连接 + 执行 ─────────────────────────────────────────────────────
 def _fetch(cur, limit: int) -> Tuple[List[str], List[List[Any]]]:
+    # 兼容层取数：JDBC 包装游标可能缺 fetchmany，统一走 fetch_rows 兜底
+    from modules.core.dbapi_compat import fetch_rows
     cols = [d[0] for d in cur.description] if cur.description else []
-    rows = cur.fetchmany(limit) if limit and limit > 0 else cur.fetchall()
+    rows = fetch_rows(cur, limit) if limit and limit > 0 else fetch_rows(cur, 0)
     out: List[List[Any]] = []
     for r in rows:
         out.append(list(r) if not isinstance(r, dict) else [r.get(c) for c in cols])
@@ -116,7 +119,7 @@ def _exec_oracledb(db_info: Dict[str, Any], sql: str, limit: int):
         except Exception as e:
             raise
     try:
-        cur = conn.cursor()
+        cur = InspectionConnection(conn,db_info.get("db_type",""),metadata_only=False).cursor()
         cur.execute(sql)
         return _fetch(cur, limit)
     finally:
@@ -135,7 +138,7 @@ def _exec_pymysql(db_info, sql, limit, db_default="INFORMATION_SCHEMA"):
         database=db_name, charset="utf8mb4", connect_timeout=10,
     )
     try:
-        cur = conn.cursor(pymysql.cursors.DictCursor)
+        cur = InspectionConnection(conn,db_info.get("db_type","mysql"),metadata_only=False).cursor(pymysql.cursors.DictCursor)
         cur.execute(sql)
         cols, rows = _fetch(cur, limit)
         # DictCursor 返回 dict，转成按列顺序的 list
@@ -157,7 +160,7 @@ def _exec_psycopg(db_info, sql, limit, db_default="postgres"):
         dbname=db_name, connect_timeout=10,
     )
     try:
-        cur = conn.cursor()
+        cur = InspectionConnection(conn,db_info.get("db_type",""),metadata_only=False).cursor()
         cur.execute(sql)
         return _fetch(cur, limit)
     finally:
@@ -167,7 +170,7 @@ def _exec_psycopg(db_info, sql, limit, db_default="postgres"):
 def _exec_pyodbc(db_info,sql,limit,database=""):
     conn=_connect_pyodbc(db_info,database)
     try:
-        cursor=conn.cursor()
+        cursor=InspectionConnection(conn,db_info.get("db_type",""),metadata_only=False).cursor()
         cursor.execute(sql)
         return _fetch(cursor,limit)
     finally:
@@ -181,7 +184,7 @@ def _exec_dm(db_info, sql, limit):
         server=db_info.get("host", ""), port=int(db_info.get("port", 5236)),
     )
     try:
-        cur = conn.cursor()
+        cur = InspectionConnection(conn,db_info.get("db_type",""),metadata_only=False).cursor()
         cur.execute(sql)
         return _fetch(cur, limit)
     finally:
@@ -195,7 +198,7 @@ def _exec_yasdb(db_info, sql, limit):
         user=db_info.get("user", ""), password=db_info.get("password", ""),
     )
     try:
-        cur = conn.cursor()
+        cur = InspectionConnection(conn,db_info.get("db_type",""),metadata_only=False).cursor()
         cur.execute(sql)
         return _fetch(cur, limit)
     finally:
@@ -213,7 +216,7 @@ def _exec_plugin(db_info, sql, limit, plugin_pkg: str, db_default="testdb"):
         db_info.get("user", ""), db_info.get("password", ""), database=db_name,
     )
     try:
-        cur = conn.cursor()
+        cur = InspectionConnection(conn,db_info.get("db_type",""),metadata_only=False).cursor()
         cur.execute(sql)
         return _fetch(cur, limit)
     finally:
@@ -390,7 +393,7 @@ def _connect_plugin(db_info, plugin_pkg, db_default="testdb"):
     )
 
 
-def connect_instance(db_info: Dict[str, Any]):
+def _connect_instance_raw(db_info: Dict[str, Any]):
     """返回目标数据源的原始 DB-API 连接（只读取向）。
 
     与 :func:`execute_instance_query` 共用同一套按 db_type 的连接分支，
@@ -417,6 +420,11 @@ def connect_instance(db_info: Dict[str, Any]):
     if kind == "plugin":
         return _connect_plugin(db_info, plugin)
     raise ValueError(f"未实现的连接类型: {kind}")
+
+
+def connect_instance(db_info: Dict[str, Any]):
+    """为巡检与分析器提供受限连接，由调用方负责关闭。"""
+    return InspectionConnection(_connect_instance_raw(db_info),db_info.get('db_type',''))
 
 
 def close_instance(conn) -> None:

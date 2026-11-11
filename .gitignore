@@ -54,6 +54,7 @@ awr_uploads/
 data/*.db
 data/agreement_violation.json
 data/autobackup/
+data/objstore/            # 对象存储备份的暂存包与执行历史（运行期产物）
 # 顶部公告条运行时文件：announcement.json=用户手动覆盖；announcement_cache.json=官网拉取缓存
 data/announcement.json
 data/announcement_cache.json
@@ -79,6 +80,12 @@ export_*.py
 *.md
 # 发版说明片段：由 deploy/release.ps1 在打 tag 时生成并提交，供 CI 追加到 Release 备注
 !/.github/release_append.md
+!docs/object-storage-backup.md
+!docs/install/INITIALIZATION_zh.md
+!docs/install/SERVICE_zh.md
+!docs/install/SCALE_zh.md
+!docs/install/LOG_LIFECYCLE_zh.md
+!docs/install/REPORT_CORE_ATTRIBUTES_zh.md
 *.mermaid
 tests/*.*
 pro_data/*
@@ -206,8 +213,25 @@ build/core-missing.txt
 # Generic integration guidance; contains no customer requirements or records
 !/docs/database-compatibility.md
 
+# 对象存储备份模块自测（tests/ 被全局忽略，这里按目录单独放开）
+!modules/objstore/tests/
+!modules/objstore/tests/*.py
+
+# 核心容量/日志生命周期自测（同上，按目录单独放开）
+!modules/core/tests/
+!modules/core/tests/*.py
+
+# 专项巡检核心属性采集自测
+!modules/inspection/tests/
+!modules/inspection/tests/*.py
+
 # Generic business inspection compatibility documentation
 !/docs/business-inspection-compatibility.md
 
 # Isolated native build environments and staging
 /.portable-build/
+# Generated clean release configuration
+/build_pyinstaller_inputs/
+
+# macOS Finder metadata
+.DS_Store

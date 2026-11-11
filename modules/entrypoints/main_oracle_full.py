@@ -15,7 +15,6 @@ DBCheck - Oracle 全面巡检工具（增强版）
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
-
 from modules.core.paths import PROJECT_ROOT
 import sys
 import os
@@ -173,10 +172,11 @@ def _get_oracle_conn_thunk_first(dsn, user, password, mode=None,
             _tunnel = None
 
     def _do_connect():
+        from modules.inspection.sql_safety import guarded_connection
         if mode is not None:
-            return _odb.connect(user=user, password=password, dsn=_real_dsn, mode=mode)
+            return guarded_connection(_odb.connect(user=user, password=password, dsn=_real_dsn, mode=mode),"oracle")
         else:
-            return _odb.connect(user=user, password=password, dsn=_real_dsn)
+            return guarded_connection(_odb.connect(user=user, password=password, dsn=_real_dsn),"oracle")
 
     # ── 第一次尝试：thin mode ──
     try:
@@ -433,6 +433,8 @@ def load_oracle_chapter_structure(template_id):
 def execute_oracle_chapter_queries(conn, chapters):
     """执行所有章节的查询，返回 chapter_results
     格式: [{chapter_number, chapter_title_zh, queries_results: [{query_key, query_description_zh, columns, data}]}]"""
+    from modules.inspection.sql_safety import guarded_connection
+    conn=guarded_connection(conn,'oracle')
     chapter_results = []
     for chapter in chapters:
         query_results = []
@@ -939,6 +941,17 @@ def oracle_check_version_and_patches(conn):
                 results['patches'] = cur.fetchall()
             except Exception:
                 results['patches'] = []
+        # 核心属性：字符集、库大小、归档路径/模式、存储模式、备份策略、
+        # 容灾与集群属性。复用同一连接，失败只影响对应字段。
+        try:
+            from modules.inspection.basic_info import collect_db
+            _bi_cur = conn.cursor()
+            try:
+                results['basic_info'] = collect_db(_bi_cur, 'oracle')
+            finally:
+                _bi_cur.close()
+        except Exception:
+            results['basic_info'] = {}
     except Exception as e:
         results['error'] = str(e)
     finally:
@@ -1800,6 +1813,8 @@ def oracle_check_alert(conn, days=7):
 
 def _html_table(headers, rows, id_="", class_="dbcheck_tbl"):
     """生成 HTML 表格"""
+    from modules.intelligence.schema_knowledge import report_field_labels
+    headers = report_field_labels('oracle', '', headers)
     lines = []
     if id_ or class_:
         lines.append(f'<table id="{id_}" class="{class_}" border="1" cellpadding="4" cellspacing="0">')
@@ -1925,6 +1940,9 @@ def build_html_report(db_info, os_data, check_results, db_version,
               'load_average','disk_usage','hugepages','thp']:
         v = os_data.get(k, 'N/A')
         os_rows.append((k, v))
+    from modules.intelligence.schema_knowledge import report_field_labels
+    os_labels = report_field_labels('oracle', '', [row[0] for row in os_rows])
+    os_rows = [(label, row[1]) for label, row in zip(os_labels, os_rows)]
     os_section = _html_section('🖥  OS 主机信息', _html_table(['项目','内容'], os_rows), 'os_info')
 
     # ── 统一章节渲染 ──────────────────────────────────────────────────────
@@ -2006,8 +2024,11 @@ def _set_cell_bg(cell, hex_color):
     shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{hex_color}"/>')
     cell._tc.get_or_add_tcPr().append(shading)
 
-def _docx_table(doc, headers, rows, header_bg='336699'):
+def _docx_table(doc, headers, rows, header_bg='336699', *, lang='zh'):
     """生成 Word 表格（带表头背景色）"""
+    if lang.startswith('zh'):
+        from modules.intelligence.schema_knowledge import report_field_labels
+        headers = report_field_labels('oracle', '', headers)
     tbl = doc.add_table(rows=1, cols=len(headers))
     tbl.style = 'Table Grid'
     tbl.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -2112,7 +2133,7 @@ _ORACLE_ROW_TRANSFORMS = {
 }
 
 
-def build_unified_chapters(check_results, chapter_results, has_template, os_data=None, db_info=None):
+def build_unified_chapters(check_results, chapter_results, has_template, os_data=None, db_info=None, lang='zh'):
     """将 check_results 或 chapter_results 转换为统一的章节结构。
 
     返回格式:
@@ -2152,7 +2173,10 @@ def build_unified_chapters(check_results, chapter_results, has_template, os_data
         os_keys = ['hostname', 'os_version', 'kernel', 'uptime', 'cpu_model', 'cpu_count',
                    'mem_total_mb', 'mem_used_mb', 'mem_usage_pct', 'swap_total_mb', 'swap_used_mb',
                    'load_average', 'hugepages', 'thp']
-        os_data_list = [[k, str(os_data.get(k, 'N/A'))] for k in os_keys]
+        from modules.intelligence.schema_knowledge import report_field_labels
+        os_labels = report_field_labels('oracle', '', os_keys) if lang.startswith('zh') else os_keys
+        os_data_list = [[label, str(os_data.get(k, 'N/A'))]
+                        for k, label in zip(os_keys, os_labels)]
         unified.append({'chapter_title': 'OS 主机信息', 'chapter_number': 0,
                         'subsections': [{'title': '', 'columns': ['项目', '内容'], 'data': os_data_list}]})
 
@@ -2334,6 +2358,80 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
 
     doc.add_page_break()
 
+    # ── 数据库基础信息（16 项核心属性，台账核对依据）──────────────
+    # Oracle 全面巡检不经 BaseInspectionEngine，这里单独渲染；字段与
+    # modules/inspection/basic_info.py 完全一致（含版本/补丁号）。
+    try:
+        from modules.inspection.basic_info import build_from_parts, to_rows
+        _vp = check_results.get('版本/补丁') or {}
+        _db_part = dict(_vp.get('basic_info') or {})
+        if not _db_part.get('version_patch'):
+            _banners = []
+            for _row in (_vp.get('version') or []):
+                _banners.append(str(_row[0]) if isinstance(_row, (tuple, list)) and _row
+                                else str(_row))
+            _patch_txt = []
+            for _row in (_vp.get('patches') or [])[:3]:
+                if isinstance(_row, (tuple, list)):
+                    _patch_txt.append(' '.join(str(x) for x in _row[:3] if x))
+                else:
+                    _patch_txt.append(str(_row))
+            if _banners:
+                _db_part['version_patch'] = _banners[0] + (
+                    '；补丁：' + ' | '.join(_patch_txt) if _patch_txt else '；补丁：未读取到')
+        _bi_info = build_from_parts(
+            host=host or db_info.get('host', ''),
+            port=db_info.get('port'),
+            db_type='oracle',
+            database=db_info.get('database') or db_info.get('service_name'),
+            instance_name=db_info.get('instance_name') or db_info.get('service_name') or '',
+            db_part=_db_part,
+            system_info={'os_version': os_data.get('platform_text') or os_data.get('platform'),
+                         'host_model': os_data.get('host_model')},
+        )
+        _bi_rows = to_rows(_bi_info, lang)
+        _bi_title = ('数据库基础信息（核心属性）' if lang == 'zh'
+                     else 'Database Basic Information (Core Attributes)')
+        _bi_h = doc.add_heading(_bi_title, level=1)
+        for _run in _bi_h.runs:
+            _run.font.color.rgb = RGBColor(0, 51, 102)
+            _run.font.size = Pt(14)
+        _bi_tbl = doc.add_table(rows=len(_bi_rows) + 1, cols=2, style='Table Grid')
+        _bi_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        _hdr = ['属性', '取值'] if lang == 'zh' else ['Attribute', 'Value']
+        for _j, _txt in enumerate(_hdr):
+            _cell = _bi_tbl.rows[0].cells[_j]
+            _cell.text = _txt
+            _run = _cell.paragraphs[0].runs[0]
+            _run.font.size = Pt(9.5)
+            _run.font.bold = True
+            _run.font.name = '微软雅黑'
+            _run.font.color.rgb = RGBColor(255, 255, 255)
+            _set_cell_bg(_cell, '336699')
+        for _i, (_label, _value) in enumerate(_bi_rows, start=1):
+            _c0, _c1 = _bi_tbl.rows[_i].cells
+            _c0.text = str(_label)
+            _c1.text = str(_value)
+            for _c in (_c0, _c1):
+                for _p in _c.paragraphs:
+                    for _run in _p.runs:
+                        _run.font.size = Pt(9.5)
+                        _run.font.name = '微软雅黑'
+            for _run in _c0.paragraphs[0].runs:
+                _run.font.bold = True
+            _set_cell_bg(_c0, 'DCE6F1')
+        _note_p = doc.add_paragraph(
+            '数据来源：数据库实时探测 + 宿主机采集 + 资产台账镜像（data/basic_info.json）；'
+            '采集不到时明确标注「未采集 / 未登记」。' if lang == 'zh' else
+            'Sources: live database probes + host collection + asset registry mirror; '
+            'missing values are marked explicitly.')
+        for _run in _note_p.runs:
+            _run.font.size = Pt(9)
+            _run.font.color.rgb = RGBColor(90, 90, 90)
+        doc.add_page_break()
+    except Exception as _bi_err:
+        print('[WARN] 核心属性表渲染失败: %s' % _bi_err)
+
     # ── 章节序号计数器（配置章节 + 固定附录共用，序号连续）───────
     _section_num = 0
     _subsection_num = 0
@@ -2511,22 +2609,27 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
     def _add_kv_table(data, cols=2):
         rows = list(data)
         headers = [_t('report.tbl_col_key'), _t('report.tbl_col_val')]
-        _docx_table(doc, headers, rows)
+        _docx_table(doc, headers, rows, lang=lang)
         doc.add_paragraph()
 
     # ═══════════════════════════════════════════════════════════════════════════
+    if check_results.get('_collection_warnings'):
+        doc.add_heading('巡检采集限制与未完成项',level=1)
+        for warning in check_results['_collection_warnings']:
+            doc.add_paragraph(str(warning))
+
     #  统一章节渲染：基于 build_unified_chapters() 输出
     #  支持模板驱动（chapter_results）和硬编码回退（check_results）
     # ═══════════════════════════════════════════════════════════════════════════
     has_template = chapter_results is not None and len(chapter_results) > 0
     unified_chapters = build_unified_chapters(
-        check_results, chapter_results, has_template, os_data=os_data, db_info=db_info
+        check_results, chapter_results, has_template, os_data=os_data, db_info=db_info, lang=lang
     )
 
     def _render_chapter_table(doc, columns, data, error=None):
         """辅助函数：渲染一个数据表格，数据为空时显示提示，查询失败时显示错误"""
         if columns and data:
-            _docx_table(doc, columns, data)
+            _docx_table(doc, columns, data, lang=lang)
             doc.add_paragraph()
         elif columns:
             p = doc.add_paragraph(_t('report.no_data'))
@@ -2652,7 +2755,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
         # 23.1 问题明细
         _add_subsection(_t('report.oracle_risk_detail_chapter'))
         risk_table_data = [(str(i+1), x['col1'], x['col2'], x['col3'], x['col4'], x['col5']) for i, x in enumerate(risk_items)]
-        _docx_table(doc, [_t('report.col_seq'), _t('report.col_risk_item'), _t('report.col_level'), _t('report.col_desc'), _t('report.col_severity'), _t('report.col_owner')], risk_table_data)
+        _docx_table(doc, [_t('report.col_seq'), _t('report.col_risk_item'), _t('report.col_level'), _t('report.col_desc'), _t('report.col_severity'), _t('report.col_owner')], risk_table_data, lang=lang)
         doc.add_paragraph()
         # 23.2 修复SQL速查
         fix_sqls = [(x['col1'], x['fix_sql']) for x in risk_items if x['fix_sql']]
@@ -2733,7 +2836,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                     str(r[14]) if len(r) > 14 else '',      # lock_type
                     str(r[17]) if len(r) > 17 else '',      # locked_object
                 ])
-            _docx_table(doc, blocking_headers, blocking_display)
+            _docx_table(doc, blocking_headers, blocking_display, lang=lang)
             doc.add_paragraph()
         else:
             p = doc.add_paragraph(_t('report.oracle_no_blocking'))
@@ -2756,7 +2859,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                 ])
             _docx_table(doc,
                 [_t('report.oracle_col_stat_name'), _t('report.oracle_col_stat_value')],
-                deadlock_stats_display)
+                deadlock_stats_display, lang=lang)
             doc.add_paragraph()
 
         if lock_waiters:
@@ -2780,7 +2883,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                  _t('report.oracle_col_username'), _t('report.oracle_col_event'),
                  _t('report.oracle_col_wait_sec'), _t('report.oracle_col_lock_type'),
                  _t('report.oracle_col_locked_obj')],
-                waiters_display)
+                waiters_display, lang=lang)
             doc.add_paragraph()
 
         if not deadlock_stats and not lock_waiters:
@@ -2806,7 +2909,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                 [_t('report.oracle_col_sid'), _t('report.oracle_col_serial'),
                  _t('report.oracle_col_username'), _t('report.oracle_col_trx_start'),
                  _t('report.oracle_col_trx_seconds'), _t('report.oracle_col_undo_blocks')],
-                long_trx_display)
+                long_trx_display, lang=lang)
             doc.add_paragraph()
         else:
             p = doc.add_paragraph(_t('report.oracle_no_long_trx'))
@@ -2856,7 +2959,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                     gap_str,
                     sev_str,
                 ])
-            _docx_table(doc, headers, rows)
+            _docx_table(doc, headers, rows, lang=lang)
             doc.add_paragraph()
         else:
             p = doc.add_paragraph(_t('report.no_risk_found_oracle'))
@@ -2895,7 +2998,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                        _t('report.oracle_col_recommendation')]
             rows = [[i.get('table_schema', ''), i.get('table_name', ''), i.get('index_name', ''),
                      str(i.get('days_unused', '')), i.get('recommendation', '')] for i in unused_list[:50]]
-            _docx_table(doc, headers, rows)
+            _docx_table(doc, headers, rows, lang=lang)
             doc.add_paragraph()
 
         # 冗余索引
@@ -2907,7 +3010,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                        _t('report.oracle_col_column')]
             rows = [[i.get('table_schema', ''), i.get('table_name', ''), i.get('index_name', ''),
                      i.get('index_name2', ''), i.get('column_name', '')] for i in redun_list[:50]]
-            _docx_table(doc, headers, rows)
+            _docx_table(doc, headers, rows, lang=lang)
             doc.add_paragraph()
 
         # 缺失索引
@@ -2918,7 +3021,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                        _t('report.oracle_col_column'), _t('report.oracle_col_recommendation')]
             rows = [[i.get('table_schema', ''), i.get('table_name', ''), i.get('column_name', ''),
                      i.get('recommendation', '')] for i in miss_list[:50]]
-            _docx_table(doc, headers, rows)
+            _docx_table(doc, headers, rows, lang=lang)
             doc.add_paragraph()
 
         if not unused_list and not redun_list and not miss_list:
@@ -2933,10 +3036,37 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
             run.font.color.rgb = RGBColor(128, 128, 128)
         doc.add_paragraph()
 
-    # ── AI 诊断章节（仅在启用且有诊断结果时生成，序号接续前面章节）───────
-    if ai_advice:
-        _add_section(_t('report.oracle_sec_ai'))
-        _render_ai_advice(doc, ai_advice)
+    # ── AI 诊断章节（始终生成：报告必须写清 AI 分析是否启用）────────────
+    # 启用时：状态行 + 大模型结论；未启用时：状态行 + 明确的未启用说明，
+    # 避免读者把"规则引擎结论"误当成"AI 分析结论"。
+    _ai_status_txt = ''
+    _ai_body = (ai_advice or '').strip()
+    try:
+        from modules.inspection.analyzer import AI_STATUS_PREFIX, ai_status_text
+        if _ai_body.startswith(AI_STATUS_PREFIX):
+            _first, _, _rest = _ai_body.partition('\n')
+            _ai_status_txt = _first.strip()
+            _ai_body = _rest.strip()
+        if not _ai_status_txt:
+            _ai_status_txt = ai_status_text(None, lang)
+    except Exception:
+        pass
+    _add_section(_t('report.oracle_sec_ai'))
+    if _ai_status_txt:
+        _sp = doc.add_paragraph()
+        _sr = _sp.add_run(_ai_status_txt)
+        _sr.font.size = Pt(9.5)
+        _sr.font.bold = True
+        _sr.font.color.rgb = (RGBColor(0xB0, 0x6A, 0x00)
+                              if ('未启用' in _ai_status_txt or 'Disabled' in _ai_status_txt)
+                              else RGBColor(0x1E, 0x8E, 0x3E))
+    if _ai_body:
+        _render_ai_advice(doc, _ai_body)
+    else:
+        p = doc.add_paragraph(_t('report.ai_notice_disabled'))
+        for run in p.runs:
+            run.font.size = Pt(10.5)
+            run.font.color.rgb = RGBColor(128, 128, 128)
 
 
 
@@ -3059,7 +3189,11 @@ def single_inspection(args):
         ssh_tunnel = None
         conn, ssh_tunnel = _get_oracle_conn_thunk_first(
             dsn, args.user, args.password, mode,
-            ssh_host=args.ssh_host, ssh_port=args.ssh_port or 22,
+            # 仅当「数据库该走隧道且上游尚未建隧道」时才把 ssh_host 交给连接层；
+            # 否则传入 None 走直连（此时 args.host/port 已是可用的隧道端点）。
+            # args.ssh_host 本身保留给第 3 步的 OS 层采集使用。
+            ssh_host=(args.ssh_host if getattr(args, '_db_tunnel_allowed', True) else None),
+            ssh_port=args.ssh_port or 22,
             ssh_user=args.ssh_user, ssh_password=args.ssh_pass,
             ssh_key=args.ssh_key if hasattr(args, 'ssh_key') else None
         )
@@ -3314,6 +3448,7 @@ def single_inspection(args):
     except Exception as e:
         print(f"  ⚠  索引健康分析失败: {e}")
 
+    check_results['_collection_warnings'] = list(getattr(conn,'warnings',[]))
     conn.close()
     if ssh_tunnel:
         ssh_tunnel.close()  # 关闭数据库连接
@@ -3464,6 +3599,10 @@ def single_inspection(args):
         )
 
     # ── Web UI 模式：跳过报告生成和历史保存，由统一调度层处理 ──
+    if check_results.get('_collection_warnings'):
+        context['collection_status']='incomplete'
+        context['health_status']='采集不完整，需复核SQL限制与未完成项'
+
     if _web_ui_mode:
         elapsed = time.time() - t0
         if ssh_client:
@@ -4158,11 +4297,25 @@ def getData(host, port, user, password, **kwargs):
     args.sysdba = bool(sysdba or user.upper() == 'SYS')
     if not args.sid and not args.servicename:
         args.sid = 'orcl'
-    args.ssh_host = ssh_info.get('host') if ssh_info else None
-    args.ssh_port = int(ssh_info.get('port', 22)) if ssh_info else 22
-    args.ssh_user = ssh_info.get('user') if ssh_info else None
-    args.ssh_pass = ssh_info.get('password') if ssh_info else None
-    args.ssh_key = ssh_info.get('key_file') if ssh_info else None
+    # ── SSH 相关参数：键名必须与 modules/ssh 的统一口径一致 ─────────────
+    # 历史实现读的是 'host'/'port'/'user'/'password'/'key_file'，而调用方
+    # （modules/web/app.py、modules/web/api.py）传的是
+    # ssh_host/ssh_port/ssh_user/ssh_password/ssh_key_file →
+    # args.ssh_host 恒为 None，301 行起的隧道分支从未执行过（死代码）。
+    # 现在按正确键名读取；同时用 _db_tunnel_allowed 把「数据库走隧道」与
+    # 「SSH 采主机指标」两件事拆开，避免与上游隧道叠加：
+    #   · _tunnel_ready：上游已把 host/port 换成本机转发端口，此处再建隧道会
+    #     指向 SSH 主机自身的该端口（远端并无服务）→ 连接必失败（隧道套隧道）。
+    #   · ssh_tunnel=False：用户只要 SSH 采主机指标，不要求数据库走隧道。
+    _ssh = ssh_info or {}
+    args.ssh_host = _ssh.get('ssh_host') or None
+    args.ssh_port = int(_ssh.get('ssh_port') or 22)
+    args.ssh_user = _ssh.get('ssh_user') or None
+    args.ssh_pass = _ssh.get('ssh_password') or None
+    args.ssh_key = _ssh.get('ssh_key_file') or None
+    args._db_tunnel_allowed = bool(args.ssh_host) \
+        and not _ssh.get('_tunnel_ready') \
+        and _ssh.get('ssh_tunnel', True)
     args.output = None
     args.zip = False
     args.inspector = inspector_name

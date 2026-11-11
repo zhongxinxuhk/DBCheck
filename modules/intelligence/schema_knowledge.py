@@ -7,6 +7,10 @@
 只记录系统视图/表的字段信息，根据用户问题动态生成SQL。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import json
@@ -133,7 +137,7 @@ def _normalize_db_type(db_type: str) -> str:
     t = t.replace("_jdbc", "").replace("_full", "")
     if t in ("oracle",):
         return "oracle"
-    if t in ("dm",):
+    if t in ("dm", "dm8"):
         return "dm"
     if t in ("kingbase",):
         return "kingbase"
@@ -147,7 +151,7 @@ def _normalize_db_type(db_type: str) -> str:
         return "oceanbase"
     if t in ("mysql", "tidb", "mariadb"):
         return "mysql"
-    if t in ("postgresql", "pg", "ivorysql", "hgdb", "uxdb"):
+    if t in ("postgresql", "pg", "ivorysql", "hgdb", "uxdb", "halodb", "vastbase", "kingbase"):
         return "postgresql"
     if t in ("sqlserver",):
         return "sqlserver"
@@ -298,3 +302,47 @@ def get_view_info(db_type: str, view_name: str) -> Optional[Dict[str, Any]]:
         if full_name.upper() == simple_name or full_name.split(".")[-1].upper() == simple_name:
             return view_info
     return None
+
+
+def report_field_labels(db_type: str, sql: str, columns: List[str]) -> List[str]:
+    """读取视图说明与跨库报告字典，为原始字段名追加中文说明。
+
+    支持连接查询、别名及原生采集。未登记的新字段显式标记待维护。
+    """
+    kb = get_knowledge()
+    common = kb.get('report_fields', {}).get('fields', {})
+    db_key = _normalize_db_type(db_type)
+    databases = kb.get('databases', {})
+    views = dict(databases.get(db_key, {}).get('views', {}))
+    views.update(databases.get((db_type or '').lower(), {}).get('views', {}))
+    # 去掉字符串与注释，避免把日志文本中的 FROM 误识别为视图来源。
+    source_sql = re.sub(r"'(?:''|[^'])*'", "''", sql or '')
+    source_sql = re.sub(r'/\*.*?\*/|--[^\n]*', ' ', source_sql, flags=re.S)
+    sources = re.findall(
+        r'\b(?:FROM|JOIN)\s+([\w$."`]+)', source_sql, flags=re.I)
+    source_names = {name.replace('"', '').replace('`', '').upper() for name in sources}
+    scoped_fields = []
+    for name, info in views.items():
+        if name.upper() in source_names or name.upper() in {n.split('.')[-1] for n in source_names}:
+            scoped_fields.append({str(k).upper(): v for k, v in info.get('fields', {}).items()})
+    aliases = {
+        alias.upper(): source.upper()
+        for source, alias in re.findall(
+            r'\b(?:[\w$]+\.)?([\w$]+)\s+AS\s+["`]?([\w$]+)', source_sql, flags=re.I)
+    }
+    labels = []
+    for column in columns:
+        text = str(column)
+        if re.search(r'[\u4e00-\u9fff]', text) or not re.search(r'[A-Za-z]', text):
+            labels.append(text)
+            continue
+        field = aliases.get(text.upper(), text.upper())
+        descriptions = {str(fields[field].get('desc') or '').strip()
+                        for fields in scoped_fields if field in fields}
+        descriptions = {d for d in descriptions if re.search(r'[\u4e00-\u9fff]', d)}
+        description = next(iter(descriptions)) if len(descriptions) == 1 else common.get(field, '')
+        if not description:
+            canonical = re.sub(r'\s+', '_', text.strip('`"[]').lstrip('@')).upper()
+            description = common.get(canonical, '待维护中文说明')
+        labels.append(f'{text}（{description}）')
+    return labels

@@ -404,7 +404,8 @@ class MssqlJdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             self.raw_jdbc_conn = conn
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'sqlserver')
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本

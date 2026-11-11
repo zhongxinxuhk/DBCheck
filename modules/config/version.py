@@ -4,10 +4,10 @@
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """
-DBCheck 版本信息
+DB 版本信息
 """
 
-__version__ = 'v26.11.5.1'
+__version__ = 'v1.0.3'
 
-# 发行版本：community 为社区版，professional 为专业版
-EDITION = 'community'
+# 发行版本：community 为社区版，professional 为专业版，Business Special Edition 为业务专用版
+EDITION = 'Business Special Edition'

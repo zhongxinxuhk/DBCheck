@@ -52,4 +52,13 @@ echo ""
 echo "   默认管理员: admin / admin123"
 echo ""
 
-$PYTHON web_ui.py >> data/logs/web_service_restart.log 2>&1
+# 控制台日志由 shell 重定向持有 fd，运行中无法安全轮转；
+# 每次启动前先把超限的旧文件移入归档目录（data/logs/_archive/console），
+# 长期运行请使用 deploy/service/ 下的服务方式（systemd/journald 自带容量上限）。
+CONSOLE_LOG="data/logs/web_service_restart.log"
+if [ -f "$CONSOLE_LOG" ] && [ "$(wc -c < "$CONSOLE_LOG" 2>/dev/null || echo 0)" -gt 20971520 ]; then
+    mkdir -p data/logs/_archive/console
+    mv "$CONSOLE_LOG" "data/logs/_archive/console/web_service_restart.$(date +%Y%m%d-%H%M%S).log"
+fi
+
+$PYTHON web_ui.py >> "$CONSOLE_LOG" 2>&1

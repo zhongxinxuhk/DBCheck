@@ -1,3 +1,11 @@
+/*
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+*/
 /**
  * 巡检配置管理 - 样式
  */
@@ -855,3 +863,21 @@
 .inline-edit-form.view-mode textarea::-webkit-scrollbar-track {
     background: transparent;
 }
+
+/* 配置搜索在当前工作区内筛选，隐藏条目仍保留在列表中。 */
+#page-inspection-config .inspection-search-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 14px;
+}
+#page-inspection-config .inspection-search-bar input {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+#page-inspection-config .inspection-search-bar [role="status"] {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+#page-inspection-config [hidden] { display: none !important; }

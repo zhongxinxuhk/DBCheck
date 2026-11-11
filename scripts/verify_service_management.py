@@ -584,8 +584,8 @@ class WebSecurity(unittest.TestCase):
     def test_page_coverage_and_forbidden_manual_inspection_pass(self):
         self.login()
         result=self.client.get('/services')
-        self.assertEqual(result.status_code,200)
-        self.assertIn(b'csrf-token',result.data)
+        self.assertEqual(result.status_code,302)
+        self.assertEqual(result.headers['Location'],'/#services')
         self.assertEqual(result.headers['Cache-Control'],'no-store, private')
         item=next(i for i in all_items(load_catalog(CATALOG)).values() if i['kind']=='inspection')
         result=self.client.post('/api/services/evidence',json={'item_id':item['id'],'status':'pass'},headers={'X-CSRF-Token':'fixture-csrf'})

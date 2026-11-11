@@ -2937,8 +2937,6 @@ RU.update({
     # ══ Страница входа ══
     "login.title": "RaccoonX",
     "login.subtitle": "Интеллектуальная платформа проверки и анализа производительности баз данных",
-    "login.welcome": "С возвращением",
-    "login.welcome_desc": "Войдите, чтобы начать проверку баз данных",
     "login.slogan": "Эксплуатация БД: Наглядно · Управляемо · Профилактично",
     "login.feature_1": "Умная проверка",
     "login.feature_1_desc": "Проверка состояния БД в один клик",
@@ -2955,10 +2953,6 @@ RU.update({
     "login.error_empty": "Введите имя пользователя и пароль",
     "login.error_failed": "Ошибка входа",
     "login.error_network": "Сетевая ошибка, попробуйте позже",
-    "login.demo_title": "Демо-аккаунты",
-    "login.demo_admin": "Администратор",
-    "login.demo_viewer": "Только чтение",
-    "login.demo_operator": "Оператор",
     "login.theme_toggle": "Сменить тему",
     "login.copyright": "RaccoonX © 2026",
     "login.show_password": "Показать пароль",
@@ -3318,4 +3312,12 @@ RU.update({
     "webui.system_info_brand": "Бренд-атрибутика",
     "webui.system_info_opensource": "Открытый исходный код",
     "webui.system_info_check_update": "Проверить обновления",
+})
+
+RU.update({
+    "menu.inventory": "Реестр баз данных",
+    "menu.batch-inspection": "Комплексная проверка источников",
+    "menu.clusters": "Управление кластерами",
+    "menu.services": "Эксплуатационные услуги и приемка",
+    "menu.system-info": "Сведения о системе"
 })

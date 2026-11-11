@@ -14,7 +14,12 @@ Werkzeug==3.1.9
 gevent==26.9.0
 cryptography==50.0.2
 python-docx==1.2.0
+docxcompose==2.2.0
+openpyxl==3.1.5
+psutil==7.2.2
 beautifulsoup4==4.15.0
 python-tds==1.17.1
 PyJWT==2.15.1
 bcrypt==4.3.0
+
+croniter==7.0.0

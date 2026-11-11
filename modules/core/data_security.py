@@ -52,6 +52,8 @@ _READ_FUNCTIONS = set(
 )
 
 
+_READ_FUNCTIONS.update({'CURRENT_DATABASE','IF','DB_MEMBERS','MON_GET_PKG_CACHE_STMT','INET_SERVER_ADDR','INET_SERVER_PORT','ARRAY_TO_STRING','PG_ENCODING_TO_CHAR','FORMAT_TYPE','OBJECT_SCHEMA_NAME','TIDB_VERSION','ENV_GET_INST_INFO','MON_GET_DATABASE','MON_GET_ACTIVITY','SF_GET_PARAMLINK_VALUE','SF_GET_SESSION_SQL'})
+
 def assert_readonly_sql(sql):
     """Accept one read statement, rejecting executable comments and known side effects.
 
@@ -127,12 +129,20 @@ def assert_readonly_sql(sql):
         raise ValueError('禁止写入执行计划表')
 
 
-def redact(value, *, mask_identity=False, key=''):
-    """Redact nested credentials and exported identities without mutating the input."""
+def redact(value, *, mask_identity=False, preserve_network=False, key=''):
+    """Redact nested credentials and identities without mutating the input.
+
+    preserve_network keeps report IP addresses and host names visible while
+    retaining credential and other identity redaction.
+    """
     if _SECRET.search(str(key)) and str(key) not in {'credential_reference','password_policy'}:
         return '[REDACTED]'
     if isinstance(value, Mapping):
-        output = {str(k): redact(v, mask_identity=mask_identity, key=str(k)) for k, v in value.items()}
+        output = {
+            str(k): redact(v, mask_identity=mask_identity,
+                           preserve_network=preserve_network, key=str(k))
+            for k, v in value.items()
+        }
         label = str(value.get('name') or value.get('NAME') or value.get('variable_name') or value.get('VARIABLE_NAME') or '')
         if _SECRET.search(label):
             for field in ('value','VALUE','variable_value','VARIABLE_VALUE','setting'):
@@ -140,7 +150,8 @@ def redact(value, *, mask_identity=False, key=''):
                     output[field] = '[REDACTED]'
         return output
     if isinstance(value, (list, tuple)):
-        return [redact(v, mask_identity=mask_identity, key=key) for v in value]
+        return [redact(v, mask_identity=mask_identity,
+                       preserve_network=preserve_network, key=key) for v in value]
     if isinstance(value, str):
         text = _ASSIGNMENT.sub(lambda m: m.group(1) + '=[REDACTED]', value)
         text = re.sub(r'([A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@', r'\1[REDACTED]@', text)
@@ -149,13 +160,15 @@ def redact(value, *, mask_identity=False, key=''):
             text = re.sub(r"'(?:''|[^'])*'", "'?'", text)
             text = re.sub(r'\b\d+(?:\.\d+)?\b', '?', text)
         if mask_identity:
-            text = _IPV4.sub('[IP]', text)
+            if not preserve_network:
+                text = _IPV4.sub('[IP]', text)
             public_authors = {'sdfiyon@gmail.com','xuzhongxin@sec.hn.cn'}
             text = _EMAIL.sub(lambda m: m.group() if m.group() in public_authors else '[EMAIL]', text)
             text = re.sub(r'(?<!\d)1[3-9]\d{9}(?!\d)', '[PHONE]', text)
             text = re.sub(r'(?<!\w)\d{17}[0-9Xx](?!\w)', '[IDENTITY]', text)
             if key.lower() in {'host', 'ip', 'hostname', 'user', 'username', 'db_user', 'ssh_user', 'owner', 'responsible_person'}:
-                text = '[MASKED]' if text else ''
+                if not (preserve_network and key.lower() in {'host', 'ip', 'hostname'}):
+                    text = '[MASKED]' if text else ''
         return text
     return value
 

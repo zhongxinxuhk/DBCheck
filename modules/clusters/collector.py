@@ -150,6 +150,7 @@ def collect_node(instance, kind, previous=None):
         assert_readonly_sql(sql)
     payload = {key:instance.get(key) for key in ('host','port','user','password','database','service_name',
                                                'sid','use_sid','sysdba','driver_version','jdbc_url')}
+    payload['inspection_safe'] = True
     payload['db_type'] = 'oracle_jdbc' if db_family(instance['db_type'])=='oracle' else 'dm'
     host,port,tunnel = resolve_db_endpoint(instance,log=lambda *args:None)
     payload.update(host=host,port=port,queries=list(sqls.values()))

@@ -2936,8 +2936,6 @@ ES.update({
     # ══ Página de inicio de sesión ══
     "login.title": "RaccoonX",
     "login.subtitle": "Plataforma de inspección y análisis de rendimiento de bases de datos inteligente",
-    "login.welcome": "Bienvenido de nuevo",
-    "login.welcome_desc": "Inicie sesión para comenzar su inspección de bases de datos",
     "login.slogan": "Operación de BD: Visible · Controlable · Preventiva",
     "login.feature_1": "Inspección Inteligente",
     "login.feature_1_desc": "Verificación de salud de BD con un clic",
@@ -2954,10 +2952,6 @@ ES.update({
     "login.error_empty": "Ingrese usuario y contraseña",
     "login.error_failed": "Inicio de sesión fallido",
     "login.error_network": "Error de red, intente más tarde",
-    "login.demo_title": "Cuentas de Demostración",
-    "login.demo_admin": "Administrador",
-    "login.demo_viewer": "Lectura",
-    "login.demo_operator": "Operador",
     "login.theme_toggle": "Cambiar Tema",
     "login.copyright": "RaccoonX © 2026",
     "login.show_password": "Mostrar contraseña",
@@ -3317,4 +3311,12 @@ ES.update({
     "webui.system_info_brand": "Identidad visual",
     "webui.system_info_opensource": "Código abierto",
     "webui.system_info_check_update": "Ver actualizaciones",
+})
+
+ES.update({
+    "menu.inventory": "Inventario de bases de datos",
+    "menu.batch-inspection": "Inspección de múltiples fuentes",
+    "menu.clusters": "Gestión de clústeres",
+    "menu.services": "Servicios operativos y aceptación",
+    "menu.system-info": "Información del sistema"
 })

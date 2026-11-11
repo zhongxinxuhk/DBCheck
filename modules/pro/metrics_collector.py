@@ -39,6 +39,8 @@ import threading
 import concurrent.futures as cf
 from datetime import datetime
 
+from modules.ssh import resolve_db_endpoint
+
 # ── 配置 ───────────────────────────────────────────────
 DEFAULT_INTERVAL = 30          # 采集间隔（秒）
 DEFAULT_MAX_POINTS = 2000      # 每实例保留的快照数（环形裁剪）
@@ -392,6 +394,26 @@ class MetricsCollector:
     def _connect(self, inst: dict):
         """返回底层 DBAPI 连接；不支持深采的类型返回 None。"""
         db_type = str(inst.get('db_type') or '').lower()
+
+        # SSH 隧道：本采集器此前只把 SSH 用于「主机指标」（_resolve_ssh），
+        # 数据库连接始终按 host/port 直连。于是「经 SSH 隧道」的实例在实时
+        # 监控里探针不通、深采全空，而巡检（走隧道）正常。
+        # 此处统一切换到隧道本地端点，后面所有分支自动生效。
+        # 注：oracle_jdbc / uxdb_jdbc 若显式配置了 jdbc_url（自带 host:port），
+        # JDBC 驱动会以 jdbc_url 为准，此情形请把 jdbc_url 里的地址一并改成
+        # 隧道可达地址，或留空让本函数接管。
+        # sqlserver / gbase8a 由 modules.db_types.compatibility.verified_tunnel
+        # 内部自建隧道（含 TDS / TLS 强制校验），此处不接管，避免双重转发。
+        if db_type in ('sqlserver', 'gbase8a'):
+            _ep_host, _ep_port, _tnl = inst.get('host'), int(inst.get('port') or 0), None
+        else:
+            _ep_host, _ep_port, _tnl = resolve_db_endpoint(inst)
+        if _tnl is not None and _ep_host and _ep_port:
+            inst = dict(inst)
+            inst['ip'] = _ep_host
+            inst['host'] = _ep_host
+            inst['port'] = _ep_port
+
         host = inst.get('host')
         port = int(inst.get('port') or 0)
         user = inst.get('user')
@@ -765,7 +787,9 @@ class MetricsCollector:
         cursor=conn.cursor()
         try:
             cursor.execute('SHOW GLOBAL STATUS')
-            status={str(row[0]).lower():_to_num(row[1]) for row in cursor.fetchmany(1001)}
+            # 兼容层取数：GBase 8a 可能经由 JDBC 包装游标执行（缺 fetchmany 也不至于整章失败）
+            from modules.core.dbapi_compat import fetch_rows
+            status={str(row[0]).lower():_to_num(row[1]) for row in fetch_rows(cursor, 1001)}
             for key in ('queries','threads_connected','threads_running','slow_queries','bytes_received','bytes_sent','connections'):
                 if key in status:metrics[key]=status[key]
             return metrics
@@ -1659,7 +1683,10 @@ class MetricsCollector:
             snapshot['status'] = 'cooldown'
             return snapshot
 
-        up, latency = self._tcp_probe(inst.get('host'), inst.get('port'))
+        # 可用性探针同样必须经隧道：直连 127.0.0.1:5432 会把「仅监听 SSH
+        # 主机回环」的实例误判为 down，且后续深采根本走不到。
+        _ep_host, _ep_port, _ = resolve_db_endpoint(inst)
+        up, latency = self._tcp_probe(_ep_host, _ep_port)
         snapshot['available'] = bool(up)
         snapshot['latency_ms'] = latency
         if not up:

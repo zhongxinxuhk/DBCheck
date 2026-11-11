@@ -2,139 +2,24 @@
 REM SPDX-License-Identifier: Apache-2.0
 REM Copyright 2025-2026 fiyo (Jack Ge) ^<sdfiyon@gmail.com^>
 REM Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
-chcp 437 >nul
-title DBPulse Windows Build
+REM SPDX-License-Identifier: Apache-2.0
+REM Copyright 2025-2026 sec.hn.cn (X.U zx) ^<xuzhongxin@sec.hn.cn^>
+REM Author: sec.hn.cn (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+chcp 65001 >nul
 cd /d "%~dp0.."
-
-:: Use temp directory for PyInstaller intermediate files
-:: (avoid conflict with our build/ script directory)
-set WORKPATH=%TEMP%\dbcheck_build_%RANDOM%
-set DISTPATH=dist
-
-echo ==========================================
-echo   DBPulse Windows Build Script
-echo   Target: Windows x64
-echo ==========================================
-echo.
-
-:: --- Check Python ---
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python not found. Please install Python 3.10+.
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-
-for /f "tokens=*" %%v in ('python -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))"') do set PYVER=%%v
-echo [1/5] Python version: %PYVER%
-
-python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python >= 3.10 required. Current: %PYVER%
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-
-:: --- Read version ---
-for /f "tokens=*" %%v in ('python -c "import json,sys; d=json.load(open('modules/config/version.json','r',encoding='utf-8-sig')); print(d['version'])"') do set VERSION=%%v
-if not defined VERSION set VERSION=v26.11.5.1
-echo [    ] DBPulse version: %VERSION%
-echo.
-
-:: --- Install dependencies ---
-echo [2/5] Installing dependencies (this may take a few minutes)...
-echo [    ] You will see pip progress output below.
-echo.
-:: 兜底：若 env 未传入 DBCHECK_WHEEL_DIR，但仓库根 wheels\ 下已有预下载的 wheel，
-:: 则自动启用离线安装（避免 GITHUB_ENV 未及时传递导致回退到被封的在线源）。
-if not defined DBCHECK_WHEEL_DIR (
-    if exist "wheels\*.whl" (
-        echo [    ] auto-detected offline wheel dir: wheels
-        set "DBCHECK_WHEEL_DIR=wheels"
-    )
-)
-:: CI 宽松模式：逐个依赖安装，装不上的可选驱动（依赖厂商 SDK 的厂商驱动等）跳过，
-:: 最后统一 import 校验构建期必需模块。未设该变量时行为与原先完全一致。
-if defined DBCHECK_CI_LENIENT (
-    echo [    ] CI lenient mode: installing dependencies one-by-one.
-    python build\ci_install_deps.py
-) else (
-    pip install -r deploy/requirements.txt
-)
-if errorlevel 1 (
-    echo [ERROR] Failed to install dependencies.
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-echo.
-
-echo [    ] Installing PyInstaller...
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
+python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)"
+if errorlevel 1 exit /b 1
+python build\ci_install_deps.py
+if errorlevel 1 exit /b 1
 if defined DBCHECK_WHEEL_DIR (
-    pip install --no-index --find-links "%DBCHECK_WHEEL_DIR%" pyinstaller
+    python -m pip install --no-index --find-links "%DBCHECK_WHEEL_DIR%" pyinstaller
 ) else (
-    pip install pyinstaller
+    python -m pip install pyinstaller
 )
-if errorlevel 1 (
-    echo [ERROR] Failed to install PyInstaller.
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-echo.
-
-:: --- Clean previous builds ---
-echo [3/5] Cleaning previous build artifacts...
-
-:: Only clean dist/ and __pycache__ (NOT build/ which holds our scripts)
-if exist "dist\" (
-    rmdir /s /q "dist" 2>nul
-)
-for /d /r %%d in (__pycache__) do (
-    if exist "%%d\" rmdir /s /q "%%d" 2>nul
-)
-echo [OK] Clean complete.
-echo.
-
-:: --- Build ---
-echo [4/5] Building executable...
-echo [    ] This takes 2-5 minutes. Please wait...
-echo [    ] Intermediate files: %WORKPATH%
-echo.
-
-pyinstaller --clean --workpath "%WORKPATH%" --distpath "%DISTPATH%" build\dbcheck_windows.spec
-
-if errorlevel 1 (
-    echo.
-    echo [ERROR] PyInstaller failed!
-    echo [    ] Common fix: close any running DBPulse instances, then retry.
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-
-:: Clean up intermediate files
-if exist "%WORKPATH%" (
-    rmdir /s /q "%WORKPATH%" 2>nul
-)
-
-:: Check output
-if not exist "%DISTPATH%\DBPulse-Windows" (
-    echo [ERROR] Build output not found at %DISTPATH%\DBPulse-Windows
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-echo.
-
-:: --- Package ---
-echo [5/5] Packaging distribution...
-python build\package_windows.py "%DISTPATH%" "%VERSION%"
-if errorlevel 1 (
-    echo [ERROR] Packaging failed.
-    if not defined GITHUB_ACTIONS pause
-    exit /b 1
-)
-
-echo.
-echo ==========================================
-echo   BUILD SUCCESS!
-echo ==========================================
-echo.
+if errorlevel 1 exit /b 1
+python build\build_release.py --platform windows
+if errorlevel 1 exit /b 1
+echo DBPulse Windows release verified. See dist for the ZIP and checksum.
 if not defined GITHUB_ACTIONS pause

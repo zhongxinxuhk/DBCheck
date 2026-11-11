@@ -35,6 +35,8 @@ jobs:
           python scripts/verify_dbpulse.py
           python scripts/verify_upstream_sync.py
           python scripts/verify_service_management.py
+          python scripts/verify_operations.py
+          python scripts/verify_scheduled_inspection.py
           if [ -d tests ] && ls tests/test_*.py >/dev/null 2>&1; then
             pytest -q
           else

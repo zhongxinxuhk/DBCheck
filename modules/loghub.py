@@ -133,9 +133,10 @@ def init_loghub():
         from pathlib import Path
         mon_path = Path(str(paths.PRO_DATA_DIR)) / 'monitor.log'
         mon_path.parent.mkdir(parents=True, exist_ok=True)
-        mh = logging.FileHandler(str(mon_path), encoding='utf-8', delay=True)
-        mh.setFormatter(logging.Formatter(
-            '%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+        # 按大小轮转（默认 20MB × 3 份，见 modules/core/log_manager.py），
+        # 避免长期运行把 monitor.log 写成无限增长的单文件。
+        from modules.core.log_manager import RotatingLogHandler
+        mh = RotatingLogHandler(mon_path, family='monitor', encoding='utf-8')
         mh.setLevel(logging.INFO)
         mon = logging.getLogger('dbcheck.monitor')
         mon.addHandler(mh)

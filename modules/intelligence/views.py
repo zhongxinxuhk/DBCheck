@@ -4,9 +4,17 @@
 
 """协同诊断中枢的 Web 接口。"""
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import json
+import copy
+from functools import wraps
+from flask import g, current_app
+import re
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
@@ -362,6 +370,30 @@ def schema_dict_delete():
     if not save_knowledge(kb):
         return jsonify({"ok": False, "msg": "保存失败"}), 500
     return jsonify({"ok": True, "msg": msg, "databases": kb.get("databases", {})})
+
+
+@intelligence_bp.route('/api/intelligence/report-fields', methods=['GET', 'PUT'])
+def report_fields():
+    """维护各数据库巡检报告共用的字段及查询别名中文说明。"""
+    from .schema_knowledge import get_knowledge, save_knowledge
+
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'fields': get_knowledge().get('report_fields', {}).get('fields', {})})
+    deny = _require_writer()
+    if deny:
+        return deny
+    data = request.get_json(silent=True) or {}
+    field = str(data.get('field') or '').strip().upper()
+    description = str(data.get('description') or '').strip()
+    if not field or len(field) > 160 or any(ord(c) < 32 for c in field):
+        return jsonify({'ok': False, 'msg': '请填写有效的原始字段名（最多 160 字符）'}), 400
+    if not re.search(r'[\u4e00-\u9fff]', description) or len(description) > 500:
+        return jsonify({'ok': False, 'msg': '字段说明须包含中文，最多 500 字符'}), 400
+    kb = copy.deepcopy(get_knowledge())
+    kb.setdefault('report_fields', {}).setdefault('fields', {})[field] = description
+    if not save_knowledge(kb):
+        return jsonify({'ok': False, 'msg': '保存失败'}), 500
+    return jsonify({'ok': True, 'field': field, 'description': description})
 
 
 # ── Workflow 编排（阶段 D：Workflow Builder UI 后端） ──────────────────────────
@@ -825,9 +857,64 @@ def compliance_custom_clear_ep(db_type):
 
 
 # ── Workflow 任务管理（独立导航「工作流任务」） ──────────────────────────
+def _task_visible(task,principal):
+    tenant=task.get('tenant_id') or 1
+    return tenant==principal.tenant_id and (task.get('owner_id') is None or task['owner_id']==principal.id or principal.is_admin)
+
+
+def _task_access(write=False):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args,**kwargs):
+            principal=getattr(g,'security_principal',None)
+            if principal is None or principal.is_anonymous:
+                return jsonify(ok=False,msg='请先登录'),403
+            if write and not (principal.is_admin or 'operator' in principal.roles):
+                return jsonify(ok=False,msg='需要运维或管理员权限'),403
+            if kwargs.get('task_id') is not None:
+                from .workflow_task_store import get_task
+                task=get_task(kwargs['task_id'])
+                if task is None:return jsonify(ok=False,msg='任务不存在'),404
+                if not _task_visible(task,principal):return jsonify(ok=False,msg='无权访问此工作任务'),403
+                g.work_task=task
+            return function(*args,**kwargs)
+        return wrapped
+    return decorate
+
+
+def _task_save_arguments(data):
+    from .workflow_store import get_workflow
+    from modules.operations.routes import prepare_batch
+    from modules.access import get_owner,visible_to
+    principal=g.security_principal
+    task_type=data.get('task_type','workflow')
+    spec=data.get('batch_spec') or {}
+    if task_type=='batch_inspection':
+        if not isinstance(spec,dict):raise ValueError('整体巡检配置须为对象')
+        prepare_batch(principal,dict(spec,name=data.get('name','整体巡检')))
+    else:
+        workflow=get_workflow(int(data.get('workflow_id') or 0))
+        if workflow is None:raise ValueError('工作流不存在')
+        from modules.pro import get_instance_manager
+        iid=data.get('instance_id') or ''
+        if not visible_to(principal,get_owner('instance',iid)) or get_instance_manager().get_instance(iid) is None:
+            raise ValueError('数据源不存在或无权访问')
+    return {'task_type':task_type,'batch_spec':spec,'schedule_enabled':data.get('schedule_enabled'),
+            'owner_id':principal.id,'tenant_id':principal.tenant_id}
+
+
 def _denorm_task(task: Dict[str, Any]) -> Dict[str, Any]:
     """给任务补充工作流名称等冗余字段，便于前端卡片直接渲染。"""
     out = dict(task)
+    if task.get('cron') and task.get('schedule_enabled'):
+        from croniter import croniter
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        try:out['next_run_at']=croniter(task['cron'],datetime.now(ZoneInfo('Asia/Shanghai'))).get_next(datetime).isoformat()
+        except (ValueError,KeyError):out['last_error']='Cron配置无效，请修订后启用'
+    if task.get('task_type')=='batch_inspection':
+        out['workflow_name']='整体巡检'
+        return out
     try:
         from .workflow_store import get_workflow
 
@@ -839,25 +926,31 @@ def _denorm_task(task: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks", methods=["GET"])
+@_task_access(write=False)
 def list_workflow_tasks_ep():
     try:
         from .workflow_task_store import list_tasks as _list
 
-        tasks = [_denorm_task(t) for t in _list()]
+        tasks = [_denorm_task(t) for t in _list() if _task_visible(t,g.security_principal)]
         return jsonify({"ok": True, "tasks": tasks})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks", methods=["POST"])
+@_task_access(write=True)
 def create_workflow_task_ep():
     data = request.get_json(silent=True) or {}
+    if not isinstance(data,dict):return jsonify(ok=False,msg='请求须为JSON对象'),400
     name = (data.get("name") or "").strip()
     workflow_id = data.get("workflow_id")
     instance_id = (data.get("instance_id") or "").strip()
     goal = data.get("goal") or ""
     cron = (data.get("cron") or "").strip()
-    if workflow_id is not None:
+    if data.get('task_type')=='batch_inspection':
+        workflow_id=0
+        instance_id=''
+    elif workflow_id is not None:
         try:
             workflow_id = int(workflow_id)
         except (TypeError, ValueError):
@@ -866,8 +959,10 @@ def create_workflow_task_ep():
         from .workflow_task_store import save_task as _save
 
         task = _save(name=name, workflow_id=workflow_id, instance_id=instance_id,
-                     goal=goal, cron=cron)
+                     goal=goal, cron=cron, **_task_save_arguments(data))
         return jsonify({"ok": True, "task": _denorm_task(task)})
+    except PermissionError as e:
+        return jsonify(ok=False,msg=str(e)),403
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e)}), 400
     except Exception as e:
@@ -875,6 +970,7 @@ def create_workflow_task_ep():
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks/<int:task_id>", methods=["GET"])
+@_task_access(write=False)
 def get_workflow_task_ep(task_id: int):
     try:
         from .workflow_task_store import get_task as _get
@@ -888,14 +984,19 @@ def get_workflow_task_ep(task_id: int):
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks/<int:task_id>", methods=["PUT"])
+@_task_access(write=True)
 def update_workflow_task_ep(task_id: int):
     data = request.get_json(silent=True) or {}
+    if not isinstance(data,dict):return jsonify(ok=False,msg='请求须为JSON对象'),400
     name = (data.get("name") or "").strip()
     workflow_id = data.get("workflow_id")
     instance_id = (data.get("instance_id") or "").strip()
     goal = data.get("goal") or ""
     cron = (data.get("cron") or "").strip()
-    if workflow_id is not None:
+    if data.get('task_type')=='batch_inspection':
+        workflow_id=0
+        instance_id=''
+    elif workflow_id is not None:
         try:
             workflow_id = int(workflow_id)
         except (TypeError, ValueError):
@@ -904,8 +1005,10 @@ def update_workflow_task_ep(task_id: int):
         from .workflow_task_store import save_task as _save
 
         task = _save(name=name, workflow_id=workflow_id, instance_id=instance_id,
-                     goal=goal, cron=cron, task_id=task_id)
+                     goal=goal, cron=cron, task_id=task_id, **_task_save_arguments(data))
         return jsonify({"ok": True, "task": _denorm_task(task)})
+    except PermissionError as e:
+        return jsonify(ok=False,msg=str(e)),403
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e)}), 400
     except Exception as e:
@@ -913,7 +1016,10 @@ def update_workflow_task_ep(task_id: int):
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks/<int:task_id>", methods=["DELETE"])
+@_task_access(write=True)
 def delete_workflow_task_ep(task_id: int):
+    if g.work_task['status']=='running':
+        return jsonify(ok=False,msg='请先停止任务并等待本次执行结束后删除'),409
     try:
         from .task_runner import get_runner
 
@@ -930,19 +1036,23 @@ def delete_workflow_task_ep(task_id: int):
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks/<int:task_id>/start", methods=["POST"])
+@_task_access(write=True)
 def start_workflow_task_ep(task_id: int):
     try:
         from .task_runner import get_runner
 
-        ok = get_runner().start(task_id)
+        runner=get_runner()
+        runner.app=current_app._get_current_object()
+        ok = runner.start(task_id)
         if not ok:
-            return jsonify({"ok": False, "msg": "任务不存在或已在运行"}), 409
+            return jsonify({"ok": False, "msg": "任务已在运行或当前并发额度已满，请稍后重试"}), 409
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks/<int:task_id>/stop", methods=["POST"])
+@_task_access(write=True)
 def stop_workflow_task_ep(task_id: int):
     try:
         from .task_runner import get_runner
@@ -956,6 +1066,7 @@ def stop_workflow_task_ep(task_id: int):
 
 
 @intelligence_bp.route("/api/intelligence/workflow-tasks/<int:task_id>/runs", methods=["GET"])
+@_task_access(write=False)
 def workflow_task_runs_ep(task_id: int):
     try:
         from .workflow_run_store import list_runs as _list

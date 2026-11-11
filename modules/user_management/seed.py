@@ -29,6 +29,11 @@ from modules.user_management.utils.password import hash_password
 # init_seed_data() 与 sync_menus() 共用；新增菜单只需在此追加一行。
 menus_data = [
     ('home',             'menu.home',            0, 10),
+    ('inventory',        'menu.inventory',       0, 11),
+    ('batch-inspection', 'menu.batch-inspection',0, 12),
+    ('clusters',         'menu.clusters',        0, 13),
+    ('services',         'menu.services',        0, 14),
+    ('system-info',      'menu.system-info',     0, 68),
     ('wizard',           'menu.wizard',          0, 21),
     ('server-inspect',   'menu.server-inspect',  0, 22),
     ('scheduler',        'menu.scheduler',       0, 23),
@@ -154,7 +159,7 @@ def init_seed_data():
     # 6. 给 operator 角色分配运维菜单
     operator_role = db.query_one("SELECT id FROM um_role WHERE role_code='operator'")
     if operator_role and access_perm:
-        operator_menus = ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery']
+        operator_menus = ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services']
         cnt = 0
         for menu in menus:
             if menu['menu_code'] in operator_menus:
@@ -174,7 +179,7 @@ def init_seed_data():
         "INSERT OR IGNORE INTO um_user(username, password, nickname) VALUES('admin', ?, '系统管理员')",
         (pw_hash,)
     )
-    print("  ✅ 管理员账户已就绪，新安装口令使用受限本机初始化文件")
+    print("  ✅ 管理员账户已就绪，首次安装使用默认账号 admin / admin123")
 
     # 8. 绑定 admin 用户 → admin 角色（UNIQUE(user_id,role_id) 幂等）
     admin_user = db.query_one("SELECT id FROM um_user WHERE username='admin'")
@@ -238,7 +243,7 @@ def sync_menus():
 
         role_menu_map = {
             'admin': 'ALL',
-            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery'],
+            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services'],
             'viewer': ['home', 'reports', 'monitor-slow', 'ai'],
         }
         access_perm = db.query_one("SELECT id FROM um_permission WHERE perm_level=1")

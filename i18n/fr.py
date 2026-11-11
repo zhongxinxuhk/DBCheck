@@ -2937,8 +2937,6 @@ FR.update({
     # ══ Page de connexion ══
     "login.title": "RaccoonX",
     "login.subtitle": "Plateforme d'inspection et d'analyse de performance de bases de données intelligente",
-    "login.welcome": "Bon retour",
-    "login.welcome_desc": "Connectez-vous pour commencer votre inspection de bases de données",
     "login.slogan": "Ops BDD : Visible · Contrôlable · Préventive",
     "login.feature_1": "Inspection Intelligente",
     "login.feature_1_desc": "Vérification de santé BDD en un clic",
@@ -2955,10 +2953,6 @@ FR.update({
     "login.error_empty": "Veuillez saisir nom d'utilisateur et mot de passe",
     "login.error_failed": "Échec de la connexion",
     "login.error_network": "Erreur réseau, réessayez plus tard",
-    "login.demo_title": "Comptes de Démonstration",
-    "login.demo_admin": "Administrateur",
-    "login.demo_viewer": "Lecture seule",
-    "login.demo_operator": "Opérateur",
     "login.theme_toggle": "Changer de Thème",
     "login.copyright": "RaccoonX © 2026",
     "login.show_password": "Afficher le mot de passe",
@@ -3318,4 +3312,12 @@ FR.update({
     "webui.system_info_brand": "Identité visuelle",
     "webui.system_info_opensource": "Open Source",
     "webui.system_info_check_update": "Voir les mises à jour",
+})
+
+FR.update({
+    "menu.inventory": "Inventaire des bases de données",
+    "menu.batch-inspection": "Inspection multisource",
+    "menu.clusters": "Gestion des clusters",
+    "menu.services": "Services d’exploitation et réception",
+    "menu.system-info": "Informations système"
 })

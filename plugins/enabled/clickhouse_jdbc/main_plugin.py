@@ -336,7 +336,8 @@ class ClickHouseJdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             self.raw_jdbc_conn = conn
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'clickhouse')
             self.cursor = self.conn.cursor()
 
             # 4. 读取版本

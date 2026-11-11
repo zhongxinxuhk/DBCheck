@@ -22,9 +22,15 @@ JDBC/DBAPI 通道覆盖不了的 NoSQL 类型（mongodb / redis / redis-cluster�
 与 gevent 兼容性风险低；连接超时统一压到 5s，避免拖慢 15s 采样轮。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import importlib.util
 import os
 import time
+
+from modules.ssh import resolve_db_endpoint
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -47,7 +53,15 @@ def collect_native(inst):
     SHOW GLOBAL STATUS Questions 命名对齐，_rate 的 (('questions',),) 组合命中）。
     """
     db_type = (inst.get('db_type') or '').lower()
+    # label 用用户配置的原始端点（隧道本地随机端口对用户无意义）
     label = "%s (%s:%s)" % (inst.get('name', ''), inst.get('host', '?'), inst.get('port', '?'))
+
+    # SSH 隧道：MongoDB / Redis 同样必须经隧道。否则「数据库仅监听 SSH 主机
+    # 回环（填 127.0.0.1）」的实例在监控大屏被判宕机，而巡检走隧道却正常。
+    _ep_host, _ep_port, _tnl = resolve_db_endpoint(inst)
+    if _tnl is not None and _ep_host and _ep_port:
+        inst = {**inst, 'ip': _ep_host, 'host': _ep_host, 'port': _ep_port}
+
     try:
         if db_type == 'mongodb':
             return _collect_mongo(inst)

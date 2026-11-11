@@ -21,6 +21,11 @@ Vastbase G100 JDBC 巡检插件 —— 通过 JPype + openGauss JDBC 驱动 + �
   （Vastbase 兼容 PG，优先复用 PG 兼容分析器，与 ivorysql/kingbase/uxdb 同策略）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import json
@@ -346,7 +351,8 @@ class VastbaseJdbcInspector(BaseInspectionEngine):
                 return False, meta['error']
 
             self.raw_jdbc_conn = conn
-            self.conn = JdbcConnectionWrapper(conn)
+            from modules.inspection.sql_safety import guarded_connection
+            self.conn = guarded_connection(JdbcConnectionWrapper(conn), 'vastbase')
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本

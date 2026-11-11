@@ -89,6 +89,8 @@ def load_catalog(path=None):
     if not path.is_file() or path.stat().st_size > 2_000_000:
         raise ValueError('需求目录尚未导入或文件过大')
     catalog = json.loads(path.read_text(encoding='utf-8'))
+    from .labels import FIELD_LABELS
+    catalog['field_labels'] = dict(FIELD_LABELS)
     ids = set()
     for requirement in catalog['requirements']:
         for item in requirement['items']:

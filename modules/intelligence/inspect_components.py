@@ -28,6 +28,10 @@
 且执行前做写类语句拦截（与自治闭环 _WRITE_TOKENS 同源口径）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import re
@@ -87,13 +91,20 @@ def list_components(db_type: Optional[str] = None) -> List[Dict[str, Any]]:
         }
     """
     from modules.inspection import dal
+    from modules.driver_registry import db_family as _fam
 
     templates = dal.get_all_templates()
+    # 同族展开：oracle_jdbc / dm / kingbase 等实例也能引用族内主名
+    # （oracle / dm8 / postgresql）下的业务专项模板章节。
+    if db_type:
+        want_fam = _fam((db_type or '').strip().lower())
+        templates = [
+            t for t in templates
+            if _fam((t.get("db_type") or "").lower()) == want_fam
+        ]
     out: List[Dict[str, Any]] = []
     for t in templates:
         t_db = (t.get("db_type") or "").lower()
-        if db_type and t_db != db_type.lower():
-            continue
         try:
             chapters = dal.get_chapters_by_template(t["id"])
         except Exception:
@@ -138,16 +149,35 @@ def get_component(comp_id: str) -> Optional[Dict[str, Any]]:
 def resolve_component(db_type: str, match_title: str) -> Optional[Dict[str, Any]]:
     """按库型 + 标题关键词模糊匹配第一个组件（runbook 声明式引用）。
 
-    匹配规则：``match_title`` 为子串（大小写不敏感）匹配组件标题；
-    优先命中 default 模板。找不到返回 None。
+    匹配优先级（自高到低）：
+    1. 标题**完全等于** ``match_title``（default 模板优先）
+    2. 标题完全相等（任意模板）
+    3. 标题**包含** ``match_title`` 子串（default 模板优先）
+    4. 标题包含子串（任意模板）
+
+    为什么把「完全相等」提到子串之前：子串匹配存在天然歧义——``安全与合规``
+    既是周巡检章节的完整标题，又是月度健康检查「安全与合规深度核查」的前缀。
+    若只按子串 + 模板默认序取第一个，绑定结果取决于排序，模板微调即可能
+    静默换到另一个章节。先比完全相等可让「标题就是关键词」的场景稳定命中。
+
+    找不到返回 None。
     """
     kw = (match_title or "").strip().lower()
     if not kw:
         return None
     comps = list_components(db_type=db_type)
     defaults = [c for c in comps if c["is_default"]]
-    for c in defaults + [x for x in comps if x not in defaults]:
-        if kw in (c["title"] or "").lower():
+    others = [x for x in comps if x not in defaults]
+    ordered = defaults + others
+
+    def _title(c):
+        return str(c.get("title") or "").strip().lower()
+
+    for c in ordered:
+        if _title(c) == kw:
+            return c
+    for c in ordered:
+        if kw in _title(c):
             return c
     return None
 
@@ -234,7 +264,8 @@ def run_component(comp_id: str = "", instance_id: str = "",
     from modules.sqlaudit.plan_analyzer import connect_instance
 
     try:
-        conn = connect_instance(inst)
+        from modules.inspection.sql_safety import guarded_connection
+        conn = guarded_connection(connect_instance(inst),inst.get('db_type',''))
     except Exception as e:
         return {"ok": False, "error_code": "CONNECT_FAILED",
                 "error": "连接失败: %s" % e, "findings": [], "metrics": {}}
@@ -306,9 +337,16 @@ def run_component(comp_id: str = "", instance_id: str = "",
             "tags": [comp["id"], "inspect"],
         })
     findings.extend(data_findings)
+    errors=[key+': '+str(value['error']) for key,value in metrics.items() if value.get('error')]
+    warnings=list(getattr(conn,'warnings',[]))
+    if errors or warnings:
+        findings.append({'source':'inspect_component','category':'collection','severity':'warning',
+            'title':'巡检采集不完整','detail':'\n'.join(errors+warnings),
+            'suggestion':'复核SQL保护限制、驱动支持及未完成项','tags':[comp['id'],'inspect']})
 
     return {
-        "ok": True,
+        "ok": not errors and not warnings,
+        "collection_status":'incomplete' if errors or warnings else 'collected',
         "component": comp,
         "instance": {"id": instance_id, "name": inst.get("name"),
                      "db_type": inst.get("db_type")},

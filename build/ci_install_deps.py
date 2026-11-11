@@ -27,6 +27,10 @@
 用法：``python build/ci_install_deps.py``
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import importlib
@@ -60,6 +64,8 @@ CORE_MODULES = [
     "werkzeug",
     "docx",
     "docxtpl",
+    "docxcompose",
+    "tzdata",
     "openpyxl",
     "yaml",
     "numpy",

@@ -5,6 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 -->
+{% set is_embedded = embedded|default(false) %}
+{% if not is_embedded %}
 <!DOCTYPE html>
 <html lang="zh">
  <head>
@@ -16,13 +18,13 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
   <title>
    运维服务与需求验收 · {{ product_name }}
   </title>
-  <link href="/static/css/service_management.css" rel="stylesheet"/>
-  <script defer="" src="/static/js/service_management.js">
-  </script>
- </head>
- <body>
+{% endif %}
+  <link href="/static/css/service_management.css?v=usability-2" rel="stylesheet"/>
+{% if not is_embedded %}</head><body style="margin:0">{% endif %}
+ <div id="service-workspace" data-embedded="{{ 'true' if is_embedded else 'false' }}">
   <main>
    <header>
+{% if not is_embedded %}
     <div>
      <a href="/">
       {{ product_full_name }}
@@ -34,6 +36,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
       资产台账、巡检证据、审批闭环与服务交付
      </p>
     </div>
+{% endif %}
     <button id="refresh">
      刷新数据
     </button>
@@ -146,6 +149,8 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
       </button>
      </div>
      <form id="asset-form">
+      <label>从数据库运维台账带入<select id="asset-inventory"><option value="">选择已有数据库</option></select></label>
+      <p id="asset-import-hint" role="status"></p>
       <label>
        当前资产
        <select id="asset-id">
@@ -159,7 +164,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
        <textarea id="asset-data" rows="18" spellcheck="false"></textarea>
       </label>
       <p>
-       凭据引用填写现有数据源 instance_id。证书、主机文件和日志使用明确配置，核心文件仅采集哈希与属性。
+       从已有台账带入连接引用和资产信息，补齐必填项后保存。证书、主机文件及日志可在更多配置中维护。
       </p>
       <button type="submit">
        保存台账
@@ -341,5 +346,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     基于 RaccoonX / DBCheck · fiyo (Jack Ge) &lt;sdfiyon@gmail.com&gt; · Apache-2.0
    </footer>
   </main>
- </body>
-</html>
+ </div>
+ <script src="/static/js/structured_forms.js?v=1"></script>
+ <script src="/static/js/service_management.js?v=usability-2"></script>
+{% if not is_embedded %}</body></html>{% endif %}

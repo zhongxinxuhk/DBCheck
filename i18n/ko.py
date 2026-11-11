@@ -2935,8 +2935,6 @@ KO.update({
     # ══ 로그인 페이지 ══
     "login.title": "RaccoonX",
     "login.subtitle": "지능형 데이터베이스 점검 및 성능 분석 플랫폼",
-    "login.welcome": "다시 오신 것을 환영합니다",
-    "login.welcome_desc": "로그인하여 데이터베이스 점검을 시작하세요",
     "login.slogan": "데이터베이스 운영: 가시적 · 통제 · 예방",
     "login.feature_1": "스마트 점검",
     "login.feature_1_desc": "원클릭 데이터베이스 건강 상태 점검",
@@ -2953,10 +2951,6 @@ KO.update({
     "login.error_empty": "사용자 이름과 비밀번호를 입력하세요",
     "login.error_failed": "로그인 실패",
     "login.error_network": "네트워크 오류, 나중에 다시 시도하세요",
-    "login.demo_title": "데모 계정",
-    "login.demo_admin": "관리자",
-    "login.demo_viewer": "읽기 전용",
-    "login.demo_operator": "운영",
     "login.theme_toggle": "테마 전환",
     "login.copyright": "RaccoonX © 2026",
     "login.show_password": "비밀번호 표시",
@@ -3316,4 +3310,12 @@ KO.update({
     "webui.system_info_brand": "브랜드 로고",
     "webui.system_info_opensource": "오픈 소스 정보",
     "webui.system_info_check_update": "업데이트 확인",
+})
+
+KO.update({
+    "menu.inventory": "데이터베이스 운영 대장",
+    "menu.batch-inspection": "다중 데이터 소스 통합 점검",
+    "menu.clusters": "클러스터 관리",
+    "menu.services": "운영 서비스 및 검수",
+    "menu.system-info": "시스템 정보"
 })

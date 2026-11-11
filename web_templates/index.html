@@ -37,19 +37,8 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 .sysinfo-row:last-child { border-bottom: none; }
 .sysinfo-row .k { color: var(--text-muted); flex: 0 0 auto; }
 .sysinfo-row .v { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
-.sysinfo-row a, .sysinfo-note a { color: var(--accent); text-decoration: none; }
-.sysinfo-row a:hover, .sysinfo-note a:hover { text-decoration: underline; }
-.sysinfo-note { font-size: 12px; color: var(--text-muted); line-height: 1.75; }
-.sysinfo-note strong { color: var(--text); font-weight: 600; }
-.sysinfo-announce-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.sysinfo-announce-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); font-size: 12.5px; color: var(--text); }
-.sysinfo-brand-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
-.sysinfo-brand-box { background: #fff; border-radius: 12px; padding: 12px; text-align: center; }
-.sysinfo-brand-box img { display: block; width: 220px; max-width: 100%; height: auto; }
-.sysinfo-brand-box--icon img { width: 96px; height: 96px; object-fit: contain; }
-.sysinfo-brand-box span { display: block; margin-top: 8px; font-size: 11px; color: #64748B; }
-.sysinfo-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-.sysinfo-btn-row .btn { padding: 7px 16px; font-size: 12.5px; text-decoration: none; }
+.sysinfo-row a { color: var(--accent); text-decoration: none; }
+.sysinfo-row a:hover { text-decoration: underline; }
 </style>
 <style>
 /* ─── Reset & Base ─── */
@@ -3479,6 +3468,346 @@ async function executeFixSql(taskId, sql) {
   white-space: nowrap;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   首页概览数据卡 v2
+   设计取向：单强调色 + 中性面；语义色只用于「状态」，不再给
+   每张卡片配渐变图标块；数据靠栅格对齐，不靠巨大居中数字。
+   ══════════════════════════════════════════════════════════════ */
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(252px, 1fr));
+  gap: 14px;
+}
+.ov-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 190px;
+  padding: 15px 18px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color var(--trans), box-shadow var(--trans);
+}
+.ov-card:hover {
+  border-color: #3A4A67;
+  box-shadow: 0 4px 14px -8px rgba(0, 0, 0, .55);
+}
+[data-theme="light"] .ov-card {
+  box-shadow: 0 1px 2px rgba(13, 20, 38, .04);
+}
+[data-theme="light"] .ov-card:hover {
+  border-color: #AEBACA;
+  box-shadow: 0 3px 10px -6px rgba(13, 20, 38, .22);
+}
+
+/* 卡头：线性图标 + 标题 + 分隔点 + 描述，单行排布 */
+.ov-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 13px;
+  min-height: 18px;
+}
+.ov-head svg {
+  width: 15px; height: 15px;
+  flex: 0 0 auto;
+  stroke: var(--text-muted);
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ov-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.ov-sep { color: var(--border); font-size: 12px; flex: 0 0 auto; }
+.ov-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 主指标 */
+.ov-metric-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ov-metric { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.ov-num {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ov-unit { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+
+/* 状态标签：小圆角而非胶囊，避免「到处都是 badge」的观感 */
+.ov-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ov-tag::before {
+  content: "";
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.ov-tag.is-ok    { color: #00C8A0; background: rgba(0, 200, 160, .12); border-color: rgba(0, 200, 160, .26); }
+.ov-tag.is-warn  { color: var(--warn); background: rgba(245, 158, 11, .12); border-color: rgba(245, 158, 11, .26); }
+.ov-tag.is-bad   { color: var(--danger); background: rgba(239, 68, 68, .11); border-color: rgba(239, 68, 68, .26); }
+.ov-tag.is-muted { color: var(--text-muted); background: var(--surface2); border-color: var(--border); }
+[data-theme="light"] .ov-tag.is-ok    { color: #0B8A6E; background: rgba(0, 168, 132, .09); border-color: rgba(0, 168, 132, .22); }
+[data-theme="light"] .ov-tag.is-warn  { color: #B45309; background: rgba(180, 83, 9, .08); border-color: rgba(180, 83, 9, .20); }
+[data-theme="light"] .ov-tag.is-bad   { color: #DC2626; background: rgba(220, 38, 38, .07); border-color: rgba(220, 38, 38, .18); }
+
+/* 风险分布：分段条 + 图例 */
+.ov-bar {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  margin-top: 15px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface2);
+}
+.ov-bar-seg { height: 100%; min-width: 3px; border-radius: 2px; }
+.ov-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 11px; }
+.ov-legend-i {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.ov-legend-d { width: 6px; height: 6px; border-radius: 2px; flex: 0 0 auto; }
+.ov-legend-v { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 卡片底部（贴底对齐，四张卡视觉基线一致） */
+.ov-foot {
+  margin-top: auto;
+  padding-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 双指标：竖向细分割，数值左对齐 */
+.ov-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 1px;
+}
+.ov-stat { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ov-stat + .ov-stat {
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+.ov-stat-v {
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ov-stat-k { font-size: 11px; color: var(--text-muted); }
+
+/* 迷你列表（最近任务） */
+.ov-joblist { margin-top: 14px; }
+.ov-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 11.5px;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+}
+.ov-row:first-child { border-top: none; padding-top: 2px; }
+.ov-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+.ov-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-row-meta {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 空状态：一句话 + 细线，不做虚线大框 */
+.ov-empty {
+  margin-top: auto;
+  padding: 12px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.ov-empty i {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  border: 1px solid var(--text-muted);
+  opacity: .7;
+  flex: 0 0 auto;
+}
+/* 卡片内的「无数据」文案改为左对齐，与整卡栅格一致 */
+.ov-card .health-no-data {
+  text-align: left;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+/* 卡片底部容器：离线清单 + 页脚一起贴底 */
+.ov-bottom { margin-top: auto; }
+.ov-bottom .ov-foot { margin-top: 0; padding-top: 8px; }
+/* 卡片正文容器（渲染时由 JS 包裹）：必须是 flex 列，
+   否则内部 .ov-bottom 的 margin-top:auto 不生效，页脚会浮在半空 */
+.ov-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.ov-offline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.ov-offline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger);
+  background: rgba(239, 68, 68, .10);
+  border: 1px solid rgba(239, 68, 68, .22);
+}
+.ov-offline-badge::before {
+  content: "";
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ov-offline-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-theme="light"] .ov-offline-badge {
+  color: #DC2626;
+  background: rgba(220, 38, 38, .07);
+  border-color: rgba(220, 38, 38, .18);
+}
+
+/* 实例分布：环形 + 右侧自定义图例 */
+.ov-donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 2px 0 4px;
+}
+.ov-donut {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  flex: 0 0 auto;
+}
+/* ECharts 会清空 init 容器，所以圆环画布必须与中心文字是兄弟节点 */
+.ov-donut-canvas {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  inset: 0;
+}
+.ov-donut-c {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+.ov-donut-n {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ov-donut-l {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: .04em;
+}
+.ov-donut-legend {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ov-donut-row { display: flex; align-items: center; gap: 7px; font-size: 11.5px; line-height: 1.2; }
+.ov-donut-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.ov-donut-val { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.ov-donut-pct {
+  width: 28px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ════════════════ 首页重构：Hero + 健康驾驶舱 ════════════════ */
 .home-hero {
   position: relative;
@@ -3793,6 +4122,7 @@ async function executeFixSql(taskId, sql) {
     }
     </style>
 
+<link rel="stylesheet" href="/static/css/workspace_usability.css?v=1">
 </head>
 <body data-page-node-id="Z8wXYH3Kq2Lmo04jsdprwJ">
 <div class="app-layout" data-page-node-id="jyhASvy4sIJW4QwFDK2QUg">
@@ -6826,6 +7156,13 @@ function formatBytes(bytes) {
                     '</div>' +
                   '</div>' +
                 '</div>' +
+                '<div class="toggle-row" onclick="toggleDsSshTunnel()" style="margin-top:10px;">' +
+                  '<span style="font-size:13px;font-weight:500;color:var(--text)">🚇 通过 SSH 隧道连接数据库</span>' +
+                  '<div class="toggle" id="ds-ssh-tunnel-toggle"></div>' +
+                '</div>' +
+                '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;line-height:1.6">' +
+                  '启用后：数据库主机填 127.0.0.1 即表示 SSH 服务器上的本地数据库（堡垒机/内网转发）；关闭后：SSH 仅采集系统指标，数据库直连。' +
+                '</div>' +
               '</div>' +
             '</div>' +
             '<div id="ds-save-msg" style="margin-top:10px;font-size:12px"></div>' +
@@ -7042,6 +7379,17 @@ function formatBytes(bytes) {
         document.getElementById('ds-ssh-password-wrap').style.display = auth === 'password' ? '' : 'none';
         document.getElementById('ds-ssh-key-wrap').style.display = auth === 'key' ? '' : 'none';
       }
+      // 数据源弹窗：是否经 SSH 隧道连接数据库（默认启用）
+      function toggleDsSshTunnel() {
+        const t = document.getElementById('ds-ssh-tunnel-toggle');
+        const on = !(t.className.indexOf('on') >= 0);
+        t.className = 'toggle' + (on ? ' on' : '');
+        t.dataset.on = on ? '1' : '0';
+      }
+      function _dsSshTunnelOn() {
+        const t = document.getElementById('ds-ssh-tunnel-toggle');
+        return !!t && t.className.indexOf('on') >= 0;
+      }
 
       async function testDsConnInModal() {
         const msgEl = document.getElementById('ds-save-msg');
@@ -7084,6 +7432,7 @@ function formatBytes(bytes) {
         const sshUser = document.getElementById('ds-ssh-user')?.value || '';
         let sshPass = document.getElementById('ds-ssh-password')?.value || '';
         if (!sshPass) sshPass = _editSshPassword;
+        const sshTunnelOn = _dsSshTunnelOn();
         if (!host) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '❌ 请输入主机地址'; return; }
         // Redis 传统模式无用户名，仅 ACL 场景需要，允许留空
         if (!user && dbType !== 'redis' && dbType !== 'redis-cluster') { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '❌ 请输入用户名'; return; }
@@ -7093,7 +7442,7 @@ function formatBytes(bytes) {
           const res = await fetch('/api/pro/datasources/test-connection', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ db_type: dbType, host, port: parseInt(port), user, password, service_name: svcName, database: dbName, tenant: tenant, sysdba, use_sid: useSid, jdbc_url: jdbcUrl, connection_mode: connectionMode, encrypt, trust_server_certificate: trustServerCertificate, gbase_server_name: gbaseServer, ssh_host: sshHost, ssh_port: parseInt(sshPort), ssh_user: sshUser, ssh_password: sshPass, connect_mode: mongoConnectMode, auth_source: mongoAuthSource, auth_mechanism: mongoAuthMechanism, replica_set: mongoReplicaSet, tls: mongoTls, tls_ca_file: mongoTlsCaFile, tls_cert_key_file: mongoTlsCertKeyFile, tls_allow_invalid_certs: mongoTlsAllowInvalid, seed_nodes: redisSeedNodes, driver_version: driverVersion })
+            body: JSON.stringify({ db_type: dbType, host, port: parseInt(port), user, password, service_name: svcName, database: dbName, tenant: tenant, sysdba, use_sid: useSid, jdbc_url: jdbcUrl, connection_mode: connectionMode, encrypt, trust_server_certificate: trustServerCertificate, gbase_server_name: gbaseServer, ssh_host: sshHost, ssh_port: parseInt(sshPort), ssh_user: sshUser, ssh_password: sshPass, ssh_key_file: (document.getElementById('ds-ssh-key')?.value || ''), ssh_key_password: (document.getElementById('ds-ssh-key-password')?.value || ''), ssh_tunnel: sshTunnelOn, connect_mode: mongoConnectMode, auth_source: mongoAuthSource, auth_mechanism: mongoAuthMechanism, replica_set: mongoReplicaSet, tls: mongoTls, tls_ca_file: mongoTlsCaFile, tls_cert_key_file: mongoTlsCertKeyFile, tls_allow_invalid_certs: mongoTlsAllowInvalid, seed_nodes: redisSeedNodes, driver_version: driverVersion })
           });
           const data = await res.json();
           msgEl.style.color = data.ok ? 'var(--success)' : 'var(--danger)';
@@ -7124,6 +7473,7 @@ function formatBytes(bytes) {
         payload.ssh_password = sshOn ? (document.getElementById('ds-ssh-password').value || undefined) : '';
         payload.ssh_key_file = sshOn ? document.getElementById('ds-ssh-key').value.trim() : '';
         payload.ssh_key_password = sshOn ? document.getElementById('ds-ssh-key-password').value.trim() : '';
+        payload.ssh_tunnel = sshOn ? (_dsSshTunnelOn() ? 1 : 0) : 0;
         if (window.SHOW_DB_FIELD[payload.db_type] || ['gbase8a','sqlserver','sqlserver_jdbc'].includes(payload.db_type)) payload.database = document.getElementById('ds-database').value.trim();
         if (payload.db_type === 'oracle' || payload.db_type === 'oracle_jdbc') {
           payload.service_name = document.getElementById('ds-service-name').value.trim();
@@ -7302,6 +7652,10 @@ function formatBytes(bytes) {
                   document.getElementById('ds-ssh-auth').value = 'key';
                 }
                 onDsSshAuthChange();
+                // 隧道开关回填：数据源里没存过该字段时按「默认关闭」处理
+                const _tunOn = (ds.ssh_tunnel === true || ds.ssh_tunnel === 1 || ds.ssh_tunnel === '1');
+                const _tunEl = document.getElementById('ds-ssh-tunnel-toggle');
+                if (_tunEl) _tunEl.className = 'toggle' + (_tunOn ? ' on' : '');
               }
               // 端口放在 onDsDbTypeChange 之后，避免被默认值覆盖
               document.getElementById('ds-port').value = ds.port ?? 3306;
@@ -7354,6 +7708,14 @@ function formatBytes(bytes) {
               ssh_port: ds.ssh_port || 22,
               ssh_user: ds.ssh_user || '',
               ssh_password: ds.ssh_password || '',
+              ssh_key_file: ds.ssh_key_file || '',
+              ssh_key_password: ds.ssh_key_password || '',
+              // 必须回传隧道开关：后端据此决定是否建立 SSH 隧道。
+              // 此前漏传 → data.get('ssh_tunnel', False) 恒为 False →
+              // 测试连接直连 127.0.0.1:5432 被拒（Connection refused），
+              // 而巡检走隧道却能成功。
+              ssh_tunnel: (ds.ssh_tunnel === true || ds.ssh_tunnel === 1 ||
+                           ds.ssh_tunnel === '1'),
               driver_version: ds.driver_version || '',
             })
           });
@@ -7491,17 +7853,21 @@ let __wfTaskPoll = null;
 let __wfTaskDatasources = [];
 let __wfTasksCache = [];
 let __wfCurrentFilter = '';
+let __wfTaskClusters = [];
 
 async function loadWorkflowTaskPage() {
   try {
-    const [tres, wres, dres] = await Promise.all([
+    const [tres, wres, dres, ores] = await Promise.all([
       fetch('/api/intelligence/workflow-tasks'),
       fetch('/api/intelligence/workflows'),
-      fetch('/api/pro/datasources')
+      fetch('/api/pro/datasources'),
+      fetch('/api/operations/options')
     ]);
     const tdata = await tres.json();
     const wdata = await wres.json();
     const ddata = await dres.json();
+    const odata = await ores.json();
+    __wfTaskClusters = odata.ok ? (odata.clusters || []) : [];
     __wfTaskDatasources = (ddata.ok && ddata.datasources) ? ddata.datasources : [];
     const wfMap = {};
     ((wdata.workflows) || []).forEach(w => { wfMap[w.id] = w.name; });
@@ -7562,8 +7928,10 @@ function wfRenderTaskGrid() {
     catch(e){ return t.last_run_at; }
   };
   grid.innerHTML = list.map(t => {
-    const wfName = wfMap[t.workflow_id] || ('#' + t.workflow_id);
-    const dsName = wfDsName(t.instance_id);
+    const batch = t.task_type === 'batch_inspection';
+    const wfName = batch ? '整体巡检' : (wfMap[t.workflow_id] || ('#' + t.workflow_id));
+    const spec = t.batch_spec || {};
+    const dsName = batch ? `${(spec.instance_ids || []).length}个数据源 / ${(spec.cluster_ids || []).length}个集群` : wfDsName(t.instance_id);
     const cronIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     return `<div class="wf-task-card ${t.status}" onclick="wfOpenRunDrawer(${t.id})">
       <div class="wf-tc-strip ${t.status}"></div>
@@ -7579,10 +7947,12 @@ function wfRenderTaskGrid() {
           <div class="wf-tc-wf"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>${wfEscape(wfName)}</div>
         </div>
         <div class="wf-tc-meta-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>${wfEscape(dsName)}</div>
-        ${t.cron ? `<div class="wf-tc-meta-row">${cronIcon}${wfEscape(t.cron)}</div>` : ''}
+        ${t.cron ? `<div class="wf-tc-meta-row">${cronIcon}${wfEscape(t.cron)} · ${t.schedule_enabled ? '定时已启用' : '定时已暂停'}</div>` : ''}
+        ${t.next_run_at ? `<div class="wf-tc-meta-row">下次运行 ${wfEscape(new Date(t.next_run_at).toLocaleString('zh-CN'))}</div>` : ''}
       </div>
+      <div class="wf-direct-actions" onclick="event.stopPropagation()"><button class="btn btn-primary" onclick="${t.status === 'running' ? 'wfTaskStop' : 'wfTaskStart'}(${t.id})">${t.status === 'running' ? '停止本次并暂停定时' : '立即运行'}</button><button class="btn btn-ghost" onclick="wfTaskEdit(${t.id})">编辑</button><button class="btn btn-ghost" onclick="wfOpenRunDrawer(${t.id})">运行记录</button></div>
       <div class="wf-tc-footer">
-        <div class="wf-tc-status ${t.status}"><span class="wf-tc-dot ${t.status}"></span>${statusText[t.status] || t.status}</div>
+        <div class="wf-tc-status ${t.status}"><span class="wf-tc-dot ${t.status}"></span>${t.status === 'stopped' && t.schedule_enabled ? '等待定时运行' : (statusText[t.status] || t.status)}</div>
         <div class="wf-tc-time">${t.status === 'running' ? '正在运行' : (lastAt(t) || '未运行')}</div>
       </div>
     </div>`;
@@ -7608,6 +7978,7 @@ function wfTaskMenu(taskId, el) {
     : `<button onclick="wfTaskStart(${taskId})">${_wfMenuIcons.start}启动</button>`
       + `<button onclick="wfTaskEdit(${taskId})">${_wfMenuIcons.edit}编辑</button>`
       + `<hr><button class="danger" onclick="wfTaskDelete(${taskId})">${_wfMenuIcons.del}删除</button>`;
+  if (!running && t.schedule_enabled) menu.innerHTML = `<button onclick="wfTaskStop(${taskId})">${_wfMenuIcons.stop}暂停定时</button>` + menu.innerHTML;
   const rect = el.getBoundingClientRect();
   menu.style.display = 'block';
   menu.style.top = (rect.bottom + 6) + 'px';
@@ -7632,7 +8003,7 @@ async function wfTaskStop(taskId) {
   try {
     const r = await fetch('/api/intelligence/workflow-tasks/' + taskId + '/stop', {method: 'POST'});
     const d = await r.json();
-    if (d.ok) toastSuccess('任务已停止'); else toastError(d.msg || '停止失败');
+    if (d.ok) toastSuccess('已停止后续调度，当前任务完成后结束'); else toastError(d.msg || '停止失败');
   } catch (e) { toastError(e.message); }
 }
 async function wfTaskDelete(taskId) {
@@ -7654,15 +8025,18 @@ function wfTaskEdit(taskId) {
 function wfSetCron(expr) {
   const el = document.getElementById('wf-task-cron');
   if (el) el.value = expr;
+  document.getElementById('wf-task-schedule-enabled').checked = true;
+  window.DBPulseUX?.prepareTaskForm();
 }
 
 function wfOpenTaskModal(task) {
   const modal = document.getElementById('wf-task-modal');
-  document.getElementById('wf-task-modal-title').textContent = task ? (i18n('wf_task.edit_title') || '编辑工作流任务') : (i18n('wf_task.new_title') || '新建工作流任务');
+  document.getElementById('wf-task-modal-title').textContent = task?.id ? (i18n('wf_task.edit_title') || '编辑工作流任务') : (i18n('wf_task.new_title') || '新建工作流任务');
   document.getElementById('wf-task-name').value = task ? task.name : '';
   document.getElementById('wf-task-goal').value = task ? (task.goal || '') : '';
   document.getElementById('wf-task-cron').value = task ? (task.cron || '') : '';
-  modal.dataset.taskId = task ? task.id : '';
+  modal.dataset.taskId = task?.id || '';
+  modal.dataset.batchSpec = JSON.stringify(task?.batch_spec || {});
   const wfMap = window.__wfTaskWfMap || {};
   const wfList = Object.keys(wfMap).map(id => ({id: id, name: wfMap[id]}));
   const wfSel = document.getElementById('wf-task-workflow');
@@ -7671,7 +8045,23 @@ function wfOpenTaskModal(task) {
   const dsSel = document.getElementById('wf-task-instance');
   dsSel.innerHTML = '<option value="">请选择数据源</option>' + __wfTaskDatasources.map(d => `<option value="${wfEscape(d.id)}">${wfEscape(d.name || (d.host + ':' + d.port))}</option>`).join('');
   dsSel.value = task ? task.instance_id : '';
+  const spec = task?.batch_spec || {};
+  document.getElementById('wf-task-type').value = task?.task_type || 'workflow';
+  document.getElementById('wf-task-schedule-enabled').checked = task ? !!task.schedule_enabled : false;
+  document.getElementById('wf-task-concurrency').value = spec.concurrency || 1;
+  const selectedSources = new Set(spec.instance_ids || []);
+  document.getElementById('wf-task-batch-sources').innerHTML = __wfTaskDatasources.map(source => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${wfEscape(source.id)}" ${selectedSources.has(source.id)?'checked':''}>${wfEscape(source.name || source.host)}</label>`).join('');
+  const selectedClusters = new Set(spec.cluster_ids || []);
+  document.getElementById('wf-task-batch-clusters').innerHTML = __wfTaskClusters.map(cluster=>`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${wfEscape(cluster.id)}" ${selectedClusters.has(cluster.id)?'checked':''}>${wfEscape(cluster.name)}</label>`).join('') || '<span>暂无可选择的集群</span>';
+  wfTaskTypeChanged();
   modal.style.display = 'flex';
+  window.DBPulseUX?.prepareTaskForm();
+}
+function wfTaskTypeChanged() {
+  const batch = document.getElementById('wf-task-type').value === 'batch_inspection';
+  document.getElementById('wf-task-workflow-fields').style.display = batch ? 'none' : '';
+  document.getElementById('wf-task-goal-field').style.display = batch ? 'none' : '';
+  document.getElementById('wf-task-batch-fields').style.display = batch ? '' : 'none';
 }
 function wfCloseTaskModal() { document.getElementById('wf-task-modal').style.display = 'none'; }
 async function wfSaveTask() {
@@ -7683,9 +8073,22 @@ async function wfSaveTask() {
   const goal = document.getElementById('wf-task-goal').value;
   const cron = document.getElementById('wf-task-cron').value.trim();
   if (!name) { toastError('请填写任务名称'); return; }
-  if (!workflow_id) { toastError('请选择工作流'); return; }
-  if (!instance_id) { toastError('请选择数据源'); return; }
-  const body = JSON.stringify({name, workflow_id, instance_id, goal, cron});
+  const task_type = document.getElementById('wf-task-type').value;
+  const schedule_enabled = document.getElementById('wf-task-schedule-enabled').checked;
+  const batch_spec = {
+    ...JSON.parse(modal.dataset.batchSpec || '{}'),
+    instance_ids:[...document.querySelectorAll('#wf-task-batch-sources input:checked')].map(input=>input.value),
+    cluster_ids:[...document.querySelectorAll('#wf-task-batch-clusters input:checked')].map(input=>input.value),
+    concurrency:Number(document.getElementById('wf-task-concurrency').value)
+  };
+  if (task_type === 'workflow' && !workflow_id) {toastError('请选择工作流');return;}
+  if (task_type === 'workflow' && !instance_id) {toastError('请选择数据源');return;}
+  if (task_type === 'batch_inspection' && !batch_spec.instance_ids.length && !batch_spec.cluster_ids.length) {toastError('请选择数据源或集群');return;}
+  if (schedule_enabled && !cron) {toastError('启用定时运行须填写Cron');return;}
+  const saveButton = document.getElementById('wf-task-save');
+  if (saveButton.disabled) return;
+  saveButton.disabled = true; saveButton.textContent = '保存中…';
+  const body = JSON.stringify({name, workflow_id, instance_id, goal, cron,task_type,schedule_enabled,batch_spec:task_type==='batch_inspection'?batch_spec:{}});
   try {
     const url = taskId ? ('/api/intelligence/workflow-tasks/' + taskId) : '/api/intelligence/workflow-tasks';
     const r = await fetch(url, {method: taskId ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body});
@@ -7693,6 +8096,7 @@ async function wfSaveTask() {
     if (d.ok) { toastSuccess('已保存'); wfCloseTaskModal(); loadWorkflowTaskPage(); }
     else toastError(d.msg || '保存失败');
   } catch (e) { toastError(e.message); }
+  finally {saveButton.disabled = false; saveButton.textContent = '保存';}
 }
 
 async function wfOpenRunDrawer(taskId) {
@@ -7703,7 +8107,7 @@ async function wfOpenRunDrawer(taskId) {
   const titleEl = document.getElementById('wf-run-drawer-title');
   const subEl = document.getElementById('wf-run-drawer-sub');
   if (titleEl) titleEl.innerHTML = `<span class="wf-dot" style="background:var(--accent)"></span>${t ? wfEscape(t.name) : '运行历史'}`;
-  if (subEl) subEl.textContent = t ? `${wfEscape(window.__wfTaskWfMap[t.workflow_id] || '')} · ${wfEscape(wfDsName(t.instance_id))}` : '查看每次运行结果、产出与耗时';
+  if (subEl) subEl.textContent = t?.task_type === 'batch_inspection' ? '整体巡检 · 每次运行生成一份汇总报告' : t ? `${window.__wfTaskWfMap[t.workflow_id] || ''} · ${wfDsName(t.instance_id)}` : '查看每次运行结果、产出与耗时';
   body.innerHTML = '<div class="wf-run-empty">加载中…</div>';
   const aiPanel = document.getElementById('ai-chat-sidebar');
   const aiOpen = aiPanel && (aiPanel.classList.contains('open') || !aiPanel.classList.contains('collapsed'));
@@ -7718,7 +8122,7 @@ async function wfOpenRunDrawer(taskId) {
     const statusText = {running: '运行中', done: '完成', error: '失败', cancelled: '已取消'};
     const triggerText = {manual: '手动', cron: '定时', api: 'API'};
     body.innerHTML = '<div class="wf-run-timeline">' + runs.map(rn => {
-      const outs = (rn.outputs || []).map(o => {
+      const outs = (rn.outputs || []).filter(o => o.type !== 'batch_inspection').map(o => {
         let line = `<div class="wf-run-out">${wfEscape(o.label || o.id || '')}（${wfEscape(o.action || '')}）：${wfEscape(o.summary || '')}`;
         if (o.report_path) {
           const _rb = encodeURIComponent(String(o.report_path).split(/[\\/]/).pop());
@@ -7738,6 +8142,7 @@ async function wfOpenRunDrawer(taskId) {
           <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>发现 ${rn.findings_count || 0}</span>
           <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>方案 ${rn.plan_count || 0}</span>
         </div>
+        ${(rn.outputs || []).filter(output=>output.type==='batch_inspection' && /^[0-9a-f-]{36}$/.test(output.batch_run_id || '')).map(output=>`<div class="wf-run-outs"><a href="/api/operations/batches/${encodeURIComponent(output.batch_run_id)}/report" target="_blank" rel="noopener">下载本次整体巡检报告</a></div>`).join('')}
         ${rn.error ? `<div class="wf-ri-error">${wfEscape(rn.error)}</div>` : ''}
         ${outs || (rn.summary ? `<div class="wf-run-outs"><div class="wf-run-out">${wfEscape(rn.summary)}</div></div>` : '')}
       </div>`;
@@ -7760,10 +8165,27 @@ function wfCloseRunDrawer() {
       <img src="/dbcheck_logo_icon.png" alt="" aria-hidden="true" class="sidebar-brand-logo-collapsed" data-page-node-id="sysBrandCollapsedX1">
     </div>
 
+    <div class="navigation-search"><input id="navigation-search" type="search" placeholder="查找功能 · ⌘/Ctrl K" aria-label="查找功能"><button id="navigation-clear" type="button" aria-label="清除功能搜索" hidden>清除</button></div>
+    <p id="navigation-empty" role="status" hidden>未找到可用功能</p>
     <div class="sidebar-nav" data-page-node-id="nJfdiOGgREz2KCCFAOfG5M">
     <!-- ── 首页 ── -->
     <div class="nav-item active" onclick="showPage('home')" id="nav-home" data-page-node-id="nm2tRs0IXyHb0pb4iozP8t">
       <span class="icon" data-page-node-id="D9WFjCkwVrMbXr3POrU0VK"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="Tg2J4xerNNb6UxixaML2sv"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" data-page-node-id="sfenDWBJJHd7LVaSV90fbD"/></svg></span> <span data-i18n="webui.nav_home" data-page-node-id="hbN3Rx7qpLtd3syyDMMlG2">首页</span>
+    </div>
+
+    <!-- ── 运维中台 ── -->
+    <div class="nav-section">运维中台</div>
+    <div class="nav-item" onclick="showPage('inventory')" id="nav-inventory">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>数据库运维台账</span>
+    </div>
+    <div class="nav-item" onclick="showPage('batch-inspection')" id="nav-batch-inspection">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><path d="m17 16 4 3-4 3"/></svg></span><span>多数据源整体巡检</span>
+    </div>
+    <div class="nav-item" onclick="showPage('clusters')" id="nav-clusters">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="m10 8-4 8m8-8 4 8M8 19h8"/></svg></span><span>集群管理</span>
+    </div>
+    <div class="nav-item" onclick="showPage('services')" id="nav-services">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 5V3h8v2M7 10h10M7 15h10"/></svg></span><span>运维服务与需求验收</span>
     </div>
 
     <!-- ── 智能巡检 ── -->
@@ -7848,7 +8270,7 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('monitor-conn')" id="nav-monitor-conn" data-page-node-id="WdCbp1T6zypdwAbqufdcxA">
       <span class="icon" data-page-node-id="OWE9CHM7Ha7i8e9MGiWHSS"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="IpFrMmsMEARB6OOH7FBaBJ"><path d="M12 22v-5" data-page-node-id="N9xTPRHHlDu3x3MIFuFhf1"/><path d="M9 8V2" data-page-node-id="JPEWgLzTML3VSnB8Blirnf"/><path d="M15 8V2" data-page-node-id="GT9A8a9sN4QwgMP5CNZFfD"/><path d="M18 8v5a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V8Z" data-page-node-id="3VASqfWubRzXV8vg2F5Eny"/></svg></span> <span data-i18n="webui.nav_monitor_conn" data-page-node-id="qlZIOMxoEt51YyEOYc3oZd">活跃连接监控</span>
     </div>
-    <div class="nav-item" onclick="window.open('/monitor-screen', '_blank')" id="nav-monitor-screen" data-page-node-id="scrNavMenu1">
+    <div class="nav-item" onclick="showPage('monitor-screen')" id="nav-monitor-screen" data-page-node-id="scrNavMenu1">
       <span class="icon" data-page-node-id="scrNavMenu2"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="scrNavMenu3"><rect x="2" y="4" width="20" height="13" rx="2" data-page-node-id="scrNavMenu4"/><path d="M8 21h8M12 17v4" data-page-node-id="scrNavMenu5"/></svg></span> <span data-i18n="webui.nav_monitor_screen">监控大屏</span>
     </div>
     <div class="nav-item" onclick="showPage('fleet')" id="nav-fleet" data-page-node-id="fLeEt1nav">
@@ -7913,11 +8335,10 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('shares')" id="nav-shares" data-page-node-id="Px3726GOxyVCfjBfWAfsvk">
       <span class="icon" data-page-node-id="MclWyqKqLGuxXU1N6295yu"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="xIwT1ykqxwgkPYxPkDNfEO"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" data-page-node-id="yn71KpZYGY2EC4Acc8BZPF"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" data-page-node-id="LqnylOxn1E8flMUZypbDSz"/></svg></span> <span data-i18n="webui.nav_shares" data-page-node-id="7OrFgQlS6iEjA2rol5hwJX">分享管理</span>
     </div>
-    <a class="nav-item" href="/services" id="nav-services">运维服务与需求验收</a>
     <div class="nav-item" onclick="showPage('license')" id="nav-license" style="display:none;" data-page-node-id="O0GnruyLVpTBbtmKVZGO5l">
       <span class="icon" data-page-node-id="LT1VAIiQcgMtIEkePOTPU3"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="QnafWCKfjK66Qj3iSzygLe"><circle cx="12" cy="8" r="7" data-page-node-id="JEm0Q9k3zKbihz3PkPvd9J"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" data-page-node-id="bWmd6C2dOgnLFW3ASb9Yps"/></svg></span> <span data-i18n="webui.nav_license" data-page-node-id="aS1CJku9U6WosKyQVcni1P">许可证</span>
     </div>
-    <!-- ── 系统信息：版本 / 更新提醒 / 系统 Logo / 开源署名 ── -->
+    <!-- ── 系统信息：版本与运行信息 ── -->
     <div class="nav-item" onclick="showPage('system-info')" id="nav-system-info" data-page-node-id="sysInfoNavX1">
       <span class="icon" data-page-node-id="sysInfoNavIconX1"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="sysInfoNavSvgX1"><circle cx="12" cy="12" r="9" data-page-node-id="sysInfoNavCircleX1"/><line x1="12" y1="11" x2="12" y2="16" data-page-node-id="sysInfoNavLineX1"/><path d="M12 8h.01" data-page-node-id="sysInfoNavDotX1"/></svg></span> <span data-i18n="webui.nav_system_info" data-page-node-id="sysInfoNavTxtX1">系统信息</span>
     </div>
@@ -7993,7 +8414,7 @@ function wfCloseRunDrawer() {
             <div class="hero-actions" data-page-node-id="IRMtJnJvJKe0luBUI3YITG">
               <button class="hero-btn hero-btn--primary" onclick="showPage('wizard')" data-i18n="webui.home_quick_inspect" data-page-node-id="DJXlpyYVGBWwqfV44AD4tb">立即巡检</button>
               <button class="hero-btn hero-btn--ghost" onclick="showPage('intelligence')" data-i18n="webui.home_quick_diagnose" data-page-node-id="tdFAFMfubG76bEYAPALy0J">智能诊断</button>
-              <button class="hero-btn hero-btn--screen" onclick="window.open('/monitor-screen', '_blank')" title="监控大屏（新窗口打开）">
+              <button class="hero-btn hero-btn--screen" onclick="showPage('monitor-screen')" title="监控大屏">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                 <span data-i18n="webui.home_quick_screen">监控大屏</span>
                 <span class="screen-live-dot" title="实时"></span>
@@ -8115,77 +8536,73 @@ function wfCloseRunDrawer() {
         <!-- 首页概览卡片 -->
         <div class="home-overview" id="home-overview-section" style="display:none;" data-page-node-id="FeXALahp07krhv1Sw588n9">
           <div class="section-header" style="display:none;" data-page-node-id="cwzGoaGqVTjTBxEhBBC7dY"></div>
-          <div class="overview-grid" data-page-node-id="yJShiAroL0ltnTss1dEE9J">
-            <!-- 健康评分仪表盘 -->
-            <div class="overview-card" data-page-node-id="1QZOttwVADGIBsZDEbl3KB">
-              <div class="card-header" data-page-node-id="RrxZGn8kryr6LkqEKe6TpT">
-                <div class="card-icon" style="background:linear-gradient(135deg,#f97316,#ea580c);" data-page-node-id="GHxGzfLIgyji2vRkToGtYB">📊</div>
-                <div data-page-node-id="cCDeGk8bZ9uW5I3Cpe9DaX">
-                  <div class="card-title" data-i18n="webui.home_health_score" data-page-node-id="7g6nAPlIkQtHfvpzmv3Z8v">健康评分</div>
-                  <div class="card-subtitle" data-i18n="webui.home_health_score_sub" data-page-node-id="Ii23gUKF4qkNYcujai7y0a">综合健康状态</div>
-                </div>
+          <div class="ov-grid" data-page-node-id="yJShiAroL0ltnTss1dEE9J">
+            <!-- 健康评分 -->
+            <div class="ov-card" data-page-node-id="1QZOttwVADGIBsZDEbl3KB">
+              <div class="ov-head" data-page-node-id="RrxZGn8kryr6LkqEKe6TpT">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3.4l2.2-6 3.3 12 2.5-7 1.9 4H21"/></svg>
+                <span class="ov-title" data-i18n="webui.home_health_score">健康评分</span>
+                <span class="ov-sep">·</span>
+                <span class="ov-sub" data-i18n="webui.home_health_score_sub">综合健康状态</span>
               </div>
-              <div id="home-health-dashboard" data-page-node-id="xpoF6tn3WO7IGLRMe7BOHI">
-                <div class="health-no-data" data-i18n="webui.home_no_data" data-page-node-id="q74ezwU2YDOSmK46i5dF6t">暂无巡检数据</div>
+              <div class="ov-body" id="home-health-dashboard" data-page-node-id="xpoF6tn3WO7IGLRMe7BOHI">
+                <div class="health-no-data" data-i18n="webui.home_no_data">暂无巡检数据</div>
               </div>
             </div>
 
             <!-- 实例分布 -->
-            <div class="overview-card" data-page-node-id="BnJacBoKbVC0om2fGslxfH">
-              <div class="card-header" data-page-node-id="CrDJjvBGJQmNJqh3fsNaCi">
-                <div class="card-icon" style="background:linear-gradient(135deg,#0A2A6E,#00C8A0);" data-page-node-id="fBIAv1djWXynkVzmvrTn0c">🗄️</div>
-                <div data-page-node-id="BqaWPF511nK9h1kw67xpa4">
-                  <div class="card-title" data-i18n="webui.home_instance_dist" data-page-node-id="gyjB9xEC7BibLJeHLnB17a">实例分布</div>
-                  <div class="card-subtitle" data-i18n="webui.home_instance_dist_sub" data-page-node-id="HWPXPpTqw4lAD7QuXI8aAC">各类型数据库数量</div>
-                </div>
+            <div class="ov-card" data-page-node-id="BnJacBoKbVC0om2fGslxfH">
+              <div class="ov-head" data-page-node-id="CrDJjvBGJQmNJqh3fsNaCi">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.6" rx="7.4" ry="3"/><path d="M4.6 5.6v6c0 1.65 3.3 3 7.4 3s7.4-1.35 7.4-3v-6"/><path d="M4.6 11.6v6c0 1.65 3.3 3 7.4 3s7.4-1.35 7.4-3v-6"/></svg>
+                <span class="ov-title" data-i18n="webui.home_instance_dist">实例分布</span>
+                <span class="ov-sep">·</span>
+                <span class="ov-sub" data-i18n="webui.home_instance_dist_sub">各类型数据库数量</span>
               </div>
-              <div class="db-type-donut" id="home-db-type-list" style="height:230px;" data-page-node-id="VbFnpgFsOeKhhMSg1mZ3kn"></div>
+              <div class="ov-donut-wrap" id="home-db-type-list" data-page-node-id="VbFnpgFsOeKhhMSg1mZ3kn"></div>
             </div>
 
-            <!-- 定时任务 -->
-            <div class="overview-card" data-page-node-id="SXGIm9zsGD9AxMHGAajpfQ">
-              <div class="card-header" data-page-node-id="oSDzNZzghEEdrdyvwnL6iR">
-                <div class="card-icon" style="background:linear-gradient(135deg,#11998e,#38ef7d);" data-page-node-id="rVPG2oKpt2ygx09qkQt6fV">⏰</div>
-                <div data-page-node-id="Cmilotybazq8VzVOWYs8Gi">
-                  <div class="card-title" data-i18n="webui.home_scheduler" data-page-node-id="dpQ3wVdFkNNHBEcZXssP0N">定时巡检</div>
-                  <div class="card-subtitle" data-i18n="webui.home_scheduler_sub" data-page-node-id="PRLhyXLDap4OFHMRyZqn7e">自动化调度任务</div>
+            <!-- 定时巡检 -->
+            <div class="ov-card" data-page-node-id="SXGIm9zsGD9AxMHGAajpfQ">
+              <div class="ov-head" data-page-node-id="oSDzNZzghEEdrdyvwnL6iR">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 1.9"/></svg>
+                <span class="ov-title" data-i18n="webui.home_scheduler">定时巡检</span>
+                <span class="ov-sep">·</span>
+                <span class="ov-sub" data-i18n="webui.home_scheduler_sub">自动化调度任务</span>
+              </div>
+              <div class="ov-stats" id="home-scheduler-summary" data-page-node-id="T75pxlpcocwnhASB4EWwoP">
+                <div class="ov-stat" data-page-node-id="XUiK97mQKJpXDtLGP3kQSZ">
+                  <div class="ov-stat-v" id="home-job-total" data-page-node-id="W0zLhF60j2KWateTNVSKxA">--</div>
+                  <div class="ov-stat-k" data-i18n="webui.home_job_total" data-page-node-id="PdkoI8HR9kRxkfDcRxzNPk">总任务数</div>
+                </div>
+                <div class="ov-stat" data-page-node-id="DuMHbXIPzQOfzgmDjH3Fxf">
+                  <div class="ov-stat-v" id="home-job-active" data-page-node-id="gFw0YXuf5wskcs7viVKaoU">--</div>
+                  <div class="ov-stat-k" data-i18n="webui.home_job_active" data-page-node-id="tzjgh7A4KwlwnejuhAiL78">运行中</div>
                 </div>
               </div>
-              <div class="scheduler-summary" id="home-scheduler-summary" data-page-node-id="T75pxlpcocwnhASB4EWwoP">
-                <div class="scheduler-stat" data-page-node-id="XUiK97mQKJpXDtLGP3kQSZ">
-                  <div class="stat-num" id="home-job-total" data-page-node-id="W0zLhF60j2KWateTNVSKxA">--</div>
-                  <div class="stat-lbl" data-i18n="webui.home_job_total" data-page-node-id="PdkoI8HR9kRxkfDcRxzNPk">总任务数</div>
-                </div>
-                <div class="scheduler-stat" data-page-node-id="DuMHbXIPzQOfzgmDjH3Fxf">
-                  <div class="stat-num" id="home-job-active" data-page-node-id="gFw0YXuf5wskcs7viVKaoU">--</div>
-                  <div class="stat-lbl" data-i18n="webui.home_job_active" data-page-node-id="tzjgh7A4KwlwnejuhAiL78">运行中</div>
-                </div>
-              </div>
-              <div class="job-status-list" id="home-job-list" data-page-node-id="PCmR0GsRx7r0U68bnKnIYZ">
+              <div class="ov-joblist" id="home-job-list" data-page-node-id="PCmR0GsRx7r0U68bnKnIYZ">
                 <!-- 动态加载 -->
               </div>
             </div>
 
             <!-- 知识库 -->
-            <div class="overview-card" data-page-node-id="cV1GD8Ba8j8Cst68nObSl5">
-              <div class="card-header" data-page-node-id="j1bzAmlaADSDWCyyERotLh">
-                <div class="card-icon" style="background:linear-gradient(135deg,#eb3349,#f45c43);" data-page-node-id="gxZnXhk2SgPgQYCzP71OOm">📚</div>
-                <div data-page-node-id="Wcs2FrU7KEgJ7BSAvCA3U7">
-                  <div class="card-title" data-i18n="webui.home_knowledge_base" data-page-node-id="B4d5G2FEDeidVA5ilagSaV">知识库</div>
-                  <div class="card-subtitle" data-i18n="webui.home_knowledge_base_sub" data-page-node-id="h6DtqYVRJ7b26ZLjzUFcmt">RAG 智能检索</div>
+            <div class="ov-card" data-page-node-id="cV1GD8Ba8j8Cst68nObSl5">
+              <div class="ov-head" data-page-node-id="j1bzAmlaADSDWCyyERotLh">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6 3.6 8 12 12.4 20.4 8 12 3.6Z"/><path d="M3.6 12.4 12 16.8l8.4-4.4"/></svg>
+                <span class="ov-title" data-i18n="webui.home_knowledge_base">知识库</span>
+                <span class="ov-sep">·</span>
+                <span class="ov-sub" data-i18n="webui.home_knowledge_base_sub">RAG 智能检索</span>
+              </div>
+              <div class="ov-stats" id="home-kb-summary" data-page-node-id="bwQx7QdZO0KF9XpjnSpNN6">
+                <div class="ov-stat" data-page-node-id="2qFpYlUkFOQFc8cmon6g1B">
+                  <div class="ov-stat-v" id="home-kb-docs" data-page-node-id="feQvGojWBIcHsp0XjEdXEW">--</div>
+                  <div class="ov-stat-k" data-i18n="webui.home_kb_docs" data-page-node-id="ffwQk3ECEnZ1Jdca1fogrv">文档数</div>
+                </div>
+                <div class="ov-stat" data-page-node-id="uzopJMrxM09K0tfpHBUqty">
+                  <div class="ov-stat-v" id="home-kb-chunks" data-page-node-id="8FruB20YOwB4sQBOtP6ASg">--</div>
+                  <div class="ov-stat-k" data-i18n="webui.home_kb_chunks" data-page-node-id="52Rk3bNUkyhuH5Jpn5oCdm">知识块</div>
                 </div>
               </div>
-              <div class="kb-summary" id="home-kb-summary" data-page-node-id="bwQx7QdZO0KF9XpjnSpNN6">
-                <div class="kb-stat" data-page-node-id="2qFpYlUkFOQFc8cmon6g1B">
-                  <div class="stat-num" id="home-kb-docs" data-page-node-id="feQvGojWBIcHsp0XjEdXEW">--</div>
-                  <div class="stat-lbl" data-i18n="webui.home_kb_docs" data-page-node-id="ffwQk3ECEnZ1Jdca1fogrv">文档数</div>
-                </div>
-                <div class="kb-stat" data-page-node-id="uzopJMrxM09K0tfpHBUqty">
-                  <div class="stat-num" id="home-kb-chunks" data-page-node-id="8FruB20YOwB4sQBOtP6ASg">--</div>
-                  <div class="stat-lbl" data-i18n="webui.home_kb_chunks" data-page-node-id="52Rk3bNUkyhuH5Jpn5oCdm">知识块</div>
-                </div>
-              </div>
-              <div class="kb-hint" id="home-kb-hint" data-i18n="webui.home_kb_hint" data-page-node-id="oGls82SQWqZ9Z3FCWDqUGS">上传数据库文档，AI 诊断更精准</div>
+              <div class="ov-empty" id="home-kb-hint" data-i18n="webui.home_kb_hint" data-page-node-id="oGls82SQWqZ9Z3FCWDqUGS">上传数据库文档，AI 诊断更精准</div>
             </div>
           </div>
         </div>
@@ -8339,6 +8756,11 @@ function wfCloseRunDrawer() {
       <!-- ══ Page: Wizard ══ -->
       <div class="page" id="page-wizard" data-page-node-id="IahAxH5Drwl9c0IdknCj9f">
 
+        <section id="quick-inspection" class="card">
+          <div class="card-title">使用已有数据源巡检</div>
+          <div class="workspace-toolbar"><select id="quick-inspection-source" class="input" aria-label="已有巡检数据源"><option value="">加载中…</option></select><button id="quick-inspection-open" class="btn btn-primary">使用此数据源</button><button id="quick-inspection-test" class="btn btn-ghost">测试连接与版本</button><button id="quick-inspection-refresh" class="btn btn-ghost">刷新</button><button class="btn btn-ghost" onclick="showPage('batch-inspection')">巡检多个数据源</button></div>
+          <p id="quick-inspection-hint" role="status" class="hint"></p>
+        </section>
         <!-- 步骤指示器 -->
         <div class="steps" id="wizard-steps" data-page-node-id="uSFD7nARqYfInalR2ELu4R">
           <div class="step active" id="s1" data-page-node-id="QUD09VLQyQAOKC3rB8sn32"><div class="dot" data-page-node-id="Rw8KTtI8GaTiCPBEJUvE9v">1</div><span data-i18n="webui.wizard_step1" data-page-node-id="PuZrBlxDHSFOAih3IdnBnJ">数据库类型</span></div>
@@ -8387,6 +8809,7 @@ function wfCloseRunDrawer() {
             <div class="field" data-page-node-id="3VP0WCsGhCTNJiK3tDykaX">
               <label data-i18n="webui.label_host" data-page-node-id="1pWO1whChSRlRaKPmmCYaj">主机地址 <span class="req" data-page-node-id="2iP4evKa8iaPgbwDqaqs0f">*</span></label>
               <input type="text" id="f-host" data-i18n="webui.placeholder_host" placeholder="localhost 或 IP 地址" data-page-node-id="edADTP0m3DgSDMzyNHUGTF" />
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">若数据库只监听服务器本地，填 <b>127.0.0.1</b> 并在第 3 步开启「通过 SSH 隧道连接数据库」（与 Navicat 的 SSH 隧道一致）</div>
             </div>
             <div class="field" data-page-node-id="OnXw2DQlYyPmzbxDBJwXcy">
               <label data-i18n="webui.label_port" data-page-node-id="rdAooyfsYMssCZTENLt4LI">端口 <span class="req" data-page-node-id="QdNXVyAOwc6HXrZfRkymJD">*</span></label>
@@ -8560,6 +8983,15 @@ function wfCloseRunDrawer() {
                   <input type="password" id="f-ssh-key-password" data-i18n="webui.placeholder_ssh_key_password" placeholder="私钥文件的密码（如果私钥加密）" data-page-node-id="13SrECghTRCukjeUHJGG9n" />
                 </div>
               </div>
+            </div>
+            <div class="toggle-row" onclick="toggleSshTunnel()" style="margin-top:14px;grid-column:1 / -1" data-page-node-id="SSHTUNNELROW1">
+              <span class="toggle-label" style="color:var(--text)" data-page-node-id="SSHTUNNELROW2">通过 SSH 隧道连接数据库</span>
+              <span class="toggle-sub" id="ssh-tunnel-sub" data-page-node-id="SSHTUNNELROW3">当前：关闭（SSH 仅采集系统指标，数据库直连）</span>
+              <div class="toggle" id="ssh-tunnel-toggle" data-page-node-id="SSHTUNNELROW4"></div>
+            </div>
+            <div style="grid-column:1 / -1;margin-top:-6px;margin-bottom:6px;font-size:11.5px;color:var(--text-muted);line-height:1.6" data-page-node-id="SSHTUNNELHINT1">
+              默认关闭：SSH 仅用于采集 CPU、内存、磁盘等系统指标，数据库按第 2 步地址直连。<br>
+              开启后：数据库主机填 <b>127.0.0.1</b> 即表示「SSH 跳板所在服务器的本地数据库」（堡垒机 / 内网转发场景）。
             </div>
             <div class="toggle-row" onclick="toggleEbpf()" style="margin-top:14px;grid-column:1 / -1" data-page-node-id="KYRIzCx471FmG8xHLrdQ9j">
               <span class="toggle-label" style="color:var(--text)" data-i18n="webui.ssh_ebpf_enable" data-page-node-id="GYgbJjLpVi8OcSqgCWkiVH">启用内核级 eBPF 指标</span>
@@ -9331,7 +9763,7 @@ function wfCloseRunDrawer() {
         </div>
       </div>
 
-      <!-- ══ Page: 系统信息（版本 / 更新提醒 / 系统 Logo / 开源署名）══ -->
+      <!-- ══ Page: 系统信息（版本与运行信息）══ -->
       <div class="page" id="page-system-info" data-page-node-id="sysInfoPageX1">
         <div class="sysinfo-wrap" data-page-node-id="sysInfoWrapX1">
 
@@ -9346,7 +9778,6 @@ function wfCloseRunDrawer() {
               <div class="sysinfo-pills" data-page-node-id="sysInfoHeroPillsX1">
                 <span class="sysinfo-pill" data-page-node-id="sysInfoPillVerX1">{{ version }}</span>
                 <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillEditionX1">{% if edition == 'professional' %}专业版 / Professional{% else %}社区版 / Community{% endif %}</span>
-                <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillLicenseX1">Apache-2.0</span>
               </div>
             </div>
           </div>
@@ -9363,96 +9794,20 @@ function wfCloseRunDrawer() {
               <div class="sysinfo-row"><span class="k">发行版本 / Edition</span><span class="v">{% if edition == 'professional' %}专业版 · Professional{% else %}社区版 · Community{% endif %}</span></div>
               <div class="sysinfo-row"><span class="k">界面语言 / UI Language</span><span class="v" id="sysinfo-lang">--</span></div>
               <div class="sysinfo-row"><span class="k">访问地址 / Host</span><span class="v" id="sysinfo-host">--</span></div>
-              <div class="sysinfo-row"><span class="k">开源协议 / License</span><span class="v">Apache License 2.0</span></div>
             </div>
 
-            <!-- 更新提醒 -->
-            <div class="card" data-page-node-id="sysInfoUpdCardX1">
-              <div class="card-title" data-page-node-id="sysInfoUpdTitleX1"><span data-page-node-id="sysInfoUpdIconX1">🔔</span> <span data-i18n="webui.system_info_update" data-page-node-id="sysInfoUpdTitleTxtX1">更新提醒</span> / Updates</div>
-              <p class="sysinfo-note" data-page-node-id="sysInfoUpdNoteX1">公告由后端定时从预置地址 <strong>https://dbcheck.top/announcement.json</strong> 拉取并缓存；本页直接请求本地 <strong>/api/announcement</strong>，不依赖 GitHub 直连，断网时展示最近一次缓存。版本发布信息以官方公告为准。</p>
-              <div class="sysinfo-row"><span class="k">当前版本 / Running</span><span class="v">{{ version }}</span></div>
-              <div class="sysinfo-row"><span class="k">预置公告源 / Source</span><span class="v"><button class="btn btn-ghost" id="system-update-link" onclick="refreshSystemInfo()" style="padding:3px 10px;font-size:12px;text-decoration:none;" title="直接请求预置 URL（经后端缓存）" data-page-node-id="sysInfoUpdSourceX1">dbcheck.top/announcement.json ↻</button></span></div>
-              <div class="sysinfo-row"><span class="k">最近检查 / Last Check</span><span class="v" id="sysinfo-last-check">--</span></div>
-              <div class="sysinfo-announce-list" id="sysinfo-announce-list" data-page-node-id="sysInfoUpdListX1">
-                <div class="sysinfo-note">正在读取官方公告…</div>
-              </div>
-              <div class="sysinfo-btn-row" data-page-node-id="sysInfoUpdBtnsX1">
-                <button class="btn btn-primary" onclick="refreshSystemInfo()" data-page-node-id="sysInfoUpdRefreshX1">🔄 直接请求预置 URL</button>
-              </div>
-            </div>
-
-            <!-- 系统 Logo -->
-            <div class="card" data-page-node-id="sysInfoLogoCardX1">
-              <div class="card-title" data-page-node-id="sysInfoLogoTitleX1"><span data-page-node-id="sysInfoLogoIconX1">🎨</span> <span data-i18n="webui.system_info_brand" data-page-node-id="sysInfoLogoTitleTxtX1">系统标志</span> / Brand Assets</div>
-              <div class="sysinfo-brand-row" data-page-node-id="sysInfoBrandRowX1">
-                <div class="sysinfo-brand-box" data-page-node-id="sysInfoBrandMainX1">
-                  <img src="/dbpulse_logo.png" alt="{{ product_name }} Logo">
-                  <span>系统主标志 · /dbpulse_logo.png</span>
-                </div>
-                <div class="sysinfo-brand-box sysinfo-brand-box--icon" data-page-node-id="sysInfoBrandIconX1">
-                  <img src="/dbcheck_logo_icon.png" alt="{{ product_name }} Icon">
-                  <span>应用图标 · /dbcheck_logo_icon.png</span>
-                </div>
-                <div class="sysinfo-brand-box sysinfo-brand-box--icon" data-page-node-id="sysInfoBrandFavX1">
-                  <img src="/favicon.png" alt="{{ product_name }} Favicon">
-                  <span>标签图标 · /favicon.png</span>
-                </div>
-              </div>
-              <p class="sysinfo-note" style="margin-top:12px;" data-page-node-id="sysInfoBrandNoteX1">主标志用于关于页、巡检报告与系统信息页；应用图标用于侧栏与登录页；标签图标用于浏览器标签页。</p>
-            </div>
-
-            <!-- 开源与署名 -->
-            <div class="card" data-page-node-id="sysInfoOssCardX1">
-              <div class="card-title" data-page-node-id="sysInfoOssTitleX1"><span data-page-node-id="sysInfoOssIconX1">📜</span> <span data-i18n="webui.system_info_opensource" data-page-node-id="sysInfoOssTitleTxtX1">开源信息</span> / Open Source</div>
-              <div class="sysinfo-row"><span class="k">上游开源项目 / Upstream</span><span class="v">RaccoonX / DBCheck</span></div>
-              <div class="sysinfo-row"><span class="k">作者 / Author</span><span class="v">fiyo (Jack Ge)</span></div>
-              <div class="sysinfo-row"><span class="k">联系邮箱 / Contact</span><span class="v"><a href="mailto:sdfiyon@gmail.com">sdfiyon@gmail.com</a></span></div>
-              <div class="sysinfo-row"><span class="k">项目仓库 / Repository</span><span class="v"><a href="{{ project_url }}" target="_blank" rel="noopener noreferrer">github.com/fiyo/DBCheck →</a></span></div>
-              <div class="sysinfo-row"><span class="k">官网 / Website</span><span class="v"><a href="https://dbcheck.top" target="_blank" rel="noopener noreferrer">dbcheck.top →</a></span></div>
-              <div class="sysinfo-row"><span class="k">开源协议 / License</span><span class="v">Apache License 2.0</span></div>
-              <div class="sysinfo-row"><span class="k">版权 / Copyright</span><span class="v">© 2025-2026 fiyo (Jack Ge)</span></div>
-              <div class="sysinfo-row"><span class="k">品牌署名 / Credit</span><span class="v">{{ product_name }} · RaccoonX / DBCheck · fiyo</span></div>
-              <p class="sysinfo-note" style="margin-top:12px;" data-page-node-id="sysInfoOssNoteX1">以上署名、品牌与许可证信息依据 Apache License 2.0 及项目 NOTICE 保留，请勿移除、改写或隐藏。<a href="#" onclick="showAboutModal();return false;">查看关于本系统 →</a></p>
-            </div>
 
           </div>
         </div>
       </div>
 
       <script>
-      // 系统信息页：读取运行态信息与官方公告（只读取公开接口，不改服务端状态）
-      function _sysInfoEsc(s) {
-        return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-          .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      function loadSystemInfo() {
+        const language = document.getElementById('sysinfo-lang');
+        if (language) language.textContent = document.documentElement.lang || '--';
+        const host = document.getElementById('sysinfo-host');
+        if (host) host.textContent = location.host;
       }
-      async function loadSystemInfo() {
-        var langEl = document.getElementById('sysinfo-lang');
-        if (langEl) langEl.textContent = document.documentElement.lang || '--';
-        var hostEl = document.getElementById('sysinfo-host');
-        if (hostEl) hostEl.textContent = location.host;
-        var listEl = document.getElementById('sysinfo-announce-list');
-        if (!listEl) return;
-        try {
-          var r = await fetch('/api/announcement', { cache: 'no-store' });
-          var d = await r.json();
-          var items = (d && d.enabled && d.items) || [];
-          if (!items.length) {
-            listEl.innerHTML = '<div class="sysinfo-note">暂无官方公告 / No announcements.</div>';
-          } else {
-            listEl.innerHTML = items.map(function (it) {
-              var link = it.link ? ' <a href="' + _sysInfoEsc(it.link) + '" target="_blank" rel="noopener noreferrer">' +
-                _sysInfoEsc(it.link_text || '了解详情') + ' →</a>' : '';
-              return '<div class="sysinfo-announce-item">' + (it.icon ? _sysInfoEsc(it.icon) + ' ' : '') +
-                _sysInfoEsc(it.text) + link + '</div>';
-            }).join('');
-          }
-        } catch (e) {
-          listEl.innerHTML = '<div class="sysinfo-note">预置公告源暂不可达，请稍后点击「直接请求预置 URL」重试（不依赖 GitHub）。</div>';
-        }
-        var tEl = document.getElementById('sysinfo-last-check');
-        if (tEl) tEl.textContent = new Date().toLocaleString();
-      }
-      function refreshSystemInfo() { loadSystemInfo(); }
       </script>
 
       <!-- ══ Page: Account ══ -->
@@ -9574,6 +9929,17 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
             </div>
           </div>
 
+          <!-- 自动允许在线 AI（免手动授权）：关闭时报告只能使用本地 Ollama -->
+          <div class="form-group" style="background:var(--surface2);border-radius:8px;padding:12px 14px" data-page-node-id="xg7Qp2LmNc8RvTaE1uYhBz">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer" data-page-node-id="Hr4Kd9WnXs2TgLbA6yQmUp">
+              <input type="checkbox" id="ai-auto-allow-egress" style="width:auto;margin:0" onchange="onAutoAllowEgressChange()" data-page-node-id="Ve3Jo8NfPq5ZdXwS9mClBt"/>
+              <span style="font-weight:600" data-i18n="webui.ai_auto_allow_egress" data-page-node-id="Rb6Ue1YgMk4WvNqHj2TzPd">自动允许在线 AI（免手动授权）</span>
+            </label>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px;margin-left:24px" data-i18n="webui.ai_auto_allow_egress_hint" data-page-node-id="Cw9Fn5ZtLb3GyRdK8sXqEh">
+              关闭时报告只使用本地 Ollama，不向任何外部地址发送数据；开启后巡检报告的 AI 诊断会自动调用在线模型，不再逐次弹人工审批（仅 https 地址生效）。
+            </div>
+          </div>
+
           <!-- 显示/隐藏 AI 巡检助手（全局，持久化） -->
           <div class="form-group" style="background:var(--surface2);border-radius:8px;padding:12px 14px" data-page-node-id="LSfkG46JncsPGBcxzREqSD">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer" data-page-node-id="OuXAlxtiiM1CeEe1y0bEHB">
@@ -9606,6 +9972,13 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
             <div class="form-group" data-page-node-id="4tG9dNKmbtGWWB1rz6uym8">
               <label data-i18n="webui.ai_openai_model" data-page-node-id="Q5TVEBQjsf7lTZrdgrNztC">模型名称</label>
               <input type="text" id="ai-model" class="form-input" placeholder="gpt-4o-mini" data-page-node-id="ESA9nb0EjK1AMPJ3W5c7Wb"/>
+            </div>
+            <div class="form-group" data-page-node-id="Mt7Kq2VbNf4RzXsD9wYhLp">
+              <label data-i18n="webui.ai_max_tokens" data-page-node-id="Ja5Rn8GcTm3QvWkZ6yBdSu">输出上限（max_tokens）</label>
+              <input type="number" id="ai-max-tokens" class="form-input" min="512" step="512" placeholder="8192" data-page-node-id="Fq2Ws9HnLb7XcRtE4zVmKj"/>
+              <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px" data-i18n="webui.ai_max_tokens_hint" data-page-node-id="Pc6Yt3JmNd8VbLxH5zRwQe">
+                推理模型（deepseek-flash / R1 等）的思考 token 也计入此上限，4096 常被思考耗尽导致正文为空。默认 8192，诊断偏长可调到 16384。
+              </div>
             </div>
             <div style="background:var(--surface2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-muted);margin-bottom:8px" data-i18n="webui.ai_openai_tip" data-page-node-id="ZL5c1Ed95vWa8cExzA9iME">
               💡 DeepSeek 用法：API URL 填 https://api.deepseek.com/v1，模型填 deepseek-v4-flash，API Key 填 DeepSeek 的 key
@@ -10362,6 +10735,25 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
         </div>
       </div><!-- /page-doc-kb -->
 
+      <div class="page" id="page-clusters" style="display:none">
+        {% with embedded=true %}{% include 'clusters.html' %}{% endwith %}
+      </div>
+      <div class="page" id="page-services" style="display:none">
+        {% with embedded=true %}{% include 'service_management.html' %}{% endwith %}
+      </div>
+
+      <div class="page" id="page-monitor-screen" style="display:none">
+        <div class="workspace-toolbar"><button class="btn btn-ghost" onclick="window.open('/monitor-screen', '_blank', 'noopener')">全屏窗口打开</button></div>
+        <iframe id="monitor-screen-frame" title="监控大屏" allowfullscreen style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0"></iframe>
+      </div>
+      <div class="page" id="page-batch-inspection" style="display:none">
+        <iframe id="batch-operations-frame" title="多数据源整体巡检" style="width:100%;height:calc(100vh - 115px);min-height:700px;border:0;border-radius:10px"></iframe>
+      </div>
+
+      <div class="page" id="page-inventory" style="display:none">
+        <iframe id="operations-frame" title="数据库运维台账" style="width:100%;height:calc(100vh - 115px);min-height:700px;border:0;border-radius:10px"></iframe>
+      </div>
+
       <!-- ══ Page: Schema Dict (系统字典表维护) ══ -->
       <div class="page" id="page-schema-dict" style="display:none;" data-page-node-id="QBsD7VZj5K3oYbu2NLcGI7">
         <!-- 概览卡 -->
@@ -10418,6 +10810,20 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               </tr></thead>
               <tbody id="sd-body" data-page-node-id="LmqbjgI2CzjfhuI7QBfiTj"><tr data-page-node-id="C0krjd8mvgSMHRR7teLQdJ"><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px" data-page-node-id="pMPaP25UX0sFvLmStBFbIZ">加载中...</td></tr></tbody>
             </table>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-title">巡检报告字段中文说明（所有数据库共用）</div>
+          <p style="color:var(--text-muted);font-size:12px">维护查询别名及原生采集字段的中文说明。视图中已有的字段说明优先使用上方系统字典；此处作为跨库通用说明。新生成的中文报告显示英文字段名及中文说明。</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0">
+            <input id="rf-search" class="form-input" placeholder="搜索英文字段或中文说明" oninput="renderReportFieldLabels()" aria-label="搜索报告字段" />
+            <input id="rf-field" class="form-input" placeholder="原始字段名，如 TOTAL_MB" aria-label="报告原始字段名" />
+            <input id="rf-description" class="form-input" placeholder="中文说明，如 总大小（MB）" aria-label="报告中文字段说明" />
+            <button id="rf-save" class="btn btn-primary" onclick="saveReportFieldLabel()">保存说明</button>
+          </div>
+          <div id="rf-status" role="status" style="font-size:12px;color:var(--text-muted)"></div>
+          <div style="max-height:420px;overflow:auto;margin-top:8px">
+            <table class="table" style="width:100%"><thead><tr><th>原始字段</th><th>中文说明</th><th>操作</th></tr></thead><tbody id="rf-body"></tbody></table>
           </div>
         </div>
       </div><!-- /page-schema-dict -->
@@ -10878,6 +11284,11 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <button class="btn btn-sm" onclick="importInspectionTemplate()" data-i18n="webui.inspection_import" data-page-node-id="mUHWBc85LoCAVs7i9BVEzS">导入</button>
               {% endif %}
             </div>
+            <div class="inspection-search-bar">
+              <input id="inspection-template-search" class="form-input" type="search" aria-label="搜索巡检模板" placeholder="搜索模板名称、数据库类型、版本或说明" oninput="filterInspectionConfig('template')">
+              <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('template')">清空</button>
+              <span id="inspection-template-search-status" role="status"></span>
+            </div>
             <div id="inspection-template-list" class="inspection-template-list" data-page-node-id="TYLXMlkGhxQcNNAzPzrl15">
               <!-- 动态加载模板列表 -->
             </div>
@@ -10934,6 +11345,11 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <div class="inspection-chapter-list-panel" data-page-node-id="gtbjX3TMP4RzQI8oj9p8qx">
                 <div class="panel-header" data-page-node-id="S5ISLjUbFevNLpE9SgeIl1">
                   <h3 data-i18n="webui.inspection_chapters" data-page-node-id="CBH2nUjN0OyQ9ReZy4NvU2">章节列表</h3>
+                </div>
+                <div class="inspection-search-bar">
+                  <input id="inspection-chapter-search" class="form-input" type="search" aria-label="搜索巡检章节" placeholder="搜索章节编号或名称" oninput="filterInspectionConfig('chapter')">
+                  <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('chapter')">清空</button>
+                  <span id="inspection-chapter-search-status" role="status"></span>
                 </div>
                 <div id="inspection-chapter-list" class="chapter-list" data-page-node-id="SjuLVb12mJcUSwpBdnmBYe">
                   <!-- 动态加载章节列表 -->
@@ -11295,6 +11711,145 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                 </thead>
                 <tbody id="dm-backup-table-body" data-page-node-id="quq0jETNmGhTnDDxb446lD">
                   <tr data-page-node-id="A1LCsanhfgxccNjMvAY4SY"><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;" data-i18n="webui.dm_backup_empty" data-page-node-id="CZZb1gnEb1z6nfEgnZ8M6A">暂无备份记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 2.5 对象存储备份（S3 兼容） -->
+          <div class="card" style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+              <div>
+                <h3 style="font-size:15px;font-weight:600;margin:0;">☁️ <span data-i18n="objstore.title">对象存储备份（S3 兼容）</span></h3>
+                <p style="font-size:12px;color:var(--text-muted);margin:6px 0 0;" data-i18n="objstore.desc">把引擎与规则、基线、报告、历史等数据打包后上传到 S3 兼容对象存储；支持 AWS S3 与自建网关（MinIO / Ceph RGW / OSCA 联盟云 fgws3）。</p>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span id="objstore-badge" class="badge" style="background:var(--text-muted);color:#fff;padding:2px 10px;border-radius:10px;font-size:11px;" data-i18n="objstore.badge_off">未启用</span>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                  <input type="checkbox" id="objstore-enabled" onchange="objstSyncEnabled()" />
+                  <span data-i18n="objstore.enable">启用自动备份</span>
+                </label>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.endpoint">Endpoint</label>
+                <input id="objstore-endpoint" class="form-input" placeholder="https://fgws3-ocloud.ihep.ac.cn" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.bucket">Bucket</label>
+                <input id="objstore-bucket" class="form-input" placeholder="20003-osca-test" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.region">Region</label>
+                <input id="objstore-region" class="form-input" placeholder="us-east-1" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.prefix">对象前缀</label>
+                <input id="objstore-prefix" class="form-input" placeholder="dbpulse-backup" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.ak">AccessKey</label>
+                <input id="objstore-access-key" class="form-input" autocomplete="off" placeholder="AK" />
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.sk">SecretKey</label>
+                <input id="objstore-secret-key" class="form-input" type="password" autocomplete="new-password" placeholder="SK" />
+                <div id="objstore-sk-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px;"></div>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.interval">备份间隔</label>
+                <div style="display:flex;gap:6px;">
+                  <select id="objstore-interval-preset" class="form-input" style="flex:1;" onchange="objstApplyPreset()">
+                    <option value="">自定义</option>
+                    <option value="60">每 1 小时</option>
+                    <option value="360">每 6 小时</option>
+                    <option value="720">每 12 小时</option>
+                    <option value="1440">每天</option>
+                    <option value="10080">每周</option>
+                  </select>
+                  <input id="objstore-interval" class="form-input" type="number" min="5" step="5" style="width:100px;" />
+                  <span style="align-self:center;font-size:12px;color:var(--text-muted);" data-i18n="objstore.minutes">分钟</span>
+                </div>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.retention">保留份数</label>
+                <input id="objstore-retention" class="form-input" type="number" min="1" max="365" />
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px;" data-i18n="objstore.retention_hint">超出份数的旧备份会在上传成功后自动清理</div>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;" data-i18n="objstore.pwd">压缩包密码</label>
+                <input id="objstore-archive-password" class="form-input" type="password" autocomplete="new-password" placeholder="留空 = 不加密" />
+                <div id="objstore-pwd-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px;" data-i18n="objstore.pwd_hint">设置后备份包为 AES-256-GCM 加密，密码丢失将无法还原</div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="objstore-path-style" />
+                <span data-i18n="objstore.path_style">路径风格（Path-Style，自建网关通常需要）</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="objstore-verify-tls" />
+                <span data-i18n="objstore.verify_tls">校验 TLS 证书（自签名网关可关闭）</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="objstore-overwrite" />
+                <span data-i18n="objstore.overwrite">还原时覆盖已存在文件</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+                <span data-i18n="objstore.restore_pwd">还原密码</span>
+                <input id="objstore-restore-password" class="form-input" type="password" autocomplete="off"
+                       style="height:26px;padding:0 8px;width:160px;" placeholder="加密包需填写" />
+              </label>
+            </div>
+
+            <div style="margin-top:16px;">
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;" data-i18n="objstore.contents">备份内容</div>
+              <div id="objstore-content-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;">
+                <div style="font-size:12px;color:var(--text-muted);" data-i18n="objstore.loading">加载中...</div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center;">
+              <button class="btn btn-primary" onclick="objstSave()" data-i18n="objstore.save">保存配置</button>
+              <button class="btn btn-ghost" onclick="objstTest()" data-i18n="objstore.test">测试连接</button>
+              <button class="btn btn-ghost" onclick="objstBackupNow()" data-i18n="objstore.backup_now">立即备份到对象存储</button>
+              <button class="btn btn-ghost" onclick="objstLoadObjects()" data-i18n="objstore.refresh">刷新云端列表</button>
+              <button class="btn btn-ghost" onclick="objstClearPassword()" data-i18n="objstore.pwd_clear">清除压缩包密码</button>
+              <span id="objstore-status" style="font-size:12px;color:var(--text-muted);"></span>
+            </div>
+
+            <div class="table-wrap" style="margin-top:14px;">
+              <table class="data-table" style="font-size:13px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;" data-i18n="objstore.col_name">备份对象</th>
+                    <th style="text-align:left;" data-i18n="objstore.col_time">上传时间</th>
+                    <th style="text-align:right;" data-i18n="objstore.col_size">大小</th>
+                    <th style="text-align:center;" data-i18n="objstore.col_actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="objstore-object-table-body">
+                  <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;" data-i18n="objstore.empty">暂无云端备份</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap" style="margin-top:10px;">
+              <table class="data-table" style="font-size:12px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;" data-i18n="objstore.col_hist_time">执行时间</th>
+                    <th style="text-align:left;" data-i18n="objstore.col_hist_trigger">触发</th>
+                    <th style="text-align:left;" data-i18n="objstore.col_hist_status">结果</th>
+                    <th style="text-align:left;" data-i18n="objstore.col_hist_msg">说明</th>
+                    <th style="text-align:right;" data-i18n="objstore.col_size">大小</th>
+                  </tr>
+                </thead>
+                <tbody id="objstore-history-body">
+                  <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;" data-i18n="objstore.no_history">暂无执行记录</td></tr>
                 </tbody>
               </table>
             </div>
@@ -11777,7 +12332,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                 <span class="wf-title-icon" data-page-node-id="HWB27d3D2CEFr7gmd3rJL1"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="LFU6cpzl330FZj6TQ2Q197"><rect x="3" y="3" width="7" height="7" rx="1.5" data-page-node-id="gNJFTmTcb8xSajYNZc8ueV"/><rect x="14" y="14" width="7" height="7" rx="1.5" data-page-node-id="JW9wvm7g5CFXm78dCMWN4P"/><path d="M10 6.5h4a3 3 0 0 1 3 3v4.5" data-page-node-id="VwKylzinUBNqD9eROKyTkn"/></svg></span>
                 <span data-i18n="menu.workflow_task" data-page-node-id="z7fBrhTH4gbLS1VdE11LnL">工作流任务</span>
               </h2>
-              <div class="wf-task-subtitle" data-i18n="wf_task.page_sub" data-page-node-id="tKWOWi8gMvSUCHlx1WnSes">将已编排的工作流绑定数据源并保存为可复用任务，支持手动触发与 Cron 周期调度，实时查看运行状态与历史结果。</div>
+              <div class="wf-task-subtitle" data-i18n="wf_task.page_sub" data-page-node-id="tKWOWi8gMvSUCHlx1WnSes">创建工作流任务或多数据源整体巡检任务，支持手动运行与 Cron 定时运行，查看执行状态、历史结果与整体报告。</div>
             </div>
             <div class="wf-task-actions" data-page-node-id="xK03xBjg8zicafYJ2ogDZr">
               <button class="btn btn-primary" onclick="wfOpenTaskModal(null)" data-page-node-id="MC4zRmfSB8J5TaKB1slxwv">
@@ -11825,15 +12380,19 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               <div class="wf-ico" data-page-node-id="qCVhGUCo72bsWAAG7mfR51"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" data-page-node-id="1LdfXGOTSRp7R8vnDF4JUC"><rect x="3" y="3" width="7" height="7" rx="1.5" data-page-node-id="XqCK9RTsSPwuFLBhsmomTh"/><rect x="14" y="14" width="7" height="7" rx="1.5" data-page-node-id="miHBCdGpnRCX1VWkcrSWEY"/><path d="M10 6.5h4a3 3 0 0 1 3 3v4.5" data-page-node-id="CW74GCg7wTFeDiI0UXzuke"/></svg></div>
               <div data-page-node-id="1ahDeIFzFHyGEn2cLTVu01">
                 <div class="wf-modal-title" id="wf-task-modal-title" data-page-node-id="rvOBQ65UxB5m491vK1yDJW">新建工作流任务</div>
-                <div class="wf-modal-sub" data-page-node-id="cYr8CIjGpvNZ4zoDeMlYh6">选择工作流与数据源，保存后即可手动或按计划运行。</div>
+                <div class="wf-modal-sub" data-page-node-id="cYr8CIjGpvNZ4zoDeMlYh6">选择任务类型和巡检范围，保存后可手动运行或启用定时。</div>
               </div>
             </div>
             <div class="wf-form" data-page-node-id="YlUp552KPuRWFMrsViBqZF">
+              <div class="wf-form-group full">
+                <label class="wf-form-label" for="wf-task-type">任务类型</label>
+                <select id="wf-task-type" class="wf-form-input" onchange="wfTaskTypeChanged()"><option value="workflow">工作流任务</option><option value="batch_inspection">整体巡检任务</option></select>
+              </div>
               <div class="wf-form-group full" data-page-node-id="KilAzRQiOyStSdysILS48i">
                 <label class="wf-form-label" data-page-node-id="wFjBP4WxfsqViQSiMAPyVO">任务名称</label>
                 <input id="wf-task-name" class="wf-form-input" placeholder="例如：每日生产库深度巡检" data-page-node-id="rLmkyvayJX48zCOnfnd3jt">
               </div>
-              <div class="wf-form-row" data-page-node-id="CBCwdZbaQsn0QQFTXb8TgN">
+              <div class="wf-form-row" id="wf-task-workflow-fields" data-page-node-id="CBCwdZbaQsn0QQFTXb8TgN">
                 <div class="wf-form-group" data-page-node-id="mHCfekarIwFuteO4xolK4V">
                   <label class="wf-form-label" data-page-node-id="ZTXUSq3SFwCAhTiFyhiesA">选择工作流</label>
                   <select id="wf-task-workflow" class="wf-form-input" data-page-node-id="cq2uaNc9YEsFEbd49U85eY"></select>
@@ -11843,25 +12402,35 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                   <select id="wf-task-instance" class="wf-form-input" data-page-node-id="5L9sMEhtXAGEK6F2BJcfj1"></select>
                 </div>
               </div>
-              <div class="wf-form-group full" data-page-node-id="ESjAubV1jRF68sw5pzfJYM">
+              <div class="wf-form-group full" id="wf-task-goal-field" data-page-node-id="ESjAubV1jRF68sw5pzfJYM">
                 <label class="wf-form-label" data-page-node-id="9ISL8shUFRhihBT6FfCJYT">诊断目标 <span class="opt" data-page-node-id="NrJXkHtiKyrdO8lhayqykS">（可选）</span></label>
                 <input id="wf-task-goal" class="wf-form-input" placeholder="留空则使用工作流默认目标" data-page-node-id="KqWAh5QZHx9KDJ9k74tXMB">
               </div>
+              <div id="wf-task-batch-fields" class="wf-form-group full" style="display:none">
+                <label class="wf-form-label">巡检数据源</label><div class="workspace-toolbar"><input id="wf-task-source-search" type="search" class="wf-form-input" placeholder="搜索数据源" aria-label="搜索任务数据源"><button type="button" id="wf-task-select-visible" class="btn btn-ghost">选中搜索结果</button><button type="button" id="wf-task-clear-sources" class="btn btn-ghost">清空选择</button><span id="wf-task-selected-count" role="status"></span></div><div id="wf-task-batch-sources" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:190px;overflow:auto"></div>
+                <label class="wf-form-label">按集群纳入成员</label><div id="wf-task-batch-clusters" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:140px;overflow:auto"></div>
+                <label class="wf-form-label" for="wf-task-concurrency">并发数据源数（同一端点顺序执行）</label><select id="wf-task-concurrency" class="wf-form-input"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select>
+                <div class="wf-form-hint">每次执行生成一份整体报告。集群成员在运行时重新核对，重复数据源自动去重。</div>
+              </div>
               <div class="wf-form-group full" data-page-node-id="qsSeYIzlFwULQFGNugVKCH">
-                <label class="wf-form-label" data-page-node-id="OOZ6kGfFow8z9e7DJgJuZG">周期调度 <span class="opt" data-page-node-id="5NAAvETAD7FlTsh8F0AVhb">（Cron，可选）</span></label>
+                <label class="wf-form-label" for="wf-schedule-mode">运行计划</label>
+                <div class="workspace-toolbar"><select id="wf-schedule-mode" class="wf-form-input"><option value="manual">手动运行</option><option value="hourly">每小时</option><option value="daily">每天</option><option value="weekly">每周</option><option value="monthly">每月</option><option value="custom">自定义 Cron</option></select><label id="wf-schedule-time-label">时间<input id="wf-schedule-time" class="wf-form-input" type="time" value="02:00"></label><label id="wf-schedule-weekday-label">星期<select id="wf-schedule-weekday" class="wf-form-input"><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option></select></label><label id="wf-schedule-day-label">每月日期<input id="wf-schedule-day" class="wf-form-input" type="number" min="1" max="31" value="1"></label></div>
+                <div class="wf-form-hint">时区 Asia/Shanghai。每月选择 29～31 日时，仅在存在该日期的月份执行。</div>
+                <details id="wf-schedule-advanced"><summary>高级定时配置</summary>                <label class="wf-form-label" data-page-node-id="OOZ6kGfFow8z9e7DJgJuZG">周期调度 <span class="opt" data-page-node-id="5NAAvETAD7FlTsh8F0AVhb">（Cron，可选）</span></label>
+                <label style="display:flex;gap:8px;align-items:center"><input id="wf-task-schedule-enabled" type="checkbox">启用定时运行</label>
                 <input id="wf-task-cron" class="wf-form-input" placeholder="例如 0 2 * * *（每天 02:00）" data-page-node-id="mrCgwDTD6t4RtCkGS8zo2p">
-                <div class="wf-form-hint" data-page-node-id="uv9ScoypgLg9wur1rUonhq">留空表示不启用定时调度，仅手动启动。Cron 格式：分 时 日 月 周。</div>
+                <div class="wf-form-hint" data-page-node-id="uv9ScoypgLg9wur1rUonhq">留空表示不启用定时调度，仅手动启动。使用五段 Cron（分 时 日 月 周），时区 Asia/Shanghai。</div>
                 <div class="wf-cron-presets" data-page-node-id="ACjUtBLInztsdEj0dAD8mS">
                   <span class="wf-cron-chip" onclick="wfSetCron('0 * * * *')" data-page-node-id="BLkvGqjDedxVKN9ftvSqq6">每小时</span>
                   <span class="wf-cron-chip" onclick="wfSetCron('0 2 * * *')" data-page-node-id="QnQE210uYh449q3jdI319l">每天 02:00</span>
                   <span class="wf-cron-chip" onclick="wfSetCron('0 2 * * 1')" data-page-node-id="W9Ur4iHWoAcF01vdLlSRFy">每周一 02:00</span>
                   <span class="wf-cron-chip" onclick="wfSetCron('0 2 1 * *')" data-page-node-id="Xae4RRGjDylM6dsH0GekGo">每月 1 日 02:00</span>
-                </div>
+                </div></details>
               </div>
             </div>
             <div class="wf-modal-foot" data-page-node-id="FsxA6tQ7nlqS34OQnfVDVu">
               <button class="btn btn-ghost" onclick="wfCloseTaskModal()" data-page-node-id="Xgm59JwUT0IGbde3b4CxXU">取消</button>
-              <button class="btn btn-primary" onclick="wfSaveTask()" data-page-node-id="FCwXL8Ll5NzYGQMwFDXbcc">保存</button>
+              <button class="btn btn-primary" id="wf-task-save" onclick="wfSaveTask()" data-page-node-id="FCwXL8Ll5NzYGQMwFDXbcc">保存</button>
             </div>
           </div>
         </div>
@@ -12600,6 +13169,9 @@ if (_ADMIN_TOKEN) sessionStorage.setItem('dbcheck_admin', _ADMIN_TOKEN);
 let dbType = 'oracle';
 let sshEnabled = false;
 let ebpfEnabled = true;
+// 通过 SSH 隧道连接数据库（与 Navicat 的「使用 SSH 隧道」等价）
+// 默认关闭：SSH 只承担系统信息采集；需要隧道连库（堡垒机/仅内网监听）时手动开启。
+let sshTunnelEnabled = false;
 let _inspSshPassword = '';  // 缓存数据源SSH密码，供testSsh使用
 let currentTaskId = null;
 let pollTimer = null;
@@ -13174,12 +13746,18 @@ function showPage(name) {
     'flow': [i18n('webui.flow_title') || '巡检编排', i18n('webui.flow_desc') || ''],
     'sql-audit': ['SQL 审核', '提交 SQL 变更前的安全审计：解析、规则校验、风险评分（MVP1 仅只读分析，不执行）'],
     'autonomy': ['安全自治 DBA 闭环', '检测→诊断→提议→审批闸门→执行→复检 的可审计自治闭环（P0-c 看板）'],
+    'clusters': ['集群管理', '集群成员、运行状态与节点巡检'],
+    'services': ['运维服务与需求验收', '需求覆盖、资产证据与运维闭环'],
+    'inventory': ['数据库运维台账', '资产统一维护、数据源同步与规范台账导出'],
+    'workflow-task': [i18n('menu.workflow_task') || '工作任务', '管理工作流与整体巡检的手动运行、定时计划及运行报告'],
+    'batch-inspection': ['多数据源整体巡检', '选择多个数据源或集群，一次执行并生成整体巡检报告'],
     'fleet': ['智能基线 · Smart Baseline', '无监督基线学习 + 漂移检测 + 容量预测：从单点巡检到全库智能（P1）'],
     'xinchuang': [i18n('menu.xinchuang') || '信创合规', i18n('webui.xinchuang_subtitle') || '对纳管实例做信创化程度盘点：国产（信创）占比、国外数据库待替换清单、库型分布。'],
     'run-log': [i18n('menu.run-log') || '运行日志', i18n('webui.run_log_subtitle') || '统一汇聚巡检 / 定时巡检 / 智能诊断 / 监控 的运行日志，可按分类过滤。'],
-    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本 / 更新提醒 / 系统标志 / 开源与署名信息'],
+    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本、发行版本与运行信息'],
   };
-  const t = titles[name] || [name, ''];
+  const menuLabel = document.querySelector('#nav-' + CSS.escape(name) + ' span:not(.icon)')?.textContent.trim();
+  const t = titles[name] || [menuLabel || name, ''];
   document.getElementById('topbar-title').textContent = t[0];
   document.getElementById('topbar-sub').textContent  = t[1];
   if (name === 'reports') loadReports();
@@ -13193,8 +13771,22 @@ function showPage(name) {
   if (name === 'ai') loadAIConfig();
   if (name === 'rag') showRagPage();
   if (name === 'doc-kb') loadDocKb();
+  if (name === 'clusters') window.initClusterPage();
+  if (name === 'services') window.initServiceManagementPage();
+  if (name === 'monitor-screen') {
+    const frame = document.getElementById('monitor-screen-frame');
+    if (!frame.getAttribute('src')) frame.src = '/monitor-screen';
+  }
+  if (name === 'batch-inspection') {
+    const frame = document.getElementById('batch-operations-frame');
+    if (!frame.getAttribute('src')) frame.src = '/operations/inventory?tab=batch';
+  }
+  if (name === 'inventory') {
+    const frame = document.getElementById('operations-frame');
+    if (!frame.getAttribute('src')) frame.src = '/operations/inventory';
+  }
   if (name === 'schema-dict') loadSchemaDict();
-  if (name === 'home') loadHomeStats();
+  if (name === 'home') { loadHomeStats(); startHomeRefresh(); } else { stopHomeRefresh(); }
   if (name === 'shares') loadShares();
   if (name === 'data-management') loadDataManagement();
   if (name === 'disaster-recovery') loadDisasterRecovery();
@@ -13249,8 +13841,405 @@ function showPage(name) {
 }
 
 // ─── 数据管理 ─────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// 对象存储备份（S3 兼容）
+// ══════════════════════════════════════════════════════════════════
+let objstCfg = {};
+let objstCategories = [];
+
+function objstT(key, fallback) {
+  try {
+    const v = (typeof i18n === 'function') ? i18n(key) : key;
+    return (v && v !== key) ? v : fallback;
+  } catch (e) { return fallback; }
+}
+
+function objstFmtInterval(minutes) {
+  const m = parseInt(minutes || 0, 10);
+  if (!m) return '—';
+  if (m % 10080 === 0) return (m / 10080) + ' 周';
+  if (m % 1440 === 0) return (m / 1440) + ' 天';
+  if (m % 60 === 0) return (m / 60) + ' 小时';
+  return m + ' 分钟';
+}
+
+async function objstLoadAll() {
+  await objstLoadConfig();
+  await objstLoadCategories();
+  await objstLoadHistory();
+  const configured = !!(objstCfg && objstCfg.bucket && objstCfg.access_key && objstCfg.secret_key_set);
+  if (configured) {
+    await objstLoadObjects();
+  } else {
+    // 未配置时不发远端请求，避免首屏出现无谓的鉴权/连接错误
+    document.getElementById('objstore-object-table-body').innerHTML =
+      '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">' +
+      escHtml(objstT('objstore.empty', '暂无云端备份')) + '</td></tr>';
+  }
+}
+
+async function objstLoadConfig() {
+  try {
+    const res = await fetch('/api/objstore/config');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '加载失败');
+    objstCfg = data.config || {};
+    document.getElementById('objstore-enabled').checked = !!objstCfg.enabled;
+    document.getElementById('objstore-endpoint').value = objstCfg.endpoint || '';
+    document.getElementById('objstore-bucket').value = objstCfg.bucket || '';
+    document.getElementById('objstore-region').value = objstCfg.region || 'us-east-1';
+    document.getElementById('objstore-prefix').value = objstCfg.prefix || 'dbpulse-backup';
+    document.getElementById('objstore-access-key').value = objstCfg.access_key || '';
+    const sk = document.getElementById('objstore-secret-key');
+    sk.value = '';
+    sk.placeholder = objstCfg.secret_key_set
+      ? objstT('objstore.sk_saved', '已保存，留空表示不修改')
+      : 'SK';
+    const pwd = document.getElementById('objstore-archive-password');
+    pwd.value = '';
+    pwd.placeholder = objstCfg.archive_password_set
+      ? objstT('objstore.pwd_saved', '已设置，留空表示不修改')
+      : objstT('objstore.pwd_blank', '留空 = 不加密');
+    const pwdHint = document.getElementById('objstore-pwd-hint');
+    if (!objstCfg.encrypt_available) {
+      pwdHint.textContent = objstT('objstore.pwd_unavailable', '⚠ 当前环境缺少 cryptography，暂不能启用密码');
+      pwdHint.style.color = 'var(--warn)';
+      pwd.disabled = true;
+    } else if (objstCfg.archive_password_set) {
+      pwdHint.textContent = objstT('objstore.pwd_on', '已启用口令加密（AES-256-GCM）');
+      pwdHint.style.color = 'var(--success)';
+      pwd.disabled = false;
+    } else {
+      pwdHint.textContent = objstT('objstore.pwd_hint', '设置后备份包为 AES-256-GCM 加密，密码丢失将无法还原');
+      pwdHint.style.color = 'var(--text-muted)';
+      pwd.disabled = false;
+    }
+    const hint = document.getElementById('objstore-sk-hint');
+    if (objstCfg.insecure_storage) {
+      hint.textContent = objstT('objstore.insecure_hint', '⚠ 当前环境缺少 cryptography，SecretKey 未加密落盘');
+      hint.style.color = 'var(--warn)';
+    } else {
+      hint.textContent = objstCfg.secret_key_set
+        ? objstT('objstore.sk_encrypted', '已加密存储（Fernet）')
+        : '';
+      hint.style.color = 'var(--text-muted)';
+    }
+    document.getElementById('objstore-interval').value = objstCfg.interval_minutes || 1440;
+    document.getElementById('objstore-retention').value = objstCfg.retention || 7;
+    document.getElementById('objstore-path-style').checked = objstCfg.path_style !== false;
+    document.getElementById('objstore-verify-tls').checked = objstCfg.verify_tls !== false;
+    const preset = document.getElementById('objstore-interval-preset');
+    const match = Array.from(preset.options).find(o => o.value && parseInt(o.value, 10) === parseInt(objstCfg.interval_minutes || 0, 10));
+    preset.value = match ? match.value : '';
+    objstSyncEnabled();
+    objstRenderStatus();
+  } catch (e) {
+    document.getElementById('objstore-status').textContent = '加载配置失败：' + e.message;
+  }
+}
+
+function objstRenderStatus() {
+  const el = document.getElementById('objstore-status');
+  if (!el) return;
+  const parts = [];
+  if (objstCfg.last_run_at) {
+    parts.push(objstT('objstore.last_run', '上次执行') + '：' + objstCfg.last_run_at +
+      (objstCfg.last_status === 'failed' ? '（失败）' : ''));
+  }
+  if (objstCfg.enabled) {
+    parts.push(objstT('objstore.interval', '备份间隔') + '：' + objstFmtInterval(objstCfg.interval_minutes));
+  }
+  el.textContent = parts.join(' · ');
+}
+
+function objstSyncEnabled() {
+  const on = document.getElementById('objstore-enabled').checked;
+  const badge = document.getElementById('objstore-badge');
+  badge.textContent = on
+    ? objstT('objstore.badge_on', '已启用')
+    : objstT('objstore.badge_off', '未启用');
+  badge.style.background = on ? 'var(--success)' : 'var(--text-muted)';
+}
+
+function objstApplyPreset() {
+  const v = document.getElementById('objstore-interval-preset').value;
+  if (v) document.getElementById('objstore-interval').value = v;
+}
+
+async function objstLoadCategories() {
+  const box = document.getElementById('objstore-content-list');
+  try {
+    const res = await fetch('/api/objstore/categories');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '加载失败');
+    objstCategories = data.categories || [];
+    const selected = new Set(objstCfg.contents || []);
+    box.innerHTML = objstCategories.map(cat => `
+      <label style="display:flex;gap:8px;align-items:flex-start;border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;${cat.available ? '' : 'opacity:.5;'}">
+        <input type="checkbox" class="objstore-content-cb" value="${escHtml(cat.id)}" ${selected.has(cat.id) ? 'checked' : ''} ${cat.available ? '' : 'disabled'} style="margin-top:3px;" />
+        <span>
+          <span style="font-size:13px;font-weight:600;display:block;">${escHtml(objstT(cat.label_key, cat.label))}
+            <span style="font-weight:400;color:var(--text-muted);font-size:11px;">${escHtml(cat.total_size_fmt)}</span>
+          </span>
+          <span style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">${escHtml(cat.desc || '')}</span>
+          <span style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">${cat.items.map(i => escHtml(i.display + (i.exists ? '' : '（缺失）'))).join('、')}</span>
+        </span>
+      </label>`).join('');
+  } catch (e) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--danger);">' + escHtml('加载失败：' + e.message) + '</div>';
+  }
+}
+
+function objstCollect() {
+  const contents = Array.from(document.querySelectorAll('.objstore-content-cb:checked')).map(cb => cb.value);
+  const payload = {
+    enabled: document.getElementById('objstore-enabled').checked,
+    endpoint: document.getElementById('objstore-endpoint').value.trim(),
+    bucket: document.getElementById('objstore-bucket').value.trim(),
+    region: document.getElementById('objstore-region').value.trim() || 'us-east-1',
+    access_key: document.getElementById('objstore-access-key').value.trim(),
+    prefix: document.getElementById('objstore-prefix').value.trim(),
+    interval_minutes: parseInt(document.getElementById('objstore-interval').value || '1440', 10),
+    retention: parseInt(document.getElementById('objstore-retention').value || '7', 10),
+    path_style: document.getElementById('objstore-path-style').checked,
+    verify_tls: document.getElementById('objstore-verify-tls').checked,
+    contents: contents,
+  };
+  const sk = document.getElementById('objstore-secret-key').value;
+  if (sk) payload.secret_key = sk;
+  const pwd = document.getElementById('objstore-archive-password').value;
+  if (pwd) payload.archive_password = pwd;
+  return payload;
+}
+
+async function objstSave() {
+  try {
+    const res = await fetch('/api/objstore/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(objstCollect()),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '保存失败');
+    objstCfg = data.config || {};
+    toastSuccess(objstT('objstore.saved', '对象存储配置已保存'));
+    await objstLoadConfig();
+    await objstLoadCategories();
+  } catch (e) {
+    toastError(objstT('objstore.save_failed', '保存失败') + '：' + e.message);
+  }
+}
+
+async function objstTest() {
+  const el = document.getElementById('objstore-status');
+  el.textContent = objstT('objstore.testing', '正在测试连接...');
+  try {
+    const res = await fetch('/api/objstore/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(objstCollect()),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      el.textContent = '✅ ' + (data.message || '连接成功');
+      toastSuccess((data.message || '连接成功') + (data.endpoint ? ' · ' + data.endpoint + '/' + (data.bucket || '') : ''));
+    } else {
+      el.textContent = '❌ ' + (data.message || '连接失败');
+      toastError(data.message || '连接失败');
+    }
+  } catch (e) {
+    el.textContent = '❌ ' + e.message;
+    toastError(e.message);
+  }
+}
+
+function objstBackupNow() {
+  const contents = Array.from(document.querySelectorAll('.objstore-content-cb:checked')).map(cb => cb.value);
+  if (!contents.length) { toastError(objstT('objstore.pick_content', '请至少选择一项备份内容')); return; }
+  showConfirmModal(
+    objstT('objstore.backup_confirm_title', '立即备份到对象存储'),
+    objstT('objstore.backup_confirm', '将把选中的内容打包为 tar.gz 上传到对象存储，可能耗时较久，确定继续？'),
+    async () => {
+      const el = document.getElementById('objstore-status');
+      el.textContent = objstT('objstore.backing_up', '正在打包并上传...');
+      try {
+        const res = await fetch('/api/objstore/backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || data.message || '备份失败');
+        // 后台执行：轮询 /status 直到 job 完成
+        const ok = await objstWaitJob(el);
+        if (ok) toastSuccess(el.textContent.replace('✅ ', ''));
+      } catch (e) {
+        el.textContent = '❌ ' + e.message;
+        toastError(objstT('objstore.backup_failed', '备份失败') + '：' + e.message);
+        await objstLoadHistory();
+      }
+    }
+  );
+}
+
+async function objstWaitJob(el, maxMs = 30 * 60 * 1000) {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 2000));
+    let job = null;
+    try {
+      const res = await fetch('/api/objstore/status');
+      const data = await res.json();
+      job = (data.status && data.status.job) || null;
+    } catch (e) { continue; }
+    if (!job || job.status === 'idle') return false;
+    if (job.status === 'success') {
+      const r = job.result || {};
+      el.textContent = '✅ ' + (r.object_key || '') + (r.size_fmt ? ' · ' + r.size_fmt : '');
+      await Promise.all([objstLoadObjects(), objstLoadHistory(), objstLoadConfig()]);
+      return true;
+    }
+    if (job.status === 'failed') {
+      el.textContent = '❌ ' + (job.error || '备份失败');
+      toastError(objstT('objstore.backup_failed', '备份失败') + '：' + (job.error || ''));
+      await objstLoadHistory();
+      return false;
+    }
+  }
+  el.textContent = '⏳ ' + objstT('objstore.still_running', '任务仍在执行，可稍后刷新查看结果');
+  return false;
+}
+
+async function objstLoadObjects() {
+  const tbody = document.getElementById('objstore-object-table-body');
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">' + escHtml(objstT('objstore.loading', '加载中...')) + '</td></tr>';
+  try {
+    const res = await fetch('/api/objstore/objects');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '加载失败');
+    const objects = data.objects || [];
+    if (!objects.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">' + escHtml(objstT('objstore.empty', '暂无云端备份')) + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = objects.map(o => `<tr>
+      <td style="font-family:monospace;font-size:12px;">${escHtml(o.name)}</td>
+      <td style="font-size:12px;">${escHtml(o.last_modified || '—')}</td>
+      <td style="text-align:right;">${escHtml(o.size_fmt || '—')}</td>
+      <td style="text-align:center;white-space:nowrap;">
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;" data-objstore-restore="${escHtml(o.key)}">${escHtml(objstT('objstore.restore', '还原'))}</button>
+        <button class="btn btn-danger" style="font-size:11px;padding:2px 8px;" data-objstore-delete="${escHtml(o.key)}">${escHtml(objstT('objstore.delete', '删除'))}</button>
+      </td>
+    </tr>`).join('');
+    tbody.querySelectorAll('[data-objstore-restore]').forEach(btn => {
+      btn.addEventListener('click', () => objstRestore(btn.getAttribute('data-objstore-restore')));
+    });
+    tbody.querySelectorAll('[data-objstore-delete]').forEach(btn => {
+      btn.addEventListener('click', () => objstDelete(btn.getAttribute('data-objstore-delete')));
+    });
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);padding:20px;">' + escHtml('加载失败：' + e.message) + '</td></tr>';
+  }
+}
+
+async function objstLoadHistory() {
+  const tbody = document.getElementById('objstore-history-body');
+  try {
+    const res = await fetch('/api/objstore/history?limit=10');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '加载失败');
+    const rows = data.history || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">' + escHtml(objstT('objstore.no_history', '暂无执行记录')) + '</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const ok = r.status === 'success';
+      const color = ok ? 'var(--success)' : (r.status === 'partial' ? 'var(--warn)' : 'var(--danger)');
+      const label = ok ? '成功' : (r.status === 'partial' ? '部分成功' : '失败');
+      return `<tr>
+        <td style="font-size:11px;">${escHtml(r.time || '')}</td>
+        <td style="font-size:11px;">${escHtml(r.trigger === 'schedule' ? '定时' : (r.trigger === 'restore' ? '还原' : '手动'))}</td>
+        <td><span style="background:${color};color:#fff;padding:1px 8px;border-radius:10px;font-size:11px;">${escHtml(label)}</span></td>
+        <td style="font-size:11px;word-break:break-all;">${escHtml(r.message || '')}</td>
+        <td style="text-align:right;font-size:11px;">${escHtml(r.size_fmt || '—')}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:16px;">' + escHtml('加载失败：' + e.message) + '</td></tr>';
+  }
+}
+
+function objstClearPassword() {
+  showConfirmModal(objstT('objstore.pwd_clear', '清除压缩包密码'),
+    '清除后新的备份包将恢复为未加密；已上传的加密包仍需原密码才能还原。确定继续？',
+    async () => {
+      try {
+        const res = await fetch('/api/objstore/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clear_archive_password: true }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || '操作失败');
+        objstCfg = data.config || {};
+        toastSuccess(objstT('objstore.pwd_cleared', '已关闭压缩包密码'));
+        await objstLoadConfig();
+      } catch (e) {
+        toastError('操作失败：' + e.message);
+      }
+    });
+}
+
+function objstRestore(key) {
+  const overwrite = document.getElementById('objstore-overwrite').checked;
+  let password = document.getElementById('objstore-restore-password').value;
+  if (key.endsWith('.enc') && !password) {
+    password = window.prompt(objstT('objstore.pwd_prompt', '该备份包已加密，请输入压缩包密码')) || '';
+    if (!password) { toastError(objstT('objstore.pwd_required', '加密包需要密码才能还原')); return; }
+  }
+  const msg = overwrite
+    ? '将下载对象 "' + key + '" 并覆盖本机同名文件（覆盖前会自动留 .pre_restore 副本），确定继续？'
+    : '将下载对象 "' + key + '" 并只补回本机缺失的文件（不覆盖已有数据），确定继续？';
+  showConfirmModal(objstT('objstore.restore', '还原'), msg, async () => {
+    try {
+      const res = await fetch('/api/objstore/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, overwrite, password }),
+      });
+      const data = await res.json();
+      if (!data.ok && !data.message) throw new Error(data.error || '还原失败');
+      const text = data.message || '还原完成';
+      if (data.failed && data.failed.length) toastError(text + '：' + data.failed.slice(0, 3).join('; '));
+      else toastSuccess(text);
+      await objstLoadHistory();
+    } catch (e) {
+      toastError('还原失败：' + e.message);
+    }
+  });
+}
+
+function objstDelete(key) {
+  showConfirmModal(objstT('objstore.delete', '删除'), '确定要从对象存储删除 "' + key + '" 吗？此操作不可恢复。', async () => {
+    try {
+      const res = await fetch('/api/objstore/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '删除失败');
+      toastSuccess('已删除：' + key);
+      await objstLoadObjects();
+    } catch (e) {
+      toastError('删除失败：' + e.message);
+    }
+  });
+}
+
 async function loadDataManagement() {
-  await Promise.all([dmLoadFiles(), dmLoadBackups()]);
+  await Promise.all([dmLoadFiles(), dmLoadBackups(), objstLoadAll()]);
 }
 
 async function dmLoadFiles() {
@@ -13502,6 +14491,9 @@ function startWizard() {
   // 重置 eBPF 开关（默认启用）
   ebpfEnabled = true;
   document.getElementById('ebpf-toggle').className = 'toggle on';
+  // 重置「SSH 隧道连库」开关（默认关闭）
+  sshTunnelEnabled = false;
+  _syncSshTunnelUi();
   document.getElementById('ebpf-toggle-sub').textContent = i18n('webui.ssh_ebpf_state_on');
   document.getElementById('f-ssh-auth').value = 'password';
   document.getElementById('f-ssh-password-wrap').style.display = '';
@@ -13579,6 +14571,7 @@ async function loadDatasourcesForSelect() {
     const res = await fetch('/api/pro/datasources');
     const data = await res.json();
     const sel = document.getElementById('f-datasource');
+    const previous = sel.value;
     sel.innerHTML = '<option value="">-- 手动输入连接信息 --</option>';
     if (data.ok && data.datasources) {
       // 按当前选中的数据库类型过滤已保存数据源
@@ -13601,6 +14594,7 @@ async function loadDatasourcesForSelect() {
         sel.appendChild(opt);
       }
     }
+    if ([...sel.options].some(option => option.value === previous)) sel.value = previous;
   } catch (e) { console.error('loadDatasourcesForSelect failed', e); }
 }
 
@@ -13677,6 +14671,7 @@ async function onDatasourceChange() {
     const data = await res.json();
     if (data.ok && data.datasource) {
       const ds = data.datasource;
+      resetFormFromDatasource();
       // 切换数据库类型（await 确保模板加载完成后才执行版本检测）
       if (ds.db_type) await selectDbType(ds.db_type, true);
       document.getElementById('f-name').value = ds.name || '';
@@ -13713,33 +14708,11 @@ async function onDatasourceChange() {
         document.getElementById('f-trust-server-cert').checked = ds.trust_server_certificate !== false && ds.trust_server_certificate !== 0 && ds.trust_server_certificate !== '0';
       }
       if (ds.db_type === 'oracle' || ds.db_type === 'oracle_jdbc') {
-        console.log('[Oracle模板] onDatasourceChange: oracle branch entered, ds:', ds);
         document.getElementById('f-service-name').value = ds.service_name || '';
         document.getElementById('f-sysdba').checked = !!ds.sysdba;
         document.getElementById('f-use-sid').checked = !!ds.use_sid;
-        // 静默检测 Oracle 版本，自动选择对应模板
-        try {
-          console.log('[Oracle模板] Sending version detection request...');
-          const tRes = await fetch('/api/test_db', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-              db_type: ds.db_type,
-              host: ds.host, port: ds.port, user: ds.user, password: ds.password,
-              service_name: ds.service_name || null,
-              sysdba: !!ds.sysdba,
-            })
-          });
-          const tdata = await tRes.json();
-          console.log('[Oracle模板] Version detection response:', tdata);
-          if (tdata.ok && tdata.oracle_major_version) {
-            autoSelectOracleTemplate(tdata.oracle_major_version, 'f-template');
-          } else {
-            console.warn('[Oracle模板] tdata.ok:', tdata.ok, 'oracle_major_version:', tdata.oracle_major_version);
-          }
-        } catch(e) { console.warn('[Oracle模板] Version detection error:', e); }
-      } else {
-        console.log('[Oracle模板] onDatasourceChange: db_type is', ds.db_type, ', not oracle/oracle_jdbc');
+        const version = parseInt(ds.version || '', 10);
+        if (version) autoSelectOracleTemplate(version, 'f-template');
       }
       // JDBC 驱动管理：数据源回填 驱动版本（driver_version）；Oracle 额外回填 use_sid
       if (isJdbcType(ds.db_type)) {
@@ -13760,29 +14733,38 @@ async function onDatasourceChange() {
         document.getElementById('f-ssh-key').value = ds.ssh_key_file || '';
         document.getElementById('f-ssh-key-password').value = ds.ssh_key_password || '';
         _inspSshPassword = ds.ssh_password || '';  // 缓存供 testSsh 兜底
+        // 隧道开关回填：数据源里没存过该字段时按「默认关闭」处理
+        sshTunnelEnabled = (ds.ssh_tunnel === true || ds.ssh_tunnel === 1 || ds.ssh_tunnel === '1');
+        _syncSshTunnelUi();
         // 自动启用 SSH
         if (!sshEnabled) toggleSsh();
       }
+      return true;
     } else {
       document.getElementById('f-name').value = '';
       toastError(i18n('webui.ds_load_fail'));
+      return false;
     }
   } catch(e) {
     document.getElementById('f-name').value = '';
     toastError('加载数据源失败: ' + e.message);
+    return false;
   }
 }
 
 function resetFormFromDatasource() {
   // 清除自动填充的内容，让用户手动输入
   ['f-name','f-host','f-port','f-user','f-password','f-database','f-service-name','f-tenant',
-   'f-ssh-host','f-ssh-port','f-ssh-user','f-ssh-password','f-ssh-key'].forEach(id => {
+   'f-ssh-host','f-ssh-port','f-ssh-user','f-ssh-password','f-ssh-key','f-ssh-key-password'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   document.getElementById('f-password').placeholder = '数据库密码';
   document.getElementById('f-encrypt').checked = false;
   document.getElementById('f-trust-server-cert').checked = true;
+  _inspSshPassword = '';
+  sshTunnelEnabled = false;   // 复位为默认关闭
+  _syncSshTunnelUi();
   if (sshEnabled) toggleSsh();
 }
 
@@ -14233,6 +15215,7 @@ function toggleSsh() {
   if (sshEnabled && !document.getElementById('f-ssh-host').value) {
     document.getElementById('f-ssh-host').value = document.getElementById('f-host').value;
   }
+  _syncSshTunnelUi();
 }
 
 function toggleEbpf() {
@@ -14240,6 +15223,23 @@ function toggleEbpf() {
   document.getElementById('ebpf-toggle').className = 'toggle' + (ebpfEnabled ? ' on' : '');
   document.getElementById('ebpf-toggle-sub').textContent = ebpfEnabled
     ? i18n('webui.ssh_ebpf_state_on') : i18n('webui.ssh_ebpf_state_off');
+}
+
+// 通过 SSH 隧道连接数据库（Navicat 式开关）
+function toggleSshTunnel() {
+  sshTunnelEnabled = !sshTunnelEnabled;
+  _syncSshTunnelUi();
+}
+
+function _syncSshTunnelUi() {
+  const tg = document.getElementById('ssh-tunnel-toggle');
+  const sub = document.getElementById('ssh-tunnel-sub');
+  if (tg) tg.className = 'toggle' + (sshTunnelEnabled ? ' on' : '');
+  if (sub) {
+    sub.textContent = sshTunnelEnabled
+      ? (i18n('webui.ssh_tunnel_state_on') || '当前：启用（数据库连接经 SSH 跳板转发）')
+      : (i18n('webui.ssh_tunnel_state_off') || '当前：关闭（SSH 仅采集系统指标，数据库直连）');
+  }
 }
 
 // ─── 一键修复建议功能 ───────────────────────────────────────
@@ -14508,7 +15508,10 @@ function fillConfirmPanel() {
   const name = document.getElementById('f-name').value.trim() || (nameDefaults[dbType]||'_Server');
   const host = document.getElementById('f-host').value.trim() || 'localhost';
   const port = document.getElementById('f-port').value || (portDefaults[dbType]||'1521');
-  const sshLabel = sshEnabled ? `${document.getElementById('f-ssh-host').value || host}:${document.getElementById('f-ssh-port').value||22}` : i18n('webui.ssh_not_configured');
+  const sshLabel = sshEnabled
+    ? `${document.getElementById('f-ssh-host').value || host}:${document.getElementById('f-ssh-port').value||22}`
+      + (sshTunnelEnabled ? ' · 🚇 隧道连库' : ' · 仅系统指标')
+    : i18n('webui.ssh_not_configured');
 
   const tagClass = dbType === 'mysql' ? 'tag-mysql' : dbType === 'oracle' || dbType === 'oracle_jdbc' ? 'tag-oracle' : dbType === 'dm' ? 'tag-dm' : dbType === 'sqlserver' ? 'tag-sqlserver' : dbType === 'tidb' ? 'tag-tidb' : dbType === 'yashandb' ? 'tag-yashandb' : dbType === 'mongodb' ? 'tag-mongodb' : 'tag-pg';
   document.getElementById('cf-dbtype').innerHTML = `<span class="tag ${tagClass}">${typeLabel}</span>`;
@@ -14603,6 +15606,7 @@ async function startInspection() {
     payload.ssh_key_file = document.getElementById('f-ssh-key').value.trim();
     payload.ssh_key_password = document.getElementById('f-ssh-key-password').value.trim();
     payload.ssh_ebpf = ebpfEnabled;
+    payload.ssh_tunnel = !!sshTunnelEnabled;   // 是否经 SSH 隧道连接数据库
   }
   // 附加巡检模板 ID
   const templateId = document.getElementById('f-template')?.value;
@@ -15978,8 +16982,54 @@ let sdData = {databases: {}};
 
 // 进入页面：加载库类型下拉 + 数据
 async function loadSchemaDict() {
-  await Promise.allSettled([loadSchemaDictTypes(), loadSchemaDictData()]);
+  await Promise.allSettled([loadSchemaDictTypes(), loadSchemaDictData(), loadReportFieldLabels()]);
   applySchemaDictWriterUI();
+}
+
+let reportFieldLabels = {};
+async function loadReportFieldLabels() {
+  const status = document.getElementById('rf-status');
+  try {
+    const res = await fetch('/api/intelligence/report-fields');
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.msg || '加载失败');
+    reportFieldLabels = data.fields || {};
+    document.getElementById('rf-save').disabled = !isSchemaDictWriter();
+    renderReportFieldLabels();
+  } catch (error) { status.textContent = error.message; }
+}
+function renderReportFieldLabels() {
+  const query = document.getElementById('rf-search').value.trim().toLowerCase();
+  const matches = Object.entries(reportFieldLabels).filter(([field, desc]) =>
+    (field + ' ' + desc).toLowerCase().includes(query));
+  const body = document.getElementById('rf-body');
+  body.innerHTML = matches.slice(0, 100).map(([field, desc]) => `<tr>
+    <td><code>${escHtml(field)}</code></td><td>${escHtml(desc)}</td>
+    <td>${isSchemaDictWriter() ? `<button class="btn btn-ghost" data-report-field="${escHtml(field)}">编辑</button>` : '只读'}</td></tr>`).join('');
+  body.querySelectorAll('[data-report-field]').forEach(button => {
+    button.addEventListener('click', () => {
+      const field = button.dataset.reportField;
+      document.getElementById('rf-field').value = field;
+      document.getElementById('rf-description').value = reportFieldLabels[field];
+    });
+  });
+  document.getElementById('rf-status').textContent = `匹配 ${matches.length} 个字段，显示前 100 项。可通过搜索定位。`;
+}
+async function saveReportFieldLabel() {
+  const field = document.getElementById('rf-field').value.trim();
+  const description = document.getElementById('rf-description').value.trim();
+  const status = document.getElementById('rf-status');
+  try {
+    const res = await fetch('/api/intelligence/report-fields', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({field, description})
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.msg || '保存失败');
+    reportFieldLabels[data.field] = data.description;
+    renderReportFieldLabels();
+    status.textContent = '已保存，新生成报告将使用更新后的说明。';
+  } catch (error) { status.textContent = error.message; }
 }
 
 // 库类型下拉
@@ -18449,6 +19499,8 @@ async function loadAIConfig() {
     const cfg = data;  // API 直接返回配置对象，无嵌套
     // 在线模型开关
     document.getElementById('ai-online-enabled').checked = cfg.online_enabled === true;
+    // 自动允许在线 AI（免手动授权）：关闭时报告只走本地 Ollama
+    document.getElementById('ai-auto-allow-egress').checked = cfg.auto_allow_egress === true;
     document.getElementById('ai-backend').value = cfg.backend || 'disabled';
     document.getElementById('ai-api-key').value = cfg.api_key === '***' ? '' : (cfg.api_key || '');
     document.getElementById('ai-api-url').value = cfg.api_url || '';
@@ -18457,6 +19509,9 @@ async function loadAIConfig() {
       document.getElementById('ai-api-url').value = cfg.online_api_url || 'https://api.openai.com/v1';
       document.getElementById('ai-model').value = cfg.online_model || 'gpt-4o-mini';
     }
+    // 输出上限：未配置时按 8192 回填，与后端 AIAdvisor.max_tokens 的默认值一致
+    const _mtEl = document.getElementById('ai-max-tokens');
+    if (_mtEl) _mtEl.value = cfg.max_tokens || 8192;
     if (cfg.api_url && (cfg.api_url.includes('localhost') || cfg.api_url.includes('127.0.0.1') || cfg.backend === 'ollama')) {
       document.getElementById('ai-ollama-url').value = cfg.api_url;
       document.getElementById('ai-ollama-model').value = cfg.model || '';
@@ -18539,6 +19594,12 @@ async function executeFixSql(taskId, sql) {
 function onOnlineEnabledChange() {
   const enabled = document.getElementById('ai-online-enabled').checked;
   const backendSelect = document.getElementById('ai-backend');
+  // 关闭在线模型时必须连带关闭「自动允许在线 AI」：没有在线模型就无从谈起自动放行，
+  // 否则配置里会留下 online_enabled=false + auto_allow_egress=true 的矛盾态。
+  const autoEl = document.getElementById('ai-auto-allow-egress');
+  if (!enabled && autoEl && autoEl.checked) {
+    autoEl.checked = false;
+  }
   // 控制 openai 选项是否可用
   const openaiOption = backendSelect.querySelector('option[value="openai"]');
   if (openaiOption) {
@@ -18554,6 +19615,25 @@ function onOnlineEnabledChange() {
     backendSelect.value = 'disabled';
   }
   onAIBackendChange();
+}
+
+// 「自动允许在线 AI」：开启后巡检报告 / AI 助手调用在线模型不再逐次弹人工审批；
+// 关闭时报告只能用本地 Ollama（在线模型字段仍可保留配置，只是不参与报告诊断）。
+function onAutoAllowEgressChange() {
+  const auto = document.getElementById('ai-auto-allow-egress').checked;
+  const onlineEl = document.getElementById('ai-online-enabled');
+  const backendSelect = document.getElementById('ai-backend');
+  if (auto && !onlineEl.checked) {
+    // 自动放行必须有在线模型：勾选时顺手打开在线模型并切到 openai 后端，
+    // 否则用户开了开关却看不到 API 地址 / 模型字段，会以为没生效。
+    onlineEl.checked = true;
+    if (backendSelect.value === 'disabled') {
+      backendSelect.value = 'openai';
+    }
+    onOnlineEnabledChange();
+  }
+  const banner = document.getElementById('ai-save-banner');
+  if (banner) banner.style.display = 'none';
 }
 
 function onAIBackendChange() {
@@ -18577,9 +19657,11 @@ function updateOllamaTip() {
 async function saveAIConfig() {
   const backend = document.getElementById('ai-backend').value;
   const onlineEnabled = document.getElementById('ai-online-enabled').checked;
+  const autoAllowEgress = document.getElementById('ai-auto-allow-egress').checked;
   let cfg = {
     backend,
     online_enabled: onlineEnabled,
+    auto_allow_egress: autoAllowEgress,
   };
   if (onlineEnabled) {
     cfg.backend = 'openai';
@@ -18591,6 +19673,8 @@ async function saveAIConfig() {
     cfg.online_api_url = (document.getElementById('ai-api-url').value || '').trim() || 'https://api.openai.com/v1';
     cfg.online_model = (document.getElementById('ai-model').value || '').trim() || 'gpt-4o-mini';
     cfg.timeout = parseInt(document.getElementById('ai-timeout').value) || 600;
+    // 输出上限：推理模型的思考 token 也计入此值，留空按 8192 处理
+    cfg.max_tokens = parseInt(document.getElementById('ai-max-tokens').value) || 8192;
     // 保存 RAG 配置（在线模型也可使用 RAG）
     cfg.rag = {
       enabled: document.getElementById('rag-enable').checked,
@@ -21538,7 +22622,6 @@ function toggleTheme() {
 // ─── 前端每 30 分钟重查一次，官网内容更新后自动重新弹出（即使旧内容已被关闭）；
 // ─── 内容签名未变化时不动 DOM（定时重查对用户零感知）；多条轮播；可关闭 ───
 // 顶部公告条已按产品要求停用：不再向 .main 注入 DOM，🦝 / 版本播报条不再出现。
-// 公告数据仍由「系统配置 → 系统信息 → 更新提醒」读取 /api/announcement 展示。
 // 需要恢复顶部公告条时，把该开关置 true 即可（渲染逻辑原样保留）。
 var ANNOUNCEMENT_BAR_ENABLED = false;
 var _announceTimer = null;      // 轮播定时器
@@ -21643,46 +22726,40 @@ async function initApp() {
   // 初始加载 Pro 状态，更新侧边栏徽章
   await loadProStatus();
   showPage('home');
+  window.__workspaceAppReady = true;
+  document.dispatchEvent(new Event('workspace-app-ready'));
 }
 initApp();
 
+// 首页概览自动刷新：与指标采集器同频（30s 一轮）。
+// 只在「首页可见且窗口未隐藏」时执行，离开首页立即停表，避免无谓请求。
+let _homeRefreshTimer = null;
+function startHomeRefresh() {
+  stopHomeRefresh();
+  _homeRefreshTimer = setInterval(function () {
+    try {
+      if (document.hidden) return;
+      var home = document.getElementById('page-home');
+      if (!home || !home.classList.contains('active')) return;
+      loadHomeStats();
+    } catch (e) {}
+  }, 30000);
+}
+function stopHomeRefresh() {
+  if (_homeRefreshTimer) {
+    clearInterval(_homeRefreshTimer);
+    _homeRefreshTimer = null;
+  }
+}
+
 async function loadHomeStats() {
+  // 防抖：30s 轮询与手动进入首页可能撞车，5s 内不重复拉取
+  if (Date.now() - (window._homeStatsAt || 0) < 5000) return;
+  window._homeStatsAt = Date.now();
   try {
     const overviewSection = document.getElementById('home-overview-section');
     if (!overviewSection) return;
 
-    // 数据库类型映射
-    const dbTypeMap = {
-      'mysql': { icon: '🐬', name: 'MySQL' },
-      'pg': { icon: '🐘', name: 'PostgreSQL' },
-      'oracle': { icon: '🔴', name: 'Oracle' },
-      'dm': { icon: '🟡', name: '达梦 DM8' },
-      'sqlserver': { icon: '🟠', name: 'SQL Server' },
-      'tidb': { icon: '🟢', name: 'TiDB' }
-    };
-
-    // 颜色配置
-    const levelColors = {
-      healthy:  '#00C8A0',
-      low:      '#00C8A0',
-      medium:   '#F59E0B',
-      high:     '#ff9800',
-      critical: '#EF4444',
-    };
-    const catColors = {
-      performance:   '#0A2A6E',
-      security:      '#EF4444',
-      configuration: '#0A2A6E',
-      capacity:      '#F59E0B',
-      availability:  '#00C8A0',
-    };
-    const catIcons = {
-      performance:   '🚀',
-      security:      '🔒',
-      configuration: '⚙️',
-      capacity:      '💾',
-      availability:  '✅',
-    };
     const levelLabels = {
       healthy:  '健康',
       low:      '良好',
@@ -21703,61 +22780,132 @@ async function loadHomeStats() {
     try { const r = await fetch('/api/home_stats'); dataHome = await r.json(); } catch(e) {}
     try { const r = await fetch('/api/db_types'); const _arr = await r.json(); dataDbTypes = Array.isArray(_arr) ? _arr : []; } catch(e) {}
 
-    // 1. 健康评分摘要（紧凑卡片——详细仪表盘见下方「健康态势大屏」）
+    // 1. 健康评分摘要（本期口径 + 离线实例单列，详细仪表盘见下方「健康态势大屏」）
     const dashEl = document.getElementById('home-health-dashboard');
     if (dashEl) {
       try {
-        if (dash.ok && dash.has_history) {
+        if (dash.ok === false) {
+          // 鉴权失败 / 接口异常必须说清楚，不能伪装成「没数据」
+          dashEl.innerHTML = `<div class="health-no-data">${escHtml(dash.error || '健康数据读取失败')}</div>`;
+        } else if (dash.has_history) {
           const level = dash.level || 'unknown';
-          const color = levelColors[level] || '#94A3B8';
           const total = dash.total_score || 0;
+          const tagCls = ({
+            healthy: 'is-ok', low: 'is-ok', medium: 'is-warn',
+            high: 'is-bad', critical: 'is-bad'
+          })[level] || 'is-muted';
+          const levelColor = ({
+            healthy: 'var(--accent)', low: 'var(--accent)', medium: 'var(--warn)',
+            high: '#F97316', critical: 'var(--danger)'
+          })[level] || 'var(--text-muted)';
+          const periodLabel = (dash.period && dash.period.label) || '近期';
 
-          // 风险分布 chips
-          const riskChips = [];
+          // 风险分布：分段条（按占比归一）+ 图例，只渲染非零项
+          // 口径：在线实例 + 本期巡检；离线实例在下方单列，不进分布
           const riskB = dash.risk_breakdown || {};
-          if (riskB.critical > 0) riskChips.push(`<span class="health-risk-chip critical">严重 ${riskB.critical}</span>`);
-          if (riskB.high > 0)     riskChips.push(`<span class="health-risk-chip high">高危 ${riskB.high}</span>`);
-          if (riskB.medium > 0)   riskChips.push(`<span class="health-risk-chip medium">中危 ${riskB.medium}</span>`);
-          if (riskB.low > 0)     riskChips.push(`<span class="health-risk-chip low">低危 ${riskB.low}</span>`);
-          if (riskB.healthy > 0) riskChips.push(`<span class="health-risk-chip healthy">正常 ${riskB.healthy}</span>`);
+          const RISK_DEFS = [
+            ['critical',    '严重',   '#DC2626'],
+            ['high',        '高危',   '#F97316'],
+            ['medium',      '中危',   '#F59E0B'],
+            ['low',         '低危',   '#84CC16'],
+            ['healthy',     '正常',   'var(--accent)'],
+            ['uninspected', '未巡检', 'var(--text-muted)'],
+          ];
+          const riskSum = RISK_DEFS.reduce((s, d) => s + (riskB[d[0]] || 0), 0);
+          const segs = [], legend = [];
+          RISK_DEFS.forEach(function (d) {
+            const v = riskB[d[0]] || 0;
+            if (!v) return;
+            const pct = riskSum ? (v / riskSum * 100) : 0;
+            segs.push('<span class="ov-bar-seg" style="width:' + pct.toFixed(2) + '%;background:' + d[2] + '"></span>');
+            legend.push('<span class="ov-legend-i"><span class="ov-legend-d" style="background:' + d[2] + '"></span>'
+              + d[1] + ' <span class="ov-legend-v">' + v + '</span></span>');
+          });
 
-          // 实例数统计
-          const instTotal = dash.total_instances || 0;
+          // 离线实例单列（不参与评分、不进入风险分布）
+          const offline = dash.offline_instances || [];
+          const instTotal0 = dash.total_instances || 0;
+          const allOffline = instTotal0 > 0 && offline.length >= instTotal0;
+          let offlineHtml = '';
+          if (offline.length) {
+            const names = offline.map(i => i.name || i.host || '未命名').join('、');
+            offlineHtml = '<div class="ov-offline">'
+              + '<span class="ov-offline-badge">离线 ' + offline.length + ' 台</span>'
+              + '<span class="ov-offline-names" title="' + escHtml(offline.map(i =>
+                  (i.name || i.host || '未命名') + '（' + (i.db_type || '') + ' ' + (i.host || '') + ':' + (i.port || '') + '）'
+                ).join('\n')) + '">' + escHtml(names) + '</span>'
+              + '</div>';
+          }
+
+          // 全部离线时不能还挂「健康」——分数照给，状态如实说
+          let tagRender = `<span class="ov-tag ${tagCls}">${levelLabels[level] || level}</span>`;
+          if (allOffline) {
+            tagRender = `<span class="ov-tag is-bad">全部离线</span>`;
+          }
+
+          // 风险条为空时说明原因，避免出现空白区块
+          const riskBlock = (segs.length
+            ? '<div class="ov-bar">' + segs.join('') + '</div><div class="ov-legend">' + legend.join('') + '</div>'
+            : '<div class="ov-legend"><span class="ov-legend-i">本期暂无可统计的风险数据</span></div>');
+
+          const instTotal = instTotal0;
           const instDone  = dash.inspected_count || 0;
+          const onlineCnt = dash.online_count;
+          const footLeft = periodLabel + '已巡检 ' + instDone + ' / ' + instTotal + ' 个实例'
+            + (typeof onlineCnt === 'number' && onlineCnt < instTotal ? ' · 在线 ' + onlineCnt : '');
 
           dashEl.innerHTML = `
-            <div class="health-summary" style="display:flex;flex-direction:column;align-items:center;padding:12px 4px;text-align:center;">
-              <div style="font-size:42px;font-weight:800;line-height:1;color:${color};letter-spacing:-2px;">${total}
-                <span style="font-size:14px;font-weight:600;color:var(--text-muted);margin-left:2px;">分</span>
+              <div class="ov-metric-row">
+                <div class="ov-metric">
+                  <span class="ov-num" style="color:${allOffline ? 'var(--text-muted)' : levelColor}">${total}</span>
+                  <span class="ov-unit">分</span>
+                </div>
+                ${tagRender}
               </div>
-              <span class="health-level-badge ${level}" style="margin-top:4px;margin-bottom:10px;">${levelLabels[level] || level}</span>
-              ${riskChips.length ? '<div class="health-risk-row" style="margin-bottom:8px">' + riskChips.join('') + '</div>' : ''}
-              <div style="font-size:11px;color:var(--text-muted);">
-                已巡检 ${instDone}/${instTotal} 个实例
-              </div>
-            </div>`;
+              ${riskBlock}
+              <div class="ov-bottom">
+                ${offlineHtml}
+                <div class="ov-foot"><span>${footLeft}</span></div>
+              </div>`;
         } else {
-          dashEl.innerHTML = `<div class="health-no-data">暂无巡检数据<br><span style="font-size:12px">开始一次巡检即可看到评分</span></div>`;
+          // 本期无巡检：区分「历史有数据」和「从没巡检过」，并照样报在线数
+          const periodLabel = (dash.period && dash.period.label) || '近期';
+          const instTotal = dash.total_instances || 0;
+          const onlineCnt = dash.online_count;
+          const offlineCnt = dash.offline_count || 0;
+          let offlineHtml = '';
+          if (offlineCnt > 0) {
+            const names = (dash.offline_instances || []).map(i => i.name || i.host || '未命名').join('、');
+            offlineHtml = '<div class="ov-offline">'
+              + '<span class="ov-offline-badge">离线 ' + offlineCnt + ' 台</span>'
+              + '<span class="ov-offline-names" title="' + escHtml(names) + '">' + escHtml(names) + '</span>'
+              + '</div>';
+          }
+          dashEl.innerHTML = `<div class="health-no-data">${periodLabel}暂无巡检数据</div>
+              <div class="ov-bottom">
+                ${offlineHtml}
+                <div class="ov-foot"><span>共 ${instTotal} 个实例${typeof onlineCnt === 'number' ? ' · 在线 ' + onlineCnt : ''}</span></div>
+              </div>`;
         }
       } catch(e) {
-        dashEl.innerHTML = `<div class="health-no-data">暂无巡检数据</div>`;
+        dashEl.innerHTML = `<div class="health-no-data">${i18n('webui.home_no_data') || '暂无巡检数据'}</div>`;
       }
     }
 
-    // 2. 处理统计数据 - 实例分布（左侧自定义 HTML 图例 + 右侧 ECharts 大圆环，彻底避免重叠）
+    // 2. 处理统计数据 - 实例分布（左侧 ECharts 细圆环 + 右侧自定义图例，中心总数由 HTML 承载）
     const dbTypeList = document.getElementById('home-db-type-list');
     if (dataStats.ok && dataStats.statistics && dbTypeList) {
       const byType = dataStats.statistics.by_type || {};
       const totalInstances = dataStats.statistics.total_instances || 0;
 
-      // 与 GitHub 暗色主题协调的颜色序列（HTML 图例圆点与圆环扇区一一对应）
-      const DB_TYPE_PALETTE = [
-        '#0A2A6E', '#00C8A0', '#d29922', '#EF4444', '#0A2A6E',
-        '#56d4dd', '#f0883e', '#79c0ff', '#ff7b72', '#d2a8ff'
-      ];
+      // 分类色板：同一色相族内做深浅分级，深色主题下也保证可辨识
+      const __isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      const DB_TYPE_PALETTE = __isLight
+        ? ['#0A2A6E', '#17708F', '#00A884', '#5B7A9B', '#94A3B8', '#C3CDDA']
+        : ['#00C8A0', '#3E8FD0', '#8A7BE0', '#7887A0', '#94A3B8', '#C3CDDA'];
 
       if (typeof echarts === 'undefined') {
-        dbTypeList.innerHTML = '<div class="db-type-fallback">ECharts 未加载</div>';
+        dbTypeList.innerHTML = '<div class="ov-empty" style="border-top:none;margin-top:0"><i></i>ECharts 未加载</div>';
       } else if (Object.keys(byType).length > 0) {
         // 局部 dbTypeMap，避免依赖外层作用域
         const dbTypeMap = {
@@ -21785,53 +22933,65 @@ async function loadHomeStats() {
           const otherSum = entries.slice(5).reduce((sum, e) => sum + e.value, 0);
           pieData = top5.concat([{ name: '其他', value: otherSum }]);
         }
-        // 为每个扇区绑定对应颜色，确保圆环与左侧图例颜色一致
+        const sumVal = pieData.reduce((s, d) => s + (d.value || 0), 0) || 1;
+        // 为每个扇区绑定对应颜色，确保圆环与右侧图例颜色一致
         const coloredData = pieData.map((d, i) => ({
           name: d.name,
           value: d.value,
           itemStyle: { color: DB_TYPE_PALETTE[i % DB_TYPE_PALETTE.length] }
         }));
-        // 复用/释放旧的 ECharts 实例（绑定在右侧 .db-type-chart 容器上）
-        const oldChartEl = dbTypeList.querySelector('.db-type-chart');
+        // 释放旧实例（绑定在 .ov-donut-canvas 上）
+        const oldChartEl = dbTypeList.querySelector('.ov-donut-canvas');
         if (oldChartEl) {
           const __ex = echarts.getInstanceByDom(oldChartEl);
           if (__ex) __ex.dispose();
         }
-        // 左侧自定义 HTML 图例（支持自动换行，可多排）
+        // 右侧图例：名称 + 数量 + 占比，右对齐等宽数字
+        // 单一分类时 100% 是噪音，省掉百分比给名称让位
+        const showPct = pieData.length > 1;
         const legendHtml = pieData.map((d, i) => {
           const color = DB_TYPE_PALETTE[i % DB_TYPE_PALETTE.length];
-          return '<div class="legend-item">' +
-            '<span class="legend-dot" style="background:' + color + '"></span>' +
-            '<span class="legend-name">' + d.name + '</span>' +
-            '<span class="legend-value">' + d.value + '</span>' +
+          const pct = Math.round((d.value / sumVal) * 100);
+          return '<div class="ov-donut-row">' +
+            '<span class="ov-legend-d" style="background:' + color + '"></span>' +
+            '<span class="ov-donut-name" title="' + escHtml(d.name) + '">' + escHtml(d.name) + '</span>' +
+            '<span class="ov-donut-val">' + d.value + '</span>' +
+            (showPct ? '<span class="ov-donut-pct">' + pct + '%</span>' : '') +
             '</div>';
         }).join('');
         dbTypeList.innerHTML =
-          '<div class="db-type-legend">' + legendHtml + '</div>' +
-          '<div class="db-type-chart"></div>';
-        const chartEl = dbTypeList.querySelector('.db-type-chart');
+          '<div class="ov-donut">' +
+            '<div class="ov-donut-canvas"></div>' +
+            '<div class="ov-donut-c">' +
+              '<div class="ov-donut-n">' + totalInstances + '</div>' +
+              '<div class="ov-donut-l">实例</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="ov-donut-legend">' + legendHtml + '</div>';
+        const chartEl = dbTypeList.querySelector('.ov-donut-canvas');
+        const surfaceCol = (getComputedStyle(document.documentElement)
+          .getPropertyValue('--surface') || '#141C2E').trim();
         const chart = echarts.init(chartEl);
         chart.setOption({
           backgroundColor: 'transparent',
-          tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-          title: {
-            text: String(totalInstances),
-            subtext: '实例',
-            left: 'center',
-            top: '38%',
-            textAlign: 'center',
-            textStyle: { color: '#CBD5E1', fontSize: 24, fontWeight: 700 },
-            subtextStyle: { color: '#94A3B8', fontSize: 11 }
+          tooltip: {
+            trigger: 'item',
+            formatter: '{b}: {c} ({d}%)',
+            backgroundColor: surfaceCol,
+            borderColor: DB_TYPE_PALETTE[0],
+            borderWidth: 1,
+            textStyle: { fontSize: 12 }
           },
           series: [{
             type: 'pie',
-            radius: ['46%', '72%'],
+            radius: ['76%', '96%'],
             center: ['50%', '50%'],
+            avoidLabelOverlap: false,
             data: coloredData,
             label: { show: false },
             labelLine: { show: false },
-            itemStyle: { borderRadius: 5, borderColor: '#0D1426', borderWidth: 2 },
-            emphasis: { scale: true, scaleSize: 6 }
+            itemStyle: { borderColor: surfaceCol, borderWidth: 2, borderRadius: 2 },
+            emphasis: { scale: false, itemStyle: { borderWidth: 2 } }
           }]
         });
         // 容器初始可能未获得宽度（概览区隐藏时即初始化），下一帧强制重算尺寸
@@ -21840,14 +23000,18 @@ async function loadHomeStats() {
         // 供概览区显示后统一 resize（见下方 overviewSection 显示处）
         dbTypeList._chart = chart;
       } else {
-        dbTypeList.innerHTML = '<div class="db-type-fallback">暂无实例</div>';
+        dbTypeList.innerHTML = '<div class="ov-empty" style="border-top:none;margin-top:0"><i></i>暂无实例</div>';
       }
     }
 
-    // 3. 处理定时任务
+    // 3. 处理定时任务（最多展示 3 条最近任务，行内细线分隔）
     const jobList = document.getElementById('home-job-list');
     const jobTotalEl = document.getElementById('home-job-total');
     const jobActiveEl = document.getElementById('home-job-active');
+    const renderJobEmpty = function () {
+      return '<div class="ov-empty" style="margin-top:14px"><i></i>' +
+        (i18n('webui.scheduler_empty') || '暂无定时任务，点击上方按钮创建') + '</div>';
+    };
     if (dataJobs.ok && jobList) {
       const jobs = dataJobs.jobs || [];
       const activeCount = jobs.filter(j => j.enabled !== false).length;
@@ -21856,35 +23020,44 @@ async function loadHomeStats() {
       if (jobActiveEl) jobActiveEl.textContent = activeCount;
 
       if (jobs.length > 0) {
-        jobList.innerHTML = jobs.slice(0, 5).map(job => {
+        jobList.innerHTML = jobs.slice(0, 3).map(job => {
           const isActive = job.enabled !== false;
           const nextRun = job.next_run || '--';
-          return `<div class="job-item">
-            <span class="job-dot" style="background:${isActive ? '#00C8A0' : '#666'}"></span>
-            <span class="job-name">${escHtml(job.name || '定时巡检')}</span>
-            <span class="job-next">${isActive ? nextRun : '已暂停'}</span>
-          </div>`;
+          return '<div class="ov-row">' +
+            '<span class="ov-dot" style="background:' + (isActive ? 'var(--accent)' : 'var(--text-muted)') + '"></span>' +
+            '<span class="ov-row-name">' + escHtml(job.name || '定时巡检') + '</span>' +
+            '<span class="ov-row-meta">' + (isActive ? escHtml(nextRun) : '已暂停') + '</span>' +
+            '</div>';
         }).join('');
       } else {
-        jobList.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">' + i18n('webui.scheduler_empty') + '</div>';
+        jobList.innerHTML = renderJobEmpty();
       }
     } else {
       if (jobTotalEl) jobTotalEl.textContent = '0';
       if (jobActiveEl) jobActiveEl.textContent = '0';
-      if (jobList) jobList.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px;">' + i18n('webui.scheduler_empty') + '</div>';
+      if (jobList) jobList.innerHTML = renderJobEmpty();
     }
 
-    // 4. 处理知识库
+    // 4. 处理知识库（脚注随内容状态切换：未上传 / 已索引）
     const kbDocsEl = document.getElementById('home-kb-docs');
     const kbChunksEl = document.getElementById('home-kb-chunks');
+    const kbHintEl = document.getElementById('home-kb-hint');
+    let kbDocCount = 0, kbChunkCount = 0;
     if (dataRag.ok && kbDocsEl) {
       const docs = dataRag.documents || [];
-      const totalChunks = docs.reduce((sum, d) => sum + (d.chunk_count || 0), 0);
-      kbDocsEl.textContent = docs.length;
-      kbChunksEl.textContent = totalChunks;
+      kbDocCount = docs.length;
+      kbChunkCount = docs.reduce((sum, d) => sum + (d.chunk_count || 0), 0);
+      kbDocsEl.textContent = kbDocCount;
+      kbChunksEl.textContent = kbChunkCount;
     } else {
       if (kbDocsEl) kbDocsEl.textContent = '0';
       if (kbChunksEl) kbChunksEl.textContent = '0';
+    }
+    if (kbHintEl) {
+      kbHintEl.removeAttribute('data-i18n');
+      kbHintEl.innerHTML = '<i></i><span>' + (kbDocCount > 0
+        ? '已索引 ' + kbChunkCount + ' 个检索片段'
+        : (i18n('webui.home_kb_hint') || '上传数据库文档，AI 诊断更精准')) + '</span>';
     }
 
     // 5. 渲染新图表（模板/巡检/基线/规则统计）
@@ -23718,31 +24891,72 @@ function addChatMessage(text, type, isHtml) {
   return div;
 }
 
-let _thinkingShownAt = 0;  // Thinking 显示的时间戳
+let _thinkingShownAt = 0;      // Thinking 显示的时间戳
+let _thinkingTimer = null;     // 计时器句柄
+let _thinkingMinDelay = 800;   // 最短显示时长，避免响应太快一闪而过
 
-function showTypingIndicator() {
-  hideTypingIndicator();  // 先清除旧的（取消之前的延迟删除）
+/**
+ * 显示「思考中」指示器。
+ * 带实时秒数 + 阶段文案 + 长耗时提示——用户在等待期能明确看到"还在跑"，
+ * 而不是盯着一个静止的省略号怀疑界面卡死。
+ * @param {string} stageText 初始阶段文案，如「正在理解问题…」
+ */
+function showTypingIndicator(stageText) {
+  hideTypingIndicator(true);  // 先清除旧的（立即，不延迟）
   _thinkingShownAt = Date.now();
-  console.log('[AI Chat] 显示 Thinking...');
   const container = document.getElementById('chat-messages');
+  if (!container) return;
+
   const div = document.createElement('div');
   div.className = 'chat-msg ai';
   div.id = 'chat-typing-indicator';
-  div.innerHTML = '<span style="color:#f0ad4e;font-weight:600;">💭 Thinking<span class="thinking-dots">...</span></span>';
+  div.innerHTML =
+    '<div class="typing-line" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#f0ad4e;">'
+    + '<span class="typing-spinner" style="display:inline-block;">💭</span>'
+    + '<span class="typing-stage">' + escapeHtml(stageText || '正在思考…') + '</span>'
+    + '<span class="typing-elapsed" style="font-size:11px;font-weight:400;color:var(--text-muted);"></span>'
+    + '</div>'
+    + '<div class="typing-hint" style="display:none;font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.5;"></div>';
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+
+  _thinkingTimer = setInterval(function () {
+    const el = document.getElementById('chat-typing-indicator');
+    if (!el) { clearInterval(_thinkingTimer); _thinkingTimer = null; return; }
+    const secs = Math.floor((Date.now() - _thinkingShownAt) / 1000);
+    const elapsed = el.querySelector('.typing-elapsed');
+    if (elapsed) elapsed.textContent = secs > 0 ? (secs + 's') : '';
+    const hint = el.querySelector('.typing-hint');
+    if (hint && secs >= 3) {
+      hint.style.display = 'block';
+      hint.textContent = secs >= 20
+        ? '本地模型首次加载或长上下文推理可能较慢，仍在处理中，请继续等待…'
+        : '正在处理，复杂问题与本地模型可能需要数十秒，请稍候…';
+    }
+  }, 1000);
 }
 
-function hideTypingIndicator() {
-  console.log('[AI Chat] 隐藏 Thinking...');
+/** 更新「思考中」的阶段文案（不重建元素，避免闪烁）。 */
+function setThinkingStage(stageText) {
+  const el = document.getElementById('chat-typing-indicator');
+  if (!el) return;
+  const stage = el.querySelector('.typing-stage');
+  if (stage && stageText) stage.textContent = stageText;
+  const container = document.getElementById('chat-messages');
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+function hideTypingIndicator(immediate) {
+  if (_thinkingTimer) { clearInterval(_thinkingTimer); _thinkingTimer = null; }
   const indicator = document.getElementById('chat-typing-indicator');
   if (!indicator) return;
-  // 至少显示 800ms，避免 Ollama 响应太快一闪而过
-  var elapsed = Date.now() - _thinkingShownAt;
-  var delay = Math.max(0, 800 - elapsed);
+  if (immediate) { indicator.remove(); return; }
+  // 至少显示 _thinkingMinDelay，避免响应太快一闪而过
+  const elapsed = Date.now() - _thinkingShownAt;
+  const delay = Math.max(0, _thinkingMinDelay - elapsed);
   if (delay > 0) {
-    setTimeout(function() {
-      var el = document.getElementById('chat-typing-indicator');
+    setTimeout(function () {
+      const el = document.getElementById('chat-typing-indicator');
       if (el) el.remove();
     }, delay);
   } else {
@@ -23915,9 +25129,11 @@ function clearChatSession() {
     container.innerHTML = '';
     addChatMessage(
       '✅ 对话已清空。<br><br>' +
-      '<strong>🔍 巡检执行</strong><br>' +
+      '<strong>🚀 常见起点</strong><br>' +
+      '• 不知道填什么：在「快速开始」页问我，我按步骤带你接入<br>' +
       '• 巡检 MySQL-01 的连接数<br>' +
-      '• 查看 PostgreSQL 的锁等待<br><br>' +
+      '• 查看 PostgreSQL 的锁等待<br>' +
+      '• 对 Oracle 做一次全库巡检（执行前会先请你授权）<br><br>' +
       '<strong>💡 知识问答</strong><br>' +
       '• MySQL 慢查询怎么优化？<br>' +
       '• PostgreSQL 如何配置 WAL 归档？',
@@ -24013,6 +25229,8 @@ async function sendChatMessageWithContext(message, context) {
       if (data.candidates && data.candidates.length > 0) {
         renderChatCandidateButtons(data.candidates);
       }
+    } else if (data.type === 'task_approval_required') {
+      renderTaskApproval(data, message);
     } else if (data.type === 'report') {
       setChatMode('inspect');
       addChatMessage(data.message, 'ai', false);
@@ -24036,19 +25254,20 @@ async function sendChatMessageWithContext(message, context) {
   setInputEnabled(true);
 }
 
-async function sendChatMessage() {
+async function sendChatMessage(messageOverride, egressTicket, echoUser, taskTicket, extraContext) {
   const textarea = document.getElementById('chat-textarea');
-  const message = textarea.value.trim();
+  const isResend = (typeof messageOverride === 'string' && messageOverride.length > 0);
+  const message = isResend ? messageOverride : textarea.value.trim();
   if (!message) return;
 
-  textarea.value = '';
+  if (!isResend) textarea.value = '';
   setInputEnabled(false);
 
-  addChatMessage(message, 'user', false);
-  showTypingIndicator();
+  if (echoUser !== false) addChatMessage(message, 'user', false);
+  showTypingIndicator(taskTicket ? '已授权，正在执行任务…' : '正在理解你的问题…');
 
   // 自动获取当前页面上下文
-  const context = getChatContext();
+  const context = Object.assign(getChatContext(), extraContext || {});
 
   // v2.6.3：使用 SSE 流式接收
   try {
@@ -24058,7 +25277,9 @@ async function sendChatMessage() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(Object.assign({
         message: message,
-        session_id: chatSessionId
+        session_id: chatSessionId,
+        egress_ticket: egressTicket || '',
+        task_ticket: taskTicket || ''
       }, context))
     });
 
@@ -24069,12 +25290,41 @@ async function sendChatMessage() {
       throw new Error(`HTTP ${res.status}: ${errText}`);
     }
 
-    hideTypingIndicator();
+    // 注意：这里**不再**立刻隐藏「思考中」。
+    // 响应头到达 ≠ 有内容；模型首 token 往往还要等数秒到数十秒，
+    // 过早隐藏会让界面看起来卡死。真正隐藏时机是首个
+    // thinking / chunk / qa / inspect_* / approval 事件到达。
 
     let fullContent = '';
-    let thinkingContent = '';
-    let thinkingEl = null;
+    let thinkingStages = [];   // 本轮收集到的思考阶段（供折叠回看）
+    let thinkingEl = null;     // 局部引用，避免用全局 id 造成多轮串台
+    let thinkingBody = null;
     let aiMsgEl = null;  // 延迟创建，等第一个 chunk 到达
+
+    /** 惰性创建本轮专属的「思考过程」折叠块（挂在 AI 消息上方）。 */
+    function ensureThinkingBlock() {
+      if (thinkingEl) return thinkingEl;
+      const box = document.getElementById('chat-messages');
+      thinkingEl = document.createElement('details');
+      thinkingEl.className = 'thinking-block';
+      thinkingEl.open = false;
+      thinkingEl.style.cssText =
+        'margin:0 0 8px;border:1px solid var(--border);border-radius:8px;'
+        + 'background:var(--surface2);overflow:hidden;';
+      const summary = document.createElement('summary');
+      summary.style.cssText =
+        'cursor:pointer;padding:7px 12px;font-size:12.5px;color:var(--text-muted);'
+        + 'user-select:none;outline:none;';
+      summary.textContent = '🤔 思考过程';
+      thinkingEl.appendChild(summary);
+      thinkingBody = document.createElement('div');
+      thinkingBody.style.cssText =
+        'padding:0 12px 10px;font-size:12px;line-height:1.7;color:var(--text-muted);'
+        + 'white-space:pre-wrap;max-height:260px;overflow:auto;';
+      thinkingEl.appendChild(thinkingBody);
+      box.appendChild(thinkingEl);
+      return thinkingEl;
+    }
 
     // 读取 SSE 流
     const reader = res.body.getReader();
@@ -24097,30 +25347,27 @@ async function sendChatMessage() {
           try {
             const data = JSON.parse(dataStr);
             if (data.type === 'thinking') {
-              // 收到思考过程，创建可折叠的 thinking 块（在 AI 消息前面）
-              thinkingContent += data.content;
-              if (!thinkingEl) {
-                thinkingEl = document.createElement('details');
-                thinkingEl.className = 'thinking-block';
-                thinkingEl.style.cssText = 'margin-bottom:8px; border:1px solid var(--border); border-radius:8px; padding:8px 12px; background:var(--surface2);';
-                const summary = document.createElement('summary');
-                summary.textContent = '🤔 AI 思考过程';
-                summary.style.cssText = 'cursor:pointer; font-size:13px; color:var(--text-muted);';
-                thinkingEl.appendChild(summary);
-                const pre = document.createElement('pre');
-                pre.id = 'thinking-content';
-                pre.style.cssText = 'margin:8px 0 0 0; padding:8px; background:var(--bg); border-radius:6px; font-size:12px; white-space:pre-wrap; max-height:300px; overflow:auto;';
-                thinkingEl.appendChild(pre);
-                // 插入到聊天区域（在 AI 消息前面）
-                const chatMessages = document.getElementById('chat-messages');
-                chatMessages.appendChild(thinkingEl);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-              }
-              // 实时更新 thinking 内容
-              const pre = document.getElementById('thinking-content');
-              if (pre) pre.textContent = thinkingContent;
+              // 实时阶段：先更新「思考中」状态条的文案（用户第一眼看得见）
+              const stageText = data.content || '正在思考…';
+              setThinkingStage(stageText);
+
+              // 同时累积进本轮专属的折叠块，便于回看完整思考链路
+              const det = ensureThinkingBlock();
+              thinkingStages.push('• ' + stageText + (data.detail ? '\n  ' + data.detail : ''));
+              if (thinkingBody) thinkingBody.textContent = thinkingStages.join('\n');
+              const sm = det.querySelector('summary');
+              if (sm) sm.textContent = '🤔 思考过程 · ' + stageText;
+
+              const chatMessages = document.getElementById('chat-messages');
+              if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
 
             } else if (data.type === 'chunk') {
+              // 首个正文到达：收起等待态，把思考块定稿为「已完成」
+              hideTypingIndicator();
+              if (thinkingEl) {
+                const sm = thinkingEl.querySelector('summary');
+                if (sm) sm.textContent = '🤔 思考过程（已完成，共 ' + thinkingStages.length + ' 步）';
+              }
               // 第一次收到 chunk 时创建 AI 消息气泡
               if (!aiMsgEl) {
                 aiMsgEl = addChatMessage('', 'ai', true);
@@ -24145,6 +25392,11 @@ async function sendChatMessage() {
 
             } else if (data.type === 'qa') {
               // 平台数据查询 / 智能诊断 / 工作流 等直接返回的答案（与 /api/chat fallback 对齐）
+              hideTypingIndicator();
+              if (thinkingEl) {
+                const sm = thinkingEl.querySelector('summary');
+                if (sm) sm.textContent = '🤔 思考过程（已完成，共 ' + thinkingStages.length + ' 步）';
+              }
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', true);
               let contentDiv = aiMsgEl.querySelector('.ai-content');
               if (!contentDiv) {
@@ -24156,6 +25408,7 @@ async function sendChatMessage() {
 
             } else if (data.type === 'inspect_result') {
               // 巡检简单查询结果
+              hideTypingIndicator();
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', true);
               let contentDiv = aiMsgEl.querySelector('.ai-content');
               if (!contentDiv) {
@@ -24167,6 +25420,7 @@ async function sendChatMessage() {
 
             } else if (data.type === 'inspect_start') {
               // 巡检任务已启动
+              hideTypingIndicator();
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', true);
               let contentDiv = aiMsgEl.querySelector('.ai-content');
               if (!contentDiv) {
@@ -24180,8 +25434,27 @@ async function sendChatMessage() {
               showChatSpinner();
               pollChatTaskStatus(data.task_id);
 
+            } else if (data.type === 'task_approval_required') {
+              // 任务类操作（巡检 / 诊断 / 工作流）：执行前必须由用户明确授权
+              hideTypingIndicator();
+              if (thinkingEl) {
+                const sm = thinkingEl.querySelector('summary');
+                if (sm) sm.textContent = '🤔 思考过程（等待授权）';
+              }
+              renderTaskApproval(data, message);
+              setInputEnabled(true);
+              return;  // 等用户决定，本次流到此为止
+
+            } else if (data.type === 'task_denied') {
+              // 票据失效 / 用户取消：明确告知未执行任何动作
+              hideTypingIndicator();
+              addChatMessage('⏸ ' + (data.message || '任务未执行'), 'system', false);
+              setInputEnabled(true);
+              return;
+
             } else if (data.type === 'inspect_ask') {
               // 需要用户选择数据源
+              hideTypingIndicator();
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', false);
               aiMsgEl.innerHTML = '<span style="color:var(--text-muted)">' + escapeHtml(data.message || '') + '</span>';
               renderChatCandidateButtons(data.candidates);
@@ -24190,6 +25463,7 @@ async function sendChatMessage() {
 
             } else if (data.type === 'inspect_result') {
               // 巡检简单查询结果
+              hideTypingIndicator();
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', true);
               let contentDiv = aiMsgEl.querySelector('.ai-content');
               if (!contentDiv) {
@@ -24201,6 +25475,7 @@ async function sendChatMessage() {
 
             } else if (data.type === 'inspect_start') {
               // 巡检任务已启动
+              hideTypingIndicator();
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', true);
               let contentDiv = aiMsgEl.querySelector('.ai-content');
               if (!contentDiv) {
@@ -24213,9 +25488,18 @@ async function sendChatMessage() {
               showChatSpinner();
               pollChatTaskStatus(data.task_id);
 
+            } else if (data.type === 'approval_required') {
+              // 外发审批：把将发往外部的内容完整展示，由用户决定
+              hideTypingIndicator();
+              renderEgressApproval(data, message);
+              setInputEnabled(true);
+              return;  // 等用户决定，本次流到此为止
+
             } else if (data.type === 'done') {
               // 完成
+              hideTypingIndicator();
             } else if (data.type === 'error') {
+              hideTypingIndicator();
               if (!aiMsgEl) aiMsgEl = addChatMessage('', 'ai', true);
               aiMsgEl.innerHTML = `❌ ${data.message}`;
             }
@@ -24240,7 +25524,9 @@ async function sendChatMessage() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(Object.assign({
           message: message,
-          session_id: chatSessionId
+          session_id: chatSessionId,
+          egress_ticket: egressTicket || '',
+          task_ticket: taskTicket || ''
         }, context))
       });
       const data = await res.json();
@@ -24266,6 +25552,14 @@ async function sendChatMessage() {
         currentChatTaskId = data.task_id;
         showChatSpinner();
         pollChatTaskStatus(data.task_id);
+      } else if (data.type === 'blocked' || data.blocked) {
+        addChatMessage(_markdownToHtml(data.message), 'ai', true);
+      } else if (data.type === 'approval_required') {
+        renderEgressApproval(data, message);
+      } else if (data.type === 'task_approval_required') {
+        renderTaskApproval(data, message);
+      } else if (data.type === 'task_denied') {
+        addChatMessage('⏸ ' + (data.message || '任务未执行'), 'system', false);
       } else if (data.type === 'error') {
         addChatMessage(i18n('webui.chat_error_prefix') + data.message, 'ai', false);
         if (data.message && data.message.includes('未找到')) {
@@ -24284,6 +25578,196 @@ async function sendChatMessage() {
       setInputEnabled(true);
     }
   }
+}
+
+/**
+ * 渲染外发审批卡片。
+ * 设计意图：不一刀切拦截，也不偷偷外发——把「到底要发什么」原样摊给用户看，
+ * 批准则本次放行（票据一次性 + 指纹绑定），拒绝则跳过且聊天继续可用。
+ */
+function renderEgressApproval(info, originalMessage) {
+  const box = document.getElementById('chat-messages');
+  if (!box) return;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'border:1px solid var(--warning,#f59e0b);border-radius:10px;padding:12px 14px;margin:10px 0;background:rgba(245,158,11,.07);';
+
+  const host = escapeHtml(info.host || '未知主机');
+  const purpose = escapeHtml(info.purpose || '调用远程模型');
+  const bytes = info.bytes || 0;
+  const preview = escapeHtml(info.preview || '');
+
+  wrap.innerHTML =
+    '<div style="font-weight:600;font-size:13.5px;margin-bottom:6px;">🔐 需要你确认：本次回答要把数据发到外部</div>' +
+    '<div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:8px;">' +
+      '目标主机：<b>' + host + '</b><br>' +
+      '用途：' + purpose + '<br>' +
+      '内容大小：' + bytes + ' 字节 · 凭证与身份信息已自动脱敏' +
+    '</div>' +
+    '<details style="margin-bottom:10px;">' +
+      '<summary style="cursor:pointer;font-size:12.5px;color:var(--primary,#3b82f6);">展开查看将外发的完整内容</summary>' +
+      '<pre style="margin:8px 0 0;padding:10px;background:var(--bg);border-radius:6px;' +
+        'font-size:12px;white-space:pre-wrap;max-height:280px;overflow:auto;">' + preview + '</pre>' +
+    '</details>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<button class="egress-approve" style="padding:7px 16px;border:none;border-radius:6px;cursor:pointer;' +
+        'background:var(--primary,#3b82f6);color:#fff;font-size:13px;">批准并继续</button>' +
+      '<button class="egress-deny" style="padding:7px 16px;border:1px solid var(--border);border-radius:6px;' +
+        'cursor:pointer;background:transparent;color:inherit;font-size:13px;">拒绝（不外发）</button>' +
+    '</div>';
+
+  const approveBtn = wrap.querySelector('.egress-approve');
+  const denyBtn = wrap.querySelector('.egress-deny');
+
+  function finalize(text, color) {
+    approveBtn.disabled = true;
+    denyBtn.disabled = true;
+    approveBtn.style.opacity = '0.5';
+    denyBtn.style.opacity = '0.5';
+    const note = document.createElement('div');
+    note.style.cssText = 'margin-top:8px;font-size:12.5px;color:' + (color || 'var(--text-muted)') + ';';
+    note.textContent = text;
+    wrap.appendChild(note);
+  }
+
+  async function decide(approved) {
+    try {
+      const r = await fetch('/api/chat/egress_decision', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          session_id: chatSessionId,
+          ticket_id: info.ticket_id,
+          approved: approved
+        })
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        finalize('⚠️ ' + (d.message || '审批失败'), 'var(--danger,#ef4444)');
+        return;
+      }
+      if (approved) {
+        finalize('✅ 已批准，正在继续本次回答…', '#10b981');
+        // 用同一句话重发，带上票据；不再重复回显用户消息
+        sendChatMessage(originalMessage, info.ticket_id, false);
+      } else {
+        finalize('已拒绝：未发送任何数据。可以继续提问，下次仍会向你确认。', 'var(--text-muted)');
+        addChatMessage('已跳过外发，未发送任何数据。如希望长期免确认，可由运维把该主机加入环境变量 DBPULSE_ALLOWED_EGRESS_HOSTS（仅 https，需重启生效）；或改用本地模型（Ollama）回答。', 'system', false);
+      }
+    } catch (e) {
+      finalize('⚠️ 审批请求失败：' + e.message, 'var(--danger,#ef4444)');
+    }
+  }
+
+  approveBtn.addEventListener('click', function () { decide(true); });
+  denyBtn.addEventListener('click', function () { decide(false); });
+
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+/**
+ * 渲染任务授权确认卡（巡检 / 智能诊断 / 工作流）。
+ *
+ * 设计意图与 renderEgressApproval 一致：不替用户做决定，也不静默执行。
+ * 把「要对谁、做什么、影响面、有效期」摊开给用户看，
+ * 批准则携带票据重放原请求，拒绝则一条 SQL 都不发出去。
+ */
+function renderTaskApproval(info, originalMessage) {
+  const box = document.getElementById('chat-messages');
+  if (!box) return;
+
+  const KIND_ICON = {
+    inspect: '🔍',
+    diagnose: '🧭',
+    workflow: '⚙️',
+  };
+  const kind = info.kind || 'inspect';
+  const icon = KIND_ICON[kind] || '▶️';
+  const action = escapeHtml(info.action || '任务');
+  const target = escapeHtml(info.target || '未知目标');
+  // detail 里后端用了 **加粗**，先转义再还原为 strong，避免直接显示星号
+  const detail = escapeHtml(info.detail || '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const ttl = Math.round((info.expires_in || 300) / 60);
+  const impacts = Array.isArray(info.impact) ? info.impact : [];
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText =
+    'border:1px solid var(--warning,#f59e0b);border-radius:10px;padding:12px 14px;'
+    + 'margin:10px 0;background:rgba(245,158,11,.07);';
+
+  wrap.innerHTML =
+    '<div style="font-weight:600;font-size:13.5px;margin-bottom:6px;">'
+      + icon + ' 需要授权：即将执行' + action + '</div>'
+    + '<div style="font-size:12.5px;color:var(--text-muted);line-height:1.7;margin-bottom:8px;">'
+      + '目标：<b>' + target + '</b><br>'
+      + (detail ? detail + '<br>' : '')
+      + '授权有效期：' + ttl + ' 分钟 · 一次性，执行后立即失效'
+    + '</div>'
+    + (impacts.length
+        ? '<ul style="margin:0 0 10px;padding-left:18px;font-size:12px;color:var(--text-muted);line-height:1.7;">'
+          + impacts.map(function (t) { return '<li>' + escapeHtml(t) + '</li>'; }).join('')
+          + '</ul>'
+        : '')
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      + '<button class="task-approve" style="padding:7px 16px;border:none;border-radius:6px;cursor:pointer;'
+        + 'background:var(--primary,#3b82f6);color:#fff;font-size:13px;">确认执行</button>'
+      + '<button class="task-deny" style="padding:7px 16px;border:1px solid var(--border);border-radius:6px;'
+        + 'cursor:pointer;background:transparent;color:inherit;font-size:13px;">取消</button>'
+    + '</div>';
+
+  const approveBtn = wrap.querySelector('.task-approve');
+  const denyBtn = wrap.querySelector('.task-deny');
+
+  function finalize(text, color) {
+    approveBtn.disabled = true;
+    denyBtn.disabled = true;
+    approveBtn.style.opacity = '0.5';
+    denyBtn.style.opacity = '0.5';
+    const note = document.createElement('div');
+    note.style.cssText = 'margin-top:8px;font-size:12.5px;color:' + (color || 'var(--text-muted)') + ';';
+    note.textContent = text;
+    wrap.appendChild(note);
+  }
+
+  async function decide(approved) {
+    try {
+      const r = await fetch('/api/chat/task_decision', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          session_id: chatSessionId,
+          ticket_id: info.ticket_id,
+          approved: approved
+        })
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        finalize('⚠️ ' + (d.message || '授权失败'), 'var(--danger,#ef4444)');
+        return;
+      }
+      if (approved) {
+        finalize('✅ 已授权，正在执行…', '#10b981');
+        // 携带票据重放原请求；计划里的 instance_id 一并回传，确保目标不漂移
+        const replayCtx = {};
+        const plan = info.plan || {};
+        if (plan.instance_id) replayCtx.instance_id = plan.instance_id;
+        if (plan.db_type) replayCtx.db_type = plan.db_type;
+        sendChatMessage(originalMessage, null, false, info.ticket_id, replayCtx);
+      } else {
+        finalize('已取消：未执行任何任务，也没有连接数据库。', 'var(--text-muted)');
+        addChatMessage('任务已取消。本次没有连接数据库，也没有产生任何巡检或诊断记录。如需执行，重新告诉我即可。', 'system', false);
+      }
+    } catch (e) {
+      finalize('⚠️ 授权请求失败：' + e.message, 'var(--danger,#ef4444)');
+    }
+  }
+
+  approveBtn.addEventListener('click', function () { decide(true); });
+  denyBtn.addEventListener('click', function () { decide(false); });
+
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
 }
 
 async function pollChatTaskStatus(taskId) {
@@ -25162,16 +26646,17 @@ async function deleteBackupHistory(recordId) {
   </div>
   <div class="chat-messages" id="chat-messages" data-page-node-id="vPE26SnF60GrYTKDscBEFZ">
     <div class="chat-msg ai" id="chat-welcome" data-page-node-id="GycMFAD57edt93W5mOFKFE">
-      您好！我是 {{ product_name }} AI 巡检助手 🎉<br data-page-node-id="tTFPjbBtYrmBAHUYzZHjPF"><br data-page-node-id="EYsWPFKujKiKHv48nCMPA2">
-      <strong data-page-node-id="EEAiu4YjVqSk3WZ71p2Ezz">🔍 巡检执行</strong><br data-page-node-id="HH6DKrafnj4rcT2dtLEzA7">
-      • 巡检 MySQL-01 的连接数<br data-page-node-id="WyBUZyLVnypLOaE0MESrr9">
-      • 查看 PostgreSQL 的锁等待<br data-page-node-id="yNmuwKB7wmKmtPDxqnyKpy">
-      • 对 Oracle 做完整巡检<br data-page-node-id="8RoVuCkwOS2s5dDbucjkgR"><br data-page-node-id="dVR9qTTkkj2BmCetQHffeM">
-      <strong data-page-node-id="TNOs1V1Ou5W13wvOQLcGME">💡 知识问答</strong><br data-page-node-id="HPmwenSQ9pq32qkw5dRkJw">
-      • MySQL 慢查询怎么优化？<br data-page-node-id="ctj5XDxJP9HZFrbrqz5LB3">
-      • PostgreSQL 如何配置 WAL 归档？<br data-page-node-id="owHv3hFdk8yFIoroW7vrEA">
-      • Oracle 表空间满了怎么办？<br data-page-node-id="jZgatZSHLnBmxCd92CkVQG"><br data-page-node-id="dD2PPEL9syk665KtDJEi1C">
-      <span style="font-size:11px;color:var(--text-secondary)" data-page-node-id="FzdUiDTe2Br0guu1G4xxbV">输入 <code data-page-node-id="WUZkJIzGhXCoM0O3IUqd48">/clear</code> 清空对话</span>
+      你好！我是 {{ product_name }} 数据库运维智能助手 👋<br>
+      直接说需求就行，我会边想边告诉你进度。<br><br>
+      <strong>🚀 第一次用？从这里开始</strong><br>
+      • 不知道填什么：在「快速开始」页告诉我你的数据库类型，我按步骤带你接入<br>
+      • 想先看看：巡检 MySQL-01 的连接数<br>
+      • 要完整体检：对 Oracle 做一次全库巡检（执行前会先请你授权）<br><br>
+      <strong>💡 知识问答</strong><br>
+      • MySQL 慢查询怎么优化？<br>
+      • PostgreSQL 如何配置 WAL 归档？<br>
+      • Oracle 表空间满了怎么办？<br><br>
+      <span style="font-size:11px;color:var(--text-secondary)">执行巡检 / 诊断 / 工作流前都会先弹授权卡片，你确认后才会连接数据库。输入 <code>/clear</code> 清空对话</span>
     </div>
   </div>
   <div class="chat-status-bar" id="chat-status-bar" style="display:none;padding:4px 16px;font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border);background:var(--surface2)" data-page-node-id="H2NGn2jo5H6gQSqj5CAPgf">
@@ -28421,6 +29906,8 @@ function mkdirRemote() {
         }
         sec.style.display = hasVisible ? '' : 'none';
       });
+      window.__workspaceMenusReady = true;
+      document.dispatchEvent(new Event('workspace-menus-ready'));
     } catch(e) { console.warn('[MenuPerm] load failed:', e); }
   }
   // 页面加载后立即执行
@@ -28838,6 +30325,40 @@ document.addEventListener('keydown', function(e) {
   <div class="sweep-veil"></div>
 </div>
 
+<script>
+window.addEventListener('message', function(event) {
+  const frames = ['operations-frame', 'batch-operations-frame'].map(id => document.getElementById(id));
+  if (event.origin !== window.location.origin || !frames.some(frame => frame?.contentWindow === event.source)) return;
+  if (event.data?.type === 'operations-open-batch') {
+    window.__operationsBatchSelection = event.data.instance_ids || [];
+    showPage('batch-inspection');
+    const frame = document.getElementById('batch-operations-frame');
+    if (frame.dataset.ready === 'true') {
+      frame.contentWindow.postMessage({type:'operations-select-sources',instance_ids:window.__operationsBatchSelection},window.location.origin);
+      window.__operationsBatchSelection = null;
+    }
+  }
+  if (event.data?.type === 'operations-ready') {
+    const frame = frames.find(frame=>frame?.contentWindow === event.source);
+    frame.dataset.ready = 'true';
+    if (frame.id === 'batch-operations-frame' && window.__operationsBatchSelection) {
+      frame.contentWindow.postMessage({type:'operations-select-sources',instance_ids:window.__operationsBatchSelection},window.location.origin);
+      window.__operationsBatchSelection = null;
+    }
+  }
+  if (event.data?.type === 'operations-datasource-updated') {
+    document.dispatchEvent(new Event('workspace-datasources-updated'));
+    if (typeof loadDataSources === 'function') loadDataSources();
+    frames.forEach(frame => {
+      if (frame?.getAttribute('src') && frame.contentWindow !== event.source) {
+        frame.contentWindow.postMessage({type:'operations-refresh'},window.location.origin);
+      }
+    });
+  }
+});
+</script>
+
+<script src="/static/js/workspace_usability.js?v=1"></script>
 </body>
 </html>
 
