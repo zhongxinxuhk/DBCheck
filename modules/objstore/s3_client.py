@@ -30,6 +30,11 @@
 所有失败统一抛 ``S3Error``（带 status / code / request_id，便于前端提示）。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import hashlib

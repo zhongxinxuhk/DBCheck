@@ -19,5 +19,11 @@ if not exist "%JAVA_HOME%\bin\java.exe" (
     exit /b 1
 )
 cd /d "%~dp0"
+if "%~1"=="" (
+    if exist "%~dp0bin\windows-x86_64\DBPulse.exe" (
+        start "" "%~dp0bin\windows-x86_64\DBPulse.exe"
+        exit /b 0
+    )
+)
 "%~dp0bin\windows-x86_64\dbcheck.exe" %*
 exit /b %errorlevel%

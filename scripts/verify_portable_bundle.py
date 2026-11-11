@@ -190,6 +190,20 @@ class PortableChecks(unittest.TestCase):
         with patch.object(sys,'platform','win32'),patch('platform.machine',return_value='ARM64'),patch('sysconfig.get_platform',return_value='win-arm64'):
             self.assertEqual(portable.platform_key(),'windows-arm64')
 
+    def test_windows_status_launcher_uses_shared_data(self):
+        from modules.desktop.windows_launcher import BackendProcess
+        (self.bundle/'dbpulse-portable.json').write_text('{}')
+        executable=self.bundle/'bin/windows-x86_64'
+        executable.mkdir(parents=True)
+        with patch.dict(os.environ,{},clear=False):
+            os.environ.pop('DBPULSE_PORTABLE_HOME',None)
+            controller=BackendProcess(executable)
+        self.assertEqual(controller.metadata,self.bundle/'data/desktop_process.json')
+        self.assertEqual(controller.executable,executable/'dbcheck.exe')
+        launcher=(ROOT/'build/portable/start.bat').read_text()
+        self.assertIn('DBPulse.exe',launcher)
+        self.assertIn('dbcheck.exe" %*',launcher)
+
     def test_windows_pe_architecture_is_validated(self):
         builder=load_file('portable_builder_fixture',ROOT/'build/portable_bundle.py')
         path=self.root/'fixture.exe';data=bytearray(512);data[:2]=b'MZ';data[60:64]=(128).to_bytes(4,'little');data[128:132]=b'PE\0\0';data[132:134]=(0x8664).to_bytes(2,'little');path.write_bytes(data)

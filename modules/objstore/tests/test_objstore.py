@@ -14,6 +14,11 @@
 用 ``python -m unittest discover -s modules/objstore/tests`` 直接跑。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import hashlib

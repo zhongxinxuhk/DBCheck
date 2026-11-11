@@ -46,7 +46,7 @@ def self_test():
     from modules.core import paths
     required = ('flask','flask_socketio','gevent','jinja2','cryptography','bcrypt','jwt','paramiko',
                 'docx','docxtpl','openpyxl','requests','yaml','apscheduler','pymysql','pytds','jaydebeapi','jpype',
-                'numpy','pandas','pymongo','redis','oracledb','psycopg2','tzdata','psutil','six')
+                'docxcompose.composer','babel.numbers','croniter','numpy','pandas','pymongo','redis','oracledb','psycopg2','tzdata','psutil','six')
     errors = {}
     for name in required:
         try:

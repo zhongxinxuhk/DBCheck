@@ -11,6 +11,11 @@
   3. 补齐后规则能否真正命中（这是治理前 174 条"接线但不执行"的根因）；
   4. 模板已提供的键不被覆盖。
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import sys
 sys.path.insert(0, '/Users/xuzhongxin/DBCheck')
 

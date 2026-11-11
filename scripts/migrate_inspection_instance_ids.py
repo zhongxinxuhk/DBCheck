@@ -28,6 +28,11 @@
 幂等：已收敛的记录不会再被处理。默认先备份 pro_history.db。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import argparse
 import hashlib
 import os

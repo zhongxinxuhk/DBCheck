@@ -18,6 +18,11 @@ Oracle 连接测试独立模块（纯函数，无 Flask / 线程副作用）。
 ``modules.ssh``，无任何模块级副作用。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import sys
 import json

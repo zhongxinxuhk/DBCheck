@@ -16,6 +16,11 @@ DBCheck 增强智能分析模块
 - 所有数据在本地处理，不会发送到第三方服务器
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import os
 import json
 import time

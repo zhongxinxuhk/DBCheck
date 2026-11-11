@@ -11,6 +11,11 @@ DBCheck 定时调度模块
 - 持久化任务配置到 JSON 文件
 - 巡检完成后触发邮件/钉钉/企业微信通知
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from modules.core.paths import PROJECT_ROOT
 import os, sys, json, datetime, threading, logging, time, signal
 from apscheduler.schedulers.background import BackgroundScheduler

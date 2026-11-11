@@ -26,11 +26,21 @@ ADDRESS = "http://127.0.0.1:5003"
 TITLE = "DBPulse 运行状态"
 
 
+def portable_home(directory):
+    configured = os.environ.get('DBPULSE_PORTABLE_HOME')
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for parent in (directory, *directory.parents):
+        if (parent/'dbpulse-portable.json').is_file():
+            return parent
+    return None
+
+
 class BackendProcess:
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
         self.executable = self.directory / "dbcheck.exe"
-        self.metadata = self.directory / "data" / "desktop_process.json"
+        self.metadata = (portable_home(self.directory) or self.directory) / "data" / "desktop_process.json"
         self.process = None
         self.pid = None
         self.started = None
@@ -82,7 +92,7 @@ class BackendProcess:
             if not self.executable.is_file():
                 raise FileNotFoundError("未找到 dbcheck.exe，请保持发布目录完整")
             self.metadata.parent.mkdir(parents=True, exist_ok=True)
-            logs = self.directory / "data" / "logs"
+            logs = self.metadata.parent / "logs"
             logs.mkdir(parents=True, exist_ok=True)
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
                 subprocess, "CREATE_NEW_PROCESS_GROUP", 0
@@ -254,6 +264,9 @@ class TrayIcon:
         user.LoadImageW.restype = w.HANDLE
         taskbar_created = user.RegisterWindowMessageW("TaskbarCreated")
         resource = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+        shared = portable_home(Path(sys.executable).resolve().parent)
+        if shared is not None:
+            resource = shared
         icon = user.LoadImageW(
             None, str(resource / "assets/brand/favicon.ico"), 1, 16, 16, 0x10
         )
@@ -364,6 +377,12 @@ def main():
         if getattr(sys, "frozen", False)
         else Path(__file__).resolve().parents[2]
     )
+    shared = portable_home(directory)
+    if shared is not None:
+        os.environ['DBPULSE_PORTABLE_HOME'] = str(shared)
+        java = shared/'runtime/windows-x86_64/jre'
+        if (java/'bin/java.exe').is_file():
+            os.environ['JAVA_HOME'] = str(java)
     identity = hashlib.sha256(str(directory).lower().encode()).hexdigest()[:24]
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateMutexW.argtypes = [w.LPVOID, w.BOOL, w.LPCWSTR]

@@ -48,7 +48,7 @@ bash start.sh --portable-import /path/to/old-installation
 
 `--portable-self-test` 检查打包模块、资源和随包 JVM。`--portable-state-check` 检查现有数据源密码可读性及本地密钥、证书引用，不输出密码。旧版导入需要尚未初始化的新 `data/` 目录，使用 SQLite backup 复制已提交的 WAL 内容并保留原 Fernet 密钥。原安装目录保留。
 
-首次启动的管理员口令写入 `data/bootstrap_admin_password`。`DBPULSE_PORT` 和 `DBPULSE_BIND_HOST` 可以覆盖当前进程的 Web 监听设置，默认使用 `127.0.0.1:5003`。
+首次安装默认账号为 `admin`，默认密码为 `admin123`。Windows 默认显示运行状态窗口，关闭后保留在系统托盘，托盘菜单可以恢复、启动、停止和退出。`DBPULSE_PORT` 和 `DBPULSE_BIND_HOST` 可以覆盖当前进程的 Web 监听设置，默认使用 `127.0.0.1:5003`。
 
 ## 原生构建与统一组装
 

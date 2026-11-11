@@ -60,6 +60,10 @@ jobs:
           python scripts/verify_service_management.py
           python scripts/verify_operations.py
           python scripts/verify_scheduled_inspection.py
+          python scripts/verify_clusters.py
+          python scripts/verify_database_compatibility.py
+          python scripts/verify_portable_bundle.py
+          python -m pytest -q modules/inspection/tests modules/core/tests modules/objstore/tests
           python -m compileall -q modules plugins scripts i18n web_ui.py
           git diff --check
 

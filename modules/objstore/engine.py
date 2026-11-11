@@ -14,6 +14,11 @@
 * 远端保留份数由 ``retention`` 控制，只清理本模块前缀下的对象，绝不碰桶内其他数据。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 from __future__ import annotations
 
 import hashlib

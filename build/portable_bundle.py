@@ -152,7 +152,7 @@ Windows 双击 start.bat，Linux 执行 bash start.sh，macOS 双击 start.comma
 本地证书与 SSH 文件可使用相对于便携根目录的路径。
 
 Linux 版本基于 glibc 2.28。二进制分别适用于清单列出的 CPU 架构。
-程序启动后的 data/bootstrap_admin_password 保存首次生成的管理员口令。
+首次安装默认账号为 admin，默认密码为 admin123。
 
 DBCheck / RaccoonX Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 Author https://github.com/fiyo/DBCheck
@@ -193,6 +193,11 @@ def add_component(destination, platform, component, runtime, receipt=None):
         shutil.copy2(component_receipt,target/'component.json')
     metadata['platforms'][platform] = {'executable':str((target/name).relative_to(destination)).replace('\\','/'),
         'sha256':digest(target/name),'java_runtime':java_receipt,'minimum_glibc':'2.28' if platform.startswith('linux-') else None}
+    launcher = target/'DBPulse.exe'
+    if platform.startswith('windows-') and launcher.is_file():
+        validate_binary(launcher, platform)
+        metadata['platforms'][platform]['launcher'] = str(launcher.relative_to(destination)).replace('\\','/')
+        metadata['platforms'][platform]['launcher_sha256'] = digest(launcher)
     metadata['complete'] = all(key in metadata['platforms'] for key in PLATFORMS)
     (destination/'dbpulse-portable.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2))
 
@@ -208,6 +213,9 @@ def archive_bundle(destination, archive):
         validate_binary(destination/name,platform)
         if digest(destination/name)!=metadata['platforms'][platform]['sha256']:
             raise ValueError('Staged binary was modified for '+platform)
+        launcher = metadata['platforms'][platform].get('launcher')
+        if launcher and digest(destination/launcher)!=metadata['platforms'][platform]['launcher_sha256']:
+            raise ValueError('Staged desktop launcher was modified for '+platform)
     archive.parent.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as output:
         for path in sorted(destination.rglob('*')):

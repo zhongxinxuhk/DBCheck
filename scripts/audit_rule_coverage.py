@@ -13,6 +13,11 @@
                  · 引擎注入键（system_info / version / ...）
                  · 派生键（_derive_metrics 计算得出）
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import ast
 import glob
 import os
