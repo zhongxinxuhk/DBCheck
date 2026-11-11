@@ -4253,6 +4253,120 @@ def api_announcement():
             return jsonify({'enabled': True, 'items': items})
     return jsonify({'enabled': False, 'items': []})
 
+# ─── 作者手记「也谢谢这些名字」：官网名单 + 出厂快照兜底 ───
+# 解析顺序：data/donors.json（用户手动覆盖，enabled:false 可关闭）
+#          > data/donors_cache.json（官网 30 分钟定时拉取的本地缓存）
+#          > assets/web/donors.json（随包出厂快照，只读，断网/首次运行也能显示）
+_DONORS_REMOTE_URL = "https://dbcheck.top/donors.json"
+_DONORS_REFRESH_INTERVAL = 30 * 60
+_DONORS_FETCH_TIMEOUT = 8
+_DONORS_MAX_NAMES = 500
+_DONORS_MAX_NAME_LEN = 24
+_donors_refresher_started = False
+_donors_refresher_lock = threading.Lock()
+
+def _clean_donor_names(raw):
+    """官网名单是不可信输入：只收字符串，去控制字符、限长、限总量、去重保序。"""
+    if not isinstance(raw, list):
+        return []
+    out, seen = [], set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        name = ''.join(ch for ch in item.strip() if ch.isprintable()).strip()
+        if not name or len(name) > _DONORS_MAX_NAME_LEN or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+        if len(out) >= _DONORS_MAX_NAMES:
+            break
+    return out
+
+def _refresh_donors_cache():
+    """从官网拉取名单，成功且内容有变化才原子覆盖本地缓存；任何失败保留旧缓存。"""
+    from modules.core.paths import DONORS_CACHE_JSON
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            _DONORS_REMOTE_URL,
+            headers={'User-Agent': 'DBCheck-Donors/1.0'})
+        with urllib.request.urlopen(req, timeout=_DONORS_FETCH_TIMEOUT) as resp:
+            raw = resp.read()
+        cfg = json.loads(raw.decode('utf-8'))
+        if not isinstance(cfg, dict):
+            print(f"[donors] 官网名单格式非法，跳过覆盖: {_DONORS_REMOTE_URL}")
+            return
+        names = _clean_donor_names(cfg.get('names'))
+        if not names:
+            print(f"[donors] 官网名单无有效名字，跳过覆盖: {_DONORS_REMOTE_URL}")
+            return
+        clean = {'enabled': bool(cfg.get('enabled', True)), 'names': names}
+        if DONORS_CACHE_JSON.exists():
+            try:
+                with open(DONORS_CACHE_JSON, 'r', encoding='utf-8') as f:
+                    if json.load(f) == clean:
+                        return
+            except Exception:
+                pass  # 现有缓存损坏 → 走正常覆盖
+        tmp = DONORS_CACHE_JSON.with_suffix('.json.tmp')
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(clean, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, DONORS_CACHE_JSON)
+        print(f"[donors] 检测到官网名单更新，已写入缓存: {DONORS_CACHE_JSON}")
+    except Exception as e:
+        print(f"[donors] 拉取官网名单失败（保留本地缓存）: {e}")
+
+def _donors_refresher_loop():
+    while True:
+        _refresh_donors_cache()
+        time.sleep(_DONORS_REFRESH_INTERVAL)
+
+def _ensure_donors_refresher():
+    """懒启动后台拉取线程（仅启动一次，daemon 不阻断退出）。"""
+    global _donors_refresher_started
+    if _donors_refresher_started:
+        return
+    with _donors_refresher_lock:
+        if _donors_refresher_started:
+            return
+        _donors_refresher_started = True
+        t = threading.Thread(target=_donors_refresher_loop,
+                             name='donors-refresher', daemon=True)
+        t.start()
+
+def _load_donors_file(path):
+    """读取名单文件；enabled:false 返回 'disabled'，有效返回 {'names': [...]}，其余 None。"""
+    try:
+        if not path.exists():
+            return None
+        with open(path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        if not isinstance(cfg, dict) or not cfg.get('enabled', True):
+            return 'disabled'
+        names = _clean_donor_names(cfg.get('names'))
+        return {'names': names} if names else None
+    except Exception as e:
+        print(f"[donors] 读取名单失败（{path}，降级）: {e}")
+        return None
+
+@app.route('/api/donors', methods=['GET'])
+def api_donors():
+    """作者手记名字墙（公开只读）：手动覆盖 > 官网缓存 > 出厂快照；只返回名字。"""
+    from modules.core.paths import DONORS_JSON, DONORS_CACHE_JSON, ASSETS_DIR
+    _ensure_donors_refresher()
+    for path, source in ((DONORS_JSON, 'override'), (DONORS_CACHE_JSON, 'cache')):
+        cfg = _load_donors_file(path)
+        if cfg == 'disabled':
+            return jsonify({'enabled': False, 'names': [], 'source': source})
+        if isinstance(cfg, dict):
+            return jsonify({'enabled': True, 'names': cfg['names'], 'source': source})
+    bundled = ASSETS_DIR / 'web' / 'donors.json'
+    cfg = _load_donors_file(bundled)
+    if isinstance(cfg, dict):
+        return jsonify({'enabled': True, 'names': cfg['names'], 'source': 'bundled'})
+    return jsonify({'enabled': False, 'names': [], 'source': 'none'})
+
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
     cfg_path = paths.DBC_CONFIG_PATH
@@ -12701,6 +12815,47 @@ def _setup_driver_paths():
 
 # ── 数据管理 API ───────────────────────────────────────────
 
+# ── 巡检评分历史：首页统计与近一年日历的统一数据源 ──────────────
+# 历史上存在两套口径：data/history.db::snapshots 只存趋势快照（health_status
+# 文本、无数值评分），data/pro_data/pro_history.db::inspection_history 才是每次
+# 巡检的真实评分记录。首页「累计巡检次数」与巡检日历统一以评分历史为准，避免
+# 同一屏出现「累计 18 次」却画出 56 天的矛盾。
+def _inspection_score_rows(since=None):
+    """读取评分历史记录。
+
+    since 为 'YYYY-MM-DD' 时只取该日及之后，None 取全部。
+    返回 None 表示评分历史库不存在或不可用（调用方回退旧口径）。
+
+    关于可见性：inspection_history.instance_id 由 md5(db_type-host-port)
+    生成，与 pro_data/instances.db 的主键（uuid 片段）不同源，实测本机
+    28 个历史实例与 9 个当前实例交集为 0，且历史表没有 owner/scope 字段，
+    因此无法可靠按身份过滤——按 id 过滤会把全部历史误杀（这也是
+    /api/pro/history 未带 instance_id 时的既有缺陷）。这里沿用 /api/home_stats、
+    /api/pro/dashboard、/api/pro/health-score 既有的「本机全局聚合」口径，
+    不新增过滤维度，也不声称已解决多租户隔离；彻底方案是给历史表补
+    owner/scope 并在写入时回填真实实例主键，属独立改造。
+    """
+    db_path = str(paths.PRO_DATA_DIR / 'pro_history.db')
+    if not os.path.exists(db_path):
+        return None
+    sql = ("SELECT substr(inspect_time,1,10) AS day, instance_id, instance_name, "
+           "db_type, health_score, risk_count, risk_level FROM inspection_history")
+    params = []
+    if since:
+        # 直接用列范围比较（inspect_time 为 ISO 字符串），可用 idx_insp_history_time
+        # 索引；写成 substr(...) >= ? 会让索引失效并触发全表扫描。
+        sql += " WHERE inspect_time >= ?"
+        params.append(since)
+    try:
+        conn = sqlite3.connect(db_path, timeout=5)
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, params)]
+        conn.close()
+        return rows
+    except Exception:
+        return None
+
+
 @app.route('/api/home_stats', methods=['GET'])
 def api_home_stats():
     """首页综合统计：巡检次数、备份信息、基线条数、数据源等"""
@@ -12723,28 +12878,45 @@ def api_home_stats():
     try:
         # 运行时数据目录统一走中央路径：frozen 下为 <exe>/_internal/data，
         # 与各写入方（dal / server.inspect / db_history / 插件）保持一致。
-        # 1. 巡检次数（Pro版 data/history.db 中的 snapshots JOIN history_instances）
-        history_db = str(paths.DATA_DIR / 'history.db')
-        if os.path.exists(history_db):
-            conn = sqlite3.connect(history_db)
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT COUNT(*) as cnt FROM snapshots
-            """)
-            row = cur.fetchone()
-            result['inspection_total'] = row['cnt'] if row else 0
-
-            # 按 db_type 统计（snapshots 无 db_type，需 JOIN history_instances）
-            cur.execute("""
-                SELECT hi.db_type, COUNT(s.id) as cnt
-                FROM snapshots s
-                JOIN history_instances hi ON s.instance_key = hi.key
-                GROUP BY hi.db_type
-            """)
-            for r in cur.fetchall():
-                result['inspection_by_db'][r['db_type']] = r['cnt']
-            conn.close()
+        # 1. 巡检次数：统一取评分历史（pro_history.db::inspection_history）。
+        #    它是每次巡检的真实记录，且与首页巡检日历同源；旧 snapshots 只是趋势
+        #    快照（无数值评分），仅在评分历史库不存在时作为兼容回退。
+        score_rows = _inspection_score_rows()
+        if score_rows is not None:
+            result['inspection_total'] = len(score_rows)
+            try:
+                from modules.driver_registry import normalize_db_type
+            except Exception:
+                normalize_db_type = lambda v: (v or '').replace('_jdbc', '')
+            by_db = {}
+            for _r in score_rows:
+                # 库型判定必须先归一化：_jdbc 只是连接实现方式，hgdb 需映射到 highgo
+                try:
+                    _key = normalize_db_type(_r.get('db_type')) or 'unknown'
+                except Exception:
+                    _key = str(_r.get('db_type') or 'unknown')
+                by_db[_key] = by_db.get(_key, 0) + 1
+            result['inspection_by_db'] = dict(sorted(by_db.items()))
+            result['inspection_total_source'] = 'score_history'
+        else:
+            # 兼容回退：老版本 / 评分历史库缺失时沿用 snapshots 口径
+            history_db = str(paths.DATA_DIR / 'history.db')
+            if os.path.exists(history_db):
+                conn = sqlite3.connect(history_db)
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) as cnt FROM snapshots")
+                row = cur.fetchone()
+                result['inspection_total'] = row['cnt'] if row else 0
+                cur.execute("""
+                    SELECT hi.db_type, COUNT(s.id) as cnt
+                    FROM snapshots s
+                    JOIN history_instances hi ON s.instance_key = hi.key
+                    GROUP BY hi.db_type
+                """)
+                for r in cur.fetchall():
+                    result['inspection_by_db'][r['db_type']] = r['cnt']
+                conn.close()
 
         # 2. 服务器巡检次数
         server_db = str(paths.DATA_DIR / 'server_history.db')
@@ -12891,6 +13063,76 @@ def api_home_stats():
         pass
 
     return jsonify({'success': True, 'stats': result})
+
+
+@app.route('/api/home/inspection_calendar', methods=['GET'])
+def api_home_inspection_calendar():
+    """近一年巡检日历：按日聚合，色块取当日最差健康评分（保守口径）。
+
+    返回 items 只包含「有巡检」的日期，灰色空日由前端补齐；一次巡检都不会
+    落库时返回空 items，前端负责显示空态引导。
+    """
+    try:
+        days = max(30, min(366, int(request.args.get('days', 365))))
+    except (TypeError, ValueError):
+        days = 365
+    today = datetime.date.today()
+    since_day = today - datetime.timedelta(days=days - 1)
+    # 前端固定 53 周 × 7 天网格，起点对齐到周日；查询窗口与网格起点用同一个
+    # 值，否则网格最左一列会出现「当天有巡检却画成灰格」的边界遗漏。
+    since_day -= datetime.timedelta(days=(since_day.weekday() + 1) % 7)
+    since = since_day.isoformat()
+    rows = _inspection_score_rows(since)
+    if rows is None:
+        return jsonify({
+            'ok': False, 'error_code': 'SCORE_HISTORY_UNAVAILABLE',
+            'error': '评分历史不可用', 'items': [], 'days': days,
+            'since': since, 'until': today.isoformat(),
+        })
+
+    by_day = {}
+    for r in rows:
+        day = r.get('day')
+        if not day:
+            continue
+        try:
+            score = float(r.get('health_score') if r.get('health_score') is not None else 100)
+        except (TypeError, ValueError):
+            score = 100.0
+        item = by_day.get(day)
+        if item is None:
+            item = {
+                'date': day, 'count': 0, 'min_score': score,
+                '_sum': 0.0, 'risk_count': 0,
+                'worst_instance': '', 'worst_db_type': '',
+            }
+            by_day[day] = item
+        item['count'] += 1
+        item['_sum'] += score
+        try:
+            item['risk_count'] += int(r.get('risk_count') or 0)
+        except (TypeError, ValueError):
+            pass
+        # 当日多次巡检取最差一次定色，避免一次好巡检掩盖同日的严重异常
+        if score <= item['min_score']:
+            item['min_score'] = score
+            item['worst_instance'] = r.get('instance_name') or ''
+            item['worst_db_type'] = r.get('db_type') or ''
+
+    items = []
+    for day in sorted(by_day):
+        it = by_day[day]
+        it['avg_score'] = round(it['_sum'] / it['count'], 1)
+        it['min_score'] = round(it['min_score'], 1)
+        del it['_sum']
+        items.append(it)
+
+    return jsonify({
+        'ok': True, 'days': days, 'since': since, 'until': today.isoformat(),
+        'active_days': len(items),
+        'total_inspections': sum(i['count'] for i in items),
+        'items': items,
+    })
 
 
 @app.route('/api/data_management/files', methods=['GET'])
