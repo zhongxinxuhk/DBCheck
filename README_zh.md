@@ -9,19 +9,21 @@ cd DBCheck
 docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 ```
 
-本项目基于 RaccoonX / DBCheck，原作者为 fiyo (Jack Ge) <sdfiyon@gmail.com>，原仓库为 https://github.com/fiyo/DBCheck 。原项目介绍与署名保留如下。自动同步范围、冲突处理和启用步骤见 [.github/UPSTREAM_SYNC.md](.github/UPSTREAM_SYNC.md)。
+本项目基于上游 DBCheck（RaccoonX）开源项目，原作者为 fiyo (Jack Ge) <sdfiyon@gmail.com>，上游仓库为 https://github.com/fiyo/DBCheck 。本仓库在其基础上以 **DBPulse** 品牌独立演进，原项目署名与许可证信息完整保留。上游自动同步范围、冲突处理和启用步骤见 [.github/UPSTREAM_SYNC.md](.github/UPSTREAM_SYNC.md)。
 
 ---
 
-﻿# 🦝 RaccoonX
+# ⚡ DBPulse
 
-![RaccoonX Logo](snapshot/dbcheck_logo_info.png)
+<p align="center">
+  <img src="assets/web/dbpulse_logo.png" alt="DBPulse Logo" width="320" />
+</p>
 
 ### 开源智能数据库巡检与运维平台
 
-> **RaccoonX** 是一个开源、跨平台的数据库巡检与运维平台，面向 DBA、数据库工程师、DevOps 团队与基础设施团队。
+> **DBPulse** 是一个开源、跨平台的数据库巡检与运维平台，面向 DBA、数据库工程师、DevOps 团队与基础设施团队。
 >
-> 项目**原名 DBCheck**。
+> 基于 fiyo (Jack Ge) 的上游开源项目 **DBCheck** 演进。
 
 [![Version](https://img.shields.io/badge/Version-v26.11.5.1-blue.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
@@ -29,9 +31,8 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 [![AI](https://img.shields.io/badge/AI-Ollama%20%7C%20OpenAI-orange.svg)]()
 [![RAG](https://img.shields.io/badge/RAG-知识库-red.svg)]()
 [![WebUI](https://img.shields.io/badge/WebUI-Flask-success.svg)]()
-[![Docker Pulls](https://img.shields.io/docker/pulls/jackge12345/dbcheck?style=flat-square\&label=Docker%20Pulls\&cacheSeconds=300)](https://hub.docker.com/r/jackge12345/dbcheck)
-[![GitHub Stars](https://img.shields.io/github/stars/fiyo/DBCheck?style=flat-square\&label=Stars)](https://github.com/fiyo/DBCheck/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/fiyo/DBCheck?style=flat-square\&label=Forks)](https://github.com/fiyo/DBCheck/network/members)
+[![GitHub Stars](https://img.shields.io/github/stars/zhongxinxuhk/DBCheck?style=flat-square&label=Stars)](https://github.com/zhongxinxuhk/DBCheck/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/zhongxinxuhk/DBCheck?style=flat-square&label=Forks)](https://github.com/zhongxinxuhk/DBCheck/network/members)
 
 * 🗄️ **22 种数据库**
 * 🔍 **839 条巡检规则**
@@ -39,7 +40,7 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 * 🔌 **可扩展插件架构**
 * 📜 **Apache License 2.0**
 
-如果 RaccoonX 对你有帮助，欢迎给仓库点一个 ⭐。
+如果 DBPulse 对你有帮助，欢迎给仓库点一个 ⭐。
 
 一个 Star 能让更多数据库工程师发现这个项目，也是支持独立开源项目最简单的方式。
 
@@ -47,17 +48,18 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 
 ## 🌐 项目链接
 
-* **官网：** https://raccoonx.cn/
-* **GitHub：** https://github.com/fiyo/DBCheck
-* **Docker Hub：** https://hub.docker.com/r/jackge12345/dbcheck
+* **仓库：** https://github.com/zhongxinxuhk/DBCheck
+* **发行版：** https://github.com/zhongxinxuhk/DBCheck/releases
+* **容器镜像：** `ghcr.io/zhongxinxuhk/dbpulse`
 * **English：** [README.md](./README.md)
 * **中文：** [README_zh.md](./README_zh.md)
-* **Issues：** https://github.com/fiyo/DBCheck/issues
-* **Discussions：** https://github.com/fiyo/DBCheck/discussions
+* **Issues：** https://github.com/zhongxinxuhk/DBCheck/issues
+* **Discussions：** https://github.com/zhongxinxuhk/DBCheck/discussions
+* **上游项目：** https://github.com/fiyo/DBCheck
 
 ---
 
-# 🦝 为什么选择 RaccoonX？
+# ⚡ 为什么选择 DBPulse？
 
 数据库环境正变得越来越复杂。
 
@@ -77,9 +79,9 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 
 传统的数据库巡检往往依赖手工执行 SQL 脚本、检查操作系统资源、截图留存、分析慢 SQL，再人工撰写巡检报告。
 
-RaccoonX 希望把这些工作整合到一个开源平台里。
+DBPulse 希望把这些工作整合到一个开源平台里。
 
-### RaccoonX 帮助你：
+### DBPulse 帮助你：
 
 ```text
 连接
@@ -105,22 +107,22 @@ AI 辅助诊断
 
 # 📊 项目里程碑
 
-RaccoonX 前身是 **DBCheck**，在持续开发与社区反馈中不断演进。
+DBPulse 延续 **DBCheck** 的开源脉络，在持续开发与社区反馈中不断演进。
 
 | 里程碑             |         现状 |
 | ------------------ | -------------: |
-| GitHub Stars       |       **180+** |
-| GitHub Forks       |        **60+** |
+| 上游 Stars         |       **180+** |
+| 上游 Forks         |        **60+** |
 | 数据库类型             |        **22** |
 | 巡检规则               |       **839** |
 | 界面语言               |          **9** |
 | 开源协议               | **Apache 2.0** |
 
-Docker 镜像拉取量变动频繁，只由顶部徽标实时展示，不在此写死；它代表镜像拉取次数，不应解读为独立用户数或安装数。
+Stars 与 Forks 指上游 DBCheck 仓库的数据。容器镜像拉取量变动频繁，请以镜像仓库实时统计为准，不在此写死。
 
 ### ⭐ 帮我们到达下一个里程碑
 
-如果你用过 RaccoonX、测试过它、从它学到过东西，或者单纯觉得这个项目有意思：
+如果你用过 DBPulse、测试过它、从它学到过东西，或者单纯觉得这个项目有意思：
 
 **给它一个 Star。**
 
@@ -129,7 +131,7 @@ Docker 镜像拉取量变动频繁，只由顶部徽标实时展示，不在此�
         ↓
      持续构建
         ↓
-   ⭐ Star RaccoonX
+   ⭐ Star DBPulse
 ```
 
 ---
@@ -172,7 +174,7 @@ Docker 镜像拉取量变动频繁，只由顶部徽标实时展示，不在此�
 
 # 🗄️ 支持的数据库
 
-RaccoonX 目前支持 **22 种数据库与数据系统**。
+DBPulse 目前支持 **22 种数据库与数据系统**。
 
 | 数据库        | 驱动                    | 默认端口 | 说明                       |
 | ------------- | ----------------------- | -----------: | -------------------------- |
@@ -209,28 +211,17 @@ RaccoonX 目前支持 **22 种数据库与数据系统**。
 
 ## 🐳 Docker — 推荐
 
-Docker 是启动 RaccoonX 最简单的方式。
+Docker 是启动 DBPulse 最简单的方式。
 
-### Docker  Images
+### 🐳 容器镜像（GitHub Container Registry）
 ```bash
-docker pull jackge12345/dbcheck:latest
+docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 
 docker run -d -p 5003:5003 \
   -v dbcheck_data:/app/data \
   -v dbcheck_reports:/app/data/reports \
   -e LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/dmssl \
-  jackge12345/dbcheck:latest
-```
-
-### GitHub Container Registry
-```bash
-docker pull ghcr.io/fiyo/dbcheck:latest
-
-docker run -d -p 5003:5003 \
-  -v dbcheck_data:/app/data \
-  -v dbcheck_reports:/app/data/reports \
-  -e LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/dmssl \
-  ghcr.io/fiyo/dbcheck:latest
+  ghcr.io/zhongxinxuhk/dbpulse:latest
 ```
 
 打开：
@@ -245,7 +236,7 @@ http://localhost:5003
 
 ```bash
 curl -o deploy/docker-compose.yml \
-  https://raw.githubusercontent.com/fiyo/DBCheck/main/deploy/docker-compose.yml
+  https://raw.githubusercontent.com/zhongxinxuhk/DBCheck/main/deploy/docker-compose.yml
 
 docker compose -f deploy/docker-compose.yml up -d
 ```
@@ -264,15 +255,15 @@ docker compose -f deploy/docker-compose.yml up -d
 
 ```bash
 uname -m                                      # 期望 aarch64
-# 版本号见 Releases 页：https://github.com/fiyo/DBCheck/releases
+# 版本号见 Releases 页：https://github.com/zhongxinxuhk/DBCheck/releases
 VERSION=26.11.5.1
-docker pull jackge12345/dbcheck:$VERSION     # 建议固定版本号
+docker pull ghcr.io/zhongxinxuhk/dbpulse:$VERSION     # 建议固定版本号
 docker run -d -p 5003:5003 \
   --memory=2g --memory-swap=2g \
   -v dbcheck_data:/app/data \
   -v dbcheck_reports:/app/reports \
-  --name raccoonx \
-  jackge12345/dbcheck:$VERSION
+  --name dbpulse \
+  ghcr.io/zhongxinxuhk/dbpulse:$VERSION
 ```
 
 > **请使用固定版本号 tag**
@@ -311,7 +302,7 @@ docker run -d -p 5003:5003 \
 克隆仓库：
 
 ```bash
-git clone https://github.com/fiyo/DBCheck.git
+git clone https://github.com/zhongxinxuhk/DBCheck.git
 cd DBCheck
 ```
 
@@ -359,7 +350,7 @@ python web_ui.py
 
 # 🔍 数据库巡检
 
-RaccoonX 提供配置驱动的数据库巡检。
+DBPulse 提供配置驱动的数据库巡检。
 
 巡检引擎采集数据库元数据、配置、性能信息、资源使用与安全相关信息，并依据巡检规则进行评估。
 
@@ -399,7 +390,7 @@ RaccoonX 提供配置驱动的数据库巡检。
 
 # 📋 巡检覆盖
 
-RaccoonX 内置各数据库专属的巡检模板。
+DBPulse 内置各数据库专属的巡检模板。
 
 典型巡检维度包括：
 
@@ -425,7 +416,7 @@ RaccoonX 内置各数据库专属的巡检模板。
 
 # 📊 Word 巡检报告
 
-RaccoonX 可以自动生成结构化的 Word 巡检报告。
+DBPulse 可以自动生成结构化的 Word 巡检报告。
 
 典型的 Oracle 报告包含：
 
@@ -448,7 +439,7 @@ RaccoonX 可以自动生成结构化的 Word 巡检报告。
 
 # ⚠️ 智能风险分析
 
-RaccoonX 依据可配置的巡检规则评估采集到的信息。
+DBPulse 依据可配置的巡检规则评估采集到的信息。
 
 一条风险项可以包含：
 
@@ -494,7 +485,7 @@ TRUNCATE
 
 # 🐢 慢查询深度分析
 
-RaccoonX 可以从多个维度分析慢 SQL 或高代价 SQL。
+DBPulse 可以从多个维度分析慢 SQL 或高代价 SQL。
 
 分析内容可包括：
 
@@ -533,7 +524,7 @@ RaccoonX 可以从多个维度分析慢 SQL 或高代价 SQL。
 
 # 📊 索引健康分析
 
-RaccoonX 分析索引相关状况，包括：
+DBPulse 分析索引相关状况，包括：
 
 * 可能缺失的索引
 * 冗余索引
@@ -547,7 +538,7 @@ RaccoonX 分析索引相关状况，包括：
 
 # ⚙️ 配置基线
 
-RaccoonX 提供可配置的基线管理。
+DBPulse 提供可配置的基线管理。
 
 通过 Web UI 可以定义：
 
@@ -623,7 +614,7 @@ Web UI 为支持的数据库类型提供实时监控。
 
 监控大屏会根据各数据库类型的能力自动适配。
 
-对于不支持深度指标采集的数据库类型，RaccoonX 可以提供 TCP 层连通性信息，包括：
+对于不支持深度指标采集的数据库类型，DBPulse 可以提供 TCP 层连通性信息，包括：
 
 * 可达 / 不可达时间线
 * 可用率
@@ -655,7 +646,7 @@ Web UI 为支持的数据库类型提供实时监控。
 
 # 🤖 AI 智能诊断
 
-RaccoonX 支持 AI 辅助数据库诊断。
+DBPulse 支持 AI 辅助数据库诊断。
 
 AI 层可以分析巡检结果并给出：
 
@@ -675,7 +666,7 @@ ollama pull qwen3:30b
 ollama pull nomic-embed-text
 ```
 
-然后启动 RaccoonX：
+然后启动 DBPulse：
 
 ```bash
 python web_ui.py
@@ -699,7 +690,7 @@ python web_ui.py
 
 # 💬 AI 对话巡检
 
-RaccoonX 在 Web UI 中内置了 AI 交互面板。
+DBPulse 在 Web UI 中内置了 AI 交互面板。
 
 无需逐个手动翻阅巡检选项，用户可以用自然语言与巡检流程交互。
 
@@ -723,7 +714,7 @@ RaccoonX 在 Web UI 中内置了 AI 交互面板。
 
 # 📚 RAG 知识库
 
-RaccoonX 内置本地知识库能力。
+DBPulse 内置本地知识库能力。
 
 支持的文档类型包括：
 
@@ -756,7 +747,7 @@ AI 诊断
 
 # 🔌 插件架构
 
-RaccoonX 采用可扩展的插件架构。
+DBPulse 采用可扩展的插件架构。
 
 插件可以独立管理自己的：
 
@@ -825,7 +816,7 @@ docs/plugin/
 
 # 🖥️ 远程终端
 
-RaccoonX 内置基于 SSH 的远程终端。
+DBPulse 内置基于 SSH 的远程终端。
 
 支持的功能包括：
 
@@ -860,7 +851,7 @@ RaccoonX 内置基于 SSH 的远程终端。
 
 # ⏰ 定时巡检
 
-RaccoonX 支持基于 Cron 表达式的定时巡检任务。
+DBPulse 支持基于 Cron 表达式的定时巡检任务。
 
 常见调度包括：
 
@@ -886,7 +877,7 @@ Word 巡检报告可作为邮件附件发送。
 
 # 💾 容灾备份
 
-RaccoonX 内置容灾备份模块。
+DBPulse 内置容灾备份模块。
 
 支持的备份对象包括：
 
@@ -912,7 +903,7 @@ RaccoonX 内置容灾备份模块。
 
 # 📊 Oracle AWR 分析
 
-Oracle AWR HTML 报告可以上传到 RaccoonX。
+Oracle AWR HTML 报告可以上传到 DBPulse。
 
 系统可以解析关键性能信息并生成结构化的 Word 分析报告。
 
@@ -938,7 +929,7 @@ AI 辅助诊断
 
 # 💿 DM8 离线存储检查
 
-RaccoonX 支持在数据库实例未启动的情况下进行 DM8 存储巡检。
+DBPulse 支持在数据库实例未启动的情况下进行 DM8 存储巡检。
 
 可直接检查：
 
@@ -974,7 +965,7 @@ TRUNCATED（文件截断）
 
 # 📝 SQL 编辑器
 
-RaccoonX 在 Web UI 中内置了交互式 SQL 编辑器。
+DBPulse 在 Web UI 中内置了交互式 SQL 编辑器。
 
 功能包括：
 
@@ -990,7 +981,7 @@ RaccoonX 在 Web UI 中内置了交互式 SQL 编辑器。
 
 # 🌍 多语言支持
 
-RaccoonX 目前支持：
+DBPulse 目前支持：
 
 1. 中文
 2. English
@@ -1020,7 +1011,7 @@ python -m entrypoints.cli --lang en
 * 报告
 * AI 诊断标签
 
-RaccoonX 同时支持：
+DBPulse 同时支持：
 
 * 深色主题
 * 浅色主题
@@ -1029,9 +1020,9 @@ RaccoonX 同时支持：
 
 # 🔌 REST API
 
-RaccoonX 提供用于自动化与集成的 REST API。
+DBPulse 提供用于自动化与集成的 REST API。
 
-通过 API Key 认证，可以将 RaccoonX 集成到：
+通过 API Key 认证，可以将 DBPulse 集成到：
 
 * CI/CD
 * 监控平台
@@ -1091,7 +1082,7 @@ curl -X POST http://localhost:5003/api/v1/inspect \
 
 # 🧰 MCP Server
 
-RaccoonX 内置一个符合 **Model Context Protocol（MCP）** 的服务端，把巡检能力直接交给 Claude、Cursor、Codex 等支持 MCP 的客户端。
+DBPulse 内置一个符合 **Model Context Protocol（MCP）** 的服务端，把巡检能力直接交给 Claude、Cursor、Codex 等支持 MCP 的客户端。
 
 好处很直接：AI 不用你再手工贴 SQL 结果、截图、复制报告，它可以自己列出你的数据源、跑一轮巡检、看阻塞链、查索引健康，再给出结论。
 
@@ -1149,13 +1140,13 @@ Claude Desktop / Cursor 等客户端的 `mcpServers` 配置：
 
 # 📦 打包分发
 
-RaccoonX 可以使用 PyInstaller 打包为独立可执行文件。
+DBPulse 可以使用 PyInstaller 打包为独立可执行文件。
 
 ## Windows
 
 ```bash
 rd /s /q build dist __pycache__
-pyinstaller dbcheck.spec
+pyinstaller build/dbcheck_windows.spec
 cd dist
 dbcheck.exe
 ```
@@ -1196,7 +1187,7 @@ cd dist
 
 各数据库类型的巡检覆盖范围不同。
 
-RaccoonX 使用数据库专属模板，并在部分指标不可用时通过优雅降级机制处理。
+DBPulse 使用数据库专属模板，并在部分指标不可用时通过优雅降级机制处理。
 
 ---
 
@@ -1260,20 +1251,18 @@ sys as sysdba
 
 任何建议都不应盲目应用到生产环境。
 
-RaccoonX 提供巡检结果与建议处置动作。数据库工程师应在执行前结合实际环境审阅变更方案。
+DBPulse 提供巡检结果与建议处置动作。数据库工程师应在执行前结合实际环境审阅变更方案。
 
 ---
 
-# 🔄 从 DBCheck 到 RaccoonX
+# 🔄 品牌与脉络
 
-RaccoonX 前身是 **DBCheck**。
+DBPulse 是本仓库当前的产品名称，它基于 [fiyo (Jack Ge)](https://github.com/fiyo) 创建的上游开源项目 **DBCheck** 演进，并在其代码基础上以独立品牌、打包与运维能力持续发展。
 
 项目从一款数据库巡检工具起步，逐步扩展为更完整的数据库运维平台。
 
-**RaccoonX** 这个名字代表项目的下一个阶段。
-
 ```text
-DBCheck
+DBCheck（上游）
    │
    ├── 数据库巡检
    ├── 风险分析
@@ -1283,26 +1272,23 @@ DBCheck
    ├── 插件
    └── 自动化
           ↓
-      RaccoonX
+      DBPulse
 ```
 
-原 DBCheck 名称仍可能出现在：
+历史遗留的 DBCheck 标识为兼容性而保留，仍会出现在：
 
-* 仓库地址
-* Docker 镜像名
-* 既有部署配置
-* 历史文档
-* 既有脚本
+* Python 包名与模块名
+* 仓库地址（`zhongxinxuhk/DBCheck`）
+* Docker 卷名与既有部署配置
+* 历史文档与既有脚本
 
-随着 RaccoonX 品牌演进，这些将逐步统一。
-
-> **RaccoonX — 原名 DBCheck。**
+这些内部标识保持稳定以避免升级中断；所有面向用户的界面——产品名、Web UI、报告与发行包——统一使用 **DBPulse** 名称与 LOGO。
 
 ---
 
 # 🤝 参与贡献
 
-RaccoonX 是开源项目，欢迎各种形式的贡献。
+DBPulse 是开源项目，欢迎各种形式的贡献。
 
 你可以通过以下方式参与：
 
@@ -1314,7 +1300,7 @@ RaccoonX 是开源项目，欢迎各种形式的贡献。
 * 📝 完善文档
 * 🌍 完善翻译
 * 🔧 提交 Pull Request
-* 📢 把 RaccoonX 分享给其他数据库工程师
+* 📢 把 DBPulse 分享给其他数据库工程师
 
 提交 Pull Request 前，请先阅读：
 
@@ -1340,7 +1326,7 @@ CONTRIBUTING.md
 ```text
 数据库类型
 数据库版本
-RaccoonX 版本
+DBPulse 版本
 操作系统
 安装方式
 相关报错信息
@@ -1370,7 +1356,7 @@ RaccoonX 版本
 
 # 🙏 致谢
 
-RaccoonX 参考并借鉴了数据库社区的项目、工具与思路。
+DBPulse 参考并借鉴了数据库社区的项目、工具与思路。
 
 特别感谢以下项目：
 
@@ -1383,13 +1369,13 @@ RaccoonX 参考并借鉴了数据库社区的项目、工具与思路。
 
 # ❤️ 支持项目
 
-RaccoonX 基于 **Apache License 2.0** 开源。
+DBPulse 基于 **Apache License 2.0** 开源。
 
-如果 RaccoonX 对你有帮助，有很多方式可以支持这个项目。
+如果 DBPulse 对你有帮助，有很多方式可以支持这个项目。
 
 ### ⭐ 点个 Star
 
-一个 Star 能让更多数据库工程师发现 RaccoonX。
+一个 Star 能让更多数据库工程师发现 DBPulse。
 
 ```text
 使用它
@@ -1404,7 +1390,7 @@ RaccoonX 基于 **Apache License 2.0** 开源。
   ↓
 更多反馈
   ↓
-更好的 RaccoonX
+更好的 DBPulse
 ```
 
 ### 🐛 报告 Bug
@@ -1421,7 +1407,7 @@ RaccoonX 基于 **Apache License 2.0** 开源。
 
 ### 📢 分享项目
 
-如果你认识可能用得上 RaccoonX 的 DBA 或数据库工程师，把项目分享出去就是最有价值的支持之一。
+如果你认识可能用得上 DBPulse 的 DBA 或数据库工程师，把项目分享出去就是最有价值的支持之一。
 
 ---
 
@@ -1437,11 +1423,11 @@ RaccoonX 基于 **Apache License 2.0** 开源。
 > 有人注意到了它。
 > 有人相信它值得继续做下去。
 
-感谢每一位通过捐赠、Star、Issue、Pull Request、建议、文章、测试，或只是向另一位工程师提起 RaccoonX 来支持项目的人。
+感谢每一位通过捐赠、Star、Issue、Pull Request、建议、文章、测试，或只是向另一位工程师提起 DBPulse 来支持项目的人。
 
-<img src="snapshot/pay.png" alt="RaccoonX 赞助二维码" width="800" />
+<img src="snapshot/pay.png" alt="DBPulse 赞助二维码" width="800" />
 
-<img src="snapshot/dbcheck-badge-800w.png" alt="RaccoonX 支持者徽章" width="800" />
+<img src="snapshot/dbcheck-badge-800w.png" alt="DBPulse 支持者徽章" width="800" />
 
 > 赞助时请备注姓名或昵称 ❤️
 
@@ -1468,7 +1454,7 @@ RaccoonX 基于 **Apache License 2.0** 开源。
 
 # 📜 开源协议
 
-RaccoonX 是基于以下协议的开源软件：
+DBPulse 是基于以下协议的开源软件：
 
 **Apache License 2.0**
 
@@ -1486,13 +1472,13 @@ LICENSE
 
 本项目中提及的名称、徽标、商标与数据库技术归其各自所有者所有。
 
-它们在 RaccoonX 中的出现仅表示与对应技术的兼容或集成，不构成任何背书、从属或合作关系。
+它们在 DBPulse 中的出现仅表示与对应技术的兼容或集成，不构成任何背书、从属或合作关系。
 
 ---
 
-# 🦝 持续构建
+# ⚡ 持续构建
 
-RaccoonX 不是由一个大团队打造的。
+DBPulse 不是由一个大团队打造的。
 
 它靠代码、反馈、Issue、想法、测试、文档、贡献，以及每一位选择使用它的人成长。
 
@@ -1500,14 +1486,15 @@ RaccoonX 不是由一个大团队打造的。
 一次拉取一小步，
 我们持续构建。
 
-🦝 RaccoonX
+⚡ DBPulse
 ```
 
-**感谢你成为 RaccoonX 社区的一员。**
+**感谢你成为 DBPulse 社区的一员。**
 
 ---
 
-**作者：** [Jack Ge](https://github.com/fiyo)
-**项目：** RaccoonX — 原名 DBCheck
-**官网：** https://raccoonx.cn/
+**上游作者：** [Jack Ge](https://github.com/fiyo)
+**项目：** DBPulse（数据库智能巡检系统）
+**仓库：** https://github.com/zhongxinxuhk/DBCheck
+**上游项目：** https://github.com/fiyo/DBCheck
 **邮箱：** [sdfiyon@gmail.com](mailto:sdfiyon@gmail.com)
