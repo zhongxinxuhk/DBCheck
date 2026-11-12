@@ -15,6 +15,8 @@ DBCheck PDF 导出模块
 
 import os
 import sys
+import shutil
+import subprocess
 from xml.sax.saxutils import escape as _xml_escape
 
 

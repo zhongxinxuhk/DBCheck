@@ -29,7 +29,7 @@ class MySQLBackupEngine(BaseBackupEngine):
 
     def backup(self, instance_id: str, conn_info: Dict[str, Any],
                backup_type: str = "full", databases: List[str] = None,
-               **kwargs) -> BackupResult:
+               tables: List[str] = None, **kwargs) -> BackupResult:
         """
         执行 MySQL 备份
         参数:
@@ -40,8 +40,9 @@ class MySQLBackupEngine(BaseBackupEngine):
             'docker': {'container': 'mysql-container'},
             'ssh': {'host','port','user','key_file'}
           }
-          backup_type: 'full' | 'schema'
+          backup_type: 'full' | 'schema' | 'tables'
           databases: 指定数据库列表，不传则备份所有
+          tables: 表级备份列表，元素为 'db.table'（backup_type='tables' 时生效）
         """
         start = time.time()
 

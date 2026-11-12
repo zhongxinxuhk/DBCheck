@@ -1296,6 +1296,14 @@ def _get_sqlserver_total_memory_gb():
     """获取主机总内存（GB）"""
     return _get_total_memory_gb()
 
+def _get_sqlserver_cpu_cores():
+    """获取 CPU 核心数（psutil 不可用时回退 4 核）"""
+    try:
+        import psutil
+        return psutil.cpu_count() or 4
+    except Exception:
+        return 4
+
 SQLSERVER_BASELINE_RULES = [
     ('max server memory (MB)',
      "SELECT CAST(value AS INT) FROM sys.configurations WHERE name = 'max server memory (MB)';",
@@ -1309,7 +1317,7 @@ SQLSERVER_BASELINE_RULES = [
      '并行开销阈值，建议 25-50'),
     ('max degree of parallelism',
      "SELECT CAST(value AS INT) FROM sys.configurations WHERE name = 'max degree of parallelism';",
-     lambda conn, ctx: max(4, psutil.cpu_count() // 2),
+     lambda conn, ctx: max(4, _get_sqlserver_cpu_cores() // 2),
      '个',
      '最大并行度，建议 CPU 核心数的一半'),
     ('fill factor (%)',

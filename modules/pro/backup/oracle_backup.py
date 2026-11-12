@@ -108,7 +108,7 @@ class OracleBackupEngine(BaseBackupEngine):
                 if "ORA-39002" in result.stderr or "directory" in result.stderr.lower():
                     logger.info("Directory 不存在，尝试创建...")
                     self._create_dump_dir(host, port, user, password,
-                                          service_name, dump_dir_name,
+                                          service_name, "DBCheck_DUMP",
                                           dump_dir_path, sysdba)
                     # 重试
                     result = self._run_backup_cmd(cmd, conn_info, timeout=7200)

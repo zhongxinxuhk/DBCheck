@@ -1370,8 +1370,8 @@ def generate_offline_report_word(result: dict, output_path: str = '') -> str:
                                         style='Table Grid')
                 _style_header_row(tbs_tbl, ['表空间名', '数据文件路径'])
                 r_idx = 1
-                for tbs_name, paths in tbs_map.items():
-                    for path in paths:
+                for tbs_name, tbs_paths in tbs_map.items():
+                    for path in tbs_paths:
                         _style_data_cell(tbs_tbl.rows[r_idx].cells[0], tbs_name)
                         _style_data_cell(tbs_tbl.rows[r_idx].cells[1], path)
                         r_idx += 1
