@@ -1,5 +1,5 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 #
 # 将 DBPulse 注册为 Windows 后台服务（开机自启、无窗口、崩溃自动重启）
 #

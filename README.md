@@ -26,7 +26,8 @@ This project is built on the upstream DBCheck (RaccoonX) open-source project by 
 > Built on the upstream open-source **DBCheck** project by fiyo (Jack Ge).
 
 [![Version](https://img.shields.io/badge/Version-v26.11.5.1-blue.svg)]()
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
+[![License: PolyForm NC 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg)](./LICENSE-PolyForm-Noncommercial-1.0.0.txt)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)]()
 [![AI](https://img.shields.io/badge/AI-Ollama%20%7C%20OpenAI-orange.svg)]()
 [![RAG](https://img.shields.io/badge/RAG-Knowledge%20Base-red.svg)]()
@@ -38,7 +39,8 @@ This project is built on the upstream DBCheck (RaccoonX) open-source project by 
 > 🔍 **839 inspection rules**
 > 🤖 **AI-assisted diagnostics**
 > 🔌 **Extensible plugin architecture**
-> 📜 **Apache License 2.0**
+> 📜 **PolyForm Noncommercial 1.0.0 + commercial license** (self-developed portions)
+> ⚖️ **Apache 2.0** (upstream DBCheck code)
 
 If DBPulse is useful to you, consider giving the repository a ⭐.
 
@@ -116,7 +118,7 @@ DBPulse continues the **DBCheck** lineage and evolves through continuous develop
 | Database types     |        **22** |
 | Inspection rules   |       **839** |
 | Languages          |          **9** |
-| License            | **Apache 2.0** |
+| License            | **PolyForm NC 1.0.0 / Apache 2.0** |
 
 Stars and forks refer to the upstream DBCheck repository. Container image pull counts change frequently; use the registry statistics for live numbers instead of hard-coding them here.
 
@@ -1374,7 +1376,9 @@ We appreciate the work of everyone who contributes to the database and open-sour
 
 # ❤️ Support the Project
 
-DBPulse is released under the **Apache License 2.0**.
+DBPulse's self-developed portions are released under the **PolyForm Noncommercial 1.0.0**
+license, with a **commercial license** available on written request. Upstream DBCheck code
+by fiyo (Jack Ge) remains under the **Apache License 2.0**.
 
 If DBPulse has been useful to you, there are many ways to support the project.
 
@@ -1418,19 +1422,34 @@ If you know a DBA or database engineer who might find DBPulse useful, sharing th
 
 # 📜 License
 
-DBPulse is open-source software licensed under the:
+DBPulse uses a **split license**, because it is built on the upstream DBCheck
+(RaccoonX) open-source project:
 
-**Apache License 2.0**
+| Portion | License |
+| --- | --- |
+| Self-developed code (files marked `SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0`) | **PolyForm Noncommercial 1.0.0** for noncommercial use, **commercial license** on written request |
+| Upstream DBCheck code and modified upstream files (marked `SPDX-License-Identifier: Apache-2.0`) | **Apache License 2.0** |
 
 See:
 
 ```text
-LICENSE
+LICENSE-PolyForm-Noncommercial-1.0.0.txt   # noncommercial terms (self-developed parts)
+LICENSE-COMMERCIAL.md                      # commercial licensing and how to request it
+LICENSE                                    # Apache License 2.0 (upstream parts)
+NOTICE                                     # attribution for both
 ```
 
-for the complete license text.
+For the self-developed portions you may use, modify and distribute the software
+for any noncommercial purpose — personal study, research, experiment, hobby
+projects, and use by charitable, educational, public-research, public-safety,
+health, environmental or government organizations — under PolyForm
+Noncommercial 1.0.0. Commercial use (production use in a for-profit
+organization, SaaS/hosted service, bundling, paid delivery, white-label/OEM, or
+any other revenue-generating use) requires a separate written commercial
+license from sec.hn.cn (X.U zx) &lt;xuzhongxin@sec.hn.cn&gt;.
 
-You are free to use, modify, distribute and build upon the project according to the terms of the Apache License 2.0.
+Upstream DBCheck code stays under the Apache License 2.0, and all upstream
+copyright, branding and attribution notices remain intact.
 
 ---
 

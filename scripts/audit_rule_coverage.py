@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """规则可执行率审计：判定每条规则是否"接线 + 取数键齐备"。
 

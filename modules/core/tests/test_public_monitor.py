@@ -1,5 +1,5 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """Public monitor reads retain authenticated context and reject anonymous writes."""
 

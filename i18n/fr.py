@@ -2618,7 +2618,7 @@ FR.update({
     "webui.pro_history": "Historique d'inspection",
     "webui.pro_import": "Importer",
     "webui.pro_instance_manage": "Gestion des instances",
-    "webui.pro_license_free": "Apache License 2.0 · édition gratuite open-source",
+    "webui.pro_license_free": "PolyForm Noncommercial 1.0.0 · gratuite pour un usage non commercial",
     "webui.pro_license_status": "État de la licence",
     "webui.pro_no_history": "Aucun enregistrement d'inspection",
     "webui.pro_no_instance": "Aucune instance pour le moment. Ajoutez-en une avec le bouton ci-dessus",

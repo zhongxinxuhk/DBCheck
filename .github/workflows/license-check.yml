@@ -8,7 +8,7 @@ on:
 
 jobs:
   license-check:
-    name: Verify Apache-2.0 license headers
+    name: Verify license headers (Apache-2.0 upstream / PolyForm NC self-developed)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

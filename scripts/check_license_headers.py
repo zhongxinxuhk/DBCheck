@@ -20,10 +20,14 @@ What it does
   licensed and must keep its own header).
 * Accepts the original upstream header or the two-line copyright/SPDX header
   used by completely new local source files. Files carrying an upstream
-  copyright must retain its author email.
-* Verifies that the root ``LICENSE`` file references the Apache License and that
-  a root ``NOTICE`` file exists.
-* With ``--fix`` it rewrites/inserts the canonical three-line Apache 2.0 header
+  copyright must retain its author email and stay under Apache-2.0 (Apache 2.0
+  section 4); files without upstream code use the local PolyForm Noncommercial
+  1.0.0 license.
+* Verifies that the root ``LICENSE`` file references the Apache License, that a
+  root ``NOTICE`` file exists, and that the self-developed portions ship their
+  PolyForm Noncommercial 1.0.0 text plus the commercial-license note.
+* With ``--fix`` it rewrites/inserts the canonical header (Apache 2.0 for
+  upstream-derived files, PolyForm Noncommercial 1.0.0 for local-only files)
   into every non-compliant first-party file.
 
 Exit codes
@@ -85,10 +89,25 @@ APACHE_HEADER_LINES = [
     "# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck",
 ]
 
+LOCAL_SPDX = "PolyForm-Noncommercial-1.0.0"
+
 LOCAL_HEADER_LINES = [
     "# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>",
-    "# SPDX-License-Identifier: Apache-2.0",
+    f"# SPDX-License-Identifier: {LOCAL_SPDX}",
 ]
+
+LOCAL_LICENSE_FILE = "LICENSE-PolyForm-Noncommercial-1.0.0.txt"
+COMMERCIAL_LICENSE_FILE = "LICENSE-COMMERCIAL.md"
+
+# A PolyForm SPDX line placed in a comment/template header. Upstream-derived
+# files must never carry it, so upstream code cannot be relicensed by appending
+# a local attribution block. Anchored to comment-style header lines so that a
+# mere string constant mentioning the license does not trigger it.
+LOCAL_SPDX_RE = re.compile(
+    r"(?m)^[ \t]*(?:#|//|rem\s|/\*|\*|<!--)?[ \t]*SPDX-License-Identifier:[ \t]*PolyForm",
+    re.IGNORECASE,
+)
+APACHE_SPDX_LINE = "SPDX-License-Identifier: Apache-2.0"
 
 # Markers (lower-cased) that, when present in a file header together with a
 # copyright holder OTHER than fiyo, indicate a genuine third-party license that
@@ -160,17 +179,53 @@ def collect_first_party_py_files() -> list[Path]:
     return results
 
 
+UPSTREAM_MARKER_RE = re.compile(
+    r"(?:Copyright 2025-2026 fiyo|fiyo \(Jack Ge\)|Author: fiyo)", re.IGNORECASE
+)
+
+
+def header_region(text: str) -> str:
+    """Return the leading region of *text* where license headers live."""
+    return "\n".join(text.split("\n", 80)[:80])
+
+
+def is_upstream_derived(text: str) -> bool:
+    """True when the file header carries upstream fiyo attribution.
+
+    Only the header region is inspected so that incidental mentions of the
+    upstream author (for example inside fixtures or test data) do not force a
+    self-developed file onto Apache-2.0.
+    """
+    return bool(UPSTREAM_MARKER_RE.search(header_region(text)))
+
+
 def file_is_compliant(path: Path) -> bool:
-    """Accept local-only headers and preserve genuine upstream attribution."""
+    """Accept local-only headers and preserve genuine upstream attribution.
+
+    Upstream-derived files must keep ``Apache-2.0`` plus the fiyo copyright
+    email; files without upstream code must use the local PolyForm
+    Noncommercial header.
+    """
     try:
         text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return False
-    has_spdx = "SPDX-License-Identifier: Apache-2.0" in text
-    has_copyright = bool(re.search(r"(?m)^#\s*Copyright 2025-2026 fiyo", text))
-    has_email = "sdfiyon@gmail.com" in text
     has_local = LOCAL_HEADER_LINES[0] in text
-    return has_spdx and (has_email if has_copyright else has_local)
+    if is_upstream_derived(text):
+        # Upstream-derived file: Apache-2.0 plus the upstream author email are
+        # mandatory (Apache 2.0 section 4 and AGENTS.md sections 1-8), and no
+        # PolyForm SPDX line may be attached to upstream code.
+        head = header_region(text)
+        return (
+            APACHE_SPDX_LINE in head
+            and "sdfiyon@gmail.com" in head
+            and not LOCAL_SPDX_RE.search(text)
+        )
+    return (
+        f"SPDX-License-Identifier: {LOCAL_SPDX}" in text
+        and has_local
+        and APACHE_SPDX_LINE not in header_region(text)
+    )
 
 
 def find_license_block(lines: list[str], start: int):
@@ -256,9 +311,18 @@ def fix_file(rel_path: Path) -> bool:
         preamble.append(shebang)
     if coding is not None:
         preamble.append(coding)
-    has_upstream_marker = re.search(r"(?m)^#.*(?:Copyright 2025-2026 fiyo|Author: fiyo|sdfiyon@gmail\.com)", text)
+    has_upstream_marker = is_upstream_derived(text)
     is_local = not has_upstream_marker
-    preamble.extend(LOCAL_HEADER_LINES if is_local else APACHE_HEADER_LINES)
+    if is_local:
+        preamble.extend(LOCAL_HEADER_LINES)
+        # Keep any existing local author line so attribution is never reduced.
+        if block is not None:
+            block_text = "\n".join(lines[block[0]:block[1]])
+            author = re.search(r"(?m)^#\s*Author: sec\.hn\.cn.*$", block_text)
+            if author:
+                preamble.append(author.group(0))
+    else:
+        preamble.extend(APACHE_HEADER_LINES)
     preamble.append("")  # single trailing blank line separating header from body
 
     if block is not None:
@@ -292,6 +356,18 @@ def check_root_license_and_notice() -> list[str]:
             )
     if not (REPO_ROOT / "NOTICE").is_file():
         problems.append("Missing root NOTICE file")
+
+    local_license = REPO_ROOT / LOCAL_LICENSE_FILE
+    if not local_license.is_file():
+        problems.append(f"Missing self-developed license file {LOCAL_LICENSE_FILE}")
+    else:
+        text = local_license.read_text(encoding="utf-8-sig").lower()
+        if "polyform noncommercial license 1.0.0" not in text:
+            problems.append(
+                f"{LOCAL_LICENSE_FILE} does not contain the PolyForm Noncommercial 1.0.0 text"
+            )
+    if not (REPO_ROOT / COMMERCIAL_LICENSE_FILE).is_file():
+        problems.append(f"Missing commercial-license note {COMMERCIAL_LICENSE_FILE}")
     return problems
 
 
@@ -302,12 +378,16 @@ def check_root_license_and_notice() -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     global REPO_ROOT
     parser = argparse.ArgumentParser(
-        description="Check/fix Apache-2.0 license headers in first-party *.py files."
+        description=(
+            "Check/fix license headers in first-party *.py files "
+            "(Apache-2.0 for upstream-derived files, PolyForm Noncommercial 1.0.0 "
+            "for self-developed files)."
+        )
     )
     parser.add_argument(
         "--fix",
         action="store_true",
-        help="Insert/replace the Apache-2.0 header in non-compliant files.",
+        help="Insert/replace the applicable license header in non-compliant files.",
     )
     parser.add_argument(
         "--root",
@@ -338,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.fix:
         if fixed:
-            print(f"FIX: wrote Apache-2.0 header to {len(fixed)} file(s):")
+            print(f"FIX: wrote license headers to {len(fixed)} file(s):")
             for f in fixed:
                 print(f"  + {f}")
         else:

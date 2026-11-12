@@ -60,11 +60,27 @@ Derivative Work Attribution / 衍生创作署名
 ==============================================================================
 
 DBPulse derivative-work portions contributed by sec.hn.cn (X.U zx):
-  SPDX-License-Identifier: Apache-2.0
-  Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-  Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+  Newly created files (no upstream code):
+    SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+    Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+    Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+    License text : LICENSE-PolyForm-Noncommercial-1.0.0.txt
+    Commercial   : LICENSE-COMMERCIAL.md (written license required for
+                   commercial use; contact xuzhongxin@sec.hn.cn)
+
+  Upstream-derived files (contain fiyo code, incl. modified upstream files):
+    SPDX-License-Identifier: Apache-2.0
+    Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+    Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 This section is ADDITIVE. It does not replace, alter or weaken the original
 copyright, branding and attribution of fiyo (Jack Ge) <sdfiyon@gmail.com>
 stated above, nor the Apache License 2.0 terms. All original headers and
 notices must remain intact.
+
+Dual licensing of the self-developed portions: noncommercial purposes are
+permitted under PolyForm Noncommercial 1.0.0; commercial use (production use in
+a for-profit organization, SaaS/hosted service, bundling, paid delivery,
+white-label/OEM, or other revenue-generating use) requires a separate written
+commercial license. Files that contain or modify upstream fiyo code remain
+under the Apache License 2.0 as required by that license.

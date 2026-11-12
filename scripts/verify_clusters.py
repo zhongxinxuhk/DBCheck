@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """Isolated regressions for cluster identity, partial failures and ownership."""
 

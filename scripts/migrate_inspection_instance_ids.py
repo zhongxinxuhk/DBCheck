@@ -1,5 +1,5 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """把巡检历史里遗留的 md5(db_type-host-port) instance_id 收敛到实例主键。
 

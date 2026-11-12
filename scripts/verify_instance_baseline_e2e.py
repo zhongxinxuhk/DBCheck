@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """
 端到端验证「实例自身基线」是否真的被规则引擎消费。

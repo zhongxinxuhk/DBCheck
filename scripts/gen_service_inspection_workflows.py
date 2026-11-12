@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """
 生成《数据库运维服务清单》配套的巡检工作流（日 / 周 / 月 / 健康检查 / 异常闭环）。

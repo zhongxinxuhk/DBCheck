@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """DB-API 2.0 取数兼容层。
 

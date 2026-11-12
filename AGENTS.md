@@ -5,14 +5,23 @@
 本节优先于下方历史条款中的新增文件署名和页面展示要求。
 
 - 完全新增的自研代码文件，文件头只使用以下两行，按语言采用对应注释格式。
+- 自研部分采用**双授权**：非商业用途按 **PolyForm Noncommercial 1.0.0** 免费许可，
+  商业用途需另行取得**书面商业授权**。
+- **许可证分界**：完全新增、不含上游代码的自研文件使用 `PolyForm-Noncommercial-1.0.0`；
+  含上游 fiyo 代码或基于上游文件修改的文件，`SPDX-License-Identifier` 必须保持
+  `Apache-2.0`（Apache License 2.0 第 4 条要求），不得改为 PolyForm。
 - 页面及自研模块生成的报告不展示作者署名与版权页脚。
 - 上游已有文件按真实来源保留原有版权信息，修改部分可以注明本地创作信息。
 - 检查与自动修复脚本必须识别自研文件的两行文件头。
 
 ```text
 Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-SPDX-License-Identifier: Apache-2.0
+SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 ```
+
+自研部分的授权文件：`LICENSE-PolyForm-Noncommercial-1.0.0.txt`（完整条款）、
+`LICENSE-COMMERCIAL.md`（商业授权说明与申请方式）。上游 Apache 2.0 仍由根目录
+`LICENSE`、`NOTICE` 承载，本节的授权调整只作用于完全自研文件，不改变上游权利。
 
 ---
 
@@ -67,7 +76,11 @@ SPDX-License-Identifier: Apache-2.0
 ```
 非第一仓库代码文件或代码段在开发时必须在顶部携带开发者标头：
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+说明：完全新增、不含任何上游代码的自研文件按文首「当前自研文件与页面署名规则」
+使用两行 `PolyForm-Noncommercial-1.0.0` 头；含上游代码的文件保持本节的三行
+`Apache-2.0` 头。本节对 fiyo 署名、品牌与上游授权的保护不因自研部分换证而改变。
 
 ### 5. UI 与文档中的署名
 
@@ -182,10 +195,14 @@ CI runs the same check automatically; a failure turns the PR red.
 第一方源文件与前端模板时，除保留原 fiyo 三行外，**必须追加**以下三行创作署名：
 
 ```python
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 ```
+
+许可证标识按文件实际构成选择：完全新增的自研文件用
+`PolyForm-Noncommercial-1.0.0`；含上游 fiyo 代码或被修改的上游文件必须保持
+`Apache-2.0`，此时追加署名块的首行写 `Apache-2.0`。
 
 ### 9.1 放置位置（重要）
 
@@ -208,3 +225,14 @@ Derivative-work portions of this repository are authored by
 substantively modifies first-party source files or frontend templates MUST append the three
 attribution lines above, in addition to — never instead of — the fiyo header.
 See 9.1 for placement rules that survive `--fix`.
+
+### 9.3 自研部分许可证 / Licensing of Self-Developed Portions
+
+Newly created files that contain no upstream code are licensed under
+**PolyForm Noncommercial 1.0.0** (`LICENSE-PolyForm-Noncommercial-1.0.0.txt`) for
+noncommercial use, with a separate **commercial license** available on written
+request (`LICENSE-COMMERCIAL.md`). Files that contain upstream fiyo (Jack Ge) code,
+including modified upstream files, stay under the **Apache License 2.0** — this is
+mandated by Apache 2.0 section 4 and by sections 1–8 above. Relicensing the
+self-developed files does not alter, weaken or remove the upstream copyright,
+headers, branding or NOTICE text.

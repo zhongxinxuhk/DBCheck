@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """
 校验工作流 ``match_title`` 与巡检模板章节标题的一致性。

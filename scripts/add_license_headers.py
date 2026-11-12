@@ -40,6 +40,12 @@ COPYRIGHT_LINE = "# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>"
 AUTHOR_LINE = "# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck"
 HEADER_LINES = [SPDX_LINE, COPYRIGHT_LINE, AUTHOR_LINE]
 
+# Self-developed files carry a two-line PolyForm Noncommercial header and must
+# never be rewritten to Apache-2.0 by this tool (Apache 2.0 only applies to
+# upstream-derived files).
+LOCAL_COPYRIGHT_LINE = "# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>"
+LOCAL_SPDX_MARKER = "SPDX-License-Identifier: PolyForm"
+
 # Default repository root = parent directory of the ``scripts/`` folder.
 DEFAULT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -48,6 +54,10 @@ DEFAULT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # third-party vendored code, legal/copyright materials and runtime data dirs.
 EXCLUDE_DIR_FRAGMENTS = {
     ".git",
+    ".venv",
+    ".idea",
+    ".pytest_cache",
+    ".codex",
     "__pycache__",
     "node_modules",
     "dist",
@@ -131,6 +141,12 @@ def has_target_header(content: str) -> bool:
     return False
 
 
+def has_local_header(content: str) -> bool:
+    """True if the file header carries the self-developed PolyForm license."""
+    head = "\n".join(content.splitlines()[:80])
+    return LOCAL_COPYRIGHT_LINE in head and LOCAL_SPDX_MARKER in head
+
+
 def normalize_header(content: str) -> Tuple[str, bool]:
     """Return ``(new_content, changed)`` with the Apache header applied.
 
@@ -202,6 +218,7 @@ def add_headers(root: str, dry_run: bool = False) -> dict:
     """
     changed_files: List[str] = []
     skipped_ok = 0
+    skipped_local = 0
     processed = 0
     for full, rel in iter_target_files(root):
         processed += 1
@@ -214,6 +231,11 @@ def add_headers(root: str, dry_run: bool = False) -> dict:
 
         if has_target_header(content):
             skipped_ok += 1
+            continue
+
+        if has_local_header(content):
+            # Self-developed file: keep its PolyForm Noncommercial header.
+            skipped_local += 1
             continue
 
         new_content, changed = normalize_header(content)
@@ -230,6 +252,7 @@ def add_headers(root: str, dry_run: bool = False) -> dict:
         "processed": processed,
         "changed": len(changed_files),
         "unchanged": skipped_ok,
+        "skipped_local": skipped_local,
         "changed_files": changed_files,
         "dry_run": dry_run,
     }
@@ -255,6 +278,7 @@ def main(argv: List[str] | None = None) -> int:
     action = "would change" if args.dry_run else "changed"
     print(f"Scanned first-party .py files : {summary['processed']}")
     print(f"Already correct (skipped)     : {summary['unchanged']}")
+    print(f"Self-developed (kept PolyForm): {summary['skipped_local']}")
     print(f"Files {action}               : {summary['changed']}")
     for rel in summary["changed_files"]:
         print(f"  - {rel}")
