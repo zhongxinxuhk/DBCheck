@@ -122,19 +122,42 @@
     $('service-instance').replaceChildren(new Option('逐节点采集',''));
     for(const source of sources) {
       const row = document.createElement('div');
-      row.className = 'toolbar';
+      row.className = 'member-row';
       const label = document.createElement('label');
-      const check = document.createElement('input');check.type='checkbox';check.dataset.instanceId=source.id;check.checked=!!existing[source.id];
-      label.append(check,document.createTextNode(`${source.name} · ${source.host}:${source.port} · ${source.service_name || source.database || ''}`));
-      const role = document.createElement('select');role.dataset.roleFor=source.id;role.style.width='130px';
+      label.className = 'member-label';
+      const check = document.createElement('input');
+      check.type='checkbox';check.className='member-check';check.dataset.instanceId=source.id;
+      check.checked=!!existing[source.id];
+      const info = document.createElement('span');
+      info.className = 'member-info';
+      const name = document.createElement('strong');
+      name.textContent = source.name;
+      const meta = document.createElement('small');
+      meta.textContent = `${source.host}:${source.port} · ${source.service_name || source.database || '—'}`;
+      info.append(name,meta);
+      label.append(check,info);
+      const controls = document.createElement('div');
+      controls.className = 'member-controls';
+      const role = document.createElement('select');role.dataset.roleFor=source.id;
       for(const value of ['member','primary','standby','unknown']) role.add(new Option(labels[value],value));
       role.value = existing[source.id]?.expected_role || 'member';
       const enabled = document.createElement('input');enabled.type='checkbox';enabled.dataset.enabledFor=source.id;enabled.checked=existing[source.id]?.enabled !== false;
-      const enabledLabel = document.createElement('label');enabledLabel.append(enabled,document.createTextNode('启用'));
-      row.append(label,role,enabledLabel);$('member-options').append(row);
+      const enabledLabel = document.createElement('label');
+      enabledLabel.className = 'member-enabled';
+      enabledLabel.append(enabled,document.createTextNode('启用'));
+      controls.append(role,enabledLabel);
+      row.append(label,controls);
+      row.classList.toggle('selected',check.checked);
+      check.onchange=()=>row.classList.toggle('selected',check.checked);
+      $('member-options').append(row);
       $('service-instance').add(new Option(source.name,source.id));
     }
-    if (!sources.length) $('member-options').textContent = '请先在数据源管理中添加此系列的数据库节点。';
+    if (!sources.length) {
+      const empty = document.createElement('div');
+      empty.className = 'member-empty';
+      empty.textContent = '请先在数据源管理中添加此系列的数据库节点。';
+      $('member-options').append(empty);
+    }
   }
   function edit(cluster=null) {
     state.editing = cluster;
@@ -148,16 +171,17 @@
     const members = Object.fromEntries((cluster?.spec.members || []).map(row=>[row.instance_id,row]));
     memberOptions(members);
     $('service-instance').value = cluster?.spec.service_instance_id || '';
-    $('form-message').textContent='';$('cluster-dialog').showModal();
+    $('form-message').textContent='';$('cluster-dialog').showModal();$('cluster-name').focus();
   }
   $('cluster-kind').onchange=()=>memberOptions();
   $('new-cluster').onclick=()=>edit();
   $('cancel-cluster').onclick=()=>$('cluster-dialog').close();
+  $('close-cluster').onclick=()=>$('cluster-dialog').close();
   $('cluster-form').onsubmit=async event=>{
     event.preventDefault();$('save-cluster').disabled=true;$('form-message').textContent='';
     const members=[...root.querySelectorAll('#member-options input[data-instance-id]:checked')].map(check=>{
       const id=check.dataset.instanceId;
-      const row=check.closest('.toolbar');
+      const row=check.closest('.member-row');
       return {instance_id:id,expected_role:row.querySelector('select').value,enabled:row.querySelector('input[data-enabled-for]').checked};
     });
     const body={name:$('cluster-name').value,kind:$('cluster-kind').value,expected_nodes:Number($('expected-nodes').value),

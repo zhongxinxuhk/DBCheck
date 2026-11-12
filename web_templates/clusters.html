@@ -62,23 +62,183 @@ SPDX-License-Identifier: Apache-2.0 -->
 #cluster-workspace .form-grid{grid-template-columns:1fr}
 #cluster-workspace .toolbar,#cluster-workspace header{align-items:flex-start;gap:12px;flex-wrap:wrap}}
 #cluster-workspace[data-embedded="true"] main {max-width:none;margin:0;padding:0;}
+/* ── 添加/编辑集群弹窗：Apple 极简 + 毛玻璃，仅作用于本弹窗 ────────── */
+#cluster-workspace dialog#cluster-dialog{
+  width:min(680px,92vw);max-height:min(86vh,880px);padding:0;
+  border:1px solid rgba(255,255,255,.72);border-radius:22px;
+  background:rgba(255,255,255,.93);
+  -webkit-backdrop-filter:blur(28px) saturate(180%);
+  backdrop-filter:blur(28px) saturate(180%);
+  box-shadow:0 28px 72px rgba(18,32,56,.26),0 2px 8px rgba(18,32,56,.08);
+  overflow:hidden;color:#1c2430;
+}
+#cluster-workspace dialog#cluster-dialog::backdrop{
+  background:rgba(18,32,56,.34);
+  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
+}
+#cluster-dialog #cluster-form{display:flex;flex-direction:column;max-height:min(86vh,880px)}
+#cluster-dialog .dlg-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  padding:24px 28px 18px;flex:none;
+}
+#cluster-dialog .dlg-head h2{font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px;color:#1c2430}
+#cluster-dialog .dlg-sub{margin:0;font-size:12px;line-height:1.6;color:#8a8f99}
+#cluster-workspace #cluster-dialog .dlg-close{
+  width:30px;height:30px;flex:none;padding:0;border:none;border-radius:50%;
+  background:#f0f2f6;color:#8a8f99;font-size:19px;line-height:1;
+  display:grid;place-items:center;cursor:pointer;outline:none;
+}
+#cluster-workspace #cluster-dialog .dlg-close:hover{background:#e5e9f0;color:#3a4453}
+#cluster-workspace #cluster-dialog .dlg-close:focus-visible{box-shadow:0 0 0 3px rgba(47,124,246,.28)}
+#cluster-dialog .dlg-body{overflow-y:auto;flex:1 1 auto;min-height:0;padding:0 28px 24px}
+#cluster-dialog .dlg-body::-webkit-scrollbar{width:6px}
+#cluster-dialog .dlg-body::-webkit-scrollbar-thumb{background:rgba(20,35,60,.16);border-radius:3px}
+#cluster-dialog .dlg-body::-webkit-scrollbar-track{background:transparent}
+#cluster-dialog .dlg-section{margin-top:20px}
+#cluster-dialog .dlg-section:first-child{margin-top:8px}
+#cluster-dialog .dlg-section-title{
+  margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.06em;color:#8a8f99;
+}
+#cluster-dialog .dlg-section-note{margin:-4px 0 12px;font-size:12px;line-height:1.7;color:#8a8f99}
+#cluster-dialog .dlg-card{
+  background:#f6f8fb;border:1px solid rgba(20,35,60,.04);border-radius:14px;padding:16px;
+}
+#cluster-dialog .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#cluster-dialog .field{display:flex;flex-direction:column;gap:6px;min-width:0}
+#cluster-dialog .field label{display:block;margin:0;font-size:13px;font-weight:500;color:#3c4757}
+#cluster-dialog .field-hint{font-size:11px;line-height:1.5;color:#8a8f99}
+#cluster-workspace #cluster-dialog .field input,
+#cluster-workspace #cluster-dialog .field select{
+  width:100%;height:38px;margin:0;padding:0 12px;
+  border:1px solid transparent;border-radius:10px;background:#fff;
+  box-shadow:0 1px 2px rgba(20,35,60,.06);
+  font:inherit;font-size:13px;color:#1c2430;outline:none;
+  transition:border-color .18s,box-shadow .18s;
+}
+#cluster-workspace #cluster-dialog .field input:focus,
+#cluster-workspace #cluster-dialog .field select:focus{
+  border-color:#2f7cf6;box-shadow:0 0 0 3px rgba(47,124,246,.16);
+}
+#cluster-workspace #cluster-dialog .field input::placeholder{color:#b3bac6}
+/* 持续监控开关 */
+#cluster-dialog .switch-row{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  margin-top:12px;padding:13px 16px;background:#fff;
+  border:1px solid rgba(20,35,60,.05);border-radius:14px;cursor:pointer;
+}
+#cluster-dialog .switch-text{display:flex;flex-direction:column;gap:3px}
+#cluster-dialog .switch-text strong{font-size:13px;font-weight:500;color:#3c4757}
+#cluster-dialog .switch-text small{font-size:11px;color:#8a8f99}
+#cluster-workspace #cluster-dialog #monitor-enabled{
+  appearance:none;-webkit-appearance:none;flex:none;width:44px;height:26px;margin:0;
+  border:none;border-radius:13px;background:#d6dbe3;position:relative;cursor:pointer;
+  transition:background .2s;
+}
+#cluster-workspace #cluster-dialog #monitor-enabled::after{
+  content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:transform .2s;
+}
+#cluster-workspace #cluster-dialog #monitor-enabled:checked{background:#34c759}
+#cluster-workspace #cluster-dialog #monitor-enabled:checked::after{transform:translateX(18px)}
+/* 成员列表 */
+#cluster-dialog .member-list{display:flex;flex-direction:column;gap:8px;padding:2px}
+#cluster-dialog .member-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 12px;background:#fff;border:1px solid rgba(20,35,60,.06);
+  border-radius:12px;transition:border-color .18s,background .18s;
+}
+#cluster-dialog .member-row.selected{border-color:rgba(47,124,246,.38);background:#f5f9ff}
+#cluster-dialog .member-label{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto;cursor:pointer}
+#cluster-dialog .member-check{width:16px;height:16px;flex:none;margin:0;accent-color:#2f7cf6}
+#cluster-dialog .member-info{display:flex;flex-direction:column;gap:2px;min-width:0}
+#cluster-dialog .member-info strong{font-size:13px;font-weight:500;color:#2b3543;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cluster-dialog .member-info small{font-size:11px;color:#8a8f99;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cluster-dialog .member-controls{display:flex;align-items:center;gap:10px;flex:none}
+#cluster-workspace #cluster-dialog .member-controls select{
+  width:104px;height:30px;margin:0;padding:0 8px;font-size:12px;
+  border:1px solid #e3e8ef;border-radius:8px;background:#f8fafc;color:#4a5566;
+}
+#cluster-dialog .member-enabled{display:flex;align-items:center;gap:4px;font-size:11px;color:#8a8f99;white-space:nowrap;cursor:pointer}
+#cluster-dialog .member-enabled input{width:14px;height:14px;margin:0;accent-color:#2f7cf6}
+#cluster-dialog .member-empty{
+  padding:22px;text-align:center;font-size:12px;color:#8a8f99;
+  background:#fafbfd;border:1px dashed #dfe5ee;border-radius:12px;
+}
+/* 吸底操作栏 */
+#cluster-dialog .dlg-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;
+  padding:14px 28px;border-top:1px solid rgba(20,35,60,.06);
+  background:rgba(250,251,253,.9);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  box-shadow:0 -10px 18px -14px rgba(18,32,56,.35);
+}
+#cluster-dialog .foot-hint{font-size:11px;color:#8a8f99}
+#cluster-dialog .dlg-actions{display:flex;gap:10px}
+#cluster-workspace #cluster-dialog .dlg-actions button{
+  font-size:13px;font-weight:500;padding:9px 18px;border-radius:10px;
+}
+#cluster-workspace #cluster-dialog .btn-ghost{background:#fff;border-color:#e0e5ed;color:#4a5566}
+#cluster-workspace #cluster-dialog .btn-ghost:hover{background:#f4f6f9}
+#cluster-workspace #cluster-dialog .btn-primary{
+  background:#1f6feb;border-color:#1f6feb;color:#fff;
+  box-shadow:0 4px 12px rgba(31,111,235,.24);
+}
+#cluster-workspace #cluster-dialog .btn-primary:hover{background:#185fd0}
+#cluster-dialog #form-message{margin:14px 0 0;padding:0;min-height:0;font-size:12px}
+@media(max-width:700px){
+  #cluster-dialog .form-grid{grid-template-columns:1fr}
+  #cluster-dialog .dlg-head{padding:20px 20px 14px}
+  #cluster-dialog .dlg-body{padding:0 20px 18px}
+  #cluster-dialog .dlg-foot{padding:12px 20px}
+  #cluster-dialog .foot-hint{display:none}
+  #cluster-dialog .member-row{flex-direction:column;align-items:stretch}
+  #cluster-dialog .member-controls{justify-content:flex-end}
+}
 </style>
 {% if not is_embedded %}</head><body style="margin:0">{% endif %}
 <div id="cluster-workspace" data-embedded="{{ 'true' if is_embedded else 'false' }}">
 {% if not is_embedded %}<header><div><h1>DBPulse 集群管理</h1><p>Oracle RAC / Data Guard · 达梦 DMDSC / 数据守护</p></div><a href="/">返回数据库管理</a></header>{% endif %}
 <main><div class="toolbar"><p class="muted">集群引用已有数据源。每个节点保留独立连接和权限，预期节点数用于核对采集覆盖率。</p><button id="new-cluster" class="primary">添加集群</button></div>
 <div id="page-message" class="message" role="status"></div><div class="layout"><aside id="cluster-list" aria-label="集群列表"></aside><section id="cluster-detail" aria-live="polite"><div class="panel">选择一个集群查看成员、监控和巡检结果。</div></section></div></main>
-<dialog id="cluster-dialog"><form id="cluster-form"><h2 id="form-title">添加集群</h2><div class="form-grid">
-<label>集群名称<input id="cluster-name" required maxlength="120"></label>
-<label>架构类型<select id="cluster-kind" required></select></label>
-<label>预期节点数<input id="expected-nodes" type="number" min="2" max="64" value="2" required></label>
-<label>采集周期（秒）<input id="interval-seconds" type="number" min="15" max="3600" value="30" required></label>
-<label>复制延迟告警阈值（秒）<input id="lag-seconds" type="number" min="1" max="86400" value="30" required></label>
-<label>业务服务入口（可选）<select id="service-instance"><option value="">逐节点采集</option></select></label>
-<label class="full"><input id="monitor-enabled" type="checkbox" checked>启用持续监控</label>
-<div class="full"><h3>集群成员</h3><p class="muted">选择节点对应的数据源。Oracle RAC 使用节点 VIP / SID 对应的数据源，SCAN 或服务地址可以作为业务入口。预期节点尚未全部登记时，监控会显示覆盖不足。</p><div id="member-options" class="scroll"></div></div>
-</div><div id="form-message" class="message" role="alert"></div><div class="form-actions"><button id="cancel-cluster" type="button">取消</button><button id="save-cluster" type="submit" class="primary">保存集群</button></div></form></dialog>
+<dialog id="cluster-dialog"><form id="cluster-form">
+<div class="dlg-head">
+  <div><h2 id="form-title">添加集群</h2><p class="dlg-sub">配置集群拓扑与采集策略，成员沿用已有数据源的连接与权限。</p></div>
+  <button id="close-cluster" type="button" class="dlg-close" aria-label="关闭">&times;</button>
+</div>
+<div class="dlg-body">
+  <section class="dlg-section">
+    <h3 class="dlg-section-title">基本信息</h3>
+    <div class="dlg-card form-grid">
+      <div class="field"><label for="cluster-name">集群名称</label><input id="cluster-name" required maxlength="120" placeholder="例如：生产 Oracle RAC"></div>
+      <div class="field"><label for="cluster-kind">架构类型</label><select id="cluster-kind" required></select></div>
+    </div>
+  </section>
+  <section class="dlg-section">
+    <h3 class="dlg-section-title">采集设置</h3>
+    <div class="dlg-card form-grid">
+      <div class="field"><label for="expected-nodes">预期节点数</label><input id="expected-nodes" type="number" min="2" max="64" value="2" required><span class="field-hint">用于核对采集覆盖率</span></div>
+      <div class="field"><label for="interval-seconds">采集周期</label><input id="interval-seconds" type="number" min="15" max="3600" value="30" required><span class="field-hint">秒，15 ～ 3600</span></div>
+      <div class="field"><label for="lag-seconds">复制延迟告警阈值</label><input id="lag-seconds" type="number" min="1" max="86400" value="30" required><span class="field-hint">秒，1 ～ 86400</span></div>
+      <div class="field"><label for="service-instance">业务服务入口</label><select id="service-instance"><option value="">逐节点采集</option></select><span class="field-hint">可选，SCAN 或服务地址作为业务入口</span></div>
+    </div>
+    <label class="switch-row" for="monitor-enabled">
+      <span class="switch-text"><strong>启用持续监控</strong><small>关闭后仅保留集群配置，不再定时采集</small></span>
+      <input id="monitor-enabled" type="checkbox" checked>
+    </label>
+  </section>
+  <section class="dlg-section">
+    <h3 class="dlg-section-title">集群成员</h3>
+    <p class="dlg-section-note">选择节点对应的数据源。Oracle RAC 使用节点 VIP / SID 对应的数据源，SCAN 或服务地址可作为业务入口；预期节点未全部登记时监控会显示覆盖不足。</p>
+    <div id="member-options" class="member-list"></div>
+  </section>
+  <div id="form-message" class="message" role="alert"></div>
+</div>
+<div class="dlg-foot">
+  <span class="foot-hint">成员数据源沿用各自连接与权限</span>
+  <div class="dlg-actions"><button id="cancel-cluster" type="button" class="btn-ghost">取消</button><button id="save-cluster" type="submit" class="btn-primary">保存集群</button></div>
+</div>
+</form></dialog>
 
 </div>
-<script src="/static/js/clusters.js?v=workspace-1"></script>
+<script src="/static/js/clusters.js?v=workspace-2"></script>
 {% if not is_embedded %}</body></html>{% endif %}
