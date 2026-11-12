@@ -6,6 +6,7 @@
 
 
 import hmac
+import os
 import re
 import secrets
 from flask import g, jsonify, redirect, request, session
@@ -17,6 +18,20 @@ SELF_WRITE = {'/api/auth/logout','/api/um/auth/logout','/api/auth/change-passwor
               '/api/auth/update-profile'}
 REPORT_PREFIXES = ('/api/reports','/api/report_detail/','/api/download','/api/delete_report',
                    '/api/share','/share/','/api/db_inspect_share','/api/server_inspect_share')
+
+# 监控大屏投屏场景：页面与只读数据接口允许匿名访问。
+# 严格限制 GET + 白名单路径；阈值保存等写接口、其它 API 仍需登录与 CSRF。
+# 设 DBPULSE_PUBLIC_MONITOR=0 可一键恢复全局登录要求。
+MONITOR_PUBLIC_PATHS = {'/monitor-screen',
+                        '/api/dashboard/overview',
+                        '/api/dashboard/host-series',
+                        '/api/dashboard/thresholds',
+                        '/api/dashboard/history/overview'}
+MONITOR_PUBLIC_PREFIXES = ('/api/dashboard/instance/',)
+
+
+def monitor_public_enabled():
+    return os.environ.get('DBPULSE_PUBLIC_MONITOR', '1') != '0'
 
 
 def current_principal():
@@ -58,6 +73,12 @@ def install_security(app):
     @app.before_request
     def data_security_boundary():
         if request.endpoint == 'static':
+            return None
+        # 匿名只读大屏：先于会话检查放行，但只认 GET 与显式白名单，
+        # 不触碰写方法、CSRF 校验与其它业务接口。
+        if (request.method == 'GET' and monitor_public_enabled()
+                and (request.path in MONITOR_PUBLIC_PATHS
+                     or request.path.startswith(MONITOR_PUBLIC_PREFIXES))):
             return None
         if request.path in PUBLIC:
             if request.path in LOGIN:

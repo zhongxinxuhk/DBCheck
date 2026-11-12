@@ -6581,10 +6581,11 @@ def api_rag_delete_document(doc_id):
 
 @app.route('/monitor-screen')
 def monitor_screen_page():
-    """监控大屏 — 独立全屏页（脱离主框架，可新标签打开 / 投屏）。"""
-    from flask import session, redirect
-    if not session.get('user_id'):
-        return redirect('/um/login')
+    """监控大屏 — 独立全屏页（脱离主框架，可新标签打开 / 投屏）。
+
+    匿名只读访问由 modules.core.web_security 的 MONITOR_PUBLIC_PATHS 统一控制；
+    这里不再重复校验会话，关闭开关后全局鉴权会自动把匿名访问挡在登录页。
+    """
     # 大屏页文案走 i18n：一次取齐注入模板（JS 内再经 tojson 使用）
     _keys = ['probe', 'subtitle', 'k_online', 'k_warn', 'k_crit', 'k_conn', 'k_qps', 'k_tps',
              'btn_fs', 'topo_title', 'qps_top', 'conn_util_top', 'conns_top', 'trend',

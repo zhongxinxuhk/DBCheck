@@ -22,6 +22,8 @@ from modules.desktop.log_output import LogOutput
 from modules.desktop.maintenance import Maintenance, CrashRecovery
 
 ADDRESS = "http://127.0.0.1:5003"
+# 大屏为匿名只读页，点击后无需登录即可投屏查看实例状态。
+MONITOR_ADDRESS = ADDRESS + "/monitor-screen"
 TITLE = "DBPulse 运行状态"
 
 
@@ -525,6 +527,9 @@ def main():
     ttk.Button(
         buttons, text="打开管理页面", command=lambda: webbrowser.open(ADDRESS)
     ).pack(side="left")
+    ttk.Button(
+        buttons, text="监控大屏", command=lambda: webbrowser.open(MONITOR_ADDRESS)
+    ).pack(side="left", padx=8)
 
     backup_buttons = ttk.Frame(frame)
     backup_buttons.pack(fill="x", pady=(12, 12))
