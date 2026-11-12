@@ -217,7 +217,7 @@ def _render_markdown_to_doc(doc, text, default_size=11, ch8_prefix=False):
                 for code_line in code_buf:
                     run = code_para.add_run(code_line + '\n')
                     run.font.name = CODE_FONT
-                    run.font.size = Pt(size - 1)
+                    run.font.size = Pt(default_size - 1)
                 code_para.add_run('\n')
             continue
         if in_code_block:

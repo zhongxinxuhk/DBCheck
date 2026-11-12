@@ -667,19 +667,19 @@ def create_word_template(inspector_name="Jack"):
     # 封面信息表（深蓝表头样式）
     info_table = doc.add_table(rows=8, cols=2, style='Table Grid')
     info_cells = [
-        (self._t('report.dm_fallback_db_name'),     "{{{ co_name }}}"),
-        (self._t('report.dm_fallback_server_addr'), "{{{ server_addr }}}"),
-        (self._t('report.dm_fallback_version'),      "{{{ dm_version }}}"),
-        (self._t('report.dm_fallback_hostname'),    "{{{ hostname }}}"),
-        (self._t('report.dm_fallback_instance_time'), "{{{ uptime_text }}}"),
-        (self._t('report.dm_fallback_inspector'),   inspector_name),
-        (self._t('report.dm_fallback_platform'),   "{{{ platform_text }}}"),
-        (self._t('report.dm_fallback_report_time'), "{{{ report_time }}}"),
+        (_t('report.dm_fallback_db_name'),     "{{{ co_name }}}"),
+        (_t('report.dm_fallback_server_addr'), "{{{ server_addr }}}"),
+        (_t('report.dm_fallback_version'),      "{{{ dm_version }}}"),
+        (_t('report.dm_fallback_hostname'),    "{{{ hostname }}}"),
+        (_t('report.dm_fallback_instance_time'), "{{{ uptime_text }}}"),
+        (_t('report.dm_fallback_inspector'),   inspector_name),
+        (_t('report.dm_fallback_platform'),   "{{{ platform_text }}}"),
+        (_t('report.dm_fallback_report_time'), "{{{ report_time }}}"),
     ]
     # 表头行
     _hdr = info_table.rows[0]
-    _hdr.cells[0].text = self._t('report.tbl_col_key')
-    _hdr.cells[1].text = self._t('report.tbl_col_val')
+    _hdr.cells[0].text = _t('report.tbl_col_key')
+    _hdr.cells[1].text = _t('report.tbl_col_val')
     for c in _hdr.cells:
         from docx.oxml.ns import nsdecls
         from docx.oxml import parse_xml
@@ -706,38 +706,38 @@ def create_word_template(inspector_name="Jack"):
     doc.add_page_break()
 
     # 章节占位符
-    doc.add_paragraph("\n" + self._t("report.dm_ch1"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch1"), style='Heading1Custom')
     doc.add_paragraph("{{{ dm_instance }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch2"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch2"), style='Heading1Custom')
     doc.add_paragraph("{{{ health_summary_text }}}")
     doc.add_paragraph("{{{ error_summary_text }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch3"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch3"), style='Heading1Custom')
     doc.add_paragraph("{{{ dm_tablespace }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch4"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch4"), style='Heading1Custom')
     doc.add_paragraph("{{{ dm_sessions }}}")
     doc.add_paragraph("{{{ dm_trx }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch5"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch5"), style='Heading1Custom')
     doc.add_paragraph("{{{ dm_sga }}}")
     doc.add_paragraph("{{{ dm_memory_info }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch6"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch6"), style='Heading1Custom')
     doc.add_paragraph("{{{ dm_redo_logs }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch7"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch7"), style='Heading1Custom')
     doc.add_paragraph("{{{ system_info_text }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch8"), style='Heading1Custom')
-    doc.add_paragraph(self._t("report.dm_ch81") + "\n{{{ dm_invalid_cnt }}}")
-    doc.add_paragraph(self._t("report.dm_ch82") + "\n{{{ dm_users }}}")
+    doc.add_paragraph("\n" + _t("report.dm_ch8"), style='Heading1Custom')
+    doc.add_paragraph(_t("report.dm_ch81") + "\n{{{ dm_invalid_cnt }}}")
+    doc.add_paragraph(_t("report.dm_ch82") + "\n{{{ dm_users }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_ch9"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_ch9"), style='Heading1Custom')
     doc.add_paragraph("{{{ dm_backup }}}")
 
-    doc.add_paragraph("\n" + self._t("report.dm_fallback_notes_chapter"), style='Heading1Custom')
+    doc.add_paragraph("\n" + _t("report.dm_fallback_notes_chapter"), style='Heading1Custom')
     doc.add_paragraph("{{{ notes_text }}}")
 
     os.makedirs(template_path, exist_ok=True)

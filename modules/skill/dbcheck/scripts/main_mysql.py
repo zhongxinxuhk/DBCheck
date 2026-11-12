@@ -294,7 +294,7 @@ class RemoteSystemInfoCollector:
             self.ssh_client = paramiko.SSHClient()
             self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             if self.key_file:
-                private_key = paramiko.RSAKey.from_private_key_file(self.key_file, key_password)
+                private_key = paramiko.RSAKey.from_private_key_file(self.key_file, self.key_password)
                 self.ssh_client.connect(hostname=self.host, port=self.port, username=self.username, pkey=private_key, timeout=10)
             else:
                 self.ssh_client.connect(hostname=self.host, port=self.port, username=self.username, password=self.password, timeout=10)
