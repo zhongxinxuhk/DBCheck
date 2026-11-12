@@ -32,6 +32,7 @@ MSSQL-JDBC 端到端 demo 脚本 —— 模拟 web_ui.py → MssqlJdbcInspector 
 """
 
 import argparse
+import contextlib
 import os
 import sys
 import time
@@ -57,6 +58,21 @@ def _print_step(step_num: int, label: str, ok: bool = True, detail: str = ""):
     if detail:
         for line in detail.splitlines():
             print(f"        {line}")
+
+
+def _emit_report(generate, report_path: str) -> str:
+    """执行报告生成并打印落地信息；失败返回空串（调用方按返回码处理）。"""
+    os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
+    t0 = time.time()
+    result_path = generate()
+    elapsed = time.time() - t0
+    if not os.path.isfile(result_path):
+        print(f"        FAIL: 报告文件未生成: {result_path}")
+        return ""
+    size_kb = os.path.getsize(result_path) / 1024
+    print(f"        OK   report={result_path}")
+    print(f"        size = {size_kb:.1f} KB   elapsed = {elapsed:.2f}s")
+    return str(result_path)
 
 
 def _build_mock_context(db_type: str = "sqlserver_jdbc") -> Dict[str, Any]:
@@ -210,7 +226,7 @@ def _run_mock_mode(report_path: str) -> int:
 
     # 2. 模拟 web_ui 调用链：main_sqlserver_dual.getData 返回的 CompatWrapper.checkdb
     #    → collect_data → 拿到 context；这里直接用 mock context
-    _print_step(1, "模拟 web_ui 调用链 (mock context)", ok=True,
+    _print_step(1, "模拟 web_ui 调用链 (mock context)",
                 detail="getData → MssqlJdbcInspector → CompatWrapper.checkdb")
 
     # 3. 验证 context 至少包含 1 章节
@@ -218,7 +234,7 @@ def _run_mock_mode(report_path: str) -> int:
     if not chapters:
         print("\n[FAIL] mock context 必须包含至少 1 章节")
         return 1
-    _print_step(2, "章节加载（mock 1 章节）", ok=True,
+    _print_step(2, "章节加载（mock 1 章节）",
                 detail=f"chapters={len(chapters)}, chapter_1='{chapters[0]['chapter_title_zh']}'")
 
     # 4. 调用 generate_report 生成 docx
@@ -241,28 +257,22 @@ def _run_mock_mode(report_path: str) -> int:
         insp.template_file = None
         insp.context = mock_ctx
 
-        os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
-        t0 = time.time()
-        result_path = insp.generate_report(report_path, "MockInspector")
-        elapsed = time.time() - t0
-
-        if not os.path.isfile(result_path):
-            print(f"        FAIL: 报告文件未生成: {result_path}")
+        result_path = _emit_report(
+            lambda: insp.generate_report(report_path, "MockInspector"), report_path
+        )
+        if not result_path:
             return 3
-        size_kb = os.path.getsize(result_path) / 1024
-        print(f"        OK   report={result_path}")
-        print(f"        size = {size_kb:.1f} KB   elapsed = {elapsed:.2f}s")
     except Exception as e:
         print(f"        FAIL: {e}")
         traceback.print_exc()
         return 3
 
     # 5. 校验 context 关键字段
-    _print_step(4, "校验 mock context 关键字段", ok=True,
+    _print_step(4, "校验 mock context 关键字段",
                 detail=f"mssql_version_str={mock_ctx.get('mssql_version_str')}, "
                        f"mssql_db_count={mock_ctx.get('mssql_db_count')}, "
                        f"mssql_top_wait_type={mock_ctx.get('mssql_top_wait_type')}")
-    _print_step(5, "E2E DEMO PASS（mock 模式）", ok=True,
+    _print_step(5, "E2E DEMO PASS（mock 模式）",
                 detail=f"报告路径: {result_path}\n"
                        f"包含 1 章节（实例概况）\n"
                        f"包含 1 条 mock 智能分析（索引碎片）")
@@ -317,34 +327,27 @@ def _run_real_mode(host: str, port: int, user: str, password: str,
         return 2
 
     # 3. 章节加载
-    _print_step(3, "章节加载（_chapters）", ok=True,
+    _print_step(3, "章节加载（_chapters）",
                 detail=f"chapters={len(context.get('_chapters', []))}")
 
     # 4. generate_report
     _print_step(4, "生成 docx 报告（generate_report）")
     try:
-        os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
-        t0 = time.time()
-        result_path = wrapper.generate_report(report_path, "E2EDemo")
-        elapsed = time.time() - t0
-        if not os.path.isfile(result_path):
-            print(f"        FAIL: 报告文件未生成: {result_path}")
+        result_path = _emit_report(
+            lambda: wrapper.generate_report(report_path, "E2EDemo"), report_path
+        )
+        if not result_path:
             return 3
-        size_kb = os.path.getsize(result_path) / 1024
-        print(f"        OK   report={result_path}")
-        print(f"        size = {size_kb:.1f} KB   elapsed = {elapsed:.2f}s")
     except Exception as e:
         print(f"        FAIL: {e}")
         traceback.print_exc()
         return 3
     finally:
-        try:
+        with contextlib.suppress(Exception):
             wrapper.inspector.disconnect()
-        except Exception:
-            pass
 
     # 5. PASS
-    _print_step(5, "E2E DEMO PASS（真实模式）", ok=True,
+    _print_step(5, "E2E DEMO PASS（真实模式）",
                 detail=f"报告路径: {result_path}")
     print("\n" + "=" * 70)
     print("MSSQL-JDBC E2E DEMO PASS（真实模式）")

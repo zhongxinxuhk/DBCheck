@@ -94,7 +94,7 @@ def main():
             print(f"      OK（耗时 {time.time() - t0:.2f}s）")
         else:
             print("      JVM 已由其它组件启动（OK）")
-    except Exception as e:
+    except (RuntimeError, OSError) as e:
         print(f"      FAIL: {e}")
         sys.exit(1)
 
@@ -105,14 +105,16 @@ def main():
             "com.microsoft.sqlserver.jdbc.SQLServerDriver"
         )
         print("      OK（com.microsoft.sqlserver.jdbc.SQLServerDriver）")
-    except Exception as e:
+    except (jpype.JException, TypeError) as e:
         print(f"      FAIL: {e}")
         sys.exit(2)
 
     # 4. 建立连接
     print(f"\n[4/5] DriverManager.getConnection ...")
-    from java.sql import DriverManager
-    from java.util import Properties
+    # 不用 ``from java.sql import ...``：``java`` 是 JPype 运行时注入的虚拟包，
+    # 静态分析阶段无法解析（会报“未解析的引用”）；JClass 是等价写法且可被 IDE 识别。
+    driver_manager = jpype.JClass("java.sql.DriverManager")
+    properties_cls = jpype.JClass("java.util.Properties")
 
     url = (
         f"jdbc:sqlserver://{host}:{port};"
@@ -120,13 +122,13 @@ def main():
         f"encrypt=true;trustServerCertificate=true;"
         f"loginTimeout=10;applicationName=DBCheck-Spike"
     )
-    props = Properties()
+    props = properties_cls()
     props.setProperty("user", user)
     props.setProperty("password", password)
     try:
-        conn = DriverManager.getConnection(url, props)
+        conn = driver_manager.getConnection(url, props)
         print(f"      OK  url={url}")
-    except Exception as e:
+    except jpype.JException as e:
         print(f"      FAIL: {e}")
         sys.exit(3)
 
@@ -170,13 +172,13 @@ def main():
                     for row in rows:
                         print("  | " + " | ".join(r.ljust(widths[i]) for i, r in enumerate(row)) + " |")
                 stmt.close()
-            except Exception as e:
+            except jpype.JException as e:
                 print(f"  FAIL  ({label}): {e}")
                 failures += 1
     finally:
         try:
             conn.close()
-        except Exception:
+        except jpype.JException:
             pass
 
     print("\n" + "=" * 70)
