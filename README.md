@@ -1416,47 +1416,6 @@ If you know a DBA or database engineer who might find DBPulse useful, sharing th
 
 ---
 
-## ☕ Sponsorship
-
-Some users have supported the project through donations.
-
-The amount of a donation is not the most important thing.
-
-For an independent open-source project, a small donation means:
-
-> Someone used it.
-> Someone noticed it.
-> Someone believed it was worth continuing.
-
-Thank you to everyone who has supported DBPulse through donations, Stars, Issues, Pull Requests, suggestions, articles, testing, or simply telling another engineer about the project.
-
-<img src="snapshot/pay-en.png" alt="DBPulse Support QR Code" width="800" />
-
-<img src="snapshot/dbcheck-badge-800w.png" alt="DBPulse Supporter Badge" width="800" />
-
-> Please specify your name or nickname when sponsoring ❤️
-
-### Sponsors
-
-| Date       | Name          | ID        |
-| ---------- | ------------- | --------- |
-| 2026-04-28 | 自由的风      | No.000001 |
-| 2026-04-29 | 黄嵘          | No.000002 |
-| 2026-05-04 | 张佰政        | No.000003 |
-| 2026-06-02 | 残酷月光      | No.000004 |
-| 2026-06-03 | 大树          | No.000005 |
-| 2026-06-07 | 岳彩波（Adil0518） | No.000006 |
-| 2026-06-17 | 轩            | No.000007 |
-| 2026-06-18 | 卿云          | No.000008 |
-| 2026-06-18 | yuanlnet      | No.000009 |
-| 2026-06-18 | 赵法威        | No.000010 |
-| 2026-06-19 | 类延良        | No.000011 |
-| 2026-06-19 | 渺渺兮予怀    | No.000012 |
-| 2026-09-06 | leon          | No.000013 |
-| 2026-09-24 | James.Yao          | No.000014 |
-| 2026-10-10 | acdante-zhang          | No.000015 |
----
-
 # 📜 License
 
 DBPulse is open-source software licensed under the:
