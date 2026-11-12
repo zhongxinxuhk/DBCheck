@@ -192,3 +192,43 @@ def test_invalid_driver_is_closed_before_windows_cleanup(tmp_path):
     ), patch.object(Path, "unlink", windows_unlink):
         bundle.stage_resources(tmp_path / "staged", ["windows-x86_64"])
     assert not (tmp_path / "staged/drivers/gbase8a/legacy/invalid.jar").exists()
+
+
+def test_verified_download_retries_transport_and_keeps_cache_atomic(tmp_path):
+    import io
+    import urllib.error
+
+    payload = b"verified build input"
+    checksum = __import__("hashlib").sha256(payload).hexdigest()
+    archive = tmp_path / "input.zip"
+    with patch.object(
+        bundle.urllib.request,
+        "urlopen",
+        side_effect=[urllib.error.URLError("handshake timeout"), io.BytesIO(payload)],
+    ) as request, patch.object(bundle.time, "sleep"):
+        assert (
+            bundle.download_verified("https://fixture.invalid", archive, checksum)
+            == archive
+        )
+    assert archive.read_bytes() == payload
+    assert request.call_count == 2
+    archive.write_bytes(b"previous cache entry")
+    with patch.object(
+        bundle.urllib.request, "urlopen", side_effect=urllib.error.URLError("offline")
+    ), patch.object(bundle.time, "sleep"), pytest.raises(urllib.error.URLError):
+        bundle.download_verified("https://fixture.invalid", archive, checksum)
+    assert archive.read_bytes() == b"previous cache entry"
+    assert not list(tmp_path.glob("*.download"))
+
+
+def test_verified_download_never_accepts_wrong_checksum(tmp_path):
+    import io
+
+    archive = tmp_path / "input.zip"
+    with patch.object(
+        bundle.urllib.request,
+        "urlopen",
+        side_effect=lambda *args, **kwargs: io.BytesIO(b"wrong"),
+    ), patch.object(bundle.time, "sleep"), pytest.raises(ValueError):
+        bundle.download_verified("https://fixture.invalid", archive, "0" * 64)
+    assert not archive.exists()

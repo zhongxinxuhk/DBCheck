@@ -15,6 +15,8 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -48,6 +50,39 @@ def digest(path):
     return value.hexdigest()
 
 
+def download_verified(url, archive, checksum, attempts=3):
+    """Retry transport failures without publishing a partial cache artifact."""
+    if archive.is_file() and digest(archive) == checksum:
+        return archive
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(1, attempts + 1):
+        temporary = archive.with_name(
+            archive.name + "." + uuid.uuid4().hex + ".download"
+        )
+        try:
+            with urllib.request.urlopen(url, timeout=120) as source, temporary.open(
+                "wb"
+            ) as target:
+                shutil.copyfileobj(source, target)
+            if digest(temporary) != checksum:
+                raise ValueError(
+                    "Downloaded build input SHA-256 mismatch: " + archive.name
+                )
+            temporary.replace(archive)
+            return archive
+        except (OSError, ValueError):
+            if attempt == attempts:
+                raise
+            print(
+                f"Build input transfer interrupted, retry {attempt+1}/{attempts}: {archive.name}",
+                flush=True,
+            )
+            time.sleep(5 * attempt)
+        finally:
+            temporary.unlink(missing_ok=True)
+    raise RuntimeError("No build input transfer attempt completed")
+
+
 def download_runtime(platform, cache):
     system, arch = platform.split("-", 1)
     remote_system = {"windows": "windows", "linux": "linux", "macos": "mac"}[system]
@@ -71,15 +106,7 @@ def download_runtime(platform, cache):
     package = assets[0]["binary"]["package"]
     archive = cache / package["name"]
     cache.mkdir(parents=True, exist_ok=True)
-    if not archive.is_file() or digest(archive) != package["checksum"]:
-        temporary = archive.with_name(archive.name + ".download")
-        with urllib.request.urlopen(
-            package["link"], timeout=120
-        ) as source, temporary.open("wb") as target:
-            shutil.copyfileobj(source, target)
-        if digest(temporary) != package["checksum"]:
-            raise ValueError("Java archive SHA-256 mismatch")
-        temporary.replace(archive)
+    download_verified(package["link"], archive, package["checksum"])
     return archive, {
         "source": package["link"],
         "sha256": package["checksum"],

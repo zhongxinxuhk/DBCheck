@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from modules.core.portable import platform_key
-from portable_bundle import PLATFORMS
+from portable_bundle import PLATFORMS, download_verified
 
 
 def native(args):
@@ -121,16 +121,7 @@ def prepare_drivers(args):
     args.cache.mkdir(parents=True, exist_ok=True)
     for entry in entries:
         archive = args.cache / entry["filename"]
-        if (
-            not archive.is_file()
-            or hashlib.sha256(archive.read_bytes()).hexdigest() != entry["sha256"]
-        ):
-            with urllib.request.urlopen(
-                entry["url"], timeout=120
-            ) as source, archive.open("wb") as target:
-                shutil.copyfileobj(source, target)
-        if hashlib.sha256(archive.read_bytes()).hexdigest() != entry["sha256"]:
-            raise ValueError("Driver download checksum mismatch")
+        download_verified(entry["url"], archive, entry["sha256"])
         destination = ROOT / "drivers" / entry["db_type"] / entry["version"]
         destination.mkdir(parents=True, exist_ok=True)
         if entry["archive"]:
@@ -185,16 +176,7 @@ def prepare_python(args):
     args.cache.mkdir(parents=True, exist_ok=True)
     archive = args.cache / asset["name"]
     expected = asset["digest"].split(":", 1)[1]
-    if (
-        not archive.is_file()
-        or hashlib.sha256(archive.read_bytes()).hexdigest() != expected
-    ):
-        with urllib.request.urlopen(
-            asset["browser_download_url"], timeout=120
-        ) as source, archive.open("wb") as target:
-            shutil.copyfileobj(source, target)
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
-        raise ValueError("Standalone Python SHA-256 mismatch")
+    download_verified(asset["browser_download_url"], archive, expected)
     output = args.output.resolve() / args.platform
     output.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive) as package:
