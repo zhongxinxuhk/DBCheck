@@ -32,7 +32,7 @@ import threading
 import traceback
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 
 from modules.core import paths
@@ -715,7 +715,7 @@ def admin_list_keys():
     try:
         rows = conn.execute(
             'SELECT id, name, key_prefix, created_at, last_used_at, is_active,'
-            '       user_id FROM api_keys ORDER BY created_at DESC'
+            '       user_id, expires_at, scopes FROM api_keys ORDER BY created_at DESC'
         ).fetchall()
         keys = [dict(r) for r in rows]
         return jsonify({'ok': True, 'keys': keys})
@@ -751,21 +751,57 @@ def admin_create_key():
     if isinstance(owner_id, str) and owner_id.startswith('old_'):
         owner_id = None
 
+    scopes = [item.strip() for item in str(data.get('scopes') or 'read,write').split(',')]
+    scopes = [item for item in scopes if item in ('read', 'write')]
+    if 'write' in scopes and 'read' not in scopes:
+        scopes.insert(0, 'read')
+    scopes_text = ','.join(dict.fromkeys(scopes)) or 'read'
+    try:
+        expires_days = max(0, int(data.get('expires_days') or 0))
+    except (TypeError, ValueError):
+        expires_days = 0
+    expires_at = (
+        (datetime.now() + timedelta(days=expires_days)).isoformat(timespec='seconds')
+        if expires_days else ''
+    )
+
     conn = _get_key_db()
     try:
         conn.execute(
-            'INSERT INTO api_keys (id, name, key_hash, key_prefix, created_at, user_id)'
-            ' VALUES (?,?,?,?,?,?)',
-            (key_id, name, key_hash, key_prefix, datetime.now().isoformat(), owner_id)
+            'INSERT INTO api_keys (id, name, key_hash, key_prefix, created_at, user_id, expires_at, scopes)'
+            ' VALUES (?,?,?,?,?,?,?,?)',
+            (key_id, name, key_hash, key_prefix, datetime.now().isoformat(), owner_id,
+             expires_at, scopes_text)
         )
         conn.commit()
         return jsonify({
             'ok': True, 'key': raw_key, 'id': key_id, 'name': name,
-            'user_id': owner_id,
+            'user_id': owner_id, 'scopes': scopes_text, 'expires_at': expires_at,
             'warning': None if owner_id else '该 Key 未绑定用户，MCP 调用将被拒绝',
         })
     except sqlite3.IntegrityError:
         return jsonify({'ok': False, 'error': '创建失败，请重试'}), 500
+    finally:
+        conn.close()
+
+
+@api_v1.route('/admin/keys/<key_id>/rotate', methods=['POST'])
+def admin_rotate_key(key_id):
+    """轮换 API Key：旧 Key 立即失效，新 Key 仅返回一次"""
+    auth_err = _require_admin()
+    if auth_err:
+        return auth_err
+    raw_key = _generate_key()
+    conn = _get_key_db()
+    try:
+        cur = conn.execute(
+            'UPDATE api_keys SET key_hash=?, key_prefix=?, is_active=1, last_used_at=NULL WHERE id=?',
+            (_hash_key(raw_key), raw_key[:10], key_id),
+        )
+        conn.commit()
+        if not cur.rowcount:
+            return jsonify({'ok': False, 'error': 'Key 不存在'}), 404
+        return jsonify({'ok': True, 'key': raw_key, 'id': key_id})
     finally:
         conn.close()
 
