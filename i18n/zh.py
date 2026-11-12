@@ -3741,3 +3741,14 @@ ZI.update({
 })
 
 ZI.update({"menu.workflow_task":"工作任务","wf_task.new_title":"新建工作任务","wf_task.edit_title":"编辑工作任务","wf_task.empty_title":"还没有工作任务","wf_task.empty_sub":"可以创建工作流任务或整体巡检任务，选择数据源与集群并配置运行计划。"})
+
+# 监控大屏：实例健康矩阵（替代侧栏 6 张 Top10 榜单）
+ZI.update({
+    "webui.screen_hm_title": "实例健康矩阵 · 异常置顶 · 点行看详情",
+    "webui.screen_hm_inst": "实例",
+    "webui.screen_hm_qps": "QPS",
+    "webui.screen_hm_conn": "连接%",
+    "webui.screen_hm_tbs": "剩余%",
+    "webui.screen_hm_risk": "异常",
+    "webui.screen_hm_tip": "点击行查看实例详情",
+})
