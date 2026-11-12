@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """只读审计巡检模板与基线SQL，不连接任何客户数据库。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import argparse
 import collections

@@ -1,6 +1,5 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """对象存储备份 REST 接口（Blueprint: objstore, url_prefix=/api/objstore）。
 
@@ -29,9 +28,6 @@
 defined` 吞成普通 400/500 业务错误，日志里连 traceback 都没有，只能靠用户报错定位。
 """
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
 import logging

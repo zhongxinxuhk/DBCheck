@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """Consistent evidence coverage for HTML, Word and existing inspection reports."""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
 import io
@@ -144,8 +140,6 @@ def render_docx(catalog, overview, title):
         document.add_heading(record['item_id']+' '+record['id'],level=2)
         document.add_paragraph(_display(record))
     append_coverage(document,catalog,redact(overview,mask_identity=True))
-    document.add_paragraph('基于 RaccoonX / DBCheck，Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>，Apache-2.0')
-    document.add_paragraph('DBPulse 衍生维护 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>')
     sanitize_document(document)
     stream = io.BytesIO()
     document.save(stream)
@@ -175,7 +169,7 @@ def render_html(catalog, overview, title):
             if not req['details']:
                 blocks.append('<li>尚无绑定资产及验收证据</li>')
             blocks.append('</ul>')
-    blocks.append('<footer>RaccoonX / DBCheck · fiyo (Jack Ge) · Apache-2.0；DBPulse · sec.hn.cn (X.U zx)</footer></body></html>')
+    blocks.append('</body></html>')
     return ''.join(blocks)
 
 

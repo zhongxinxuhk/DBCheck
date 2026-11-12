@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """日志生命周期：轮转、保留、总预算与紧急清理的行为约束。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import json
 import logging

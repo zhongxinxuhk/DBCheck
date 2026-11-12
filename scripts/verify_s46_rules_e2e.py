@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """§4.6 关键指标规则的功能性验证（问题 4 的闭合判据）。
 
@@ -37,9 +36,6 @@
     python3 scripts/verify_s46_rules_e2e.py [--verbose]
 """
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import os
 import sys

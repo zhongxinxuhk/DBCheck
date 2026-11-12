@@ -64,9 +64,6 @@ DONE_PREFIX = "__DBCHECK_INSP_DONE__"
 # 本 CLI 需要隔离执行的 JVM 数据库类型
 # 全部走 JDBC 的巡检类型：JDBC 插件 + 核心内置 dm/gbase/ivorysql（与 driver_registry.JDBC_PLUGIN_TO_CATALOG 对齐）
 JVM_INSPECTION_DB_TYPES = ('hgdb', 'db2', 'sqlserver_jdbc', 'oracle_jdbc', 'dm', 'gbase', 'clickhouse', 'uxdb', 'ivorysql', 'halodb', 'pg', 'kingbase', 'yashandb', 'mysql', 'mariadb', 'tidb', 'oceanbase', 'vastbase')
-from modules.core.paths import PORTABLE_ROOT
-if PORTABLE_ROOT is not None:
-    JVM_INSPECTION_DB_TYPES += ('oracle','sqlserver')
 
 
 
@@ -74,9 +71,16 @@ def _ensure_project_root_on_path():
     """开发态直接执行本文件时确保项目根目录在 sys.path 上。"""
     if getattr(sys, 'frozen', False):
         return
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     if _root not in sys.path:
         sys.path.insert(0, _root)
+
+
+_ensure_project_root_on_path()
+
+from modules.core.paths import PORTABLE_ROOT
+if PORTABLE_ROOT is not None:
+    JVM_INSPECTION_DB_TYPES += ('oracle','sqlserver')
 
 
 def _tcp_preflight(host, port, timeout=8):
@@ -181,6 +185,11 @@ def main(argv=None):
         _emit_line('done', {'msg': f'不支持的数据库类型: {db_type}', 'task_id': task_id})
         return 2
 
+    from modules.operations.policy import normalize_policy
+    from modules.inspection import sql_safety
+    limits = normalize_policy(payload.get('inspection_limits') or {})
+    sql_safety.QUERY_TIMEOUT_SECONDS = limits['query_timeout']
+    sql_safety.ROW_LIMIT = limits['row_limit']
     os.environ['DBPULSE_INSPECTION_WORKER']='1'
     # 导入主应用模块（会初始化 Flask/SocketIO，但在子进程里不会被 patch）
     try:

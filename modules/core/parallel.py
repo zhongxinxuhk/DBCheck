@@ -1,6 +1,5 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """有界并发工具：按实例并发执行采集函数，避免单个慢实例阻塞整轮。
 
@@ -11,9 +10,6 @@
 - 不依赖 gevent，纯标准库，可在后台线程与测试中直接复用。
 """
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED

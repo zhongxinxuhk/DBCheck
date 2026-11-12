@@ -20,7 +20,7 @@ import sys
 if os.name == "nt":
     for _stream in (sys.stdout, sys.stderr):
         if _stream is not None and hasattr(_stream, "reconfigure"):
-            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+            _stream.reconfigure(encoding="utf-8", errors="backslashreplace", line_buffering=True, write_through=True)
 
 
 # ── OpenBLAS/NumPy 线程池护栏（必须在任何 numpy/openpyxl 导入之前）─────────
@@ -116,8 +116,9 @@ def _acquire_single_instance():
     _lock = os.path.join(os.path.dirname(sys.executable), '.dbcheck.lock')
     try:
         import psutil  # 冻结构建已内置（hiddenimports）
+        import json
         _fd = os.open(_lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(_fd, str(os.getpid()).encode())
+        os.write(_fd, json.dumps({'pid': os.getpid(), 'started': psutil.Process().create_time()}).encode())
         os.close(_fd)
 
         # 正常退出时清理锁文件（os._exit 不会触发 atexit，故旧实例异常退出可能留残留锁，
@@ -134,8 +135,14 @@ def _acquire_single_instance():
     except FileExistsError:
         # 锁已存在：检查持有者是否还活着
         try:
-            _pid = int(open(_lock, 'r', encoding='utf-8').read().strip() or '0')
-            if psutil.pid_exists(_pid):
+            with open(_lock, 'r', encoding='utf-8') as _file:
+                _raw = _file.read().strip()
+            _record = json.loads(_raw) if _raw.startswith('{') else {'pid': int(_raw or '0')}
+            _pid = int(_record['pid'])
+            _process = psutil.Process(_pid)
+            _same_executable = os.path.normcase(os.path.realpath(_process.exe())) == os.path.normcase(os.path.realpath(sys.executable))
+            _same_started = 'started' not in _record or abs(_process.create_time() - _record['started']) < 0.01
+            if _pid != os.getpid() and _same_executable and _same_started and _process.is_running():
                 print(
                     f"[RaccoonX] 已有实例在运行（PID {_pid}），本进程退出以避免端口冲突。",
                     flush=True,

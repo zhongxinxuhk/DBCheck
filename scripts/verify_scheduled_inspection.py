@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """工作任务定时整体巡检与巡检查询资源限制回归。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import sys
 import os
@@ -113,6 +109,43 @@ class ScheduledInspectionTest(unittest.TestCase):
         self.runner.stop(task["id"])
         self.assertFalse(tasks.get_task(task["id"])["schedule_enabled"])
         self.runner._sched_tick(now + timedelta(minutes=2))
+        self.assertEqual(self.f.dispatch_count, 2)
+
+    def test_scheduled_business_group_reselects_latest_members(self):
+        source = self.f.create()
+        self.f.inventory.save(
+            self.f.actor,
+            {"revision": source["revision"], "metadata": {"environment": "生产"}},
+            source["id"],
+        )
+        group = self.f.client.post(
+            "/api/operations/groups",
+            json={"name": "生产数据库", "filters": {"environment": ["生产"]}},
+        ).get_json()["record"]
+        response = self.create(
+            [],
+            batch_spec={
+                "instance_ids": [],
+                "group_ids": [group["id"]],
+                "concurrency": 1,
+                "notify_on_completion": False,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        task = response.get_json()["task"]
+        self.assertEqual(task["batch_spec"]["instance_ids"], [])
+        added = self.f.create(
+            "new-production", host="192.0.2.12", configuration_id="CI-NEW"
+        )
+        self.f.inventory.save(
+            self.f.actor,
+            {"revision": added["revision"], "metadata": {"environment": "生产"}},
+            added["id"],
+        )
+        self.assertTrue(self.runner.run_once(task["id"], "manual"))
+        run = self.wait_run(task["id"])
+        self.assertEqual(run["status"], "done", run)
+        self.assertEqual(run["outputs"][0]["summary"]["total"], 2)
         self.assertEqual(self.f.dispatch_count, 2)
 
     def test_invalid_cron_and_ownership(self):

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """
 参数基线 query_sql 静态审查（不连库）。
@@ -28,9 +27,6 @@ F. ``INFO`` 取数对象不在该库型的已知视图清单内（可能是版�
     python scripts/audit_baseline_sql.py --include-disabled
 """
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import argparse
 import os

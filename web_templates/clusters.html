@@ -1,11 +1,5 @@
-<!--
-SPDX-License-Identifier: Apache-2.0
-Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
-SPDX-License-Identifier: Apache-2.0
-Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
--->
+<!-- Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+SPDX-License-Identifier: Apache-2.0 -->
 {% set is_embedded = embedded|default(false) %}
 {% if not is_embedded %}
 <!doctype html>
@@ -84,7 +78,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 <label class="full"><input id="monitor-enabled" type="checkbox" checked>启用持续监控</label>
 <div class="full"><h3>集群成员</h3><p class="muted">选择节点对应的数据源。Oracle RAC 使用节点 VIP / SID 对应的数据源，SCAN 或服务地址可以作为业务入口。预期节点尚未全部登记时，监控会显示覆盖不足。</p><div id="member-options" class="scroll"></div></div>
 </div><div id="form-message" class="message" role="alert"></div><div class="form-actions"><button id="cancel-cluster" type="button">取消</button><button id="save-cluster" type="submit" class="primary">保存集群</button></div></form></dialog>
-<footer>DBCheck / RaccoonX © 2025–2026 fiyo (Jack Ge) · sdfiyon@gmail.com<br>DBPulse 衍生创作 © 2025–2026 sec.hn.cn (X.U zx) · xuzhongxin@sec.hn.cn</footer>
+
 </div>
 <script src="/static/js/clusters.js?v=workspace-1"></script>
 {% if not is_embedded %}</body></html>{% endif %}

@@ -1,11 +1,5 @@
-<!--
-SPDX-License-Identifier: Apache-2.0
-Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
-SPDX-License-Identifier: Apache-2.0
-Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
--->
+<!-- Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+SPDX-License-Identifier: Apache-2.0 -->
 {% set batch_view = request.args.get("tab") == "batch" %}
 <!doctype html>
 <html lang="zh-CN">
@@ -335,9 +329,11 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
             <option value="">全部数据库类型</option></select
           ><select id="cluster-filter" aria-label="筛选集群">
             <option value="">全部集群</option></select
-          ><span class="spacer"></span
+          ><select id="system-filter" aria-label="筛选业务系统"><option value="">全部业务系统</option></select><select id="environment-filter" aria-label="筛选运行环境"><option value="">全部运行环境</option></select><select id="owner-filter" aria-label="筛选运维责任人"><option value="">全部责任人</option></select><span class="spacer"></span
           ><button id="new-record" class="primary">新增台账及数据源</button
-          ><button id="inventory-history">台账变更总览</button
+          ><button id="bulk-grouping">批量维护业务分组</button><button id="manage-groups">维护巡检分组</button><button id="inventory-history">台账变更总览</button
+          ><button id="import-records">导入台账 Excel</button
+          ><button id="test-selected">批量测试连接</button
           ><button id="export-records">导出台账 Excel</button
           ><button id="inspect-selected">巡检所选数据源</button>
         </div>
@@ -391,6 +387,15 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
               </select></label
             >
           </div>
+          <details style="margin-top:12px"><summary>执行时段与负载控制</summary><div class="grid">
+            <label class="field">单库最长执行秒数<input id="batch-timeout" type="number" min="30" max="86400" value="1800"></label>
+            <label class="field">同一集群最大并发<input id="batch-cluster-limit" type="number" min="1" max="8" value="1"></label>
+            <label class="field">单条查询超时秒数<input id="batch-query-timeout" type="number" min="1" max="15" value="15"></label>
+            <label class="field">单次查询最多返回行数<input id="batch-row-limit" type="number" min="1" max="1000" value="1000"></label>
+            <label class="field">新数据源启动时段（北京时间）<span><input id="batch-window-start" type="time"> 至 <input id="batch-window-end" type="time"></span></label>
+          </div><div id="batch-weekdays">允许日期 <label><input type="checkbox" data-weekday="0" checked>周一</label> <label><input type="checkbox" data-weekday="1" checked>周二</label> <label><input type="checkbox" data-weekday="2" checked>周三</label> <label><input type="checkbox" data-weekday="3" checked>周四</label> <label><input type="checkbox" data-weekday="4" checked>周五</label> <label><input type="checkbox" data-weekday="5" checked>周六</label> <label><input type="checkbox" data-weekday="6" checked>周日</label> </div><p class="muted">时段留空可全天执行。时段结束后暂停启动后续数据源，已启动的数据源按超时限制收尾。</p></details>
+          <details><summary>按业务分组与条件纳入</summary><button id="batch-manage-groups" type="button">维护巡检分组</button><div id="batch-grouping"></div></details>
+          <label><input id="batch-notify" type="checkbox">完成后按通知设置发送整体报告与分组摘要</label>
           <h3>已选数据源</h3>
           <div id="selected-summary" class="muted"></div>
           <div class="toolbar"><input id="batch-search" type="search" placeholder="搜索数据源名称、类型或地址" aria-label="搜索整体巡检数据源"><button id="batch-select-visible" type="button">选中搜索结果</button><button id="batch-clear-selected" type="button">清空选择</button></div>
@@ -407,18 +412,20 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
           </div>
         </div>
         <div class="card">
-          <h2>批量任务记录</h2>
+          <div class="toolbar"><h2>批量任务记录</h2><button id="open-findings">巡检问题整改</button></div>
           <div id="batch-history"></div>
         </div>
         <div id="run-detail" class="card hidden">
           <div class="toolbar">
             <h2 id="run-title"></h2>
             <span class="spacer"></span
-            ><a id="run-download" class="button hidden">下载整体巡检报告</a>
+            ><button id="cancel-run" class="danger hidden">取消巡检任务</button><button id="retry-run" class="hidden">仅重试失败 / 未执行项</button><a id="run-download" class="button hidden">下载整体巡检报告</a>
           </div>
           <div id="run-stats" class="stats"></div>
           <div class="progress"><span id="run-progress"></span></div>
           <p id="run-message" class="muted"></p>
+          <div id="run-comparison"></div>
+          <details><summary>巡检异常与整改</summary><div id="run-issues"></div></details>
           <div class="scroll">
             <table>
               <thead>
@@ -474,10 +481,8 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
       <div id="history-content" class="history"></div>
       <div class="dialog-footer"><button id="close-history">关闭</button></div>
     </dialog>
-    <footer>
-      基于 DBCheck / RaccoonX · Copyright 2025-2026 fiyo (Jack Ge) ·
-      Apache-2.0<br />DBPulse 衍生维护 · sec.hn.cn (X.U zx)
-    </footer>
+
+    <script src="/static/js/operations_tools.js?v=2"></script>
     <script>
       const canWrite = {{ can_write|tojson }};
       const state = {
@@ -490,6 +495,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
         run: null,
         poll: null,
         templates: [],
+        groupPicker: null,
       };
       const $ = (id) => document.getElementById(id);
       const esc = (value) =>
@@ -553,6 +559,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
           (r) =>
             (!kind || r.source.db_type === kind) &&
             (!cluster || clusterNames(r).includes(cluster)) &&
+            ['system','environment','owner'].every(key=>!$(key+'-filter').value || String(r.metadata[key]||'')===JSON.parse($(key+'-filter').value)) &&
             (!q ||
               JSON.stringify([
                 r.configuration_id,
@@ -573,7 +580,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
             .map((r) => {
               const s = r.source,
                 m = r.metadata;
-              return `<tr><td><input type="checkbox" data-select="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""} aria-label="选择 ${esc(s.name)}"></td><td><strong>${esc(r.configuration_id)}</strong><br>${esc(s.name)}</td><td>${esc(s.db_type)}<br>${esc(s.host)}:${esc(s.port)}</td><td><div>${esc(s.user)}</div><div class="credential-value">${esc(s.password)}</div></td><td>${esc(m.system)}<br><span class="muted">${esc(m.business)}</span></td><td>${esc(clusterNames(r).join("、"))}<br><span class="muted">${esc(m.node_names)}</span></td><td>${esc(m.owner)}<br>${esc(m.lifecycle || "未登记")}</td><td class="nowrap"><button data-action="edit" data-id="${esc(r.id)}">${canWrite ? "维护" : "查看"}</button> <button data-action="history" data-id="${esc(r.id)}">变更记录</button>${canWrite ? ` <button class="danger" data-action="delete" data-id="${esc(r.id)}">删除</button>` : ""}</td></tr>`;
+              return `<tr><td><input type="checkbox" data-select="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""} aria-label="选择 ${esc(s.name)}"></td><td><strong>${esc(r.configuration_id)}</strong><br>${esc(s.name)}</td><td>${esc(s.db_type)}<br>${esc(s.host)}:${esc(s.port)}</td><td><div>${esc(s.user)}</div><div class="credential-value">${esc(s.password)}</div></td><td>${esc(m.system)}<br><span class="muted">${esc(m.business)}</span><br><span class="muted">环境 ${esc(m.environment || '未登记')}</span></td><td>${esc(clusterNames(r).join("、"))}<br><span class="muted">${esc(m.node_names)}</span></td><td>${esc(m.owner)}<br>${esc(m.lifecycle || "未登记")}</td><td class="nowrap"><button data-action="edit" data-id="${esc(r.id)}">${canWrite ? "维护" : "查看"}</button> <button data-action="history" data-id="${esc(r.id)}">变更记录</button>${canWrite ? ` <button class="danger" data-action="delete" data-id="${esc(r.id)}">删除</button>` : ""}</td></tr>`;
             })
             .join("") ||
           '<tr><td colspan="8">暂无台账。已有数据源会自动出现在此处。</td></tr>';
@@ -622,7 +629,20 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
           '<option value="">全部集群</option>' +
           clusters.map((c) => `<option>${esc(c)}</option>`).join("");
         $("cluster-filter").value = oldCluster;
+        await refreshGrouping();
         renderRecords();
+      }
+      async function refreshGrouping() {
+        const data=await api('/api/operations/groups');
+        state.options.groups=data.records;state.options.facets=data.facets;state.options.grouping_fields=data.fields;
+        for(const key of ['system','environment','owner']){
+          const field=$(key+'-filter'), previous=field.value;
+          field.innerHTML='<option value="">全部'+esc(data.fields[key])+'</option>'+(data.facets[key]||[]).map(item=>`<option value="${esc(JSON.stringify(item.value))}">${esc(item.label)}（${item.count}）</option>`).join('');
+          field.value=[...field.options].some(option=>option.value===previous)?previous:'';
+          field.onchange=renderRecords;
+        }
+        const selection=state.groupPicker?.value() || {group_ids:[],selection_filters:{}};
+        state.groupPicker=DBPulseTools.scopePicker($('batch-grouping'),data,selection,()=>{state.requestKey=null;});
       }
       function inputField(key, label, value, scope) {
         const id = scope + "-" + key;
@@ -895,11 +915,29 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
         renderSelection(); filterBatchSources();
       };
       $('batch-clear-selected').onclick = () => {state.selected.clear(); renderSelection(); filterBatchSources();};
+      function executionPolicy() {
+        const start = $('batch-window-start').value, end = $('batch-window-end').value;
+        if (!!start !== !!end) throw new Error('请同时填写时段开始和结束时间');
+        return {timeout_seconds:Number($('batch-timeout').value),cluster_concurrency:Number($('batch-cluster-limit').value),query_timeout:Number($('batch-query-timeout').value),row_limit:Number($('batch-row-limit').value),execution_window:start?{start,end,weekdays:[...document.querySelectorAll('[data-weekday]:checked')].map(input=>Number(input.dataset.weekday))}:{}};
+      }
+      $('manage-groups').onclick = () => DBPulseTools.manageGroups(refreshGrouping);
+      $('batch-manage-groups').onclick = () => DBPulseTools.manageGroups(refreshGrouping);
+      $('bulk-grouping').onclick = () => DBPulseTools.bulkGrouping(state.records.filter(record=>state.selected.has(record.id)),loadRecords);
+      $('import-records').onclick = () => DBPulseTools.importInventory(loadRecords);
+      $('test-selected').onclick = () => DBPulseTools.testConnections([...state.selected], id=>edit(state.records.find(record=>record.id===id)));
+      $('open-findings').onclick = () => DBPulseTools.findings(showRun);
+      $('cancel-run').onclick = async () => {
+        try {await api('/api/operations/batches/'+state.run+'/cancel',{method:'POST',body:'{}'});message('已请求取消，正在终止运行中的巡检。',true);await showRun(state.run);}catch(error){message(error.message);}
+      };
+      $('retry-run').onclick = async event => {
+        event.target.disabled=true;
+        try {const result=await api('/api/operations/batches/'+state.run+'/retry',{method:'POST',body:JSON.stringify({request_key:crypto.randomUUID()})});await showRun(result.run.id);await loadRuns();}catch(error){message(error.message);}finally{event.target.disabled=false;}
+      };
       $('schedule-batch').onclick = () => {
-        if (!state.selected.size && !state.clusters.size) return message('请先选择数据源或集群');
+        if (!state.selected.size && !state.clusters.size && !state.groupPicker?.value().group_ids.length && !Object.keys(state.groupPicker?.value().selection_filters||{}).length) return message('请先选择数据源、集群或业务分组');
         if (window.parent === window) return message('请从主界面进入整体巡检后设置定时任务');
         const templates = Object.fromEntries([...$('batch-templates').querySelectorAll('select')].filter(select => select.value).map(select => [select.dataset.templateType,Number(select.value)]));
-        window.parent.postMessage({type:'operations-schedule',task:{name:$('batch-name').value,batch_spec:{instance_ids:[...state.selected],cluster_ids:[...state.clusters],concurrency:Number($('batch-concurrency').value),templates,inspector:$('batch-inspector').value}}},location.origin);
+        window.parent.postMessage({type:'operations-schedule',task:{name:$('batch-name').value,batch_spec:{...state.groupPicker.value(),notify_on_completion:$('batch-notify').checked,instance_ids:[...state.selected],cluster_ids:[...state.clusters],concurrency:Number($('batch-concurrency').value),...executionPolicy(),templates,inspector:$('batch-inspector').value}}},location.origin);
       };
       async function startBatch() {
         const button = $("start-batch");
@@ -919,8 +957,11 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
           );
           const payload = {
             name: $("batch-name").value,
+            ...state.groupPicker.value(),
+            notify_on_completion:$('batch-notify').checked,
             inspector: $("batch-inspector").value,
             concurrency: Number($("batch-concurrency").value),
+            ...executionPolicy(),
             instance_ids: [...state.selected],
             cluster_ids: [...state.clusters],
             templates,
@@ -988,6 +1029,11 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
           "interrupted",
           "cancelled",
         ].includes(r.status);
+        $('cancel-run').classList.toggle('hidden', terminal || !canWrite);
+        $('retry-run').classList.toggle('hidden', !terminal || !(c.failed+c.cancelled) || !canWrite);
+        $('run-comparison').innerHTML = (r.payload.comparison || []).map(item=>`<details><summary>${esc(item.name)} · 与上次对比 · 新增 ${item.new.length} / 持续 ${item.persistent.length} / 恢复 ${item.resolved.length} / 待核对 ${item.unverified.length}</summary><p>${esc(item.reason || '')}</p>${['new','persistent','resolved','unverified'].map(key=>item[key].map(issue=>`<p>${esc({new:'新增',persistent:'持续',resolved:'已恢复',unverified:'待核对'}[key])} · ${esc(issue.description)}</p>`).join('')).join('')}${Object.entries(item.changes).map(([key,change])=>`<p>${esc({health_score:'健康评分',risk_count:'风险数',risk_level:'风险等级'}[key]||key)} · ${esc(change.before)} → ${esc(change.after)}</p>`).join('')}</details>`).join('');
+        $('run-issues').innerHTML = r.payload.members.flatMap(member=>(member.result?.issues||[]).map(issue=>`<div class="toolbar"><span>${esc(member.name)} · ${esc(issue.level)} · ${esc(issue.description)}</span>${canWrite?`<button data-create-finding data-member="${esc(member.instance_id)}" data-fingerprint="${esc(issue.fingerprint)}">创建 / 查看整改</button>`:''}</div>`)).join('') || '<p class="muted">暂无已采集异常项。</p>';
+        $('run-issues').querySelectorAll('[data-create-finding]').forEach(button=>button.onclick=()=>DBPulseTools.createFinding(id,button.dataset.member,button.dataset.fingerprint,showRun).catch(error=>message(error.message)));
         $("run-download").classList.toggle("hidden", !terminal);
         $("run-download").href = "/api/operations/batches/" + id + "/report";
         $("run-message").textContent = r.payload.report_error
@@ -995,6 +1041,13 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
           : c.failed || c.incomplete || c.cancelled
             ? "存在失败或采集缺项，整体报告会保留具体原因。"
             : "";
+        if(r.payload.scope_snapshot?.length){
+          const scopes=document.createElement('p');scopes.textContent='本次业务范围 · '+r.payload.scope_snapshot.map(item=>item.name+'（'+item.instance_ids.length+'个）').join('、');$('run-comparison').prepend(scopes);
+        }
+        if(r.payload.notification){
+          const note=document.createElement('p');note.textContent='完成通知 · '+({sending:'发送中',sent:'已发送',failed:'发送失败，请检查通知设置',skipped:'未配置可用通知渠道'}[r.payload.notification.status]||r.payload.notification.status);$('run-comparison').append(note);
+        }
+        if (r.payload.waiting_for_window) $('run-message').textContent = '等待允许的运行时段，当前未启动后续数据源。';
         if (terminal) await loadRuns();
         if (!terminal)
           state.poll = setTimeout(
@@ -1160,6 +1213,11 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
             await loadRuns();
           }
           if (window.parent !== window) window.parent.postMessage({type:'operations-ready'},location.origin);
+          $('bulk-grouping').disabled = !canWrite;
+          $('manage-groups').disabled = !canWrite;
+          $('batch-manage-groups').disabled = !canWrite;
+          $('import-records').disabled = !canWrite;
+          $('test-selected').disabled = !canWrite;
           $("new-record").disabled = !canWrite;
           $("start-batch").disabled = !canWrite;
           $("schedule-batch").disabled = !canWrite;

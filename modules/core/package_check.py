@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """Exercise a packaged release against temporary installation data."""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import importlib
 import io
@@ -61,6 +57,7 @@ REQUIRED_ASSETS = (
     "web_templates/service_management.html",
     "web_templates/clusters.html",
     "assets/web/static/js/workspace_usability.js",
+    "assets/web/static/js/operations_tools.js",
     "assets/web/static/js/structured_forms.js",
     "assets/web/static/js/inspection_config.js",
     "assets/web/static/css/workspace_usability.css",
@@ -149,6 +146,7 @@ def main():
                     "owner": "fixture",
                     "system": "fixture",
                     "business": "fixture",
+                    "environment": "验收环境",
                 },
             },
         )
@@ -161,13 +159,58 @@ def main():
         workbook = load_workbook(io.BytesIO(response.data))
         if len(workbook.sheetnames) < 9:
             raise RuntimeError("Inventory Excel export is incomplete")
+        excel = response.data
+        preview = client.post(
+            "/api/operations/inventory/import-preview",
+            headers=headers,
+            data={"file": (io.BytesIO(excel), "inventory.xlsx")},
+        )
+        if preview.status_code != 200 or not preview.get_json().get("ok"):
+            raise RuntimeError("Packaged Excel import preview failed")
+        imported = client.post(
+            "/api/operations/inventory/import-apply",
+            headers=headers,
+            json={"token": preview.get_json()["token"]},
+        )
+        if imported.status_code != 200 or imported.get_json().get("updated") != 1:
+            raise RuntimeError("Packaged Excel import apply failed")
+        if not client.get("/api/operations/findings").get_json().get("ok"):
+            raise RuntimeError("Packaged remediation records unavailable")
+        group_response = client.post(
+            "/api/operations/groups",
+            headers=headers,
+            json={
+                "name": "package-business-group",
+                "filters": {"environment": ["验收环境"]},
+            },
+        )
+        if group_response.status_code != 201:
+            raise RuntimeError("Packaged business grouping failed")
+        group_id = group_response.get_json()["record"]["id"]
+        group_members = client.get("/api/operations/groups").get_json()["records"][0][
+            "instance_ids"
+        ]
+        if group_members != [identifier]:
+            raise RuntimeError("Packaged business group member resolution failed")
         response = client.post(
             "/api/intelligence/workflow-tasks",
             headers=headers,
             json={
                 "name": "package-check",
                 "task_type": "batch_inspection",
-                "batch_spec": {"instance_ids": [identifier], "concurrency": 1},
+                "batch_spec": {
+                    "instance_ids": [],
+                    "group_ids": [group_id],
+                    "concurrency": 1,
+                    "cluster_concurrency": 1,
+                    "query_timeout": 5,
+                    "row_limit": 100,
+                    "execution_window": {
+                        "start": "01:00",
+                        "end": "06:00",
+                        "weekdays": [0, 1, 2, 3, 4],
+                    },
+                },
                 "cron": "0 2 * * *",
                 "schedule_enabled": False,
             },
@@ -177,6 +220,8 @@ def main():
                 "Scheduled overall inspection configuration failed: "
                 + str(response.get_json())
             )
+        if response.get_json()["task"]["batch_spec"].get("query_timeout") != 5:
+            raise RuntimeError("Scheduled query limits were lost")
         from docx import Document
         from docxcompose.composer import Composer
 
@@ -217,6 +262,11 @@ def main():
             "default_admin_login": True,
             "existing_password_preserved": True,
             "inventory_excel": True,
+            "inventory_excel_import": True,
+            "business_groups": True,
+            "dynamic_group_schedule": True,
+            "remediation_records": True,
+            "scheduled_query_limits": True,
             "scheduled_overall_inspection": True,
             "report_composition": True,
         }

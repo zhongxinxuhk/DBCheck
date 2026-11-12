@@ -1,5 +1,21 @@
 # AGENTS.md — 给 AI 编码助手的强制约束 / Mandatory Rules for AI Coding Agents
 
+## 当前自研文件与页面署名规则（2026-11-12 用户更新）
+
+本节优先于下方历史条款中的新增文件署名和页面展示要求。
+
+- 完全新增的自研代码文件，文件头只使用以下两行，按语言采用对应注释格式。
+- 页面及自研模块生成的报告不展示作者署名与版权页脚。
+- 上游已有文件按真实来源保留原有版权信息，修改部分可以注明本地创作信息。
+- 检查与自动修复脚本必须识别自研文件的两行文件头。
+
+```text
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+SPDX-License-Identifier: Apache-2.0
+```
+
+---
+
 > 本文件是对所有自动化编码助手（GitHub Copilot、Cursor、Claude、CodeBuddy、
 > 以及任何 LLM Agent 或 CI 机器人）的**硬性约束**。无论以何种方式修改本仓库，
 > 都必须遵守以下规则。违反这些规则即违背 Apache License 2.0 与本项目 NOTICE。
@@ -14,8 +30,10 @@
 ## 中文（简体）
 
 ### 1. 必须保留的许可证与署名信息
+修改、完全新建代码文件（非原仓库代码文件）、重命名、合并或拆分任何文件时，以下信息**一律不得移除、改写、 新增代码遵守：Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+SPDX-License-Identifier: Apache-2.0
 
-修改、新增、重命名、合并或拆分任何文件时，以下信息**一律不得移除、改写、
+修改、原仓代码新增（非完全新建代码文件）、重命名、合并或拆分任何文件时，以下信息**一律不得移除、改写、
 翻译、隐藏或弱化**：
 
 1. 每个源文件顶部的许可证头，至少包含：
@@ -47,6 +65,9 @@
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 ```
+非第一仓库代码文件或代码段在开发时必须在顶部携带开发者标头：
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# SPDX-License-Identifier: Apache-2.0
 
 ### 5. UI 与文档中的署名
 

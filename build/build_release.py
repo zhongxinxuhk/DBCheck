@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """Build, exercise and archive a native DBPulse distribution from PyCharm or CLI."""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import argparse
 import hashlib
@@ -226,6 +222,7 @@ def native(args):
     )
     if args.platform == "windows":
         desktop_result = work / "desktop-check.json"
+        desktop_result.unlink(missing_ok=True)
         desktop = subprocess.run(
             [
                 str(product / "DBPulse.exe"),
@@ -264,7 +261,7 @@ def native(args):
     (product / "README.txt").write_text(
         "DBPulse\n\n初始账号 admin\n初始密码 admin123\n管理地址 http://127.0.0.1:5003\n"
         + (
-            "\nWindows 双击 DBPulse.exe 或 start.bat。关闭状态窗口后在右下角托盘继续运行。\n托盘菜单可显示窗口、启动、停止和退出。\n"
+            "\nWindows 双击 DBPulse.exe 或 start.bat。关闭状态窗口后在右下角托盘继续运行。\n托盘菜单可显示窗口、启动、停止和退出。\n窗口下方实时显示运行日志，可导出数据备份 ZIP 或导入恢复。\n导入会保留当前数据副本，恢复完成后使用备份中的账号密码登录。\n"
             if args.platform == "windows"
             else ""
         ),

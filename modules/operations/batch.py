@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """数据库运维中台的资产台账与多数据源巡检。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import copy
 import hashlib
@@ -23,6 +19,7 @@ import psutil
 from flask import g, session
 from modules.core.data_security import redact
 from .inventory import Conflict
+from .policy import window_open
 
 TERMINAL = {"completed", "partial", "failed", "interrupted", "cancelled"}
 
@@ -45,6 +42,15 @@ class BatchStore:
                 );
             """)
         with self.connection() as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS operations_slots (instance_id TEXT PRIMARY KEY, run_id TEXT, endpoint TEXT, clusters TEXT)"
+            )
+            if "cluster_limit" not in {
+                row["name"] for row in db.execute("PRAGMA table_info(operations_slots)")
+            }:
+                db.execute(
+                    "ALTER TABLE operations_slots ADD COLUMN cluster_limit INTEGER NOT NULL DEFAULT 8"
+                )
             if "cancel_requested" not in {
                 r["name"] for r in db.execute("PRAGMA table_info(operations_batches)")
             }:
@@ -56,6 +62,51 @@ class BatchStore:
         with self.connection() as db:
             db.execute(
                 "UPDATE operations_batches SET cancel_requested=1 WHERE id=?", (run_id,)
+            )
+
+    def claim_member(self, run_id, member, cluster_limit):
+        with self.connection() as db:
+            occupied = [
+                row["run_id"]
+                for row in db.execute(
+                    "SELECT DISTINCT run_id FROM operations_slots WHERE run_id<>?",
+                    (run_id,),
+                )
+            ]
+        for other in occupied:
+            self.get(other)
+        with self.connection() as db:
+            slots = db.execute("SELECT * FROM operations_slots").fetchall()
+            endpoint = member.get("endpoint_key", member["instance_id"])
+            clusters = set(member.get("cluster_keys") or [])
+            if len(slots) >= 8 or any(row["endpoint"] == endpoint for row in slots):
+                return False
+            for cluster in clusters:
+                matching = [
+                    row for row in slots if cluster in json.loads(row["clusters"])
+                ]
+                effective = min(
+                    [cluster_limit] + [row["cluster_limit"] for row in matching]
+                )
+                if len(matching) >= effective:
+                    return False
+            db.execute(
+                "INSERT INTO operations_slots(instance_id,run_id,endpoint,clusters,cluster_limit) VALUES(?,?,?,?,?)",
+                (
+                    member["instance_id"],
+                    run_id,
+                    endpoint,
+                    json.dumps(sorted(clusters)),
+                    cluster_limit,
+                ),
+            )
+            return True
+
+    def release_member(self, run_id, iid):
+        with self.connection() as db:
+            db.execute(
+                "DELETE FROM operations_slots WHERE run_id=? AND instance_id=?",
+                (run_id, iid),
             )
 
     @contextmanager
@@ -160,6 +211,7 @@ class BatchStore:
                 (json.dumps(payload, ensure_ascii=False), status, time.time(), run_id),
             )
             if status in TERMINAL:
+                db.execute("DELETE FROM operations_slots WHERE run_id=?", (run_id,))
                 db.execute(
                     "DELETE FROM operations_batch_leases WHERE run_id=?", (run_id,)
                 )
@@ -210,6 +262,11 @@ class BatchService:
             "desensitize": False,
             "isolate_process": True,
             "template_id": run["payload"].get("templates", {}).get(member["db_type"]),
+            "inspection_timeout": run["payload"]["timeout_seconds"],
+            "inspection_limits": {
+                "query_timeout": run["payload"].get("query_timeout", 15),
+                "row_limit": run["payload"].get("row_limit", 1000),
+            },
         }
         with self.app.test_request_context(
             "/api/start_inspection", method="POST", json=payload
@@ -239,6 +296,11 @@ class BatchService:
 
         return tasks.get(task_id)
 
+    def cancel_task(self, task_id):
+        task = self.task(task_id)
+        if task is not None and not task.get("execution_complete", False):
+            task["cancel_requested"] = True
+
     def valid_report(self, value):
         path = Path(value).resolve() if value else None
         return (
@@ -254,8 +316,11 @@ class BatchService:
         try:
             with self.app.app_context():
                 while True:
-                    if self.store.get(run["id"]).get("cancel_requested"):
+                    cancelling = bool(self.store.get(run["id"]).get("cancel_requested"))
+                    if cancelling:
                         for member in payload["members"]:
+                            if member["status"] in {"running", "unconfirmed"}:
+                                self.cancel_task(member["task_id"])
                             if member["status"] == "queued":
                                 member.update(
                                     status="cancelled",
@@ -278,6 +343,7 @@ class BatchService:
                             "done",
                             "error",
                             "failed",
+                            "cancelled",
                         } and task.get("execution_complete", True):
                             result = copy.deepcopy(task.get("result") or {})
                             report = self.valid_report(
@@ -301,7 +367,11 @@ class BatchService:
                                 )
                             ][-100:]
                             member.update(
-                                status="done" if success else "error",
+                                status=(
+                                    "cancelled"
+                                    if task.get("status") == "cancelled"
+                                    else "done" if success else "error"
+                                ),
                                 finished_at=time.time(),
                                 result=result,
                                 warnings=warnings,
@@ -321,10 +391,14 @@ class BatchService:
                             time.time() - member["started_at"]
                             >= payload["timeout_seconds"]
                         ):
+                            self.cancel_task(member["task_id"])
                             member.update(
                                 status="unconfirmed",
                                 error="等待子任务超时，保留执行槽位并继续核对原任务，避免重复执行",
                             )
+                    for member in payload["members"]:
+                        if member["status"] not in {"queued", "running", "unconfirmed"}:
+                            self.store.release_member(run["id"], member["instance_id"])
                     active = [
                         m
                         for m in payload["members"]
@@ -333,7 +407,11 @@ class BatchService:
                     queued = [m for m in payload["members"] if m["status"] == "queued"]
                     busy = {m.get("endpoint_key", m["instance_id"]) for m in active}
                     available = []
-                    for candidate in queued:
+                    admission = window_open(payload.get("execution_window"))
+                    payload["waiting_for_window"] = bool(
+                        queued and not admission and not cancelling
+                    )
+                    for candidate in queued if admission and not cancelling else []:
                         key = candidate.get("endpoint_key", candidate["instance_id"])
                         if key not in busy and len(available) < max(
                             0, payload["concurrency"] - len(active)
@@ -343,6 +421,10 @@ class BatchService:
                     for member in available:
                         if self.store.get(run["id"]).get("cancel_requested"):
                             break
+                        if not self.store.claim_member(
+                            run["id"], member, payload.get("cluster_concurrency", 1)
+                        ):
+                            continue
                         try:
                             task_id = self.dispatch(run, member)
                             member.update(
@@ -351,6 +433,7 @@ class BatchService:
                                 started_at=time.time(),
                             )
                         except Exception as error:
+                            self.store.release_member(run["id"], member["instance_id"])
                             member.update(
                                 status="error",
                                 finished_at=time.time(),
@@ -373,9 +456,21 @@ class BatchService:
                 if self.store.get(run["id"]).get("cancel_requested"):
                     status = "cancelled"
                 payload["finished_at"] = time.time()
+                from .findings import compare_previous
+
+                payload["comparison"] = compare_previous(self.store, run, payload)
                 self.store.update(run["id"], payload, status)
                 try:
-                    self.ensure_report(self.store.get(run["id"]))
+                    output = self.ensure_report(self.store.get(run["id"]))
+                    if payload.get("notify_on_completion"):
+                        payload["notification"] = {"status": "sending"}
+                        self.store.update(run["id"], payload, status)
+                        from .groups import send_completion
+
+                        payload["notification"] = send_completion(
+                            self.store.get(run["id"]), output
+                        )
+                        self.store.update(run["id"], payload, status)
                 except Exception as error:
                     payload["report_error"] = str(redact(str(error)))[:500]
                     self.store.update(run["id"], payload, status)

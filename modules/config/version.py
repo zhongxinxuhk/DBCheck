@@ -12,7 +12,7 @@ DB 版本信息
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
-__version__ = 'v1.0.3'
+__version__ = 'v1.0.1'
 
 # 发行版本：community 为社区版，professional 为专业版，Business Special Edition 为业务专用版
 EDITION = 'Business Special Edition'

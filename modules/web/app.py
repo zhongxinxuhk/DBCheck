@@ -641,48 +641,51 @@ except Exception as _tuning_err:  # noqa: BLE001
 
 # ── 日志生命周期：后台清理线程（轮转由各写入方负责，这里只管保留与预算）──
 # 立即执行一次（异步），此后每 sweep_interval_seconds 一次；不阻塞启动。
-try:
-    from modules.core.log_manager import start_maintenance as _start_log_maintenance
-    _start_log_maintenance()
-except Exception as _log_mgr_err:  # noqa: BLE001
-    print('[log] 日志清理线程启动失败: %s' % _log_mgr_err, flush=True)
+if os.environ.get('DBPULSE_INSPECTION_WORKER') != '1':
+    try:
+        from modules.core.log_manager import start_maintenance as _start_log_maintenance
+        _start_log_maintenance()
+    except Exception as _log_mgr_err:  # noqa: BLE001
+        print('[log] 日志清理线程启动失败: %s' % _log_mgr_err, flush=True)
 
 # ── 实时监控采集器（v2.10）────────────────────────────────────
 # 采集器与 web_ui 同进程运行，复用同一 socketio 实时推流。
 _monitor_started = False
-try:
-    from modules.pro.metrics_collector import MetricsCollector, get_collector, set_collector
-    _collector = MetricsCollector(socketio=socketio)
-    set_collector(_collector)
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from apscheduler.triggers.interval import IntervalTrigger
-    # signal=False: 不让 APScheduler 注册自己的 SIGINT/SIGTERM 处理器（否则会覆盖本程序的
-    #   强制退出入口，且它只优雅停调度、不退出进程，导致 Ctrl+C 无反应）。
-    # daemon=True: 允许进程在主线程强杀时不被其后台线程阻塞。
-    _monitor_sched = BackgroundScheduler(signal=False, daemon=True)
-    _monitor_sched.add_job(_collector.tick, IntervalTrigger(seconds=30))
-    _monitor_sched.start()
-    _collector.running = True
-    _monitor_started = True
-    print('[monitor] 实时监控采集器已启动（间隔 30s）', flush=True)
-except Exception as _mon_e:
-    print('[monitor] 采集器启动失败: %s' % _mon_e, flush=True)
+if os.environ.get('DBPULSE_INSPECTION_WORKER') != '1':
+    try:
+        from modules.pro.metrics_collector import MetricsCollector, get_collector, set_collector
+        _collector = MetricsCollector(socketio=socketio)
+        set_collector(_collector)
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.interval import IntervalTrigger
+        # signal=False: 不让 APScheduler 注册自己的 SIGINT/SIGTERM 处理器（否则会覆盖本程序的
+        #   强制退出入口，且它只优雅停调度、不退出进程，导致 Ctrl+C 无反应）。
+        # daemon=True: 允许进程在主线程强杀时不被其后台线程阻塞。
+        _monitor_sched = BackgroundScheduler(signal=False, daemon=True)
+        _monitor_sched.add_job(_collector.tick, IntervalTrigger(seconds=30))
+        _monitor_sched.start()
+        _collector.running = True
+        _monitor_started = True
+        print('[monitor] 实时监控采集器已启动（间隔 30s）', flush=True)
+    except Exception as _mon_e:
+        print('[monitor] 采集器启动失败: %s' % _mon_e, flush=True)
 
 # ── 监控大屏采样器（六大域指标 → /api/dashboard/overview）──────
 # 大屏的连接数/慢查询指标复用 MonitorEngine，故未启动时顺带拉起（幂等）。
-try:
-    from modules.monitor.engine import get_monitor_engine as _get_me
-    from modules.monitor.screen_metrics import get_screen_collector as _get_sc
-    _me = _get_me()
-    if not _me.is_running:
-        try:
-            from modules.core.runtime_tuning import get as _tg
-            _me.start(interval=int(_tg('monitor', 'interval')))
-        except Exception:
-            _me.start()
-    _get_sc().start()
-except Exception as _sc_e:
-    print('[screen] 大屏采样器启动失败: %s' % _sc_e, flush=True)
+if os.environ.get('DBPULSE_INSPECTION_WORKER') != '1':
+    try:
+        from modules.monitor.engine import get_monitor_engine as _get_me
+        from modules.monitor.screen_metrics import get_screen_collector as _get_sc
+        _me = _get_me()
+        if not _me.is_running:
+            try:
+                from modules.core.runtime_tuning import get as _tg
+                _me.start(interval=int(_tg('monitor', 'interval')))
+            except Exception:
+                _me.start()
+        _get_sc().start()
+    except Exception as _sc_e:
+        print('[screen] 大屏采样器启动失败: %s' % _sc_e, flush=True)
 
 
 @app.route('/api/pro/metrics/summary')
@@ -1935,7 +1938,9 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
                         'description': _tr(item.get('col1', '')),
                         'suggestion': _tr(item.get('col3', '')),
                     })
+            from modules.operations.findings import snapshot_metrics
             task['result'] = {
+                'metrics': snapshot_metrics(context),
                 'db_type': cfg['history_db_type'],
                 'host': db_info['ip'],
                 'port': db_info['port'],
@@ -3206,7 +3211,7 @@ def _insp_cli_command():
     """返回启动隔离巡检 CLI 的命令行（复用与 JDBC 测试 CLI 相同模式）。"""
     if getattr(sys, 'frozen', False):
         return [sys.executable, '--jdbc-inspection-cli']
-    return [sys.executable, os.path.join(str(PROJECT_ROOT), 'modules', 'jdbc_inspection_cli.py')]
+    return [sys.executable, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'jdbc_inspection_cli.py')]
 
 
 def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
@@ -3239,6 +3244,7 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
         'template_id': template_id,
         'chapter_ids': chapter_ids,
         'isolate_process': bool(tasks.get(task_id, {}).get('isolate_process')),
+        'inspection_limits': tasks.get(task_id, {}).get('inspection_limits', {}),
         'task_metadata': {key: tasks.get(task_id, {}).get(key) for key in
                           ('datasource_id', 'owner_user_id', 'owner_tenant_id')},
     }
@@ -3366,8 +3372,13 @@ def _run_inspection_subprocess(task_id, db_type, db_info, inspector_name,
                 _handle_line(_ln)
             _processed_lines = len(_parts)
 
+        timeout = min(timeout, tasks.get(task_id, {}).get('inspection_timeout', timeout))
         deadline = time.monotonic() + timeout
         while True:
+            if tasks.get(task_id, {}).get('cancel_requested'):
+                _kill_process_tree(proc)
+                tasks[task_id].update(status='cancelled', error_msg='用户已取消巡检')
+                return
             _drain_new()
             if done_seen:
                 break
@@ -5230,6 +5241,11 @@ def api_start_inspection():
 
         if db_type=='gbase8a':
             db_info['tls_ca_file']=(instance if datasource_id else data).get('tls_ca_file','')
+        from modules.operations.policy import normalize_policy
+        inspection_limits = normalize_policy(data.get('inspection_limits') or {})
+        inspection_timeout = data.get('inspection_timeout', JDBC_INSPECTION_TIMEOUT)
+        if type(inspection_timeout) is not int or not 30 <= inspection_timeout <= 86400:
+            raise ValueError('巡检超时须为30到86400秒')
         task_id = str(uuid.uuid4())
         template_id = data.get('template_id') or None
         tasks[task_id] = {
@@ -5240,6 +5256,8 @@ def api_start_inspection():
             'datasource_id': data.get('datasource_id') or None,
             'isolate_process': True,
             'execution_complete': False,
+            'inspection_limits': inspection_limits,
+            'inspection_timeout': inspection_timeout,
             'template_id':   template_id,
             'chapter_ids':   chapter_ids,
             'inspector':     inspector_name,

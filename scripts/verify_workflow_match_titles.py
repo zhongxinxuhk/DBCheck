@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """
 校验工作流 ``match_title`` 与巡检模板章节标题的一致性。
@@ -35,9 +34,6 @@
     python scripts/verify_workflow_match_titles.py --template-kw 业务专项 --verbose
 """
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import argparse
 import os

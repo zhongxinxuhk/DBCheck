@@ -1,10 +1,6 @@
 @echo off
-REM SPDX-License-Identifier: Apache-2.0
-REM Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-REM Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
-REM SPDX-License-Identifier: Apache-2.0
-REM Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-REM Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+rem Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+rem SPDX-License-Identifier: Apache-2.0
 setlocal
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"

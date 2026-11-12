@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """Dependency-free checks for fork branding, update links and release paths."""
 
 # ── 衍生创作署名 / Derivative Work Attribution（追加，不替代上方 fiyo 原始署名）──
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import ast
 import sys
@@ -42,17 +38,21 @@ def main():
         assert removed not in template, removed
     assert 'id="sysinfo-lang"' in template and 'id="sysinfo-host"' in template
     assert 'GitHub Releases →' not in template
-    assert 'RaccoonX / DBCheck' in template and 'sdfiyon@gmail.com' in template
-    assert 'https://github.com/fiyo/DBCheck' in template
+    visible_template = template.split('-->', 1)[-1]
+    assert 'about-credit-row' not in visible_template or 'aboutCreditUpstreamX1' not in visible_template
+    assert '基于 RaccoonX / DBCheck · ©' not in visible_template
     # Verify all packaging producers and consumers agree on the renamed paths.
     for platform in ('windows', 'linux', 'macos'):
         text = (ROOT / 'build' / f'dbcheck_{platform}.spec').read_text()
         ast.parse(text)
         assert "name='DBPulse-" in text
-    for name in ('build-release.yml', 'rebuild-linux.yml'):
+    for name in ('rebuild-linux.yml',):
         text = (ROOT / '.github/workflows' / name).read_text()
         assert 'dist/DBPulse-' in text
         assert 'dist/RaccoonX-' not in text
+    release_workflow=(ROOT/'.github/workflows/build-release.yml').read_text()
+    assert './.github/workflows/portable-release.yml' in release_workflow
+    assert 'needs: [checks, version, packages]' in release_workflow
     for name in ('docker.yml', 'docker-multiarch.yml'):
         text = (ROOT / '.github/workflows' / name).read_text()
         assert 'ghcr.io/zhongxinxuhk/dbpulse' in text

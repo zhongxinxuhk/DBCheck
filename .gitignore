@@ -235,3 +235,7 @@ build/core-missing.txt
 
 # macOS Finder metadata
 .DS_Store
+
+# Windows 状态窗口、日志与本地备份回归用例
+!modules/desktop/tests/
+!modules/desktop/tests/*.py

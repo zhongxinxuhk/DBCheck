@@ -9,8 +9,7 @@
 name: Tests
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
   pull_request:
 
 jobs:
@@ -32,15 +31,20 @@ jobs:
 
       - name: Run test suite
         run: |
+          python -m compileall -q modules plugins scripts i18n web_ui.py
+          git diff --check
+          python scripts/check_license_headers.py
           python scripts/verify_dbpulse.py
           python scripts/verify_upstream_sync.py
           python scripts/verify_service_management.py
           python scripts/verify_operations.py
+          python scripts/verify_operations_round1.py
+          python scripts/verify_operations_groups.py
           python scripts/verify_scheduled_inspection.py
           python scripts/verify_clusters.py
           python scripts/verify_database_compatibility.py
           python scripts/verify_portable_bundle.py
-          python -m pytest -q modules/inspection/tests modules/core/tests modules/objstore/tests
+          python -m pytest -q modules/inspection/tests modules/core/tests modules/objstore/tests modules/desktop/tests
           if [ -d tests ] && ls tests/test_*.py >/dev/null 2>&1; then
             pytest -q
           else

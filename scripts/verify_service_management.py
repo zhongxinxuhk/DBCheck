@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """Local isolated regression checks. No customer database or external network."""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
 import io
@@ -191,7 +187,8 @@ class Services(unittest.TestCase):
             self.assertIn(req['id'],document)
         self.assertNotIn('192.0.2.123',html)
         self.assertNotIn('192.0.2.123',document)
-        self.assertIn('sdfiyon@gmail.com',document)
+        self.assertNotIn('基于 RaccoonX / DBCheck',document)
+        self.assertNotIn('DBPulse 衍生维护',document)
         self.assertIn('未采集',document)
 
     def test_schedule_lease_prevents_duplicate_collection(self):

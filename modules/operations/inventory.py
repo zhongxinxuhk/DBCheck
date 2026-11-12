@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """数据库运维中台的资产台账与多数据源巡检。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import copy
 import json
@@ -33,6 +29,7 @@ ASSET_FIELDS = {
     "project_id": "项目编号",
     "system": "系统归属",
     "business": "业务用途",
+    "environment": "运行环境",
     "owner": "运维责任人",
     "online_date": "上线日期",
     "lifecycle": "运行状态",
@@ -272,6 +269,12 @@ class Inventory:
         self.manager._load_data()
 
     def save(self, actor, data, iid=None, new_id=None):
+        with self.connection(write=True) as db:
+            record = self._save(actor, data, iid, new_id, db)
+        self._refresh()
+        return record
+
+    def _save(self, actor, data, iid=None, new_id=None, db=None):
         source_updates = data.get("source", {})
         metadata_updates = data.get("metadata", {})
         if not isinstance(source_updates, dict) or not isinstance(
@@ -287,173 +290,167 @@ class Inventory:
                 isinstance(value, (dict, list)) or len(str(value)) > 32767
             ):
                 raise ValueError("台账属性须为文本或数值，单元格最多32767字符")
-        with self.connection(write=True) as db:
-            old = self._record(db, iid) if iid else None
-            if old and data.get("revision") != old["revision"]:
-                raise Conflict("台账或数据源已被修改，请刷新后保存")
-            metadata = {
-                **(old["metadata"] if old else {}),
-                **copy.deepcopy(metadata_updates),
+        old = self._record(db, iid) if iid else None
+        if old and data.get("revision") != old["revision"]:
+            raise Conflict("台账或数据源已被修改，请刷新后保存")
+        metadata = {
+            **(old["metadata"] if old else {}),
+            **copy.deepcopy(metadata_updates),
+        }
+        if old and isinstance(metadata_updates.get("tables"), dict):
+            metadata["tables"] = {
+                **old["metadata"].get("tables", {}),
+                **metadata_updates["tables"],
             }
-            if old and isinstance(metadata_updates.get("tables"), dict):
-                metadata["tables"] = {
-                    **old["metadata"].get("tables", {}),
-                    **metadata_updates["tables"],
-                }
-            node_count = metadata.get("node_count")
-            if node_count not in (None, ""):
-                if (
-                    isinstance(node_count, bool)
-                    or not str(node_count).isdigit()
-                    or int(node_count) < 1
-                ):
-                    raise ValueError("节点数量须为正整数")
-                metadata["node_count"] = int(node_count)
-            tables = metadata.get("tables", {})
-            if not isinstance(tables, dict) or set(tables) - TABLES.keys():
-                raise ValueError("专项台账格式无效")
-            for key, rows in tables.items():
-                if not isinstance(rows, list) or len(rows) > 10000:
-                    raise ValueError("专项台账须为列表，最多10000行")
-                for row in rows:
-                    if not isinstance(row, dict) or set(row) - TABLES[key][1].keys():
-                        raise ValueError("专项台账列名无效")
-                    if any(
-                        isinstance(value, (dict, list)) or len(str(value)) > 32767
-                        for value in row.values()
-                    ):
-                        raise ValueError("专项台账单元格须为文本或数值，最多32767字符")
-            iid = iid or new_id or uuid.uuid4().hex[:12]
-            if old:
-                stored = dict(
-                    db.execute("SELECT * FROM instances WHERE id=?", (iid,)).fetchone()
-                )
-                stored["tags"] = json.loads(stored.get("tags") or "[]")
-            else:
-                stored = DatabaseInstance(
-                    id=iid, name="", db_type="", host="", port=0, user=""
-                ).to_dict()
-            for key, value in source_updates.items():
-                if key not in BOOLEAN_FIELDS | {
-                    "tags",
-                    "port",
-                    "ssh_port",
-                } and not isinstance(value, str):
-                    raise ValueError("连接文本字段格式无效")
-                if len(str(value)) > 32767:
-                    raise ValueError("连接字段最多32767字符")
-                if key in SECRETS:
-                    if value:
-                        stored[key] = _encrypt_pwd(str(value))
-                else:
-                    stored[key] = value
-            for key in ("name", "db_type", "host"):
-                if not isinstance(stored.get(key), str) or not stored[key].strip():
-                    raise ValueError("资产名称、数据库类型和主机地址必填")
-                stored[key] = stored[key].strip()
-            stored["db_type"] = {
-                "postgresql": "pg",
-                "dm8": "dm",
-                "oracle_full": "oracle",
-            }.get(stored["db_type"].lower(), stored["db_type"].lower())
-            for key in ("port", "ssh_port"):
-                try:
-                    value = stored.get(key, 22)
-                    if isinstance(value, bool) or (
-                        isinstance(value, float) and not value.is_integer()
-                    ):
-                        raise ValueError()
-                    stored[key] = int(value)
-                    if not 1 <= stored[key] <= 65535:
-                        raise ValueError()
-                except (TypeError, ValueError):
-                    raise ValueError("端口须为1到65535的整数")
-            for key in BOOLEAN_FIELDS:
-                if key not in source_updates:
-                    stored[key] = bool(stored.get(key))
-                if stored.get(key) not in (True, False, 0, 1):
-                    raise ValueError("连接开关须为布尔值")
-                stored[key] = bool(stored.get(key))
-            if not isinstance(stored.get("tags"), list) or any(
-                not isinstance(t, str) for t in stored["tags"]
+        node_count = metadata.get("node_count")
+        if node_count not in (None, ""):
+            if (
+                isinstance(node_count, bool)
+                or not str(node_count).isdigit()
+                or int(node_count) < 1
             ):
-                raise ValueError("标签须为列表")
-            if not old:
-                duplicate = db.execute(
-                    "SELECT id FROM instances WHERE db_type=? AND host=? AND port=? "
-                    'AND "user"=? AND "database"=? AND service_name=?',
-                    tuple(
-                        stored.get(k, "")
-                        for k in (
-                            "db_type",
-                            "host",
-                            "port",
-                            "user",
-                            "database",
-                            "service_name",
-                        )
-                    ),
-                ).fetchone()
-                if duplicate:
-                    raise Conflict("该连接已有数据源，请在台账列表中补充已有记录")
-            stored["connection_mode"] = stored.get("connection_mode") or (
-                "jdbc" if stored["db_type"] == "sqlserver_jdbc" else "odbc"
+                raise ValueError("节点数量须为正整数")
+            metadata["node_count"] = int(node_count)
+        tables = metadata.get("tables", {})
+        if not isinstance(tables, dict) or set(tables) - TABLES.keys():
+            raise ValueError("专项台账格式无效")
+        for key, rows in tables.items():
+            if not isinstance(rows, list) or len(rows) > 10000:
+                raise ValueError("专项台账须为列表，最多10000行")
+            for row in rows:
+                if not isinstance(row, dict) or set(row) - TABLES[key][1].keys():
+                    raise ValueError("专项台账列名无效")
+                if any(
+                    isinstance(value, (dict, list)) or len(str(value)) > 32767
+                    for value in row.values()
+                ):
+                    raise ValueError("专项台账单元格须为文本或数值，最多32767字符")
+        iid = iid or new_id or uuid.uuid4().hex[:12]
+        if old:
+            stored = dict(
+                db.execute("SELECT * FROM instances WHERE id=?", (iid,)).fetchone()
             )
-            stored["updated_at"] = now()
-            configuration_id = str(
-                metadata.get("configuration_id") or "CI-" + iid
-            ).strip()
-            if not configuration_id:
-                raise ValueError("配置项编号不能为空")
-            metadata["configuration_id"] = configuration_id
-            columns = {
-                row["name"] for row in db.execute("PRAGMA table_info(instances)")
-            }
-            values = {key: value for key, value in stored.items() if key in columns}
-            values["tags"] = json.dumps(values.get("tags", []), ensure_ascii=False)
-            names = list(values)
-            quoted = ",".join('"' + name + '"' for name in names)
-            marks = ",".join("?" for _ in names)
-            db.execute(
-                f"INSERT {'OR REPLACE ' if old else ''}INTO instances ({quoted}) VALUES ({marks})",
-                list(values.values()),
-            )
-            version = old["version"] + 1 if old else 1
+            stored["tags"] = json.loads(stored.get("tags") or "[]")
+        else:
+            stored = DatabaseInstance(
+                id=iid, name="", db_type="", host="", port=0, user=""
+            ).to_dict()
+        for key, value in source_updates.items():
+            if key not in BOOLEAN_FIELDS | {
+                "tags",
+                "port",
+                "ssh_port",
+            } and not isinstance(value, str):
+                raise ValueError("连接文本字段格式无效")
+            if len(str(value)) > 32767:
+                raise ValueError("连接字段最多32767字符")
+            if key in SECRETS:
+                if value:
+                    stored[key] = _encrypt_pwd(str(value))
+            else:
+                stored[key] = value
+        for key in ("name", "db_type", "host"):
+            if not isinstance(stored.get(key), str) or not stored[key].strip():
+                raise ValueError("资产名称、数据库类型和主机地址必填")
+            stored[key] = stored[key].strip()
+        stored["db_type"] = {
+            "postgresql": "pg",
+            "dm8": "dm",
+            "oracle_full": "oracle",
+        }.get(stored["db_type"].lower(), stored["db_type"].lower())
+        for key in ("port", "ssh_port"):
             try:
-                db.execute(
-                    "INSERT INTO operations_inventory VALUES(?,?,?,?,?) ON CONFLICT(instance_id) "
-                    "DO UPDATE SET configuration_id=excluded.configuration_id,version=excluded.version,payload=excluded.payload",
-                    (
-                        iid,
-                        actor.tenant_id,
-                        configuration_id,
-                        version,
-                        self.seal(metadata),
-                    ),
-                )
-            except sqlite3.IntegrityError as error:
-                raise Conflict("配置项编号已存在") from error
-            audit_source = {k: v for k, v in stored.items() if k not in SECRETS}
-            audit = {
-                "before": old,
-                "after": {"source": audit_source, "metadata": metadata},
-                "credential_fields_updated": sorted(
-                    SECRETS & {k for k, v in source_updates.items() if v}
+                value = stored.get(key, 22)
+                if isinstance(value, bool) or (
+                    isinstance(value, float) and not value.is_integer()
+                ):
+                    raise ValueError()
+                stored[key] = int(value)
+                if not 1 <= stored[key] <= 65535:
+                    raise ValueError()
+            except (TypeError, ValueError):
+                raise ValueError("端口须为1到65535的整数")
+        for key in BOOLEAN_FIELDS:
+            if key not in source_updates:
+                stored[key] = bool(stored.get(key))
+            if stored.get(key) not in (True, False, 0, 1):
+                raise ValueError("连接开关须为布尔值")
+            stored[key] = bool(stored.get(key))
+        if not isinstance(stored.get("tags"), list) or any(
+            not isinstance(t, str) for t in stored["tags"]
+        ):
+            raise ValueError("标签须为列表")
+        if not old:
+            duplicate = db.execute(
+                "SELECT id FROM instances WHERE db_type=? AND host=? AND port=? "
+                'AND "user"=? AND "database"=? AND service_name=?',
+                tuple(
+                    stored.get(k, "")
+                    for k in (
+                        "db_type",
+                        "host",
+                        "port",
+                        "user",
+                        "database",
+                        "service_name",
+                    )
                 ),
-            }
+            ).fetchone()
+            if duplicate:
+                raise Conflict("该连接已有数据源，请在台账列表中补充已有记录")
+        stored["connection_mode"] = stored.get("connection_mode") or (
+            "jdbc" if stored["db_type"] == "sqlserver_jdbc" else "odbc"
+        )
+        stored["updated_at"] = now()
+        configuration_id = str(metadata.get("configuration_id") or "CI-" + iid).strip()
+        if not configuration_id:
+            raise ValueError("配置项编号不能为空")
+        metadata["configuration_id"] = configuration_id
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(instances)")}
+        values = {key: value for key, value in stored.items() if key in columns}
+        values["tags"] = json.dumps(values.get("tags", []), ensure_ascii=False)
+        names = list(values)
+        quoted = ",".join('"' + name + '"' for name in names)
+        marks = ",".join("?" for _ in names)
+        db.execute(
+            f"INSERT {'OR REPLACE ' if old else ''}INTO instances ({quoted}) VALUES ({marks})",
+            list(values.values()),
+        )
+        version = old["version"] + 1 if old else 1
+        try:
             db.execute(
-                "INSERT INTO operations_inventory_history(instance_id,tenant,actor,action,created,payload) VALUES(?,?,?,?,?,?)",
+                "INSERT INTO operations_inventory VALUES(?,?,?,?,?) ON CONFLICT(instance_id) "
+                "DO UPDATE SET configuration_id=excluded.configuration_id,version=excluded.version,payload=excluded.payload",
                 (
                     iid,
                     actor.tenant_id,
-                    actor.id,
-                    "update" if old else "create",
-                    now(),
-                    self.seal(audit),
+                    configuration_id,
+                    version,
+                    self.seal(metadata),
                 ),
             )
-        self._refresh()
-        return self.get(iid)
+        except sqlite3.IntegrityError as error:
+            raise Conflict("配置项编号已存在") from error
+        audit_source = {k: v for k, v in stored.items() if k not in SECRETS}
+        audit = {
+            "before": old,
+            "after": {"source": audit_source, "metadata": metadata},
+            "credential_fields_updated": sorted(
+                SECRETS & {k for k, v in source_updates.items() if v}
+            ),
+        }
+        db.execute(
+            "INSERT INTO operations_inventory_history(instance_id,tenant,actor,action,created,payload) VALUES(?,?,?,?,?,?)",
+            (
+                iid,
+                actor.tenant_id,
+                actor.id,
+                "update" if old else "create",
+                now(),
+                self.seal(audit),
+            ),
+        )
+        return self._record(db, iid)
 
     def delete(self, actor, iid, revision):
         with self.connection(write=True) as db:

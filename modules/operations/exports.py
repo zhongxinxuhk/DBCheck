@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """数据库运维中台的资产台账与多数据源巡检。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import io
 import json
@@ -116,6 +112,7 @@ def inventory_xlsx(records, history):
         "version",
         "system",
         "business",
+        "environment",
         "owner",
         "online_date",
         "lifecycle",
@@ -323,12 +320,6 @@ def batch_docx(run, reports_dir):
     style.font.name = "微软雅黑"
     style.font.size = Pt(10)
     style.element.get_or_add_rPr().rFonts.set(qn("w:eastAsia"), "微软雅黑")
-    footer = section.footer.paragraphs[0]
-    footer.text = (
-        "DBCheck / RaccoonX · Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com> · Apache-2.0\n"
-        "DBPulse · Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>"
-    )
-    footer.style = doc.styles["Caption"]
     doc.add_heading(run["payload"]["name"], 0)
     doc.add_paragraph("多数据源整体巡检报告")
     dt = lambda ts: (
@@ -391,6 +382,37 @@ def batch_docx(run, reports_dir):
             for m in run["payload"]["members"]
         ],
     )
+    comparison = run["payload"].get("comparison", [])
+    if comparison:
+        doc.add_heading("与上次巡检对比", 1)
+        for item in comparison:
+            doc.add_heading(item["name"], 2)
+            doc.add_paragraph(
+                "新增问题 %s，持续问题 %s，已恢复问题 %s，待核对问题 %s"
+                % tuple(
+                    len(item.get(key, []))
+                    for key in ("new", "persistent", "resolved", "unverified")
+                )
+            )
+            if item.get("reason"):
+                doc.add_paragraph(item["reason"])
+            for key, label in (
+                ("new", "新增"),
+                ("persistent", "持续"),
+                ("resolved", "已恢复"),
+                ("unverified", "待核对"),
+            ):
+                for issue in item.get(key, []):
+                    doc.add_paragraph(label + " · " + issue["description"])
+            for key, change in item.get("changes", {}).items():
+                label = {
+                    "health_score": "健康评分",
+                    "risk_count": "风险数",
+                    "risk_level": "风险等级",
+                }.get(key, key)
+                doc.add_paragraph(
+                    label + " · " + str(change["before"]) + " → " + str(change["after"])
+                )
     doc.add_heading("二、集群与业务分组汇总", 1)
     grouped = defaultdict(list)
     for m in run["payload"]["members"]:
@@ -407,6 +429,38 @@ def batch_docx(run, reports_dir):
             for name, ms in grouped.items()
         ],
     )
+    scope = run["payload"].get("scope_snapshot", [])
+    if scope:
+        doc.add_heading("业务分组与本次纳入范围", 1)
+        table(
+            ["分组/范围", "筛选条件", "本次纳入数"],
+            [
+                [item["name"], item["description"], len(item["instance_ids"])]
+                for item in scope
+            ],
+        )
+    for key, label in (
+        ("system", "业务系统"),
+        ("environment", "运行环境"),
+        ("owner", "运维责任人"),
+    ):
+        sections = defaultdict(list)
+        for member in run["payload"]["members"]:
+            sections[member.get("asset_metadata", {}).get(key) or "未登记"].append(
+                member
+            )
+        table(
+            [label, "纳入数", "完成数", "失败/中断数"],
+            [
+                [
+                    name,
+                    len(items),
+                    sum(item["status"] == "done" for item in items),
+                    sum(item["status"] in {"error", "interrupted"} for item in items),
+                ]
+                for name, items in sections.items()
+            ],
+        )
     doc.add_heading("三、风险与未完成项", 1)
     for m in run["payload"]["members"]:
         issues = m.get("result", {}).get("issues") or []

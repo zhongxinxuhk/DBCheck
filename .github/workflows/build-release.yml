@@ -1,430 +1,65 @@
-name: Build Release Binaries
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# SPDX-License-Identifier: Apache-2.0
 
-# 触发：
-#   1) 推送 v* 标签时自动出包并挂到该标签的 Release 下
-#   2) 手动 dispatch（用于回填某个已存在标签，需先删除该 Release 避免冲突）
+name: Check, build and publish DBPulse
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Release tag, e.g. v26.11.5.1"
-        required: true
-        default: "v26.11.5.1"
-
 permissions:
-  contents: write
-
-env:
-  PY_VERSION: "3.11"
-  # CI 宽松依赖安装：逐个安装依赖，装不上的可选驱动（依赖厂商 SDK / 无对应平台
-  # wheel，如 macOS 上的 dmpython、gbase8sdb）跳过，最后统一校验构建期必需模块。
-  DBCHECK_CI_LENIENT: "1"
-
+  contents: read
+concurrency:
+  group: dbpulse-production-release
+  cancel-in-progress: false
 jobs:
-  # ── 离线 wheel 预下载（根治 Windows/macOS runner 无法访问 PyPI 的问题）─────────
-  # GitHub 托管的 Windows/macOS runner 共享出口 IP 被 PyPI（及国内镜像）限流/封锁，
-  # 在线 `pip install` 在那里会确定性快速失败。而 ubuntu-latest 池能通 PyPI。
-  # 故在此用 ubuntu 把三平台 wheel 全部下载成 artifact，供下游构建作业离线安装。
-  download-wheels:
-    name: Download wheels (${{ matrix.target }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: win,        artifact: wheels-win }
-          - { target: mac-x86_64, artifact: wheels-mac-x86_64 }
-          - { target: mac-arm64,  artifact: wheels-mac-arm64 }
+  checks:
+    name: Required validation
+    uses: ./.github/workflows/test.yml
+  version:
+    name: Allocate release version
+    needs: checks
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      published: ${{ steps.plan.outputs.published }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
         with:
-          python-version: ${{ env.PY_VERSION }}
-
-      - name: Download platform wheels (offline source)
-        run: python build/download_wheels.py "${{ matrix.target }}" "wheels-${{ matrix.target }}"
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        timeout-minutes: 20
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v7.1.0
         with:
-          name: ${{ matrix.artifact }}
-          path: wheels-${{ matrix.target }}
-          if-no-files-found: error
-
-  build-windows:
-    name: Build Windows (x64)
-    runs-on: windows-latest
-    needs: [download-wheels]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PY_VERSION }}
-
-      # 拉取 ubuntu 作业预下载的 Windows wheel，改为离线安装（不再访问 PyPI）
-      - name: Download prebuilt wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels-win
-          path: wheels
-
-      - name: Set offline wheel dir
-        run: echo "DBCHECK_WHEEL_DIR=wheels" >> "$GITHUB_ENV"
-
-      # 干净 checkout 缺失的输入物：data/pro_data（空目录，git 不跟踪）与
-      # dbc_config.json（含凭据、不入库）——由 ci_prepare.py 现场补齐（幂等）
-      - name: Prepare build inputs
-        run: python build/ci_prepare.py
-
-      - name: Build (PyInstaller -> zip)
-        shell: pwsh
-        run: |
-          .\build\build_windows.bat 2>&1 | Tee-Object -FilePath build-windows.log
-          exit $LASTEXITCODE
-
-      # 构建日志的下载需要认证，但产物「列表」无需认证即可读。
-      # 故把关键报错摘要编进产物名，失败时无需登录即可看到首因。
-      - name: Extract error snippet
-        if: failure()
-        shell: pwsh
-        run: |
-          $snip = ((Select-String -Path build-windows.log -Pattern 'error|failed|Traceback|No matching|Unable to find' |
-            Select-Object -Last 3 | ForEach-Object { $_.Line }) -join ' | ')
-          $snip = ($snip -replace '[^a-zA-Z0-9 |._-]', ' ')
-          if ($snip.Length -gt 160) { $snip = $snip.Substring(0, 160) }
-          "ERR_SNIPPET=$snip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "snippet: $snip"
-          # 输出为 annotation，便于无登录权限时也能从 annotations API 读到真实报错
-          if ($snip -ne '') {
-            Write-Host "::error::Windows build failed: $snip"
-          }
-          if (Test-Path build/core-missing.txt) {
-            foreach ($line in (Get-Content build/core-missing.txt)) {
-              Write-Host "::error::missing: $line"
-            }
-          }
-          # 无条件把日志关键行 + 末尾 40 行逐行以 annotation 输出，确保无登录权限也能读到真实报错
-          if (Test-Path build-windows.log) {
-            $kw = (Select-String -Path build-windows.log -Pattern 'error|fail|traceback|exception|No matching|Could not|denied|refused|Missing' |
-              Select-Object -First 20 | ForEach-Object { $_.Line.Trim() })
-            $tail = (Get-Content build-windows.log -Tail 20 | Where-Object { $_.Trim() -ne '' })
-            $all = ($kw + $tail) | Select-Object -Unique | Select-Object -First 40
-            foreach ($l in $all) {
-              $s = ($l -replace '[^a-zA-Z0-9 |._\-/:()=<>]', ' ')
-              if ($s.Length -gt 200) { $s = $s.Substring(0, 200) }
-              if ($s.Trim() -ne '') { Write-Host "::error::LOG: $s" }
-            }
-          }
-          {
-            echo "## 构建失败摘要"
-            echo ""
-            echo '```'
-            echo "$snip"
-            echo '```'
-            if (Test-Path build/core-missing.txt) {
-              echo ""
-              echo "### 缺失的核心模块"
-              echo ""
-              echo '```'
-              Get-Content build/core-missing.txt
-              echo '```'
-            }
-          } | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-
-      # 产物名必须固定：GitHub artifact 名不允许 | : < > * 等字符，
-      # 之前把错误摘要拼进名字（build-log-windows-<snippet>）会直接让本步骤
-      # 报 "The extract name is not valid" → 构建日志传不上来，出包失败时
-      # 线上没有任何可查的日志。摘要改放正文与文件名里。
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-windows
-          path: |
-            build-windows.log
-            build/core-missing.txt
-          if-no-files-found: warn
-        timeout-minutes: 10
-        continue-on-error: true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: dist/DBPulse-Windows-x86_64-*.zip
-        timeout-minutes: 15
-        continue-on-error: true
-
-  build-linux:
-    # 临时屏蔽：manylinux2014 容器内 Pillow/JPype1 源码编译缺 jpeg 等系统库持续失败，
-    # 先仅出 Windows / macOS 包。恢复方法：删除下面这行 `if: false` 即可重新启用。
-    if: false
-    name: Build Linux (manylinux2014 / glibc 2.17)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-
-      # 在 manylinux2014 容器内构建，产物兼容 CentOS 7 / RHEL 7 (glibc 2.17)
-      - name: Build in manylinux2014 container
-        run: |
-          docker run --rm -v "$PWD":/src -w /src quay.io/pypa/manylinux2014_x86_64 bash -c '
-            set -e
-            PYBIN=$(ls -d /opt/python/cp311-cp311 2>/dev/null || ls -d /opt/python/cp310-cp310 2>/dev/null || ls -d /opt/python/cp3*-cp3* 2>/dev/null | sort | tail -1)
-            echo "Using manylinux Python: $PYBIN"
-            ln -sf "$PYBIN/bin/python3" /usr/local/bin/python3
-            ln -sf "$PYBIN/bin/pip" /usr/local/bin/pip
-            # 升级 pip/setuptools/wheel：manylinux2014 自带 pip 较旧，升级可提高
-            # 预编译 wheel 命中率，避免 JPype1/Pillow 等被迫从源码编译
-            python3 -m pip install --upgrade pip setuptools wheel --timeout 120 --retries 10
-            # Pillow/JPype1/Pandas 源码编译需要的系统库（即使能命中 wheel 也装齐，作为兜底）
-            # Pillow 需要：libjpeg-turbo-devel zlib-devel libpng-devel freetype-devel
-            #              libtiff-devel lcms2-devel libwebp-devel openjpeg2-devel
-            # JPype1 需要 JDK 11+ (Java 8 编译会失败: javac: invalid target release: 9)
-            # PyInstaller 需要 Python 共享库 (python-libs)
-            # Pandas/Cython 编译需要 cython 和开发工具
-            # 注意：CentOS 7 里 Pillow 真正要的是 libjpeg-turbo-devel（libjpeg-devel 是 6b 老版本，不匹配）
-            # 重试循环确保网络抖动时也能装齐；Pillow 源码编译兜底必须有 jpeg 等开发库。
-            # 注意：CentOS 7 里 Pillow 真正要的是 libjpeg-turbo-devel（libjpeg-devel 是 6b 老版本，不匹配）
-            for i in 1 2 3; do
-              yum install -y libffi-devel openssl-devel postgresql-devel \
-                  libjpeg-turbo-devel zlib-devel libpng-devel freetype-devel \
-                  libtiff-devel lcms2-devel libwebp-devel openjpeg2-devel \
-                  java-11-openjdk java-11-openjdk-devel ant \
-                  python3-libs python3-devel \
-                  gcc gcc-c++ make cmake ninja-build cython pkgconfig && break
-              echo "[warn] yum install attempt $i failed, retrying in 5s..."
-              sleep 5
-            done
-            # 设置 JAVA_HOME 让所有 Java 工具都使用 Java 11
-            export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
-            export PATH=$JAVA_HOME/bin:$PATH
-            # 补齐干净 checkout 缺失的输入物（运行时目录 + 默认配置）
-            python3 build/ci_prepare.py
-            bash build/build_linux.sh 2>&1 | tee build-linux.log
-            RC=${PIPESTATUS[0]}
-            # dist 可能在构建失败时不生成，chmod 容错避免掩盖真实 RC
-            chmod -R a+rwX /src/dist || true
-            exit $RC
-          '
-
-      # 同 Windows：把关键报错摘要编进产物名（产物列表无需认证即可读）
-      - name: Extract error snippet
-        if: failure()
-        run: |
-          SNIP=$(grep -aiE "error|failed|Traceback|No matching|Unable to find" build-linux.log \
-            | tail -3 | tr -d '\r' | tr '\n' '|' | tr -c 'a-zA-Z0-9 |._-' ' ' | cut -c1-160)
-          echo "ERR_SNIPPET=$SNIP" >> "$GITHUB_ENV"
-          echo "snippet: $SNIP"
-          {
-            echo "## 构建失败摘要"
-            echo ""
-            echo '```'
-            echo "$SNIP"
-            echo '```'
-            if [ -f build/core-missing.txt ]; then
-              echo ""
-              echo "### 缺失的核心模块"
-              echo ""
-              echo '```'
-              cat build/core-missing.txt
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-linux
-          path: |
-            build-linux.log
-            build/core-missing.txt
-          if-no-files-found: warn
-        timeout-minutes: 10
-        continue-on-error: true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux
-          path: dist/DBPulse-Linux-x86_64-*.tar.gz
-        timeout-minutes: 15
-        continue-on-error: true
-
-  build-macos:
-    name: Build macOS (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    needs: [download-wheels]
-    strategy:
-      fail-fast: false  # 两个架构互相独立，一个失败不影响另一个跑完（便于一次看全结果）
-      matrix:
-        include:
-          - { runner: macos-14, arch: arm64 }
-          - { runner: macos-15-intel, arch: x86_64 }
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PY_VERSION }}
-
-      # 拉取 ubuntu 作业预下载的对应架构 wheel，改为离线安装
-      - name: Download prebuilt wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: wheels-mac-${{ matrix.arch }}
-          path: wheels
-
-      - name: Set offline wheel dir
-        run: echo "DBCHECK_WHEEL_DIR=wheels" >> "$GITHUB_ENV"
-
-      # 同 Windows：补齐干净 checkout 缺失的输入物
-      - name: Prepare build inputs
-        run: python build/ci_prepare.py
-
-      - name: Build (PyInstaller -> tar.gz)
-        run: |
-          bash build/build_macos.sh 2>&1 | tee build-macos-${{ matrix.arch }}.log
-          exit ${PIPESTATUS[0]}
-
-      # 同 Windows：把关键报错摘要编进产物名（产物列表无需认证即可读）
-      - name: Extract error snippet
-        if: failure()
-        run: |
-          SNIP=$(grep -aiE "error|failed|Traceback|No matching|Unable to find" "build-macos-${{ matrix.arch }}.log" \
-            | tail -3 | tr -d '\r' | tr '\n' '|' | tr -c 'a-zA-Z0-9 |._-' ' ' | cut -c1-160)
-          echo "ERR_SNIPPET=$SNIP" >> "$GITHUB_ENV"
-          echo "snippet: $SNIP"
-          # 输出为 annotation，便于无登录权限时也能从 annotations API 读到真实报错
-          if [ -n "$SNIP" ]; then
-            echo "::error::macOS(${{ matrix.arch }}) build failed: $SNIP"
-          fi
-          if [ -f build/core-missing.txt ]; then
-            while IFS= read -r line; do
-              echo "::error::missing: $line"
-            done < build/core-missing.txt
-          fi
-          # 无条件把日志关键行 + 末尾 40 行逐行以 annotation 输出，确保无登录权限也能读到真实报错
-          LOG="build-macos-${{ matrix.arch }}.log"
-          if [ -f "$LOG" ]; then
-            grep -aiE "error|fail|traceback|exception|No matching|Could not|denied|refused|Missing" "$LOG" 2>/dev/null | tail -20 | cut -c1-200 | while IFS= read -r line; do
-              s=$(printf '%s' "$line" | tr -c 'a-zA-Z0-9 |._\-/:()=<>' ' ')
-              echo "::error::LOG: $s"
-            done
-            echo "::error::LOG_TAIL_BEGIN"
-            tail -n 20 "$LOG" 2>/dev/null | cut -c1-200 | while IFS= read -r line; do
-              s=$(printf '%s' "$line" | tr -c 'a-zA-Z0-9 |._\-/:()=<>' ' ')
-              echo "::error::LOG: $s"
-            done
-            echo "::error::LOG_TAIL_END"
-          fi
-          {
-            echo "## 构建失败摘要"
-            echo ""
-            echo '```'
-            echo "$SNIP"
-            echo '```'
-            if [ -f build/core-missing.txt ]; then
-              echo ""
-              echo "### 缺失的核心模块"
-              echo ""
-              echo '```'
-              cat build/core-missing.txt
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-macos-${{ matrix.arch }}
-          path: |
-            build-macos-${{ matrix.arch }}.log
-            build/core-missing.txt
-          if-no-files-found: warn
-        timeout-minutes: 10
-        continue-on-error: true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.arch }}
-          path: dist/DBPulse-macOS-${{ matrix.arch }}-*.tar.gz
-        timeout-minutes: 15
-        continue-on-error: true
-
-  release:
-    name: Attach to Release
-    needs: [build-windows, build-macos]
-    # 部分构建失败时也尝试运行（有 artifact 就上传，没有则跳过）
-    if: always()
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: List artifacts
-        run: find artifacts -type f -exec ls -lh {} \;
-
-      # 某个架构 artifact 上传可能因 GitHub Artifact Service 超时失败，
-      # 避免空 glob 导致 action-gh-release 报错；先把实际存在的产物汇总到统一目录。
-      - name: Collect release assets
-        run: |
-          mkdir -p release_assets
-          for pattern in artifacts/windows/*.zip artifacts/macos-arm64/*.tar.gz artifacts/macos-x86_64/*.tar.gz; do
-            for f in $pattern; do
-              if [ -f "$f" ]; then
-                cp "$f" release_assets/
-                echo "collected: $f"
-              fi
-            done
-          done
-          ls -lh release_assets/ || echo "no assets collected"
-
-      - name: Create Release and upload binaries
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG }}
-          generate_release_notes: true
-          files: release_assets/*
-
-      # 动态生成追加说明：主要更新取自 CHANGELOG.md 当前 tag 段落（此前静态
-      # release_append.md 停留在旧版本导致每次 Release 说明固化，已删除该文件）；
-      # Docker 镜像 tag 由脚本按真实 TAG 注入，不再硬编码。
-      - name: Generate release notes appendix
-        run: python3 scripts/gen_release_append.py "$TAG" > release_append.md
-
-      - name: Append release notes to release
+          python-version: '3.12'
+      - id: plan
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ ! -s release_append.md ]; then
-            NOTE=$'\n---\n\n## ⚠️ 安装注意事项\n\n- **macOS**：当前分发包**未做 Apple 公证（二进制未签名）**。首次打开若被 Gatekeeper 拦截，请右键点击 App / 可执行文件 →「打开」并在弹窗中确认即可运行；如需彻底消除提示，后续可接入 Apple 开发者证书做正式公证。\n- **Windows**：解压后双击 `start.bat` 启动，浏览器访问 http://localhost:5003 。（注：Linux 客户端暂未发布，当前仅提供 Windows / macOS 安装包。）'
-            printf '%s\n' "$NOTE" > release_append.md
-          fi
-          BODY=$(gh release view "$TAG" --json body --jq '.body')
-          printf '%s\n%s\n' "$BODY" "$(cat release_append.md)" > release_notes.md
-          gh release edit "$TAG" --notes-file release_notes.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python build/release_pipeline.py plan
+  packages:
+    name: Native packages and migration checks
+    needs: [checks, version]
+    if: needs.version.outputs.published != 'true'
+    uses: ./.github/workflows/portable-release.yml
+    with:
+      version: ${{ needs.version.outputs.tag }}
+  publish:
+    name: Publish verified release
+    needs: [checks, version, packages]
+    if: needs.version.outputs.published != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-candidate-${{ needs.version.outputs.tag }}
+          path: release-assets
+      - name: Verify every asset and publish after complete uploads
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+        run: python build/release_pipeline.py publish --directory release-assets --version "$RELEASE_VERSION" --sha "$GITHUB_SHA"

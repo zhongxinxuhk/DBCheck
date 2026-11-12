@@ -18,10 +18,9 @@ What it does
   carries a genuine non-Apache third-party license header (for example the
   bundled ``modules/disaster_recovery/vendor/autobackup.py`` which is MIT
   licensed and must keep its own header).
-* Verifies that every first-party file carries ALL of:
-      - a ``SPDX-License-Identifier: Apache-2.0`` line,
-      - a ``Copyright 2025-2026 fiyo (Jack Ge)`` line, and
-      - the author email ``sdfiyon@gmail.com`` (removing the email fails).
+* Accepts the original upstream header or the two-line copyright/SPDX header
+  used by completely new local source files. Files carrying an upstream
+  copyright must retain its author email.
 * Verifies that the root ``LICENSE`` file references the Apache License and that
   a root ``NOTICE`` file exists.
 * With ``--fix`` it rewrites/inserts the canonical three-line Apache 2.0 header
@@ -84,6 +83,11 @@ APACHE_HEADER_LINES = [
     "# SPDX-License-Identifier: Apache-2.0",
     "# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>",
     "# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck",
+]
+
+LOCAL_HEADER_LINES = [
+    "# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>",
+    "# SPDX-License-Identifier: Apache-2.0",
 ]
 
 # Markers (lower-cased) that, when present in a file header together with a
@@ -157,15 +161,16 @@ def collect_first_party_py_files() -> list[Path]:
 
 
 def file_is_compliant(path: Path) -> bool:
-    """A file is compliant if it carries the SPDX id, a fiyo Copyright line and the author email."""
+    """Accept local-only headers and preserve genuine upstream attribution."""
     try:
         text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return False
     has_spdx = "SPDX-License-Identifier: Apache-2.0" in text
-    has_copyright = bool(re.search(r"Copyright 2025-2026 fiyo", text))
+    has_copyright = bool(re.search(r"(?m)^#\s*Copyright 2025-2026 fiyo", text))
     has_email = "sdfiyon@gmail.com" in text
-    return has_spdx and has_copyright and has_email
+    has_local = LOCAL_HEADER_LINES[0] in text
+    return has_spdx and (has_email if has_copyright else has_local)
 
 
 def find_license_block(lines: list[str], start: int):
@@ -216,6 +221,8 @@ def fix_file(rel_path: Path) -> bool:
     """Insert or replace the Apache-2.0 header. Returns True if the file changed."""
     abs_path = REPO_ROOT / rel_path
     text, has_bom = _read_raw(abs_path)
+    if file_is_compliant(abs_path):
+        return False
     lines = text.split("\n")
 
     # 1. Extract a leading shebang (must stay on line 0).
@@ -249,7 +256,9 @@ def fix_file(rel_path: Path) -> bool:
         preamble.append(shebang)
     if coding is not None:
         preamble.append(coding)
-    preamble.extend(APACHE_HEADER_LINES)
+    has_upstream_marker = re.search(r"(?m)^#.*(?:Copyright 2025-2026 fiyo|Author: fiyo|sdfiyon@gmail\.com)", text)
+    is_local = not has_upstream_marker
+    preamble.extend(LOCAL_HEADER_LINES if is_local else APACHE_HEADER_LINES)
     preamble.append("")  # single trailing blank line separating header from body
 
     if block is not None:

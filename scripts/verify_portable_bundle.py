@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """Regression checks for shared cross-platform state and bundled runtime layout."""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 
 import contextlib
@@ -52,7 +48,7 @@ class PortableChecks(unittest.TestCase):
     def layout(self):
         data=self.bundle/'data';data.mkdir(exist_ok=True)
         with patch.multiple(paths,PORTABLE_ROOT=self.bundle,DATA_ROOT=self.bundle,DATA_DIR=data,
-                            DB_KEY_PATH=data/'.db_key',DB_KEY_PATH_LEGACY=self.bundle/'.db_key'):
+                            PRO_DATA_DIR=data/'pro_data',DB_KEY_PATH=data/'.db_key',DB_KEY_PATH_LEGACY=self.bundle/'.db_key'):
             yield
 
     def old_installation(self):

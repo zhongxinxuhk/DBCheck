@@ -1,12 +1,8 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
-# Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 """巡检只读查询、资源边界与同端点执行互斥。"""
 
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import re
 import threading
@@ -275,7 +271,7 @@ class InspectionCursor:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             self._cancel()
-            raise TimeoutError("巡检查询超过15秒预算，已请求取消")
+            raise TimeoutError(f"巡检查询超过{QUERY_TIMEOUT_SECONDS}秒预算，已请求取消")
         expired = threading.Event()
 
         def expire():
@@ -289,7 +285,7 @@ class InspectionCursor:
         try:
             result = operation()
             if expired.is_set():
-                raise TimeoutError("巡检查询超过15秒预算，已请求取消")
+                raise TimeoutError(f"巡检查询超过{QUERY_TIMEOUT_SECONDS}秒预算，已请求取消")
             return result
         except Exception as error:
             self.connection.warn(
@@ -315,7 +311,7 @@ class InspectionCursor:
         returned_before = ROW_LIMIT + 1 - self.remaining
         self.remaining -= len(rows)
         if self.remaining == 0:
-            self.connection.warn("查询结果已截断：超过1000行，须缩小范围复核")
+            self.connection.warn(f"查询结果已截断：超过{ROW_LIMIT}行，须缩小范围复核")
         return rows[: max(0, ROW_LIMIT - returned_before)]
 
     def fetchall(self):
@@ -370,7 +366,7 @@ class InspectionConnection:
             commands = ["ALTER SESSION DISABLE PARALLEL QUERY"]
         elif self.family == "postgresql":
             commands = [
-                "SET statement_timeout = '15s'",
+                f"SET statement_timeout = '{QUERY_TIMEOUT_SECONDS}s'",
                 "SET lock_timeout = '1s'",
                 "SET max_parallel_workers_per_gather = 0",
                 "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
@@ -378,12 +374,12 @@ class InspectionConnection:
         elif self.family == "mysql":
             commands = [
                 (
-                    "SET SESSION max_statement_time=15"
+                    f"SET SESSION max_statement_time={QUERY_TIMEOUT_SECONDS}"
                     if self.kind == "mariadb"
                     else (
-                        "SET SESSION ob_query_timeout=15000000"
+                        f"SET SESSION ob_query_timeout={QUERY_TIMEOUT_SECONDS*1000000}"
                         if self.kind == "oceanbase"
-                        else "SET SESSION max_execution_time=15000"
+                        else f"SET SESSION max_execution_time={QUERY_TIMEOUT_SECONDS*1000}"
                     )
                 ),
                 "SET SESSION TRANSACTION READ ONLY",
@@ -395,7 +391,7 @@ class InspectionConnection:
                 "SET ROWCOUNT " + str(ROW_LIMIT + 1),
             ]
         elif self.family == "clickhouse":
-            commands = ["SET max_execution_time=15", "SET max_threads=1"]
+            commands = [f"SET max_execution_time={QUERY_TIMEOUT_SECONDS}", "SET max_threads=1"]
         for command in commands:
             try:
                 cursor.execute(command)

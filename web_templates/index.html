@@ -6959,6 +6959,7 @@ function formatBytes(bytes) {
               const tagClass = 'tag-' + (ds.db_type === 'oracle' || ds.db_type === 'oracle_jdbc' ? 'oracle' : ds.db_type === 'sqlserver' ? 'sqlserver' : ds.db_type);
               const groupLabel = ds.group || 'default';
               return '<div style="padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:12px">' +
+                '<input type="checkbox" data-datasource-check="' + escHtml(ds.id) + '" aria-label="选择数据源">' +
                 '<span class="tag ' + tagClass + '" style="font-size:12px">' + iconHtml + ' ' + (ds.db_type||'') + '</span>' +
                 '<div style="flex:1">' +
                   '<div style="font-weight:600;font-size:13px">' + escHtml(ds.name || (ds.host + ':' + ds.port)) + '</div>' +
@@ -7931,7 +7932,13 @@ function wfRenderTaskGrid() {
     const batch = t.task_type === 'batch_inspection';
     const wfName = batch ? '整体巡检' : (wfMap[t.workflow_id] || ('#' + t.workflow_id));
     const spec = t.batch_spec || {};
-    const dsName = batch ? `${(spec.instance_ids || []).length}个数据源 / ${(spec.cluster_ids || []).length}个集群` : wfDsName(t.instance_id);
+    const batchRanges = [
+      (spec.instance_ids || []).length ? `${spec.instance_ids.length}个数据源` : '',
+      (spec.cluster_ids || []).length ? `${spec.cluster_ids.length}个集群` : '',
+      (spec.group_ids || []).length ? `${spec.group_ids.length}个动态分组` : '',
+      Object.keys(spec.selection_filters || {}).length ? `${Object.keys(spec.selection_filters).length}项业务条件` : ''
+    ].filter(Boolean);
+    const dsName = batch ? (batchRanges.join(' / ') || '范围待配置') : wfDsName(t.instance_id);
     const cronIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
     return `<div class="wf-task-card ${t.status}" onclick="wfOpenRunDrawer(${t.id})">
       <div class="wf-tc-strip ${t.status}"></div>
@@ -8049,6 +8056,21 @@ function wfOpenTaskModal(task) {
   document.getElementById('wf-task-type').value = task?.task_type || 'workflow';
   document.getElementById('wf-task-schedule-enabled').checked = task ? !!task.schedule_enabled : false;
   document.getElementById('wf-task-concurrency').value = spec.concurrency || 1;
+  for (const [key,defaultValue] of [['cluster_concurrency',1],['query_timeout',15],['row_limit',1000],['timeout_seconds',1800]]) document.getElementById('wf-task-'+key).value = spec[key] ?? defaultValue;
+  document.getElementById('wf-task-window-start').value=spec.execution_window?.start||'';
+  document.getElementById('wf-task-window-end').value=spec.execution_window?.end||'';
+  document.querySelectorAll('[data-wf-weekday]').forEach(input=>input.checked=(spec.execution_window?.weekdays||[0,1,2,3,4,5,6]).includes(Number(input.dataset.wfWeekday)));
+
+  const scopeBox=document.getElementById('wf-task-grouping');
+  modal.__scopePicker=null;
+  const scopeToken=crypto.randomUUID();modal.dataset.scopeToken=scopeToken;
+  scopeBox.textContent='正在加载业务分组…';
+  fetch('/api/operations/groups').then(response=>response.json()).then(options=>{
+    if(modal.dataset.scopeToken!==scopeToken)return;
+    if(!options.ok)throw new Error(options.error||'分组加载失败');
+    modal.__scopePicker=DBPulseTools.scopePicker(scopeBox,options,spec);
+  }).catch(error=>{if(modal.dataset.scopeToken===scopeToken)scopeBox.textContent=error.message;});
+  document.getElementById('wf-task-notify').checked=!!spec.notify_on_completion;
   const selectedSources = new Set(spec.instance_ids || []);
   document.getElementById('wf-task-batch-sources').innerHTML = __wfTaskDatasources.map(source => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${wfEscape(source.id)}" ${selectedSources.has(source.id)?'checked':''}>${wfEscape(source.name || source.host)}</label>`).join('');
   const selectedClusters = new Set(spec.cluster_ids || []);
@@ -8077,13 +8099,17 @@ async function wfSaveTask() {
   const schedule_enabled = document.getElementById('wf-task-schedule-enabled').checked;
   const batch_spec = {
     ...JSON.parse(modal.dataset.batchSpec || '{}'),
+    ...(modal.__scopePicker?.value() || {}),
+    notify_on_completion:document.getElementById('wf-task-notify').checked,
     instance_ids:[...document.querySelectorAll('#wf-task-batch-sources input:checked')].map(input=>input.value),
     cluster_ids:[...document.querySelectorAll('#wf-task-batch-clusters input:checked')].map(input=>input.value),
-    concurrency:Number(document.getElementById('wf-task-concurrency').value)
+    concurrency:Number(document.getElementById('wf-task-concurrency').value),
+    ...Object.fromEntries(['cluster_concurrency','query_timeout','row_limit','timeout_seconds'].map(key=>[key,Number(document.getElementById('wf-task-'+key).value)])),
+    execution_window:document.getElementById('wf-task-window-start').value?{start:document.getElementById('wf-task-window-start').value,end:document.getElementById('wf-task-window-end').value,weekdays:[...document.querySelectorAll('[data-wf-weekday]:checked')].map(input=>Number(input.dataset.wfWeekday))}:{}
   };
   if (task_type === 'workflow' && !workflow_id) {toastError('请选择工作流');return;}
   if (task_type === 'workflow' && !instance_id) {toastError('请选择数据源');return;}
-  if (task_type === 'batch_inspection' && !batch_spec.instance_ids.length && !batch_spec.cluster_ids.length) {toastError('请选择数据源或集群');return;}
+  if (task_type === 'batch_inspection' && !batch_spec.instance_ids.length && !batch_spec.cluster_ids.length && !(batch_spec.group_ids||[]).length && !Object.keys(batch_spec.selection_filters||{}).length) {toastError('请选择数据源、集群或业务分组');return;}
   if (schedule_enabled && !cron) {toastError('启用定时运行须填写Cron');return;}
   const saveButton = document.getElementById('wf-task-save');
   if (saveButton.disabled) return;
@@ -10891,6 +10917,9 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div class="card-title" data-page-node-id="I3JwLtLh4xujurjUlUEANr">
             <span data-page-node-id="FA4kTpWulGlOxXuM45DLP3">🗄️</span> <span data-i18n="webui.datasources_title" data-page-node-id="gEytgGYHZSEIClIN0CWGlD">数据源管理</span>
             <span class="badge" id="datasources-count" data-page-node-id="VPoZSzoIg6HYCTyBfNuwon">0</span>
+            <button class="btn btn-ghost" onclick="DBPulseTools.manageGroups()">维护巡检分组</button><button class="btn btn-ghost" onclick="DBPulseTools.importInventory(loadDataSources)">Excel 台账导入</button>
+            <button class="btn btn-ghost" onclick="DBPulseTools.testConnections([...document.querySelectorAll('[data-datasource-check]:checked')].map(input=>input.dataset.datasourceCheck),editDatasource)">批量测试连接</button>
+            <label style="font-size:12px"><input type="checkbox" onchange="document.querySelectorAll('[data-datasource-check]').forEach(input=>input.checked=this.checked)">全选当前分组</label>
             <a class="btn btn-ghost" href="/clusters" style="padding:6px 14px;font-size:12px">集群管理</a>
             <button class="btn btn-ghost" style="margin-left:auto;padding:6px 14px;font-size:12px" onclick="exportDatasourcesJson()" data-i18n="webui.ds_export" data-page-node-id="dSxP0rtBtn1">⤓ <span data-i18n="webui.ds_export" data-page-node-id="dSxP0rtBtn1t">导出</span></button>
             <button class="btn btn-ghost" style="padding:6px 14px;font-size:12px" onclick="importDatasourcesJson(this)" data-i18n="webui.ds_import" data-page-node-id="dSxImptBtn1">⤒ <span data-i18n="webui.ds_import" data-page-node-id="dSxImptBtn1t">导入</span></button>
@@ -12407,9 +12436,11 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                 <input id="wf-task-goal" class="wf-form-input" placeholder="留空则使用工作流默认目标" data-page-node-id="KqWAh5QZHx9KDJ9k74tXMB">
               </div>
               <div id="wf-task-batch-fields" class="wf-form-group full" style="display:none">
+                <details><summary>按业务分组与条件纳入</summary><div id="wf-task-grouping"></div></details>
+                <label><input id="wf-task-notify" type="checkbox">完成后按通知设置发送整体报告与分组摘要</label>
                 <label class="wf-form-label">巡检数据源</label><div class="workspace-toolbar"><input id="wf-task-source-search" type="search" class="wf-form-input" placeholder="搜索数据源" aria-label="搜索任务数据源"><button type="button" id="wf-task-select-visible" class="btn btn-ghost">选中搜索结果</button><button type="button" id="wf-task-clear-sources" class="btn btn-ghost">清空选择</button><span id="wf-task-selected-count" role="status"></span></div><div id="wf-task-batch-sources" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:190px;overflow:auto"></div>
                 <label class="wf-form-label">按集群纳入成员</label><div id="wf-task-batch-clusters" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:140px;overflow:auto"></div>
-                <label class="wf-form-label" for="wf-task-concurrency">并发数据源数（同一端点顺序执行）</label><select id="wf-task-concurrency" class="wf-form-input"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select>
+                <label class="wf-form-label" for="wf-task-concurrency">并发数据源数（同一端点顺序执行）</label><select id="wf-task-concurrency" class="wf-form-input"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select><details><summary>执行时段与负载控制</summary><label class="wf-form-label">同一集群最大并发</label><input id="wf-task-cluster_concurrency" class="wf-form-input" type="number" min="1" max="8" value="1"><label class="wf-form-label">单条查询超时秒数</label><input id="wf-task-query_timeout" class="wf-form-input" type="number" min="1" max="15" value="15"><label class="wf-form-label">单次查询最多返回行数</label><input id="wf-task-row_limit" class="wf-form-input" type="number" min="1" max="1000" value="1000"><label class="wf-form-label">单库最长执行秒数</label><input id="wf-task-timeout_seconds" class="wf-form-input" type="number" min="30" max="86400" value="1800"><label class="wf-form-label">新数据源启动时段（北京时间，留空全天）</label><input id="wf-task-window-start" type="time"> 至 <input id="wf-task-window-end" type="time"><div><label><input type="checkbox" data-wf-weekday="0" checked>周一</label><label><input type="checkbox" data-wf-weekday="1" checked>周二</label><label><input type="checkbox" data-wf-weekday="2" checked>周三</label><label><input type="checkbox" data-wf-weekday="3" checked>周四</label><label><input type="checkbox" data-wf-weekday="4" checked>周五</label><label><input type="checkbox" data-wf-weekday="5" checked>周六</label><label><input type="checkbox" data-wf-weekday="6" checked>周日</label></div></details>
                 <div class="wf-form-hint">每次执行生成一份整体报告。集群成员在运行时重新核对，重复数据源自动去重。</div>
               </div>
               <div class="wf-form-group full" data-page-node-id="qsSeYIzlFwULQFGNugVKCH">
@@ -30245,12 +30276,6 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
       <p class="about-desc" data-i18n="webui.about_desc" data-page-node-id="Ym310YDxMAHbSpDLYRZPzp">
         {{ product_name }} 是一款数据库智能巡检工具，支持 MySQL、PostgreSQL、Oracle、SQL Server、达梦（DM）、TiDB、IvorySQL、YashanDB 等主流数据库的健康巡检与 AI 诊断。
       </p>
-      <!-- 作者署名：名称即是各自仓库的入口，不再单独罗列协议 / 官网 / 仓库 / 更新链接。
-           完整许可与版权信息见「系统配置 → 系统信息」及本弹窗页脚。 -->
-      <div class="about-meta about-credit-row" data-page-node-id="WjGu6XczLVpELccU1OSAvw">
-        <a class="about-credit-link" href="https://github.com/fiyo/DBCheck" target="_blank" rel="noopener noreferrer" title="原作者仓库 · Upstream repository" data-page-node-id="aboutCreditUpstreamX1">Jack Ge (fiyo)</a>
-        <a class="about-credit-link" href="https://github.com/zhongxinxuhk/DBCheck" target="_blank" rel="noopener noreferrer" title="衍生开发仓库 · Derivative repository" data-page-node-id="aboutCreditDerivativeX1">sec.hn.cn (X.U zx)</a>
-      </div>
 
       <!-- 支持的数据库 -->
       <div class="about-dbs" data-page-node-id="rgBEB6cEFViMhEO3EWJix7">
@@ -30284,10 +30309,6 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
         <div class="about-agreement-text" id="agreement-zh" lang="zh" data-page-node-id="BPgwuqvQuTdPvOaDafjq6P">5月19日至5月25日 · 全国哀悼日，以灰度缅怀汶川地震遇难同胞</div>
         <div class="about-agreement-text" id="agreement-en" lang="en" style="display:none;" data-page-node-id="zipYClO029rMb63ARjb86P">May 19–25 · National Mourning Day, in memory of the Wenchuan earthquake victims</div>
       </div>
-    </div>
-    <!-- Footer -->
-    <div class="about-footer" data-page-node-id="xUj7FjQTzl5cmHQvSNDlLL">
-      {{ product_full_name }} · 基于 RaccoonX / DBCheck · © 2025-2026 fiyo (Jack Ge) &lt;sdfiyon@gmail.com&gt;
     </div>
   </div>
 </div>
@@ -30358,6 +30379,7 @@ window.addEventListener('message', function(event) {
 });
 </script>
 
+<script src="/static/js/operations_tools.js?v=2"></script>
 <script src="/static/js/workspace_usability.js?v=1"></script>
 </body>
 </html>

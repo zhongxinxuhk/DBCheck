@@ -174,14 +174,24 @@ def save_task(
         workflow_id = 0
         instance_id = ""
         if not isinstance(batch_spec, dict) or not (
-            batch_spec.get("instance_ids") or batch_spec.get("cluster_ids")
+            batch_spec.get("instance_ids")
+            or batch_spec.get("cluster_ids")
+            or batch_spec.get("group_ids")
+            or batch_spec.get("selection_filters")
         ):
             raise ValueError("整体巡检须选择数据源或集群")
         allowed = {
             "instance_ids",
             "cluster_ids",
+            "group_ids",
+            "selection_filters",
+            "notify_on_completion",
             "concurrency",
             "timeout_seconds",
+            "cluster_concurrency",
+            "execution_window",
+            "query_timeout",
+            "row_limit",
             "templates",
             "inspector",
         }
