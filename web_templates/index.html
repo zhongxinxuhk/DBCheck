@@ -9884,7 +9884,19 @@ function wfCloseRunDrawer() {
           <div class="card-desc" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;" data-page-node-id="qXl25cRd7re5q8I02HXrSR">
             API Key 用于外部系统（CI/CD、监控）调用 {{ product_name }} REST API。创建后<b data-page-node-id="PQUmL0xVIM9bM3XgCuY1jc">仅显示一次</b>，请立即复制保存。
           </div>
-          <div style="display:flex;gap:8px;margin-bottom:16px;" data-page-node-id="gU6zGJ0638BdwgyQ7FP3uP">
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;" data-page-node-id="gU6zGJ0638BdwgyQ7FP3uP">
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-muted);">名称
+              <input id="apikey-new-name" class="input" style="padding:6px 10px;width:180px;" placeholder="如 CI/CD、Grafana">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-muted);">范围
+              <select id="apikey-new-scopes" class="input" style="padding:6px 10px;">
+                <option value="read,write">读写</option>
+                <option value="read">只读</option>
+              </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-muted);">有效天数
+              <input id="apikey-new-expires" type="number" min="0" class="input" style="padding:6px 10px;width:110px;" placeholder="0=永久">
+            </label>
             <button class="btn btn-primary" onclick="createApiKey()" style="font-size:12px;padding:6px 14px;" data-page-node-id="uSL1zcoxPyXbFXiEohdhEy">➕ 创建 API Key</button>
           </div>
           <div id="apikey-list" style="font-size:13px;" data-page-node-id="7JmobMyTNdJmGl1JL97Kcg">
@@ -24145,10 +24157,15 @@ async function loadApiKeys() {
             <code>${k.key_prefix}...</code>
             &middot; ${k.created_at?.slice(0,10) || ''}
             ${k.last_used_at ? ' &middot; 最近: ' + k.last_used_at.slice(0,10) : ' &middot; 未使用'}
+            &middot; 范围: ${escapeHtml(k.scopes || 'read,write')}
+            ${k.expires_at ? ' &middot; 到期: ' + escapeHtml(String(k.expires_at).slice(0,10)) : ' &middot; 永久有效'}
             ${!k.is_active ? ' <span style="color:var(--danger)">已禁用</span>' : ''}
           </div>
         </div>
-        <button class="btn btn-ghost" onclick="deleteApiKey('${k.id}','${escapeHtml(k.name)}')" style="color:var(--danger);font-size:12px;padding:4px 10px;">删除</button>
+        <span style="display:flex;gap:6px;">
+          <button class="btn btn-ghost" onclick="rotateApiKey('${k.id}','${escapeHtml(k.name)}')" style="font-size:12px;padding:4px 10px;">轮换</button>
+          <button class="btn btn-ghost" onclick="deleteApiKey('${k.id}','${escapeHtml(k.name)}')" style="color:var(--danger);font-size:12px;padding:4px 10px;">删除</button>
+        </span>
       </div>
     `).join('');
   } catch(e) {
@@ -24157,8 +24174,12 @@ async function loadApiKeys() {
 }
 
 async function createApiKey() {
-  const name = await showPromptModal('创建 API Key', '请输入 Key 名称（如：CI/CD、Grafana 监控）：');
-  if (!name) return;
+  const nameEl = document.getElementById('apikey-new-name');
+  const scopesEl = document.getElementById('apikey-new-scopes');
+  const expiresEl = document.getElementById('apikey-new-expires');
+  const name = (nameEl && nameEl.value || '').trim();
+  if (!name) { toastError('请先输入 Key 名称'); if (nameEl) nameEl.focus(); return; }
+  const expiresDays = parseInt((expiresEl && expiresEl.value) || '0', 10) || 0;
   try {
     const token = sessionStorage.getItem('dbcheck_admin') || _ADMIN_TOKEN;
     const res = await fetch('/api/v1/admin/keys', {
@@ -24167,12 +24188,18 @@ async function createApiKey() {
         'Content-Type': 'application/json',
         'X-Admin-Token': token
       },
-      body: JSON.stringify({name})
+      body: JSON.stringify({
+        name: name,
+        scopes: (scopesEl && scopesEl.value) || 'read,write',
+        expires_days: expiresDays
+      })
     });
     const data = await res.json();
     if (data.ok && data.key) {
       document.getElementById('apikey-new-value').textContent = data.key;
       document.getElementById('apikey-new-modal').style.display = '';
+      if (nameEl) nameEl.value = '';
+      if (expiresEl) expiresEl.value = '';
       loadApiKeys();
     } else {
       toastError('创建失败：' + (data.error || '未知错误'));
@@ -24180,6 +24207,27 @@ async function createApiKey() {
   } catch(e) {
     toastError('请求失败：' + e.message);
   }
+}
+
+async function rotateApiKey(id, name) {
+  showConfirmModal('轮换 API Key', '确定轮换 Key「' + name + '」？<br>旧 Key 将<b>立即失效</b>，使用它的服务需要更新配置。', async function() {
+    try {
+      const token = sessionStorage.getItem('dbcheck_admin') || _ADMIN_TOKEN;
+      const res = await fetch('/api/v1/admin/keys/' + id + '/rotate', {
+        method: 'POST',
+        headers: {'X-Admin-Token': token}
+      });
+      const data = await res.json();
+      if (data.ok && data.key) {
+        document.getElementById('apikey-new-value').textContent = data.key;
+        document.getElementById('apikey-new-modal').style.display = '';
+        loadApiKeys();
+        toastSuccess('已轮换，请立即保存新 Key');
+      } else {
+        toastError('轮换失败：' + (data.error || '未知错误'));
+      }
+    } catch(e) { toastError('请求失败：' + e.message); }
+  });
 }
 
 async function deleteApiKey(id, name) {
