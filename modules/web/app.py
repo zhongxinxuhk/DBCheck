@@ -912,6 +912,16 @@ from modules.web.auth import init_default_user, register_auth_routes
 init_default_user()
 register_auth_routes(app)
 
+# ── 对外集成：Prometheus 指标 + API Token 管理 ─────────────────
+try:
+    from modules.web.metrics import register_metrics
+    from modules.web.api_tokens import register_token_routes
+    register_metrics(app)
+    register_token_routes(app)
+    print("  [OK] 指标导出与 API Token 管理已启用")
+except Exception as e:
+    print(f"  [WARN] 指标导出/API Token 管理启用失败: {e}")
+
 # ── RBAC 用户管理模块注册 ──────────────────────────────────
 try:
     from modules.user_management.routes.auth_routes import auth_bp as um_auth_bp

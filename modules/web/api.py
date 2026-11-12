@@ -77,6 +77,11 @@ def _get_key_db():
         cols = {r['name'] for r in conn.execute("PRAGMA table_info(api_keys)")}
         if 'user_id' not in cols:
             conn.execute('ALTER TABLE api_keys ADD COLUMN user_id INTEGER')
+        # Token 过期与范围（scope）：老 Key 留空 → 永不过期、read,write，行为不变
+        if 'expires_at' not in cols:
+            conn.execute('ALTER TABLE api_keys ADD COLUMN expires_at TEXT')
+        if 'scopes' not in cols:
+            conn.execute("ALTER TABLE api_keys ADD COLUMN scopes TEXT DEFAULT 'read,write'")
     except Exception:
         pass
     conn.commit()
@@ -105,6 +110,30 @@ def _verify_api_key(req_key):
             'SELECT * FROM api_keys WHERE key_hash=? AND is_active=1', (_hash_key(req_key),)
         ).fetchone()
         if row:
+            expires_at = row['expires_at'] if 'expires_at' in row.keys() else None
+            if expires_at:
+                try:
+                    if datetime.fromisoformat(expires_at) <= datetime.now():
+                        return False, jsonify({
+                            'ok': False, 'error': 'API Key 已过期',
+                            'error_code': 'EXPIRED_API_KEY',
+                        }), 401
+                except ValueError:
+                    pass
+            scopes = (row['scopes'] if 'scopes' in row.keys() else '') or 'read,write'
+            granted = {item.strip() for item in scopes.split(',') if item.strip()}
+            required = None
+            try:
+                from flask import has_request_context
+                if has_request_context():
+                    required = 'write' if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') else 'read'
+            except Exception:
+                required = None
+            if required and required not in granted and not (required == 'read' and 'write' in granted):
+                return False, jsonify({
+                    'ok': False, 'error': 'API Key 权限不足（需要 %s）' % required,
+                    'error_code': 'API_KEY_SCOPE',
+                }), 403
             conn.execute('UPDATE api_keys SET last_used_at=? WHERE id=?',
                         (datetime.now().isoformat(), row['id']))
             conn.commit()
