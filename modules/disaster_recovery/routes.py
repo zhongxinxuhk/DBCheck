@@ -22,7 +22,7 @@
 
 from flask import Blueprint, request, jsonify, send_file
 
-from modules.disaster_recovery import engine
+from modules.disaster_recovery import engine, verify
 
 bp_dr = Blueprint("disaster_recovery", __name__, url_prefix="/api/dr")
 
@@ -118,3 +118,37 @@ def status():
 @bp_dr.route("/connections", methods=["GET"])
 def connections():
     return jsonify({"ok": True, "connections": engine.list_connections()})
+
+
+# ── 恢复验证（Restore Drill）──────────────────────────────────
+
+@bp_dr.route("/plans/<name>/verify", methods=["POST"])
+def verify_plan(name):
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        run = verify.verify_backup(name, data.get("filename"), trigger="manual")
+        return jsonify({"ok": True, "run": run})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@bp_dr.route("/verify/runs", methods=["GET"])
+def verify_runs():
+    limit = min(int(request.args.get("limit", 50)), 500)
+    return jsonify({"ok": True, "runs": verify.list_runs(limit, request.args.get("task"))})
+
+
+@bp_dr.route("/verify/health", methods=["GET"])
+def verify_health():
+    return jsonify({"ok": True, "health": verify.get_summary(request.args.get("task"))})
+
+
+@bp_dr.route("/verify/config", methods=["GET", "POST"])
+def verify_config():
+    if request.method == "GET":
+        return jsonify({"ok": True, "config": verify.get_config()})
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        return jsonify({"ok": True, "config": verify.update_config(data)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400

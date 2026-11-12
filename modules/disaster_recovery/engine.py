@@ -269,12 +269,20 @@ def get_health_metrics() -> Dict[str, Any]:
     freshness = _compute_freshness([last] if last else [])
     success_rate = float(stats.get("success_rate", 0))
     score = round(0.4 * freshness + 0.6 * success_rate, 1)
+    restore: Dict[str, Any] = {}
+    try:
+        from modules.disaster_recovery import verify as _verify
+
+        restore = _verify.get_summary()
+    except Exception:
+        restore = {"verified": False, "verified_label": "未验证", "status": "none"}
     return {
         "score": score,
         "freshness": freshness,
         "success_rate": success_rate,
-        "verified": False,
-        "verified_label": "未验证",
+        "verified": bool(restore.get("verified")),
+        "verified_label": restore.get("verified_label", "未验证"),
+        "restore": restore,
         "stats": stats,
     }
 
