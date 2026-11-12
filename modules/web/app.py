@@ -6613,7 +6613,11 @@ def monitor_screen_page():
              'host_src_ebpf', 'host_src_psutil', 'host_src_shell', 'host_src_local',
              'host_src_unavailable', 'host_src_none', 'host_spark_wait']
     S = {k: _t('webui.screen_' + k) for k in _keys}
-    return render_template('monitor_screen.html', version=__version__, S=S)
+    from flask import g
+    actor = getattr(g, 'security_principal', None)
+    can_manage_thresholds = bool(actor and (actor.is_admin or 'operator' in actor.roles))
+    return render_template('monitor_screen.html', version=__version__, S=S,
+                           can_manage_thresholds=can_manage_thresholds)
 
 @app.route('/api/dashboard/overview', methods=['GET'])
 def api_dashboard_overview():

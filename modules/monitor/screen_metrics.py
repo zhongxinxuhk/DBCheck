@@ -1611,7 +1611,9 @@ def build_overview(collector):
     """把采样器快照装配成大屏一次请求所需的全部数据（实时）。"""
     snap = collector.get_snapshot()
     nodes = _build_nodes(snap)
-    return assemble_overview(nodes, collector)
+    overview = assemble_overview(nodes, collector)
+    overview['thresholds'] = collector.get_thresholds()
+    return overview
 
 
 def _node_from_history_sample(s):

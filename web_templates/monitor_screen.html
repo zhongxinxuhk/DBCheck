@@ -604,34 +604,34 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
     <div class="th-group">
       <div class="th-glabel">{{ S.th_conn_util }}</div>
       <div class="th-rows">
-        <div class="th-field"><label>{{ S.th_warn }}</label><input id="th-warn_conn_util" type="number" step="any" min="0" max="100"></div>
-        <div class="th-field"><label>{{ S.th_crit }}</label><input id="th-crit_conn_util" type="number" step="any" min="0" max="100"></div>
+        <div class="th-field"><label>{{ S.th_warn }}</label><input id="th-warn_conn_util" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="any" min="0" max="100"></div>
+        <div class="th-field"><label>{{ S.th_crit }}</label><input id="th-crit_conn_util" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="any" min="0" max="100"></div>
       </div>
     </div>
     <div class="th-group">
       <div class="th-glabel">{{ S.th_tbs_free }}</div>
       <div class="th-rows">
-        <div class="th-field"><label>{{ S.th_warn }}</label><input id="th-warn_tbs_free" type="number" step="any" min="0" max="100"></div>
-        <div class="th-field"><label>{{ S.th_crit }}</label><input id="th-crit_tbs_free" type="number" step="any" min="0" max="100"></div>
+        <div class="th-field"><label>{{ S.th_warn }}</label><input id="th-warn_tbs_free" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="any" min="0" max="100"></div>
+        <div class="th-field"><label>{{ S.th_crit }}</label><input id="th-crit_tbs_free" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="any" min="0" max="100"></div>
       </div>
     </div>
     <div class="th-group">
       <div class="th-glabel">{{ S.th_repl_lag }}</div>
       <div class="th-rows">
-        <div class="th-field"><label>{{ S.th_warn }}</label><input id="th-warn_repl_lag" type="number" step="any" min="0"></div>
-        <div class="th-field"><label>{{ S.th_crit }}</label><input id="th-crit_repl_lag" type="number" step="any" min="0"></div>
+        <div class="th-field"><label>{{ S.th_warn }}</label><input id="th-warn_repl_lag" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="any" min="0"></div>
+        <div class="th-field"><label>{{ S.th_crit }}</label><input id="th-crit_repl_lag" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="any" min="0"></div>
       </div>
     </div>
     <div class="th-group">
       <div class="th-glabel">{{ S.th_locks }}</div>
       <div class="th-rows">
-        <div class="th-field" style="flex:0 0 50%"><label>{{ S.th_warn }}</label><input id="th-warn_locks" type="number" step="1" min="0"></div>
+        <div class="th-field" style="flex:0 0 50%"><label>{{ S.th_warn }}</label><input id="th-warn_locks" {% if not can_manage_thresholds %}disabled{% endif %} type="number" step="1" min="0"></div>
       </div>
     </div>
-    <div class="th-actions">
+    {% if can_manage_thresholds %}<div class="th-actions">
       <button onclick="resetThresholds()">{{ S.th_reset }}</button>
       <button class="primary" onclick="saveThresholds()">{{ S.th_save }}</button>
-    </div>
+    </div>{% endif %}
     <div id="th-msg"></div>
   </div>
 </div>
@@ -868,12 +868,13 @@ function hmV(v, unit){
   if (isNaN(num)) return esc(String(v));
   return (Math.round(num * 10) / 10) + (unit || '');
 }
-function hmRisks(m){
+function hmRisks(m, thresholds){
+  var th = thresholds || {};
   var out = [];
   if (m.status === 'down') out.push({ t: esc(S.st_down), c: C.crit, tip: S.st_down });
-  if (m.lag != null && m.lag >= 30)
-    out.push({ t: 'LAG ' + Math.round(m.lag) + 's', c: m.lag >= 60 ? C.crit : C.warn, tip: S.node_repl });
-  if (m.lock != null && m.lock >= 10)
+  if (m.lag != null && m.lag >= (th.warn_repl_lag ?? 30))
+    out.push({ t: 'LAG ' + Math.round(m.lag) + 's', c: m.lag >= (th.crit_repl_lag ?? 300) ? C.crit : C.warn, tip: S.node_repl });
+  if (m.lock != null && m.lock >= (th.warn_locks ?? 10))
     out.push({ t: 'LOCK ' + Math.round(m.lock), c: C.warn, tip: S.d_locks });
   if (m.slow != null && m.slow > 0)
     out.push({ t: 'SLOW ' + Math.round(m.slow), c: C.warn, tip: S.node_slowq });
@@ -883,7 +884,7 @@ function hmRisks(m){
     out.push({ t: 'MEM ' + Math.round(m.mem) + '%', c: m.mem >= 95 ? C.crit : C.warn, tip: S.host_col_mem });
   return out;
 }
-function renderHealthMatrix(nodes){
+function renderHealthMatrix(nodes, thresholds){
   var el = document.getElementById('hm-list');
   if (!el) return;
   var src = nodes || [];
@@ -897,7 +898,7 @@ function renderHealthMatrix(nodes){
     var m = { qps:n.qps, conn:c.usage_pct, tbs:n.tbs_free_pct, lag:n.repl_lag_s,
               lock:n.lock_waits, slow:n.slowq, cpu:h.host_cpu, mem:h.host_mem,
               status:n.status, connTotal:c.total, connActive:c.active };
-    return { n:n, m:m, r:hmRisks(m) };
+    return { n:n, m:m, r:hmRisks(m, thresholds) };
   });
   rows.sort(function(a, b){
     var sa = sev[a.m.status] == null ? 5 : sev[a.m.status];
@@ -913,7 +914,10 @@ function renderHealthMatrix(nodes){
     }).join('');
     if (r.length > 2)
       tags += '<span class="hm-tag" style="color:' + C.tx2 + '" title="' + esc(S.hm_tip) + '">+' + (r.length - 2) + '</span>';
-    if (!r.length) tags = '<span class="hm-ok">' + esc(S.st_ok) + '</span>';
+    if (!r.length){
+      var statusText = {ok:S.st_ok, warn:S.st_warn, crit:S.st_crit, down:S.st_down, pending:S.st_pending, unsupported:S.st_unsupported}[m.status] || S.no_data;
+      tags = '<span class="hm-ok">' + esc(statusText) + '</span>';
+    }
     var tip = [n.name, S.d_qps + ': ' + hmV(m.qps), S.d_conn + ': ' + hmV(m.connTotal),
                S.d_active + ': ' + hmV(m.connActive), S.th_conn_util + ': ' + hmV(m.conn, '%'),
                S.th_tbs_free + ': ' + hmV(m.tbs, '%'), S.node_repl + ': ' + hmV(m.lag, 's'),
@@ -2317,7 +2321,7 @@ function refresh(data){
 
   var T = data.topn || {};
   // 静态排名统一由「实例健康矩阵」呈现，不再按指标各画一张 Top10 横向条形图
-  renderHealthMatrix(data.nodes);
+  renderHealthMatrix(data.nodes, data.thresholds);
   /* 表空间：HTML 进度列表（标签完整可读 + 三档等级配色 + 点行下钻实例详情）
      自适应两种数据来源：
        - tbs_worst：Oracle/DM/DB2 等有 free 列 → 剩余% 越小越危险（标题带 %）

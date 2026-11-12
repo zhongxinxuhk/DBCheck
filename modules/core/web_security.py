@@ -79,6 +79,9 @@ def install_security(app):
         if (request.method == 'GET' and monitor_public_enabled()
                 and (request.path in MONITOR_PUBLIC_PATHS
                      or request.path.startswith(MONITOR_PUBLIC_PREFIXES))):
+            principal = current_principal()
+            if principal is not None and not principal.is_anonymous:
+                g.security_principal = principal
             return None
         if request.path in PUBLIC:
             if request.path in LOGIN:
