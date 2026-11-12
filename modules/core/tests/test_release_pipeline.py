@@ -160,3 +160,35 @@ def test_failed_asset_upload_leaves_release_as_draft(tmp_path):
         method == "PATCH" and data.get("draft") is False
         for _, method, data in client.operations
     )
+
+
+def test_invalid_driver_is_closed_before_windows_cleanup(tmp_path):
+    root = tmp_path / "source"
+    (root / "drivers/gbase8a/legacy").mkdir(parents=True)
+    (root / "modules/config").mkdir(parents=True)
+    (root / "modules/config/version.json").write_text('{"version":"v1.0.1"}')
+    (root / "build/portable").mkdir(parents=True)
+    for name in ("start.sh", "start.bat"):
+        (root / "build/portable" / name).write_text("fixture")
+    for name in ("LICENSE", "NOTICE"):
+        (root / name).write_text("fixture")
+    with zipfile.ZipFile(root / "drivers/gbase8a/legacy/invalid.jar", "w") as archive:
+        archive.writestr("incorrect/Driver.class", "fixture")
+    opened = []
+    real_zip = zipfile.ZipFile
+    real_unlink = Path.unlink
+
+    def tracked_zip(path, *args, **kwargs):
+        archive = real_zip(path, *args, **kwargs)
+        opened.append(archive)
+        return archive
+
+    def windows_unlink(path, *args, **kwargs):
+        assert all(archive.fp is None for archive in opened)
+        return real_unlink(path, *args, **kwargs)
+
+    with patch.object(bundle, "ROOT", root), patch.object(
+        zipfile, "ZipFile", tracked_zip
+    ), patch.object(Path, "unlink", windows_unlink):
+        bundle.stage_resources(tmp_path / "staged", ["windows-x86_64"])
+    assert not (tmp_path / "staged/drivers/gbase8a/legacy/invalid.jar").exists()

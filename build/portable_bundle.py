@@ -181,8 +181,9 @@ def stage_resources(destination, required_platforms=None):
     # A historical 8s driver was stored under 8a. Keep it out of clean releases.
     for jar in (destination / "drivers/gbase8a").rglob("*.jar"):
         with zipfile.ZipFile(jar) as package:
-            if "com/gbase/jdbc/Driver.class" not in package.namelist():
-                jar.unlink()
+            valid_driver = "com/gbase/jdbc/Driver.class" in package.namelist()
+        if not valid_driver:
+            jar.unlink()
     shutil.copy2(ROOT / "modules/config/version.json", destination / "version.json")
     for name in ("LICENSE", "NOTICE"):
         shutil.copy2(ROOT / name, destination / name)
