@@ -361,7 +361,7 @@ def transfer_verify(archive, fixture, platform, output):
             for info in package.infolist():
                 if not info.filename.startswith("data/") or not (
                     bundle / info.filename
-                ).resolve().is_relative_to(bundle / "data"):
+                ).resolve().is_relative_to((bundle / "data").resolve()):
                     raise ValueError("Invalid transfer fixture path")
             package.extractall(bundle)
         result = run_check(bundle, platform, ["--portable-transfer-check"])
