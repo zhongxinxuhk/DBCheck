@@ -965,6 +965,14 @@ try:
 except ImportError as e:
     print(f"  [WARN] RBAC 用户管理模块加载失败: {e}")
 
+# ── 统一审计（append-only 事件流，覆盖全部写操作）────────────
+try:
+    from modules.audit import register_audit
+    register_audit(app)
+    print("  [OK] 统一审计已启用")
+except Exception as e:
+    print(f"  [WARN] 统一审计启用失败: {e}")
+
 # ── Pro 专业版 Web 扩展点（专业版注册 flow，社区 no-op；与 main 逐字节一致）──
 from modules.pro import register_web_extensions
 register_web_extensions(app)
