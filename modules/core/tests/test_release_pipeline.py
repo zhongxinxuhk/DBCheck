@@ -232,3 +232,31 @@ def test_verified_download_never_accepts_wrong_checksum(tmp_path):
     ), patch.object(bundle.time, "sleep"), pytest.raises(ValueError):
         bundle.download_verified("https://fixture.invalid", archive, "0" * 64)
     assert not archive.exists()
+
+
+def test_extraction_normalizes_alias_paths_before_containment_checks(tmp_path):
+    import os
+
+    if os.name == "nt":
+        pytest.skip("POSIX alias fixture is covered by the Windows native transfer job")
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    archive = tmp_path / "portable.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("DBPulse/dbpulse-portable.json", "{}")
+    extracted = release.unpack(archive, alias / "extracted")
+    assert extracted == extracted.resolve()
+    fixture = tmp_path / "state.zip"
+    with zipfile.ZipFile(fixture, "w") as package:
+        package.writestr("data/fixture.json", "{}")
+    result = {"ok": True, "source_platform": "windows-x86_64"}
+    aliased_bundle = alias / "extracted/DBPulse"
+    with patch.object(release, "unpack", return_value=aliased_bundle), patch.object(
+        release, "run_check", return_value=result
+    ):
+        release.transfer_verify(
+            archive, fixture, "windows-x86_64", tmp_path / "verification.json"
+        )
+    assert (physical / "extracted/DBPulse/data/fixture.json").is_file()

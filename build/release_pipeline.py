@@ -338,7 +338,7 @@ def unpack(archive, output):
     ]
     if len(roots) != 1:
         raise ValueError("Release archive does not contain one portable root")
-    return roots[0]
+    return roots[0].resolve()
 
 
 def transfer_seed(archive, output):
