@@ -3321,3 +3321,14 @@ RU.update({
     "menu.services": "Эксплуатационные услуги и приемка",
     "menu.system-info": "Сведения о системе"
 })
+
+# 监控大屏：实例健康矩阵（替代侧栏 6 张 Top10 榜单）
+RU.update({
+    "webui.screen_hm_title": "Состояние экземпляров · сначала проблемы · клик для подробностей",
+    "webui.screen_hm_inst": "Экземпляр",
+    "webui.screen_hm_qps": "QPS",
+    "webui.screen_hm_conn": "Соед.%",
+    "webui.screen_hm_tbs": "Своб.%",
+    "webui.screen_hm_risk": "Проблемы",
+    "webui.screen_hm_tip": "Нажмите на строку для подробностей",
+})

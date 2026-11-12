@@ -3751,3 +3751,14 @@ ZH_TW.update({
     "menu.services": "運維服務與需求驗收",
     "menu.system-info": "系統資訊"
 })
+
+# 监控大屏：实例健康矩阵（替代侧栏 6 张 Top10 榜单）
+ZH_TW.update({
+    "webui.screen_hm_title": "執行個體健康矩陣 · 異常置頂 · 點行看詳情",
+    "webui.screen_hm_inst": "執行個體",
+    "webui.screen_hm_qps": "QPS",
+    "webui.screen_hm_conn": "連線%",
+    "webui.screen_hm_tbs": "剩餘%",
+    "webui.screen_hm_risk": "異常",
+    "webui.screen_hm_tip": "點擊列查看詳情",
+})

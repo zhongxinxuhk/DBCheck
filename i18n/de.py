@@ -3321,3 +3321,14 @@ DE.update({
     "menu.services": "Betriebsdienste und Abnahme",
     "menu.system-info": "Systeminformationen"
 })
+
+# 监控大屏：实例健康矩阵（替代侧栏 6 张 Top10 榜单）
+DE.update({
+    "webui.screen_hm_title": "Instanz-Zustand · Auffälliges zuerst · Zeile für Details",
+    "webui.screen_hm_inst": "Instanz",
+    "webui.screen_hm_qps": "QPS",
+    "webui.screen_hm_conn": "Verb.%",
+    "webui.screen_hm_tbs": "Frei%",
+    "webui.screen_hm_risk": "Probleme",
+    "webui.screen_hm_tip": "Zeile anklicken für Details",
+})

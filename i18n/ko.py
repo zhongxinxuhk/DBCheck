@@ -3319,3 +3319,14 @@ KO.update({
     "menu.services": "운영 서비스 및 검수",
     "menu.system-info": "시스템 정보"
 })
+
+# 监控大屏：实例健康矩阵（替代侧栏 6 张 Top10 榜单）
+KO.update({
+    "webui.screen_hm_title": "인스턴스 상태 매트릭스 · 이상 우선 · 행 클릭 시 상세",
+    "webui.screen_hm_inst": "인스턴스",
+    "webui.screen_hm_qps": "QPS",
+    "webui.screen_hm_conn": "연결%",
+    "webui.screen_hm_tbs": "잔여%",
+    "webui.screen_hm_risk": "이상",
+    "webui.screen_hm_tip": "행을 클릭하여 상세 정보 보기",
+})
