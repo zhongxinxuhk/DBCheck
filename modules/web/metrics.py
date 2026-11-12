@@ -191,28 +191,25 @@ def _authorized() -> bool:
         try:
             from modules.web import api
 
-            ok, _ = api._verify_api_key(key)
-            return bool(ok)
+            result = api._verify_api_key(key)
+            return bool(result and result[0])
         except Exception:
             return False
     return False
 
 
 def render_metrics() -> str:
-    lines: List[str] = []
+    # HELP/TYPE 每个指标只能出现一次，否则 Prometheus 解析器会拒绝整个响应
+    lines: List[str] = _header(
+        "dbpulse_metrics_collect_errors_total", "指标采集失败次数（按采集器）", "counter"
+    )
     errors = 0
     for name, collector in _COLLECTORS:
         try:
             lines.extend(collector())
         except Exception:
             errors += 1
-            lines.extend(_header(
-                "dbpulse_metrics_collect_errors_total",
-                "指标采集失败次数（按采集器）",
-                "counter",
-            ))
             lines.append(f'dbpulse_metrics_collect_errors_total{{collector="{name}"}} 1')
-    lines.extend(_header("dbpulse_metrics_collect_errors_total", "指标采集失败次数（按采集器）", "counter"))
     if not errors:
         lines.append('dbpulse_metrics_collect_errors_total{collector="none"} 0')
     return "\n".join(lines) + "\n"
