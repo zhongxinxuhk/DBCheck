@@ -9,19 +9,21 @@ cd DBCheck
 docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 ```
 
-本项目基于 RaccoonX / DBCheck，原作者为 fiyo (Jack Ge) <sdfiyon@gmail.com>，原仓库为 https://github.com/fiyo/DBCheck 。原项目介绍与署名保留如下。自动同步范围、冲突处理和启用步骤见 [.github/UPSTREAM_SYNC.md](.github/UPSTREAM_SYNC.md)。
+This project is built on the upstream DBCheck (RaccoonX) open-source project by fiyo (Jack Ge) <sdfiyon@gmail.com>, https://github.com/fiyo/DBCheck. This repository evolves independently under the **DBPulse** brand while preserving all upstream attribution and license notices. See [.github/UPSTREAM_SYNC.md](.github/UPSTREAM_SYNC.md) for upstream sync scope and conflict handling.
 
 ---
 
-﻿# 🦝 RaccoonX
+# ⚡ DBPulse
 
-![RaccoonX Logo](snapshot/dbcheck_logo_info.png)
+<p align="center">
+  <img src="assets/web/dbpulse_logo.png" alt="DBPulse Logo" width="320" />
+</p>
 
-### Open Source Intelligent Database Inspection & Operations Platform
+### Intelligent Database Inspection & Operations Platform
 
-> **RaccoonX** is an open-source, cross-platform database inspection and operations platform designed for DBAs, database engineers, DevOps teams, and infrastructure teams.
+> **DBPulse** (数据库智能巡检系统) is an open-source, cross-platform database inspection and operations platform designed for DBAs, database engineers, DevOps teams, and infrastructure teams.
 >
-> Formerly known as **DBCheck**.
+> Built on the upstream open-source **DBCheck** project by fiyo (Jack Ge).
 
 [![Version](https://img.shields.io/badge/Version-v26.11.5.1-blue.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
@@ -29,9 +31,8 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 [![AI](https://img.shields.io/badge/AI-Ollama%20%7C%20OpenAI-orange.svg)]()
 [![RAG](https://img.shields.io/badge/RAG-Knowledge%20Base-red.svg)]()
 [![WebUI](https://img.shields.io/badge/WebUI-Flask-success.svg)]()
-[![Docker Pulls](https://img.shields.io/docker/pulls/jackge12345/dbcheck?style=flat-square\&label=Docker%20Pulls\&cacheSeconds=300)](https://hub.docker.com/r/jackge12345/dbcheck)
-[![GitHub Stars](https://img.shields.io/github/stars/fiyo/DBCheck?style=flat-square\&label=Stars)](https://github.com/fiyo/DBCheck/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/fiyo/DBCheck?style=flat-square\&label=Forks)](https://github.com/fiyo/DBCheck/network/members)
+[![GitHub Stars](https://img.shields.io/github/stars/zhongxinxuhk/DBCheck?style=flat-square&label=Stars)](https://github.com/zhongxinxuhk/DBCheck/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/zhongxinxuhk/DBCheck?style=flat-square&label=Forks)](https://github.com/zhongxinxuhk/DBCheck/network/members)
 
 > 🗄️ **22 database types**
 > 🔍 **839 inspection rules**
@@ -39,7 +40,7 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 > 🔌 **Extensible plugin architecture**
 > 📜 **Apache License 2.0**
 
-If RaccoonX is useful to you, consider giving the repository a ⭐.
+If DBPulse is useful to you, consider giving the repository a ⭐.
 
 A Star helps more database engineers discover the project and is one of the simplest ways to support an independent open-source project.
 
@@ -47,17 +48,18 @@ A Star helps more database engineers discover the project and is one of the simp
 
 ## 🌐 Project Links
 
-* **Website:** https://raccoonx.cn/
-* **GitHub:** https://github.com/fiyo/DBCheck
-* **Docker Hub:** https://hub.docker.com/r/jackge12345/dbcheck
+* **Repository:** https://github.com/zhongxinxuhk/DBCheck
+* **Releases:** https://github.com/zhongxinxuhk/DBCheck/releases
+* **Container image:** `ghcr.io/zhongxinxuhk/dbpulse`
 * **English:** `README.md`
 * **中文:** [README_zh.md](./README_zh.md)
-* **Issues:** https://github.com/fiyo/DBCheck/issues
-* **Discussions:** https://github.com/fiyo/DBCheck/discussions
+* **Issues:** https://github.com/zhongxinxuhk/DBCheck/issues
+* **Discussions:** https://github.com/zhongxinxuhk/DBCheck/discussions
+* **Upstream project:** https://github.com/fiyo/DBCheck
 
 ---
 
-# 🦝 Why RaccoonX?
+# ⚡ Why DBPulse?
 
 Database environments are becoming increasingly complex.
 
@@ -77,9 +79,9 @@ A typical production environment may contain:
 
 Traditional database inspection often depends on manually executing SQL scripts, checking operating-system resources, collecting screenshots, analyzing slow SQL, and writing inspection reports.
 
-RaccoonX tries to bring these tasks together into one open-source platform.
+DBPulse tries to bring these tasks together into one open-source platform.
 
-### RaccoonX helps you:
+### DBPulse helps you:
 
 ```text
 Connect
@@ -105,22 +107,22 @@ It can be used as a standalone database inspection tool or as part of a broader 
 
 # 📊 Project Milestones
 
-RaccoonX started as **DBCheck** and has evolved through continuous development and community feedback.
+DBPulse continues the **DBCheck** lineage and evolves through continuous development and community feedback.
 
 | Milestone          |         Status |
 | ------------------ | -------------: |
-| GitHub Stars       |       **180+** |
-| GitHub Forks       |        **60+** |
+| Upstream Stars     |       **180+** |
+| Upstream Forks     |        **60+** |
 | Database types     |        **22** |
 | Inspection rules   |       **839** |
 | Languages          |          **9** |
 | License            | **Apache 2.0** |
 
-Docker pull counts change frequently and are shown live by the badge at the top of this page instead of being hard-coded here. They represent image pulls and should not be interpreted as the number of unique users or installations.
+Stars and forks refer to the upstream DBCheck repository. Container image pull counts change frequently; use the registry statistics for live numbers instead of hard-coding them here.
 
 ### ⭐ Help us reach the next milestone
 
-If you have used RaccoonX, tested it, learned from it, or simply find the project interesting:
+If you have used DBPulse, tested it, learned from it, or simply find the project interesting:
 
 **Give it a Star.**
 
@@ -129,7 +131,7 @@ Every Single Pull
         ↓
    Keep Building
         ↓
-   ⭐ Star RaccoonX
+   ⭐ Star DBPulse
 ```
 
 ---
@@ -172,7 +174,7 @@ Every Single Pull
 
 # 🗄️ Supported Databases
 
-RaccoonX currently supports **22 database and data systems**.
+DBPulse currently supports **22 database and data systems**.
 
 | Database      | Driver                  | Default Port | Notes                      |
 | ------------- | ----------------------- | -----------: | -------------------------- |
@@ -209,28 +211,17 @@ RaccoonX currently supports **22 database and data systems**.
 
 ## 🐳 Docker — Recommended
 
-Docker is the easiest way to start RaccoonX.
+Docker is the easiest way to start DBPulse.
 
-### Docker  Images
+### 🐳 Container Image (GitHub Container Registry)
 ```bash
-docker pull jackge12345/dbcheck:latest
+docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 
 docker run -d -p 5003:5003 \
   -v dbcheck_data:/app/data \
   -v dbcheck_reports:/app/data/reports \
   -e LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/dmssl \
-  jackge12345/dbcheck:latest
-```
-
-### GitHub Container Registry
-```bash
-docker pull ghcr.io/fiyo/dbcheck:latest
-
-docker run -d -p 5003:5003 \
-  -v dbcheck_data:/app/data \
-  -v dbcheck_reports:/app/data/reports \
-  -e LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/dmssl \
-  ghcr.io/fiyo/dbcheck:latest
+  ghcr.io/zhongxinxuhk/dbpulse:latest
 ```
 
 Open:
@@ -247,7 +238,7 @@ Initial accounts and roles (admin / viewer / operator), per-platform startup ste
 
 ```bash
 curl -o deploy/docker-compose.yml \
-  https://raw.githubusercontent.com/fiyo/DBCheck/main/deploy/docker-compose.yml
+  https://raw.githubusercontent.com/zhongxinxuhk/DBCheck/main/deploy/docker-compose.yml
 
 docker compose -f deploy/docker-compose.yml up -d
 ```
@@ -267,15 +258,15 @@ so the host only needs **kernel ≥ 4.x** — Galaxy Kylin V10 SP3 ships kernel 
 
 ```bash
 uname -m                                      # expect aarch64
-# Version list: https://github.com/fiyo/DBCheck/releases
+# Version list: https://github.com/zhongxinxuhk/DBCheck/releases
 VERSION=26.11.5.1
-docker pull jackge12345/dbcheck:$VERSION     # pin an explicit version
+docker pull ghcr.io/zhongxinxuhk/dbpulse:$VERSION     # pin an explicit version
 docker run -d -p 5003:5003 \
   --memory=2g --memory-swap=2g \
   -v dbcheck_data:/app/data \
   -v dbcheck_reports:/app/reports \
-  --name raccoonx \
-  jackge12345/dbcheck:$VERSION
+  --name dbpulse \
+  ghcr.io/zhongxinxuhk/dbpulse:$VERSION
 ```
 
 > **Pin an explicit version tag**
@@ -315,7 +306,7 @@ docker run -d -p 5003:5003 \
 Clone the repository:
 
 ```bash
-git clone https://github.com/fiyo/DBCheck.git
+git clone https://github.com/zhongxinxuhk/DBCheck.git
 cd DBCheck
 ```
 
@@ -363,7 +354,7 @@ python web_ui.py
 
 # 🔍 Database Inspection
 
-RaccoonX provides configuration-driven database inspection.
+DBPulse provides configuration-driven database inspection.
 
 The inspection engine collects database metadata, configuration, performance information, resource usage and security-related information, then evaluates them against inspection rules.
 
@@ -403,7 +394,7 @@ Database
 
 # 📋 Inspection Coverage
 
-RaccoonX includes database-specific inspection templates.
+DBPulse includes database-specific inspection templates.
 
 Typical inspection dimensions include:
 
@@ -429,7 +420,7 @@ Coverage varies by database type.
 
 # 📊 Word Inspection Reports
 
-RaccoonX can automatically generate structured Word inspection reports.
+DBPulse can automatically generate structured Word inspection reports.
 
 A typical Oracle report contains:
 
@@ -452,7 +443,7 @@ Report chapters can be configured through the Web UI.
 
 # ⚠️ Intelligent Risk Analysis
 
-RaccoonX evaluates collected information against configurable inspection rules.
+DBPulse evaluates collected information against configurable inspection rules.
 
 A risk item can contain:
 
@@ -498,7 +489,7 @@ All execution operations are logged.
 
 # 🐢 Deep Slow Query Analysis
 
-RaccoonX can analyze slow or expensive SQL using multiple dimensions.
+DBPulse can analyze slow or expensive SQL using multiple dimensions.
 
 Analysis may include:
 
@@ -537,7 +528,7 @@ For supported databases, remediation SQL can be generated directly from the risk
 
 # 📊 Index Health Analysis
 
-RaccoonX analyzes index-related conditions including:
+DBPulse analyzes index-related conditions including:
 
 * Potentially missing indexes
 * Redundant indexes
@@ -551,7 +542,7 @@ Recommendations should always be reviewed against actual workload characteristic
 
 # ⚙️ Configuration Baseline
 
-RaccoonX provides configurable baseline management.
+DBPulse provides configurable baseline management.
 
 The Web UI can be used to define:
 
@@ -625,7 +616,7 @@ Typical metrics include:
 
 The monitoring dashboard automatically adapts to the capabilities of each database type.
 
-For database types without deep metrics support, RaccoonX can provide TCP-level connectivity information including:
+For database types without deep metrics support, DBPulse can provide TCP-level connectivity information including:
 
 * Reachable / unreachable timeline
 * Availability percentage
@@ -657,7 +648,7 @@ CSV export is also supported.
 
 # 🤖 AI Smart Diagnostics
 
-RaccoonX supports AI-assisted database diagnostics.
+DBPulse supports AI-assisted database diagnostics.
 
 The AI layer can analyze inspection results and provide:
 
@@ -677,7 +668,7 @@ ollama pull qwen3:30b
 ollama pull nomic-embed-text
 ```
 
-Then start RaccoonX:
+Then start DBPulse:
 
 ```bash
 python web_ui.py
@@ -701,7 +692,7 @@ When using Ollama, inspection data can remain within the local environment.
 
 # 💬 AI Chat Inspection
 
-RaccoonX includes an AI interaction panel in the Web UI.
+DBPulse includes an AI interaction panel in the Web UI.
 
 Instead of navigating through every inspection option manually, users can interact with the inspection workflow using natural language.
 
@@ -725,7 +716,7 @@ Available capabilities depend on the configured database and AI backend.
 
 # 📚 RAG Knowledge Base
 
-RaccoonX includes a local knowledge-base capability.
+DBPulse includes a local knowledge-base capability.
 
 Supported document types include:
 
@@ -758,7 +749,7 @@ This allows organizations to combine database inspection data with their own ope
 
 # 🔌 Plugin Architecture
 
-RaccoonX uses an extensible plugin architecture.
+DBPulse uses an extensible plugin architecture.
 
 Plugins can manage their own:
 
@@ -827,7 +818,7 @@ This allows database and operating-system information to be considered together 
 
 # 🖥️ Remote Terminal
 
-RaccoonX includes an SSH-based remote terminal.
+DBPulse includes an SSH-based remote terminal.
 
 Supported features include:
 
@@ -862,7 +853,7 @@ Example:
 
 # ⏰ Scheduled Inspections
 
-RaccoonX supports scheduled inspection tasks based on Cron expressions.
+DBPulse supports scheduled inspection tasks based on Cron expressions.
 
 Common schedules include:
 
@@ -888,7 +879,7 @@ Word inspection reports can be attached to email notifications.
 
 # 💾 Disaster Recovery Backup
 
-RaccoonX includes a disaster recovery backup module.
+DBPulse includes a disaster recovery backup module.
 
 Supported targets include:
 
@@ -914,7 +905,7 @@ Database passwords are encrypted at rest using Fernet and masked in API response
 
 # 📊 Oracle AWR Analysis
 
-Oracle AWR HTML reports can be uploaded to RaccoonX.
+Oracle AWR HTML reports can be uploaded to DBPulse.
 
 The system can parse key performance information and generate a structured Word analysis report.
 
@@ -940,7 +931,7 @@ AI-assisted Diagnosis
 
 # 💿 DM8 Offline Storage Check
 
-RaccoonX supports DM8 storage inspection without a running database instance.
+DBPulse supports DM8 storage inspection without a running database instance.
 
 It can directly inspect:
 
@@ -976,7 +967,7 @@ A structured Word report can also be generated.
 
 # 📝 SQL Editor
 
-RaccoonX includes an interactive SQL editor in the Web UI.
+DBPulse includes an interactive SQL editor in the Web UI.
 
 Features include:
 
@@ -986,13 +977,13 @@ Features include:
 * Execution history
 * Friendly error messages
 
-The editor supports the database types available through the configured RaccoonX drivers and plugins.
+The editor supports the database types available through the configured DBPulse drivers and plugins.
 
 ---
 
 # 🌍 Multi-language Support
 
-RaccoonX currently supports:
+DBPulse currently supports:
 
 1. 中文
 2. English
@@ -1022,7 +1013,7 @@ The localized areas include:
 * Reports
 * AI diagnostic labels
 
-RaccoonX also supports:
+DBPulse also supports:
 
 * Dark theme
 * Light theme
@@ -1031,9 +1022,9 @@ RaccoonX also supports:
 
 # 🔌 REST API
 
-RaccoonX provides REST APIs for automation and integration.
+DBPulse provides REST APIs for automation and integration.
 
-API Key authentication can be used to integrate RaccoonX with:
+API Key authentication can be used to integrate DBPulse with:
 
 * CI/CD
 * Monitoring platforms
@@ -1093,7 +1084,7 @@ For production environments, use a reverse proxy such as nginx and rotate API ke
 
 # 🧰 MCP Server
 
-RaccoonX ships a **Model Context Protocol (MCP)** server that hands inspection capabilities directly to MCP-capable clients such as Claude, Cursor and Codex.
+DBPulse ships a **Model Context Protocol (MCP)** server that hands inspection capabilities directly to MCP-capable clients such as Claude, Cursor and Codex.
 
 The point is simple: your AI no longer needs you to paste SQL output, screenshots or report contents. It can list your data sources, run an inspection, inspect blocking chains, check index health — and then reason about the result.
 
@@ -1154,13 +1145,13 @@ is identical: over MCP an ordinary user can only see the data sources they are a
 
 # 📦 Distribution Packaging
 
-RaccoonX can be packaged as a standalone executable using PyInstaller.
+DBPulse can be packaged as a standalone executable using PyInstaller.
 
 ## Windows
 
 ```bash
 rd /s /q build dist __pycache__
-pyinstaller dbcheck.spec
+pyinstaller build/dbcheck_windows.spec
 cd dist
 dbcheck.exe
 ```
@@ -1201,7 +1192,7 @@ cd dist
 
 Inspection coverage varies by database type.
 
-RaccoonX uses database-specific templates and graceful fallback mechanisms when certain metrics are unavailable.
+DBPulse uses database-specific templates and graceful fallback mechanisms when certain metrics are unavailable.
 
 ---
 
@@ -1265,20 +1256,18 @@ sys as sysdba
 
 No recommendation should be blindly applied to production.
 
-RaccoonX provides inspection results and suggested remediation actions. Database engineers should review the proposed change against the actual environment before execution.
+DBPulse provides inspection results and suggested remediation actions. Database engineers should review the proposed change against the actual environment before execution.
 
 ---
 
-# 🔄 From DBCheck to RaccoonX
+# 🔄 Brand and Lineage
 
-RaccoonX was previously known as **DBCheck**.
+DBPulse is the current product name of this repository. It is built on the upstream **DBCheck** open-source project originally created by [fiyo (Jack Ge)](https://github.com/fiyo), and continues that codebase under independent branding, packaging and operations capabilities.
 
 The project began as a database inspection tool and gradually expanded into a broader database operations platform.
 
-The name **RaccoonX** represents the next stage of the project.
-
 ```text
-DBCheck
+DBCheck (upstream)
    │
    ├── Database Inspection
    ├── Risk Analysis
@@ -1288,26 +1277,23 @@ DBCheck
    ├── Plugins
    └── Automation
           ↓
-      RaccoonX
+      DBPulse
 ```
 
-The original DBCheck name may still appear in:
+The historical DBCheck identifier is intentionally kept for compatibility and still appears in:
 
-* Repository URLs
-* Docker image names
-* Existing deployment configurations
-* Historical documentation
-* Existing scripts
+* Python package and module names
+* Repository URL (`zhongxinxuhk/DBCheck`)
+* Docker volume names and legacy deployment configurations
+* Historical documentation and existing scripts
 
-These will be gradually unified as the RaccoonX brand evolves.
-
-> **RaccoonX — formerly known as DBCheck.**
+These internal identifiers stay stable so upgrades do not break; every user-facing surface — product name, Web UI, reports and release artifacts — uses **DBPulse** and its logo.
 
 ---
 
 # 🤝 Contributing
 
-RaccoonX is an open-source project and contributions are welcome.
+DBPulse is an open-source project and contributions are welcome.
 
 You can contribute through:
 
@@ -1319,7 +1305,7 @@ You can contribute through:
 * 📝 Improve documentation
 * 🌍 Improve translations
 * 🔧 Submit pull requests
-* 📢 Share RaccoonX with other database engineers
+* 📢 Share DBPulse with other database engineers
 
 Before submitting a pull request, please read:
 
@@ -1345,7 +1331,7 @@ When reporting a database-specific issue, please provide:
 ```text
 Database type
 Database version
-RaccoonX version
+DBPulse version
 Operating system
 Installation method
 Relevant error message
@@ -1375,7 +1361,7 @@ Use GitHub Discussions for questions and ideas that do not belong in a bug repor
 
 # 🙏 Acknowledgements
 
-RaccoonX references and builds upon ideas, tools and open-source projects from the database community.
+DBPulse references and builds upon ideas, tools and open-source projects from the database community.
 
 Special thanks to the following projects:
 
@@ -1388,13 +1374,13 @@ We appreciate the work of everyone who contributes to the database and open-sour
 
 # ❤️ Support the Project
 
-RaccoonX is released under the **Apache License 2.0**.
+DBPulse is released under the **Apache License 2.0**.
 
-If RaccoonX has been useful to you, there are many ways to support the project.
+If DBPulse has been useful to you, there are many ways to support the project.
 
 ### ⭐ Give it a Star
 
-A Star helps more database engineers discover RaccoonX.
+A Star helps more database engineers discover DBPulse.
 
 ```text
 Use it
@@ -1409,7 +1395,7 @@ More people discover it
   ↓
 More feedback
   ↓
-Better RaccoonX
+Better DBPulse
 ```
 
 ### 🐛 Report a Bug
@@ -1426,7 +1412,7 @@ Pull requests are welcome.
 
 ### 📢 Share the Project
 
-If you know a DBA or database engineer who might find RaccoonX useful, sharing the project is one of the most valuable forms of support.
+If you know a DBA or database engineer who might find DBPulse useful, sharing the project is one of the most valuable forms of support.
 
 ---
 
@@ -1442,11 +1428,11 @@ For an independent open-source project, a small donation means:
 > Someone noticed it.
 > Someone believed it was worth continuing.
 
-Thank you to everyone who has supported RaccoonX through donations, Stars, Issues, Pull Requests, suggestions, articles, testing, or simply telling another engineer about the project.
+Thank you to everyone who has supported DBPulse through donations, Stars, Issues, Pull Requests, suggestions, articles, testing, or simply telling another engineer about the project.
 
-<img src="snapshot/pay-en.png" alt="RaccoonX Support QR Code" width="800" />
+<img src="snapshot/pay-en.png" alt="DBPulse Support QR Code" width="800" />
 
-<img src="snapshot/dbcheck-badge-800w.png" alt="RaccoonX Supporter Badge" width="800" />
+<img src="snapshot/dbcheck-badge-800w.png" alt="DBPulse Supporter Badge" width="800" />
 
 > Please specify your name or nickname when sponsoring ❤️
 
@@ -1473,7 +1459,7 @@ Thank you to everyone who has supported RaccoonX through donations, Stars, Issue
 
 # 📜 License
 
-RaccoonX is open-source software licensed under the:
+DBPulse is open-source software licensed under the:
 
 **Apache License 2.0**
 
@@ -1493,13 +1479,13 @@ You are free to use, modify, distribute and build upon the project according to 
 
 The names, logos, trademarks and database technologies mentioned in this project belong to their respective owners.
 
-Their appearance in RaccoonX indicates compatibility or integration with the corresponding technology and does not imply endorsement, affiliation or partnership.
+Their appearance in DBPulse indicates compatibility or integration with the corresponding technology and does not imply endorsement, affiliation or partnership.
 
 ---
 
-# 🦝 Keep Building
+# ⚡ Keep Building
 
-RaccoonX is not built by a large team.
+DBPulse is not built by a large team.
 
 It grows through code, feedback, issues, ideas, testing, documentation, contributions and the people who choose to use it.
 
@@ -1507,14 +1493,15 @@ It grows through code, feedback, issues, ideas, testing, documentation, contribu
 One Pull at a Time,
 We Keep Building.
 
-🦝 RaccoonX
+⚡ DBPulse
 ```
 
-**Thank you for being part of the RaccoonX community.**
+**Thank you for being part of the DBPulse community.**
 
 ---
 
-**Author:** [Jack Ge](https://github.com/fiyo)
-**Project:** RaccoonX — formerly DBCheck
-**Website:** https://raccoonx.cn/
+**Upstream author:** [Jack Ge](https://github.com/fiyo)
+**Project:** DBPulse (数据库智能巡检系统)
+**Repository:** https://github.com/zhongxinxuhk/DBCheck
+**Upstream project:** https://github.com/fiyo/DBCheck
 **Email:** [sdfiyon@gmail.com](mailto:sdfiyon@gmail.com)
