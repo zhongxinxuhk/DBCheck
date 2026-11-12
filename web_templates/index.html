@@ -8358,6 +8358,9 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('apikey')" id="nav-apikey" data-page-node-id="edjD2UaVRd7vn2iJAcpSUq">
       <span class="icon" data-page-node-id="IvtlWGItNrkOf5YGYxXEG9"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="ADjlrSfjZwlI7b3gcS3bn9"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" data-page-node-id="L5HQVJerSfr3MZpdF0NS71"/><path d="m21 2-9.6 9.6" data-page-node-id="S6WainzqA5lm9O0grpwDmT"/><circle cx="7.5" cy="15.5" r="5.5" data-page-node-id="1yyxzoG02t5cAabcevvFYp"/></svg></span> <span data-i18n="webui.nav_apikey" data-page-node-id="C034i1aAqbR7BA9Cpdwdal">API Key 管理</span>
     </div>
+    <div class="nav-item" onclick="showPage('audit'); loadAuditPage()" id="nav-audit">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l4 4v14H5V3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 3v4h6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 12h6M9 16h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span> <span>审计日志</span>
+    </div>
     <div class="nav-item" onclick="showPage('shares')" id="nav-shares" data-page-node-id="Px3726GOxyVCfjBfWAfsvk">
       <span class="icon" data-page-node-id="MclWyqKqLGuxXU1N6295yu"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="xIwT1ykqxwgkPYxPkDNfEO"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" data-page-node-id="yn71KpZYGY2EC4Acc8BZPF"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" data-page-node-id="LqnylOxn1E8flMUZypbDSz"/></svg></span> <span data-i18n="webui.nav_shares" data-page-node-id="7OrFgQlS6iEjA2rol5hwJX">分享管理</span>
     </div>
@@ -9940,6 +9943,70 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           </details>
         </div>
 
+      </div>
+
+      <div class="page" id="page-audit" style="display:none;">
+        <div class="page-toolbar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+          <h2 style="font-size:18px;margin:0;">🧾 审计日志</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost" onclick="loadAuditPage()">🔄 刷新</button>
+            <button class="btn btn-ghost" onclick="auditIntegrity()">🔗 校验哈希链</button>
+            <button class="btn btn-primary" onclick="auditExport()">⬇ 导出 CSV</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div id="audit-stats" style="font-size:13px;color:var(--text-muted);">加载中...</div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;font-size:12px;margin-bottom:12px;">
+            <label style="display:flex;flex-direction:column;gap:4px;">操作者
+              <input id="audit-f-actor" class="input" style="padding:6px 8px;width:130px;" placeholder="用户名">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;">动作
+              <input id="audit-f-action" class="input" style="padding:6px 8px;width:170px;" placeholder="如 plan_run">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;">路径
+              <input id="audit-f-path" class="input" style="padding:6px 8px;width:180px;" placeholder="/api/...">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;">结果
+              <select id="audit-f-result" class="input" style="padding:6px 8px;">
+                <option value="">全部</option><option value="success">成功</option><option value="failure">失败</option>
+              </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;">方法
+              <select id="audit-f-method" class="input" style="padding:6px 8px;">
+                <option value="">全部</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+              </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;">起始时间
+              <input id="audit-f-since" type="datetime-local" class="input" style="padding:6px 8px;">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:4px;">结束时间
+              <input id="audit-f-until" type="datetime-local" class="input" style="padding:6px 8px;">
+            </label>
+            <button class="btn btn-primary" style="padding:6px 14px;" onclick="auditQuery(0)">查询</button>
+            <button class="btn btn-ghost" style="padding:6px 14px;" onclick="auditReset()">重置</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table" style="width:100%;">
+              <thead><tr>
+                <th>时间</th><th>操作者</th><th>动作</th><th>方法</th><th>路径</th>
+                <th style="text-align:center">状态</th><th style="text-align:center">结果</th><th>IP</th><th>客户端</th><th></th>
+              </tr></thead>
+              <tbody id="audit-tbody"><tr><td colspan="10" style="text-align:center;color:var(--text-muted)">加载中...</td></tr></tbody>
+            </table>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;color:var(--text-muted);">
+            <span id="audit-page-info">-</span>
+            <span style="display:flex;gap:8px;">
+              <button class="btn btn-ghost" style="padding:4px 10px;" onclick="auditPrevPage()">上一页</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;" onclick="auditNextPage()">下一页</button>
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- ══ Page: Share Management ══ -->
@@ -24134,6 +24201,134 @@ async function deleteApiKey(id, name) {
       toastError('请求失败：' + e.message);
     }
   });
+}
+
+// ─── 统一审计 ─────────────────────────────────────────────
+let _auditPage = 0;
+const _AUDIT_PAGE_SIZE = 50;
+let _auditTotal = 0;
+let _auditEvents = {};
+
+function _auditParams() {
+  const params = new URLSearchParams();
+  const map = {actor: 'audit-f-actor', action: 'audit-f-action', path: 'audit-f-path',
+               result: 'audit-f-result', method: 'audit-f-method'};
+  Object.keys(map).forEach(function (key) {
+    const el = document.getElementById(map[key]);
+    if (el && el.value) params.set(key, el.value);
+  });
+  const since = document.getElementById('audit-f-since');
+  const until = document.getElementById('audit-f-until');
+  if (since && since.value) params.set('since', since.value.replace('T', ' ') + ':00');
+  if (until && until.value) params.set('until', until.value.replace('T', ' ') + ':59');
+  return params;
+}
+
+async function loadAuditPage() {
+  await Promise.all([auditLoadStats(), auditQuery(0)]);
+}
+
+async function auditLoadStats() {
+  const box = document.getElementById('audit-stats');
+  try {
+    const res = await fetch('/api/audit/stats');
+    if (res.status === 401) { if (box) box.textContent = '请先登录后再查看审计日志'; return; }
+    const data = await res.json();
+    if (!data.ok) { if (box) box.textContent = '统计加载失败'; return; }
+    const st = data.stats || {};
+    const top = (st.top_actions || []).slice(0, 3).map(function (a) { return escHtml(a.action) + ' (' + a.n + ')'; }).join(' · ');
+    if (box) {
+      box.innerHTML = '事件总数 <b>' + (st.total || 0) + '</b> · 最近 24h <b>' + (st.last_24h || 0)
+        + '</b>' + (top ? ' · 高频动作：' + top : '') + ' · 库文件位于 data/user_db/audit.db（仅追加）';
+    }
+  } catch (e) { if (box) box.textContent = '统计加载失败'; }
+}
+
+async function auditQuery(page) {
+  _auditPage = Math.max(0, page || 0);
+  const params = _auditParams();
+  params.set('limit', _AUDIT_PAGE_SIZE);
+  params.set('offset', _auditPage * _AUDIT_PAGE_SIZE);
+  const tb = document.getElementById('audit-tbody');
+  try {
+    const res = await fetch('/api/audit/events?' + params.toString());
+    const data = await res.json();
+    if (!data.ok) {
+      if (tb) tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--danger)">' + escHtml(data.error || '查询失败') + '</td></tr>';
+      return;
+    }
+    _auditTotal = data.total || 0;
+    const events = data.events || [];
+    _auditEvents = {};
+    events.forEach(function (e) { _auditEvents[e.id] = e; });
+    if (!events.length) {
+      tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted)">没有匹配的审计事件</td></tr>';
+    } else {
+      tb.innerHTML = events.map(function (e) {
+        const color = e.result === 'success' ? 'var(--success)' : 'var(--danger)';
+        const label = e.result === 'success' ? '成功' : '失败';
+        return '<tr>' +
+          '<td style="font-size:12px;white-space:nowrap;">' + escHtml(e.ts || '-') + '</td>' +
+          '<td style="font-size:12px;">' + escHtml(e.actor || '-') + '</td>' +
+          '<td style="font-size:12px;">' + escHtml(e.action || '-') + '</td>' +
+          '<td style="font-size:12px;">' + escHtml(e.method || '-') + '</td>' +
+          '<td style="font-size:12px;max-width:320px;word-break:break-all;">' + escHtml(e.path || '-') + '</td>' +
+          '<td style="text-align:center;font-size:12px;">' + escHtml(e.status_code == null ? '-' : e.status_code) + '</td>' +
+          '<td style="text-align:center;"><span style="background:' + color + ';color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">' + label + '</span></td>' +
+          '<td style="font-size:12px;">' + escHtml(e.ip || '-') + '</td>' +
+          '<td style="font-size:12px;">' + escHtml(e.client || '-') + '</td>' +
+          '<td><button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" onclick="auditToggleDetail(' + e.id + ')">详情</button></td>' +
+        '</tr>' +
+        '<tr id="audit-detail-' + e.id + '" style="display:none;"><td colspan="10"><pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;background:var(--surface2);padding:10px;border-radius:6px;margin:0;">' + escHtml(e.detail || '{}') + '</pre></td></tr>';
+      }).join('');
+    }
+    const info = document.getElementById('audit-page-info');
+    if (info) {
+      const start = _auditTotal ? _auditPage * _AUDIT_PAGE_SIZE + 1 : 0;
+      const end = Math.min(_auditTotal, (_auditPage + 1) * _AUDIT_PAGE_SIZE);
+      info.textContent = '共 ' + _auditTotal + ' 条，当前 ' + start + '-' + end + ' 条';
+    }
+  } catch (e) {
+    if (tb) tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--danger)">查询失败：' + escHtml(e.message) + '</td></tr>';
+  }
+}
+
+function auditToggleDetail(id) {
+  const row = document.getElementById('audit-detail-' + id);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function auditPrevPage() { if (_auditPage > 0) auditQuery(_auditPage - 1); }
+
+function auditNextPage() {
+  if ((_auditPage + 1) * _AUDIT_PAGE_SIZE < _auditTotal) auditQuery(_auditPage + 1);
+}
+
+function auditReset() {
+  ['audit-f-actor', 'audit-f-action', 'audit-f-path', 'audit-f-since', 'audit-f-until'].forEach(function (id) {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['audit-f-result', 'audit-f-method'].forEach(function (id) {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  auditQuery(0);
+}
+
+function auditExport() {
+  const params = _auditParams();
+  params.set('limit', '10000');
+  window.location.href = '/api/audit/export?' + params.toString();
+}
+
+async function auditIntegrity() {
+  try {
+    const res = await fetch('/api/audit/integrity');
+    const data = await res.json();
+    if (!res.ok || !data.ok) { toastError(data.error || '校验失败（需要管理员权限）'); return; }
+    const info = data.integrity || {};
+    if (info.ok) toastSuccess('哈希链完整：已校验 ' + (info.checked || 0) + ' 条事件');
+    else toastError('哈希链异常：' + (info.reason || ('事件 ' + info.broken_id + ' 校验失败')));
+  } catch (e) { toastError('校验失败：' + e.message); }
 }
 
 // ─── 通用输入弹窗（替代 prompt）───────────────────────────────
