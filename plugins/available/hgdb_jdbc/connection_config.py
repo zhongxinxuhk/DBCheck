@@ -5,7 +5,6 @@
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 from dataclasses import dataclass
-from typing import Dict
 
 
 @dataclass
@@ -66,8 +65,11 @@ class HgdbConnectionConfig:
         Returns:
             java.util.Properties 实例（含 user / password 键）
         """
-        from java.util import Properties
-        props = Properties()
+        # 不用 ``from java.util import ...``：``java`` 是 JPype 在运行时注入的虚拟包，
+        # 静态分析阶段无法解析（会报“未解析的引用”）；JClass 是等价写法且可被 IDE 识别。
+        import jpype
+
+        props = jpype.JClass("java.util.Properties")()
         props.setProperty("user", str(self.user))
         props.setProperty("password", str(self.password))
         return props
@@ -100,9 +102,9 @@ class HgdbConnectionConfig:
             host=_get_str("host", "127.0.0.1") or "127.0.0.1",
             port=_get_int("port", 5866) or 5866,
             user=_get_str("user", "highgo") or "highgo",
-            password=_get_str("password", ""),
+            password=_get_str("password"),
             database=_get_str("database", "highgo") or "highgo",
-            jdbc_url=_get_str("jdbc_url", ""),
+            jdbc_url=_get_str("jdbc_url"),
         )
 
     def __repr__(self) -> str:
