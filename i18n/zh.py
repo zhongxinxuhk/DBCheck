@@ -2666,7 +2666,7 @@ ZI = {
     "webui.scheduler_db_name": "数据库名",
 
     # ── 其他 ──
-    "webui.pro_license_free": "Apache License 2.0 · 开源免费版",
+    "webui.pro_license_free": "PolyForm Noncommercial 1.0.0 · 非商业免费版",
     "webui.ds_manual_input": "-- 手动输入连接信息 --",
     "webui.scheduler_job_name": "任务名称",
     "webui.placeholder_job_name": "任务名称（用于报告命名）",

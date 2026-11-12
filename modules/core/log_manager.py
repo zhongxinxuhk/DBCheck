@@ -1,5 +1,5 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 """日志生命周期管理：按大小轮转、按份数/天数保留、总预算与磁盘余量保护。
 

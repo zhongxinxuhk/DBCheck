@@ -2618,7 +2618,7 @@ RU.update({
     "webui.pro_history": "История проверок",
     "webui.pro_import": "Импорт",
     "webui.pro_instance_manage": "Управление экземплярами",
-    "webui.pro_license_free": "Apache License 2.0 · бесплатная редакция с открытым исходным кодом",
+    "webui.pro_license_free": "PolyForm Noncommercial 1.0.0 · бесплатно для некоммерческого использования",
     "webui.pro_license_status": "Статус лицензии",
     "webui.pro_no_history": "Записей проверок пока нет",
     "webui.pro_no_instance": "Экземпляров пока нет, нажмите кнопку выше, чтобы добавить",

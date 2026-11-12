@@ -2617,7 +2617,7 @@ JA.update({
     "webui.pro_history": "検査履歴",
     "webui.pro_import": "インポート",
     "webui.pro_instance_manage": "インスタンス管理",
-    "webui.pro_license_free": "Apache License 2.0 · 無料オープンソース版",
+    "webui.pro_license_free": "PolyForm Noncommercial 1.0.0 · 非商用無料版",
     "webui.pro_license_status": "ライセンス ステータス",
     "webui.pro_no_history": "検査記録なし",
     "webui.pro_no_instance": "インスタンスはありません。追加するには上のボタンをクリックしてください",

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 set -eu
 DBPULSE_PORTABLE_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 export DBPULSE_PORTABLE_HOME

@@ -2638,7 +2638,7 @@ EN = {
     "webui.scheduler_db_name": "Database Name",
 
     # ── Other ──
-    "webui.pro_license_free": "Apache License 2.0 · free open-source edition",
+    "webui.pro_license_free": "PolyForm Noncommercial 1.0.0 · free for noncommercial use",
     "webui.ds_manual_input": "-- Manual input --",
     "webui.scheduler_job_name": "Job Name",
     "webui.placeholder_job_name": "Job name (for report naming)",

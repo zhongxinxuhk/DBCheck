@@ -26,7 +26,8 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 > 基于 fiyo (Jack Ge) 的上游开源项目 **DBCheck** 演进。
 
 [![Version](https://img.shields.io/badge/Version-v26.11.5.1-blue.svg)]()
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
+[![License: PolyForm NC 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg)](./LICENSE-PolyForm-Noncommercial-1.0.0.txt)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)]()
 [![AI](https://img.shields.io/badge/AI-Ollama%20%7C%20OpenAI-orange.svg)]()
 [![RAG](https://img.shields.io/badge/RAG-知识库-red.svg)]()
@@ -38,7 +39,8 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 * 🔍 **839 条巡检规则**
 * 🤖 **AI 辅助诊断**
 * 🔌 **可扩展插件架构**
-* 📜 **Apache License 2.0**
+* 📜 **PolyForm Noncommercial 1.0.0 + 商业授权**（自研部分）
+* ⚖️ **Apache 2.0**（上游 DBCheck 代码）
 
 如果 DBPulse 对你有帮助，欢迎给仓库点一个 ⭐。
 
@@ -116,7 +118,7 @@ DBPulse 延续 **DBCheck** 的开源脉络，在持续开发与社区反馈中�
 | 数据库类型             |        **22** |
 | 巡检规则               |       **839** |
 | 界面语言               |          **9** |
-| 开源协议               | **Apache 2.0** |
+| 开源协议               | **PolyForm NC 1.0.0 / Apache 2.0** |
 
 Stars 与 Forks 指上游 DBCheck 仓库的数据。容器镜像拉取量变动频繁，请以镜像仓库实时统计为准，不在此写死。
 
@@ -1369,7 +1371,8 @@ DBPulse 参考并借鉴了数据库社区的项目、工具与思路。
 
 # ❤️ 支持项目
 
-DBPulse 基于 **Apache License 2.0** 开源。
+DBPulse 的自研部分采用 **PolyForm Noncommercial 1.0.0** 授权，商业用途可另行申请
+**商业授权**；上游 DBCheck 代码仍由 fiyo (Jack Ge) 以 **Apache License 2.0** 授权。
 
 如果 DBPulse 对你有帮助，有很多方式可以支持这个项目。
 
@@ -1413,17 +1416,32 @@ DBPulse 基于 **Apache License 2.0** 开源。
 
 # 📜 开源协议
 
-DBPulse 是基于以下协议的开源软件：
+DBPulse 基于上游 DBCheck（RaccoonX）开源项目演进，因此采用**分拆授权**：
 
-**Apache License 2.0**
+| 部分 | 许可证 |
+| --- | --- |
+| 自研代码（文件头标注 `SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0`） | 非商业用途按 **PolyForm Noncommercial 1.0.0** 免费许可；商业用途需另行取得书面**商业授权** |
+| 上游 DBCheck 代码及被修改的上游文件（标注 `SPDX-License-Identifier: Apache-2.0`） | **Apache License 2.0** |
 
-完整协议文本见：
+完整文本见：
 
 ```text
-LICENSE
+LICENSE-PolyForm-Noncommercial-1.0.0.txt   # 自研部分的非商业许可条款
+LICENSE-COMMERCIAL.md                      # 商业授权范围与申请方式
+LICENSE                                    # 上游部分的 Apache License 2.0
+NOTICE                                     # 双方署名与归属
 ```
 
-依据 Apache License 2.0 的条款，你可以自由地使用、修改、分发本项目并基于其构建。
+自研部分可用于任何**非商业目的**：个人学习、研究、实验、兴趣爱好，以及慈善机构、
+教育机构、公共研究机构、公共安全与卫生机构、环保机构、政府机构的使用，均无需
+另行申请，按 PolyForm Noncommercial 1.0.0 条款即可。
+
+**商业用途需另行取得书面商业授权**，包括但不限于：在企业或其它营利组织的生产环境
+部署使用、以 SaaS / 托管服务形式对外提供、随商业产品销售或捆绑分发、作为收费交付
+项目的一部分、集成进商业产品、白标 / OEM 分发，以及其它以营利为目的的使用。
+申请请邮件联系 sec.hn.cn (X.U zx) &lt;xuzhongxin@sec.hn.cn&gt;。
+
+上游 DBCheck 代码仍按 Apache License 2.0 授权，其著作权、品牌与署名信息完整保留。
 
 ---
 

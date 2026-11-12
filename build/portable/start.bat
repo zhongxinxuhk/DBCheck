@@ -1,6 +1,6 @@
 @echo off
 rem Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
-rem SPDX-License-Identifier: Apache-2.0
+rem SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 setlocal
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"

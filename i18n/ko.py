@@ -2616,7 +2616,7 @@ KO.update({
     "webui.pro_history": "점검 이력",
     "webui.pro_import": "가져오기",
     "webui.pro_instance_manage": "인스턴스 관리",
-    "webui.pro_license_free": "Apache License 2.0 · 무료 오픈소스 에디션",
+    "webui.pro_license_free": "PolyForm Noncommercial 1.0.0 · 비상업용 무료 에디션",
     "webui.pro_license_status": "라이선스 상태",
     "webui.pro_no_history": "점검 기록이 없습니다",
     "webui.pro_no_instance": "인스턴스가 없습니다. 위 버튼을 클릭해 추가하세요",
