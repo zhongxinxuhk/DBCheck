@@ -111,7 +111,7 @@ def fetch_one(cursor: Any, default: Any = None) -> Any:
 
 def fetch_scalar(cursor: Any, default: Any = None) -> Any:
     """安全取单行首列（聚合查询最常用形态）。"""
-    row = fetch_one(cursor, None)
+    row = fetch_one(cursor)
     if row is None:
         return default
     try:

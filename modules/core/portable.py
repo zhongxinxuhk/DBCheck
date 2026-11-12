@@ -28,7 +28,7 @@ def platform_key():
     return system + "-" + arch
 
 
-def bundled_java_home():
+def bundled_java_home() -> Path | None:
     from modules.core import paths
 
     if paths.PORTABLE_ROOT is None:
@@ -277,6 +277,8 @@ def state_check():
     for source in sources:
         try:
             value = manager.get_instance_decrypted(source["id"])
+            if not value:
+                raise ValueError("加密配置为空或不可解密")
             for field in ("ssh_key_file", "tls_ca_file", "tls_cert_key_file"):
                 if value.get(field) and not Path(value[field]).exists():
                     failures.append(
@@ -371,9 +373,11 @@ def transfer_test(seed=False):
         raise ValueError("Portable transfer fixture is missing")
     manager = InstanceManager(manager_directory)
     instance = manager.get_instance_decrypted("ci-portable-fixture")
-    credentials = bool(instance) and all(
-        instance.get(key) == value for key, value in expected.items()
-    )
+    credentials = False
+    if instance:
+        credentials = all(
+            instance.get(key) == value for key, value in expected.items()
+        )
     key_file = Path(instance.get("ssh_key_file", "")) if instance else None
     reference = bool(
         key_file
@@ -426,9 +430,10 @@ def bootstrap():
                 paths.DB_KEY_PATH.chmod(0o600)
         java = bundled_java_home()
         if java is not None:
-            os.environ["JAVA_HOME"] = str(java)
+            java_home = Path(java)
+            os.environ["JAVA_HOME"] = str(java_home)
             os.environ["PATH"] = (
-                str(java / "bin") + os.pathsep + os.environ.get("PATH", "")
+                str(java_home / "bin") + os.pathsep + os.environ.get("PATH", "")
             )
         elif getattr(sys, "frozen", False) and "--portable-self-test" not in arguments:
             raise SystemExit(

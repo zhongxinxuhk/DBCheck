@@ -27,7 +27,7 @@ from modules.core import paths
 
 # 进程级哨兵：确保迁移与日志配置在整进程内只执行一次，
 # 满足 ensure_bootstrapped 的「幂等」约定（第二次及以后调用直接返回）。
-_BOOTSTRAPPED = False
+_BOOTSTRAPPED: bool = False
 
 
 def ensure_bootstrapped(db_type: str) -> None:
@@ -61,14 +61,14 @@ def _configure_logging_once(db_type: str) -> None:
     print 风格冲突。``logging.basicConfig`` 自带「无 handler 才配置」的幂等语义，
     因此即便被多个入口重复调用也只生效一次。
     """
+    tag = db_type or 'app'
     try:
         logging.basicConfig(
             level=logging.WARNING,
             format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
         )
-    except Exception:
-        # 日志配置失败不应阻断启动
-        pass
+    except Exception as exc:  # 日志配置失败不应阻断启动
+        print('[boot:%s] 日志配置失败，已忽略: %s' % (tag, exc), flush=True)
 
 
 def build_parser(description: str) -> argparse.ArgumentParser:

@@ -150,7 +150,7 @@ def scan(text, session_id=''):
     for name, category, pattern in RULES:
         m = pattern.search(probe)
         if m:
-            matched = m.group(0)
+            matched = m.group()
             _audit(name, category, text, session_id, matched)
             logger.warning('AI 请求被阻断 rule=%s category=%s session=%s',
                            name, category, session_id)

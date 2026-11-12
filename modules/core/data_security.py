@@ -7,9 +7,10 @@
 
 import re
 from collections.abc import Mapping
+from typing import Any
 
 _SECRET = re.compile(r'password|passwd|pwd|secret|token|private.?key|credential', re.I)
-_ASSIGNMENT = re.compile(r'(?i)(password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*(?:\{[^}]*\}|\"[^\"]*\"|\'[^\']*\'|[^\s;,]+)')
+_ASSIGNMENT = re.compile(r'(?i)(password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*(?:\{[^}]*}|\"[^\"]*\"|\'[^\']*\'|[^\s;,]+)')
 _IPV4 = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
 _EMAIL = re.compile(r'\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b')
 _DENIED = set(
@@ -220,9 +221,10 @@ def egress_policy(url):
     import os
     from urllib.parse import urlsplit
     parsed = urlsplit(str(url))
-    if parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password:
+    hostname = parsed.hostname
+    if parsed.scheme not in {'http','https'} or not hostname or parsed.username or parsed.password:
         raise ValueError('外联地址无效')
-    host = parsed.hostname.lower()
+    host = hostname.lower()
     local = host == 'localhost'
     try:
         local = local or ipaddress.ip_address(host).is_loopback
@@ -255,7 +257,8 @@ def egress_urlopen(request, *, timeout=30, context=None, proxy=None):
     tls=context or ssl.create_default_context()
     if tls.verify_mode!=ssl.CERT_REQUIRED or not tls.check_hostname:
         raise ValueError('数据外发须验证TLS证书与主机名')
-    handlers=[NoRedirect(),urllib.request.HTTPSHandler(context=tls)]
-    if proxy:handlers.append(urllib.request.ProxyHandler({'http':proxy,'https':proxy}))
+    handlers: list[Any] = [NoRedirect(), urllib.request.HTTPSHandler(context=tls)]
+    if proxy:
+        handlers.append(urllib.request.ProxyHandler({'http': proxy, 'https': proxy}))
     opener=urllib.request.build_opener(*handlers)
     return opener.open(request,timeout=timeout)
