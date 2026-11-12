@@ -8,11 +8,13 @@ import ctypes
 import hashlib
 import json
 import os
+import platform
 import queue
 import subprocess
 import sys
 import threading
 import urllib.request
+import uuid
 from pathlib import Path
 
 import psutil
@@ -421,12 +423,559 @@ class TrayIcon:
         self.thread.join(timeout=3)
 
 
+def device_serial_number():
+    """Encode stable machine information for display by the desktop launcher."""
+    machine_id = ""
+    if os.name == "nt":
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+                0,
+                winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+            ) as key:
+                machine_id = str(winreg.QueryValueEx(key, "MachineGuid")[0]).strip()
+        except OSError:
+            pass
+    # Keep the identifier independent of installation path and OS patch versions.
+    components = ["DBPulse-device-v1", platform.system(), platform.machine()]
+    if machine_id:
+        components.append(machine_id)
+    else:
+        components.extend([platform.node(), str(uuid.getnode())])
+    digest = hashlib.sha256("\0".join(components).encode("utf-8")).hexdigest()[:24].upper()
+    return "DBP-" + "-".join(digest[index:index + 4] for index in range(0, 24, 4))
+
+
+# --- Window presentation -----------------------------------------------------
+# Restrained, native-feeling styling: neutral greys, one brand navy accent and a
+# single link blue. The three status colours are also asserted by
+# ``--desktop-self-test``, so they must keep their exact values.
+UI_FONT = "Microsoft YaHei UI"
+MONO_FONT = "Consolas"
+
+WINDOW_BG = "#f2f4f7"
+SURFACE = "#ffffff"
+SURFACE_SOFT = "#f7f8fa"
+HAIRLINE = "#dfe3e9"
+HAIRLINE_SOFT = "#edf0f4"
+INK = "#1c2633"
+INK_SOFT = "#3c4959"
+MUTED = "#5f6b7a"
+FAINT = "#8b95a3"
+BRAND = "#1d3f66"
+BRAND_HOVER = "#26507d"
+LINK = "#1b5aa6"
+OK_COLOR = "#137c51"
+WARN_COLOR = "#986a00"
+DANGER_COLOR = "#b3261e"
+LOG_BG = "#fcfcfd"
+
+STATUS_TINTS = {
+    OK_COLOR: "#e9f4ee",
+    WARN_COLOR: "#fbf2dd",
+    DANGER_COLOR: "#fbecec",
+}
+
+
+def prepare_win32():
+    """Opt into crisp per-monitor DPI rendering and a stable taskbar identity."""
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except (AttributeError, OSError):
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except (AttributeError, OSError):
+                pass
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "sec.hn.cn.DBPulse.Desktop"
+        )
+    except (AttributeError, OSError):
+        pass
+
+
+def _colorref(value):
+    """Convert ``#rrggbb`` to a Win32 COLORREF (0x00BBGGRR)."""
+    red, green, blue = (int(value[index:index + 2], 16) for index in (1, 3, 5))
+    return red | (green << 8) | (blue << 16)
+
+
+def apply_window_chrome(root):
+    """Tint the Windows 11 caption to the app background; ignore older builds."""
+    if os.name != "nt":
+        return
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetParent(root.winfo_id()) or root.winfo_id()
+        dwm = ctypes.windll.dwmapi
+        # 35 = DWMWA_CAPTION_COLOR, 34 = DWMWA_BORDER_COLOR (Windows 11 22H2+).
+        for attribute, color in ((35, SURFACE), (34, HAIRLINE)):
+            reference = ctypes.c_int(_colorref(color))
+            dwm.DwmSetWindowAttribute(
+                hwnd, attribute, ctypes.byref(reference), ctypes.sizeof(reference)
+            )
+    except (AttributeError, OSError):
+        pass
+
+
+def ui_px(root):
+    """Return a pixel scaler so spacing follows the monitor DPI (96 dpi = 1.0)."""
+    try:
+        scale = max(1.0, float(root.winfo_fpixels("1i")) / 96.0)
+    except Exception:
+        scale = 1.0
+
+    def px(value):
+        if value == 0:
+            return 0
+        return max(1, int(round(value * scale)))
+
+    return px
+
+
+def build_styles(root):
+    """Install the ttk theme: flat surfaces, hairline outlines, no gradients."""
+    from tkinter import ttk
+
+    style = ttk.Style(root)
+    style.theme_use("clam")
+    style.configure(".", background=WINDOW_BG, foreground=INK,
+                    font=(UI_FONT, 10))
+    style.configure("TFrame", background=WINDOW_BG)
+    style.configure("TLabel", background=WINDOW_BG, foreground=INK,
+                    font=(UI_FONT, 10))
+    style.configure(
+        "TButton", font=(UI_FONT, 10), padding=(14, 7), borderwidth=1,
+        width=0, background=SURFACE, foreground=INK, bordercolor=HAIRLINE,
+        lightcolor=SURFACE, darkcolor=SURFACE, focuscolor=SURFACE,
+    )
+    style.map(
+        "TButton",
+        background=[("disabled", SURFACE_SOFT), ("pressed", "#e9edf2"),
+                    ("active", "#f5f7f9")],
+        foreground=[("disabled", FAINT)],
+        bordercolor=[("active", "#c9d1db"), ("disabled", HAIRLINE_SOFT)],
+    )
+    style.configure(
+        "Primary.TButton", font=(UI_FONT, 10), padding=(18, 7), width=0,
+        background=BRAND, foreground="#ffffff", bordercolor=BRAND,
+        lightcolor=BRAND, darkcolor=BRAND,
+    )
+    style.map(
+        "Primary.TButton",
+        background=[("disabled", "#b9c4d1"), ("pressed", "#16324f"),
+                    ("active", BRAND_HOVER)],
+        bordercolor=[("disabled", "#b9c4d1"), ("pressed", "#16324f"),
+                     ("active", BRAND_HOVER)],
+        foreground=[("disabled", "#f2f4f7")],
+    )
+    style.configure(
+        "Link.TButton", font=(UI_FONT, 9), padding=(8, 5), relief="flat",
+        borderwidth=0, width=0, background=SURFACE, foreground=LINK,
+        bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE,
+        focuscolor=SURFACE,
+    )
+    style.map(
+        "Link.TButton",
+        background=[("active", SURFACE), ("pressed", SURFACE),
+                    ("disabled", SURFACE)],
+        foreground=[("active", "#154c8c"), ("disabled", FAINT)],
+    )
+    style.configure(
+        "Serial.TButton", font=(MONO_FONT, 9), padding=(0, 2), relief="flat",
+        borderwidth=0, width=0, background=SURFACE, foreground=MUTED,
+        bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE,
+        focuscolor=SURFACE,
+    )
+    style.map(
+        "Serial.TButton",
+        background=[("active", SURFACE), ("pressed", SURFACE)],
+        foreground=[("active", LINK)],
+    )
+    style.configure(
+        "TEntry", padding=(8, 6), fieldbackground=SURFACE, foreground=INK,
+        bordercolor=HAIRLINE, lightcolor=HAIRLINE, darkcolor=HAIRLINE,
+        insertcolor=INK,
+    )
+    style.map("TEntry", bordercolor=[("focus", LINK)],
+              lightcolor=[("focus", LINK)], darkcolor=[("focus", LINK)])
+    style.configure(
+        "TCombobox", padding=(8, 5), fieldbackground=SURFACE, background=SURFACE,
+        foreground=INK, bordercolor=HAIRLINE, lightcolor=HAIRLINE,
+        darkcolor=HAIRLINE, arrowcolor=MUTED,
+    )
+    style.map(
+        "TCombobox",
+        bordercolor=[("focus", LINK)],
+        fieldbackground=[("readonly", SURFACE)],
+        selectbackground=[("readonly", SURFACE)],
+        selectforeground=[("readonly", INK)],
+    )
+    root.option_add("*TCombobox*Listbox.background", SURFACE)
+    root.option_add("*TCombobox*Listbox.foreground", INK)
+    root.option_add("*TCombobox*Listbox.selectBackground", "#e8eef7")
+    root.option_add("*TCombobox*Listbox.selectForeground", INK)
+    style.layout(
+        "Slim.Vertical.TScrollbar",
+        [
+            (
+                "Vertical.Scrollbar.trough",
+                {
+                    "children": [
+                        (
+                            "Vertical.Scrollbar.thumb",
+                            {"expand": "1", "sticky": "nswe"},
+                        )
+                    ],
+                    "sticky": "ns",
+                },
+            )
+        ],
+    )
+    style.configure(
+        "Slim.Vertical.TScrollbar", background="#c3cad4", troughcolor=LOG_BG,
+        bordercolor=LOG_BG, lightcolor="#c3cad4", darkcolor="#c3cad4", width=9,
+    )
+    style.map(
+        "Slim.Vertical.TScrollbar",
+        background=[("active", "#b3bac6"), ("pressed", "#a4acba")],
+    )
+    return style
+
+
+def card(parent, padx=18, pady=16):
+    """Return ``(outer, inner)`` frames for a hairline-bordered surface card."""
+    import tkinter as tk
+
+    outer = tk.Frame(parent, bg=SURFACE, bd=0, highlightbackground=HAIRLINE,
+                     highlightcolor=HAIRLINE, highlightthickness=1)
+    inner = tk.Frame(outer, bg=SURFACE)
+    inner.pack(fill="both", expand=True, padx=padx, pady=pady)
+    return outer, inner
+
+
+def desktop_layout(root, directory, status, detail):
+    """Compose the status window and return the widgets ``main`` drives.
+
+    Returns ``(frame, indicator, buttons, backup_buttons, log_header, log_view)``.
+    """
+    import tkinter as tk
+    import webbrowser
+    from tkinter import ttk
+
+    build_styles(root)
+    px = ui_px(root)
+    root.configure(background=WINDOW_BG)
+    root.option_add("*tearOff", False)
+
+    width = min(px(960), max(px(880), root.winfo_screenwidth() - px(140)))
+    height = min(px(820), max(px(660), root.winfo_screenheight() - px(160)))
+    root.minsize(min(px(860), width), min(px(640), height))
+    root.geometry(
+        "{0}x{1}+{2}+{3}".format(
+            width,
+            height,
+            max(0, (root.winfo_screenwidth() - width) // 2),
+            max(0, (root.winfo_screenheight() - height) // 3),
+        )
+    )
+
+    frame = tk.Frame(root, bg=WINDOW_BG)
+    frame.pack(fill="both", expand=True)
+
+    # Header: brand on the left, live status and device identity on the right.
+    header = tk.Frame(frame, bg=SURFACE)
+    header.pack(fill="x")
+    head = tk.Frame(header, bg=SURFACE)
+    head.pack(fill="x", padx=px(22), pady=(px(15), px(14)))
+
+    brand = tk.Frame(head, bg=SURFACE)
+    brand.pack(side="left")
+    # Frozen standard releases use _MEIPASS. Portable assets live in the shared root.
+    locations = [directory, Path(getattr(sys, "_MEIPASS", directory))]
+    shared = portable_home(Path(directory))
+    if shared:
+        locations.insert(0, shared)
+    for location in locations:
+        logo_path = location / "assets/brand/dbcheck_logo_icon.png"
+        if not logo_path.is_file():
+            continue
+        try:
+            image = tk.PhotoImage(master=root, file=str(logo_path))
+            root.iconphoto(True, image)
+            factor = max(1, (max(image.width(), image.height()) + 31) // 32)
+            root.brand_image = image.subsample(factor, factor)
+            tk.Label(brand, image=root.brand_image, bg=SURFACE).pack(
+                side="left", padx=(px(0), px(12))
+            )
+            break
+        except tk.TclError:
+            continue
+    names = tk.Frame(brand, bg=SURFACE)
+    names.pack(side="left")
+    tk.Label(names, text="DBPulse", bg=SURFACE, fg=INK,
+             font=(UI_FONT, 14, "bold")).pack(anchor="w")
+    tk.Label(names, text="数据库智能巡检系统 · 本地服务控制台", bg=SURFACE,
+             fg=MUTED, font=(UI_FONT, 9)).pack(anchor="w", pady=(px(1), px(0)))
+
+    right = tk.Frame(head, bg=SURFACE)
+    right.pack(side="right")
+    pill = tk.Frame(right, bg=SURFACE_SOFT, highlightbackground=HAIRLINE,
+                    highlightthickness=1)
+    pill.pack(anchor="e")
+    dot = tk.Label(pill, text="\u25cf", bg=SURFACE_SOFT, fg=DANGER_COLOR,
+                   font=(UI_FONT, 8))
+    dot.pack(side="left", padx=(px(9), px(5)), pady=4)
+    indicator = tk.Label(pill, textvariable=status, bg=SURFACE_SOFT,
+                         fg=DANGER_COLOR, font=(UI_FONT, 10, "bold"))
+    indicator.pack(side="left", padx=(px(0), px(10)), pady=4)
+
+    serial_row = tk.Frame(right, bg=SURFACE)
+    serial_row.pack(anchor="e", pady=(px(7), px(0)))
+    copy_hint = tk.StringVar(master=root, value="点击复制")
+    serial = device_serial_number()
+
+    def copy_serial():
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(serial)
+            copy_hint.set("已复制")
+        except tk.TclError:
+            copy_hint.set("复制失败")
+        root.after(2500, lambda: copy_hint.set("点击复制"))
+
+    ttk.Button(
+        serial_row, text=serial, command=copy_serial, style="Serial.TButton",
+        cursor="hand2", takefocus=True,
+    ).pack(side="left")
+    tk.Label(serial_row, textvariable=copy_hint, bg=SURFACE, fg=FAINT,
+             font=(UI_FONT, 9)).pack(side="left", padx=(px(10), px(0)))
+
+    def paint_status(color):
+        tint = STATUS_TINTS.get(color, SURFACE_SOFT)
+        pill.configure(bg=tint)
+        dot.configure(bg=tint, fg=color)
+        indicator.configure(bg=tint, fg=color)
+
+    root.paint_status = paint_status
+
+    tk.Frame(frame, bg=HAIRLINE, height=1).pack(fill="x")
+    body = tk.Frame(frame, bg=WINDOW_BG)
+    body.pack(fill="both", expand=True, padx=px(22), pady=(px(16), px(18)))
+
+    # Service card: address, live detail and the primary actions.
+    service_outer, service = card(body)
+    service_outer.pack(fill="x")
+    address_row = tk.Frame(service, bg=SURFACE)
+    address_row.pack(fill="x")
+    tk.Label(address_row, text="服务地址", bg=SURFACE, fg=MUTED,
+             font=(UI_FONT, 9)).pack(side="left")
+    address = tk.Label(address_row, text=ADDRESS, bg=SURFACE, fg=INK_SOFT,
+                       font=(MONO_FONT, 10), cursor="hand2")
+    address.pack(side="left", padx=(px(12), px(0)))
+    address.bind("<Button-1>", lambda _event: webbrowser.open(ADDRESS))
+
+    detail_label = tk.Label(service, textvariable=detail, bg=SURFACE, fg=MUTED,
+                            font=(UI_FONT, 10), anchor="w", justify="left",
+                            wraplength=max(240, width - 96))
+    detail_label.pack(fill="x", pady=(px(9), px(14)))
+
+    def resize_detail(event):
+        wrap = max(240, event.width - 40)
+        if str(detail_label.cget("wraplength")) != str(wrap):
+            detail_label.configure(wraplength=wrap)
+
+    service.bind("<Configure>", resize_detail)
+
+    buttons = tk.Frame(service, bg=SURFACE)
+    buttons.pack(fill="x")
+
+    # Licence card: compact key/value rows instead of a badge-heavy placeholder.
+    licence_outer, licence = card(body)
+    licence_outer.pack(fill="x", pady=(px(14), px(0)))
+    licence_head = tk.Frame(licence, bg=SURFACE)
+    licence_head.pack(fill="x")
+    tk.Label(licence_head, text="软件授权", bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 10, "bold")).pack(side="left")
+    tk.Label(licence_head, text="未激活", bg="#f1f3f6", fg=MUTED,
+             font=(UI_FONT, 9), padx=px(8), pady=2).pack(side="left", padx=(px(10), px(0)))
+    tk.Label(licence_head, text="到期时间  未设置", bg=SURFACE, fg=FAINT,
+             font=(UI_FONT, 9)).pack(side="right")
+
+    customer_row = tk.Frame(licence, bg=SURFACE)
+    customer_row.pack(fill="x", pady=(px(12), px(10)))
+    tk.Label(customer_row, text="授权客户 / 单位", bg=SURFACE, fg=MUTED,
+             font=(UI_FONT, 9)).pack(side="left")
+    tk.Label(customer_row, text="待授权", bg=SURFACE, fg=INK,
+             font=(UI_FONT, 10, "bold")).pack(side="left", padx=(px(16), px(0)))
+
+    entry_row = tk.Frame(licence, bg=SURFACE)
+    entry_row.pack(fill="x")
+    tk.Label(entry_row, text="激活码", bg=SURFACE, fg=MUTED,
+             font=(UI_FONT, 9)).pack(side="left")
+    activation_code = tk.StringVar(master=root)
+    ttk.Entry(entry_row, textvariable=activation_code, width=30).pack(
+        side="left", padx=(px(16), px(10))
+    )
+    ttk.Button(entry_row, text="激活", state="disabled", width=6).pack(side="left")
+    tk.Label(licence, text="激活功能尚未开放，输入区域已预留。", bg=SURFACE,
+             fg=FAINT, font=(UI_FONT, 9)).pack(anchor="w", pady=(px(9), px(0)))
+
+    # Backup card: one dense row of destructive/support actions.
+    backup_outer, backup = card(body)
+    backup_outer.pack(fill="x", pady=(px(14), px(0)))
+    backup_head = tk.Frame(backup, bg=SURFACE)
+    backup_head.pack(fill="x")
+    tk.Label(backup_head, text="数据备份与恢复", bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 10, "bold")).pack(side="left")
+    tk.Label(backup_head, text="含账号、数据源、台账、任务与配置", bg=SURFACE,
+             fg=FAINT, font=(UI_FONT, 9)).pack(side="right")
+    backup_buttons = tk.Frame(backup, bg=SURFACE)
+    backup_buttons.pack(fill="x", pady=(px(12), px(0)))
+
+    # Log card: light, monospaced, framed like a console pane.
+    log_outer, log_card = card(body, padx=px(0), pady=0)
+    log_outer.pack(fill="both", expand=True, pady=(px(14), px(0)))
+    log_header = tk.Frame(log_card, bg=SURFACE)
+    log_header.pack(fill="x", padx=px(16), pady=(px(12), px(9)))
+    tk.Label(log_header, text="运行日志", bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 10, "bold")).pack(side="left")
+    tk.Frame(log_card, bg=HAIRLINE_SOFT, height=1).pack(fill="x")
+    log_view = tk.Frame(log_card, bg=LOG_BG)
+    log_view.pack(fill="both", expand=True)
+    return frame, indicator, buttons, backup_buttons, log_header, log_view
+
+
+def maintenance_dialog(root, settings, state, on_save):
+    """Show the automatic-backup settings dialog.
+
+    ``on_save`` receives the validated dict and may raise; the error is shown
+    inline and the dialog stays open.
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    px = ui_px(root)
+    window = tk.Toplevel(root)
+    window.title("自动备份与异常恢复")
+    window.transient(root)
+    window.configure(bg=SURFACE)
+    window.resizable(False, False)
+    window.grab_set()
+    values = {
+        key: (
+            tk.BooleanVar(value=value)
+            if isinstance(value, bool)
+            else tk.StringVar(value=str(value))
+        )
+        for key, value in settings.items()
+    }
+    panel = tk.Frame(window, bg=SURFACE)
+    panel.pack(fill="both", expand=True, padx=px(22), pady=18)
+    tk.Label(panel, text="自动备份", bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 10, "bold")).pack(anchor="w")
+    tk.Label(panel, text="按计划导出数据并验证可恢复性。", bg=SURFACE,
+             fg=FAINT, font=(UI_FONT, 9)).pack(anchor="w", pady=(px(2), px(10)))
+    tk.Checkbutton(
+        panel, text="启用自动备份并验证", variable=values["automatic_backup"],
+        bg=SURFACE, activebackground=SURFACE, selectcolor=SURFACE,
+        fg=INK_SOFT, font=(UI_FONT, 10), bd=0, highlightthickness=0,
+        cursor="hand2",
+    ).pack(anchor="w")
+
+    form = tk.Frame(panel, bg=SURFACE)
+    form.pack(fill="x", pady=(px(12), px(0)))
+    form.columnconfigure(1, weight=1)
+    fields = [
+        ("备份周期", "backup_frequency"),
+        ("本地备份时间 HH:mm", "backup_time"),
+        ("保留最近备份份数", "retention"),
+        ("自动重启次数上限", "restart_limit"),
+        ("重启等待秒数", "restart_delay"),
+    ]
+    for row, (label, key) in enumerate(fields):
+        tk.Label(form, text=label, bg=SURFACE, fg=MUTED,
+                 font=(UI_FONT, 9)).grid(
+            row=row, column=0, sticky="w", padx=(px(0), px(14)), pady=px(5)
+        )
+        if key == "backup_frequency":
+            ttk.Combobox(
+                form, textvariable=values[key], values=["daily", "weekly"],
+                state="readonly", width=12,
+            ).grid(row=row, column=1, sticky="w")
+        else:
+            ttk.Entry(form, textvariable=values[key]).grid(
+                row=row, column=1, sticky="ew"
+            )
+    tk.Label(panel, text="daily 为每天，weekly 为每周一，软件运行时执行。",
+             bg=SURFACE, fg=FAINT, font=(UI_FONT, 9)).pack(
+        anchor="w", pady=(px(9), px(0))
+    )
+    tk.Checkbutton(
+        panel, text="后台异常退出后自动重启",
+        variable=values["restart_enabled"], bg=SURFACE,
+        activebackground=SURFACE, selectcolor=SURFACE, fg=INK_SOFT,
+        font=(UI_FONT, 10), bd=0, highlightthickness=0, cursor="hand2",
+    ).pack(anchor="w", pady=(px(10), px(0)))
+
+    tk.Frame(panel, bg=HAIRLINE_SOFT, height=1).pack(fill="x", pady=14)
+    tk.Label(panel, text="最近记录", bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 10, "bold")).pack(anchor="w", pady=(px(0), px(6)))
+    records = (
+        "成功  " + (state["last_success"] or "尚无记录"),
+        "验证  " + (state["last_verified"] or "尚无记录"),
+        "异常  " + (state["last_error"] or "无"),
+    )
+    for record in records:
+        tk.Label(panel, text=record, bg=SURFACE, fg=MUTED,
+                 font=(UI_FONT, 9), anchor="w", justify="left",
+                 wraplength=430).pack(fill="x", pady=1)
+
+    feedback = tk.StringVar()
+    tk.Label(panel, textvariable=feedback, bg=SURFACE, fg=DANGER_COLOR,
+             font=(UI_FONT, 9), anchor="w", justify="left",
+             wraplength=430).pack(fill="x", pady=(px(8), px(0)))
+
+    def save_settings():
+        try:
+            data = {key: value.get() for key, value in values.items()}
+            for key in ("retention", "restart_limit", "restart_delay"):
+                data[key] = int(data[key])
+            on_save(data)
+            window.destroy()
+        except Exception as error:  # surfaced inline, dialog stays open
+            feedback.set(str(error))
+
+    footer = tk.Frame(panel, bg=SURFACE)
+    footer.pack(fill="x", pady=(px(14), px(0)))
+    ttk.Button(footer, text="取消", command=window.destroy,
+               cursor="hand2").pack(side="right")
+    ttk.Button(footer, text="保存设置", command=save_settings,
+               style="Primary.TButton", cursor="hand2").pack(
+        side="right", padx=(px(0), px(8))
+    )
+    window.update_idletasks()
+    left = root.winfo_rootx() + (root.winfo_width() - window.winfo_width()) // 2
+    top = root.winfo_rooty() + max(
+        40, (root.winfo_height() - window.winfo_height()) // 3
+    )
+    window.geometry("+{0}+{1}".format(max(0, left), max(0, top)))
+    return window
+
+
 def main():
     if os.name != "nt":
         raise RuntimeError("此启动器仅适用于 Windows")
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
-    from tkinter.scrolledtext import ScrolledText
     from datetime import datetime
     import webbrowser
     from ctypes import wintypes as w
@@ -462,27 +1011,23 @@ def main():
     maintenance = Maintenance(backend.metadata.parent.parent)
     recovery = CrashRecovery()
     recovery.intentional(backend.owned_running())
+    prepare_win32()
     root = tk.Tk()
     root.title(TITLE)
-    root.geometry("800x580")
-    root.minsize(660, 460)
     events = queue.Queue()
     tray = TrayIcon(events, identity)
     status = tk.StringVar(value="已停止")
     detail = tk.StringVar(value="正在启动服务…")
-    frame = ttk.Frame(root, padding=20)
-    frame.pack(fill="both", expand=True)
-    indicator = tk.Label(
+    (
         frame,
-        textvariable=status,
-        fg="#b3261e",
-        font=("Microsoft YaHei UI", 19, "bold"),
-    )
-    indicator.pack(anchor="w")
-    ttk.Label(frame, text=ADDRESS).pack(anchor="w", pady=(8, 0))
-    ttk.Label(frame, textvariable=detail, wraplength=720).pack(anchor="w", pady=(6, 12))
-    buttons = ttk.Frame(frame)
-    buttons.pack(fill="x")
+        indicator,
+        buttons,
+        backup_buttons,
+        log_header,
+        log_view,
+    ) = desktop_layout(root, directory, status, detail)
+    root.update_idletasks()
+    apply_window_chrome(root)
     busy = False
     quitting = False
     closing = threading.Event()
@@ -520,19 +1065,27 @@ def main():
         recovery.intentional(False)
         action(backend.stop, "正在停止服务…")
 
-    start = ttk.Button(buttons, text="启动", command=start_service)
+    start = ttk.Button(
+        buttons, text="启动服务", command=start_service,
+        style="Primary.TButton", cursor="hand2",
+    )
     start.pack(side="left")
-    stop = ttk.Button(buttons, text="停止", command=stop_service)
-    stop.pack(side="left", padx=8)
+    stop = ttk.Button(
+        buttons, text="停止服务", command=stop_service, cursor="hand2"
+    )
+    stop.pack(side="left", padx=(8, 0))
+    tk.Frame(buttons, bg=HAIRLINE_SOFT, width=1, height=20).pack(
+        side="left", padx=14
+    )
     ttk.Button(
-        buttons, text="打开管理页面", command=lambda: webbrowser.open(ADDRESS)
+        buttons, text="打开管理页面", command=lambda: webbrowser.open(ADDRESS),
+        style="Link.TButton", cursor="hand2",
     ).pack(side="left")
     ttk.Button(
-        buttons, text="监控大屏", command=lambda: webbrowser.open(MONITOR_ADDRESS)
-    ).pack(side="left", padx=8)
-
-    backup_buttons = ttk.Frame(frame)
-    backup_buttons.pack(fill="x", pady=(12, 12))
+        buttons, text="监控大屏",
+        command=lambda: webbrowser.open(MONITOR_ADDRESS),
+        style="Link.TButton", cursor="hand2",
+    ).pack(side="left", padx=(10, 0))
 
     def progress(message):
         events.put(("log", "[备份] " + message + "\n"))
@@ -590,10 +1143,14 @@ def main():
 
         action(restore, "正在导入备份，进度见下方日志…")
 
-    export_button = ttk.Button(backup_buttons, text="导出备份", command=export_backup)
+    export_button = ttk.Button(
+        backup_buttons, text="导出备份", command=export_backup, cursor="hand2"
+    )
     export_button.pack(side="left")
-    import_button = ttk.Button(backup_buttons, text="导入备份", command=import_backup)
-    import_button.pack(side="left", padx=8)
+    import_button = ttk.Button(
+        backup_buttons, text="导入备份", command=import_backup, cursor="hand2"
+    )
+    import_button.pack(side="left", padx=(8, 0))
 
     def verify_backup():
         if busy:
@@ -619,91 +1176,23 @@ def main():
     def maintenance_settings():
         if busy:
             return
-        window = tk.Toplevel(root)
-        window.title("自动备份与异常恢复")
-        window.transient(root)
-        window.grab_set()
-        panel = ttk.Frame(window, padding=20)
-        panel.pack(fill="both", expand=True)
-        values = {
-            key: (
-                tk.BooleanVar(value=value)
-                if isinstance(value, bool)
-                else tk.StringVar(value=str(value))
-            )
-            for key, value in maintenance.settings.items()
-        }
-        ttk.Checkbutton(
-            panel, text="启用自动备份并验证", variable=values["automatic_backup"]
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=6)
-        fields = [
-            ("备份周期", "backup_frequency"),
-            ("本地备份时间 HH:mm", "backup_time"),
-            ("保留最近备份份数", "retention"),
-            ("自动重启次数上限", "restart_limit"),
-            ("重启等待秒数", "restart_delay"),
-        ]
-        for row, (label, key) in enumerate(fields, 1):
-            ttk.Label(panel, text=label).grid(
-                row=row, column=0, sticky="w", padx=(0, 15), pady=5
-            )
-            if key == "backup_frequency":
-                ttk.Combobox(
-                    panel,
-                    textvariable=values[key],
-                    values=["daily", "weekly"],
-                    state="readonly",
-                ).grid(row=row, column=1)
-            else:
-                ttk.Entry(panel, textvariable=values[key]).grid(row=row, column=1)
-        ttk.Label(panel, text="daily 为每天，weekly 为每周一，软件运行时执行。").grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=5
-        )
-        ttk.Checkbutton(
-            panel, text="后台异常退出后自动重启", variable=values["restart_enabled"]
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Label(
-            panel,
-            text="最近备份成功 " + (maintenance.state["last_success"] or "尚无记录"),
-            wraplength=450,
-        ).grid(row=8, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            panel,
-            text="最近备份验证 " + (maintenance.state["last_verified"] or "尚无记录"),
-            wraplength=450,
-        ).grid(row=9, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            panel,
-            text="最近备份异常 " + (maintenance.state["last_error"] or "无"),
-            wraplength=450,
-        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=6)
-        feedback = tk.StringVar()
-        ttk.Label(
-            panel, textvariable=feedback, foreground="#b3261e", wraplength=450
-        ).grid(row=11, column=0, columnspan=2, sticky="w")
 
-        def save_settings():
-            try:
-                data = {key: value.get() for key, value in values.items()}
-                for key in ("retention", "restart_limit", "restart_delay"):
-                    data[key] = int(data[key])
-                maintenance.save(data)
-                recovery.intentional(backend.owned_running())
-                window.destroy()
-                events.put(("log", "[维护] 自动备份与异常恢复设置已保存\n"))
-            except Exception as error:
-                feedback.set(str(error))
+        def commit(data):
+            maintenance.save(data)
+            recovery.intentional(backend.owned_running())
+            events.put(("log", "[维护] 自动备份与异常恢复设置已保存\n"))
 
-        ttk.Button(panel, text="保存设置", command=save_settings).grid(
-            row=12, column=1, sticky="e", pady=10
-        )
+        maintenance_dialog(root, maintenance.settings, maintenance.state, commit)
 
-    verify_button = ttk.Button(backup_buttons, text="验证备份", command=verify_backup)
-    verify_button.pack(side="left", padx=8)
-    settings_button = ttk.Button(
-        backup_buttons, text="自动备份与异常恢复", command=maintenance_settings
+    verify_button = ttk.Button(
+        backup_buttons, text="验证备份", command=verify_backup, cursor="hand2"
     )
-    settings_button.pack(side="left")
+    verify_button.pack(side="left", padx=(8, 0))
+    settings_button = ttk.Button(
+        backup_buttons, text="自动备份与异常恢复", command=maintenance_settings,
+        cursor="hand2",
+    )
+    settings_button.pack(side="left", padx=(8, 0))
 
     def maintenance_tick():
         if not busy and not quitting:
@@ -723,24 +1212,33 @@ def main():
         if not closing.is_set():
             root.after(1000, maintenance_tick)
 
-    log_header = ttk.Frame(frame)
-    log_header.pack(fill="x", pady=(0, 6))
-    ttk.Label(log_header, text="运行日志").pack(side="left")
     auto_scroll = tk.BooleanVar(value=True)
-    ttk.Checkbutton(log_header, text="自动滚动", variable=auto_scroll).pack(
-        side="right"
-    )
-    terminal = ScrolledText(
-        frame,
-        height=15,
-        bg="#17212b",
-        fg="#e7edf3",
-        insertbackground="#ffffff",
-        font=("Consolas", 10),
+    terminal = tk.Text(
+        log_view,
+        height=9,
+        bg=LOG_BG,
+        fg=INK,
+        insertbackground=INK,
+        font=(MONO_FONT, 10),
         wrap="word",
         state="disabled",
+        relief="flat",
+        borderwidth=0,
+        highlightthickness=0,
+        padx=16,
+        pady=11,
+        spacing1=1,
+        spacing3=1,
+        selectbackground="#dbe6f5",
+        selectforeground=INK,
     )
-    terminal.pack(fill="both", expand=True)
+    scrollbar = ttk.Scrollbar(
+        log_view, orient="vertical", command=terminal.yview,
+        style="Slim.Vertical.TScrollbar",
+    )
+    terminal.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side="right", fill="y", padx=(0, 2), pady=6)
+    terminal.pack(side="left", fill="both", expand=True)
 
     def append_log(text):
         terminal.configure(state="normal")
@@ -757,9 +1255,15 @@ def main():
         terminal.delete("1.0", "end")
         terminal.configure(state="disabled")
 
-    ttk.Button(log_header, text="清空显示", command=clear_log).pack(
-        side="right", padx=8
-    )
+    ttk.Button(
+        log_header, text="清空显示", command=clear_log, style="Link.TButton",
+        cursor="hand2",
+    ).pack(side="right")
+    tk.Checkbutton(
+        log_header, text="自动滚动", variable=auto_scroll, bg=SURFACE,
+        activebackground=SURFACE, selectcolor=SURFACE, fg=MUTED,
+        font=(UI_FONT, 9), bd=0, highlightthickness=0, cursor="hand2",
+    ).pack(side="right", padx=(0, 2))
     append_log("[DBPulse] 状态窗口已就绪，正在等待后台输出…\n")
 
     def follow_output():
@@ -829,9 +1333,11 @@ def main():
         tray.stoppable = backend.owned_running()
         pending = tray.stoppable and not tray.running
         status.set("运行中" if tray.running else "启动中…" if pending else "已停止")
-        indicator.configure(
-            fg="#137c51" if tray.running else "#986a00" if pending else "#b3261e"
+        color = (
+            OK_COLOR if tray.running else WARN_COLOR if pending else DANGER_COLOR
         )
+        indicator.configure(fg=color)
+        root.paint_status(color)
         start.configure(
             state="disabled" if busy or tray.running or pending else "normal"
         )
