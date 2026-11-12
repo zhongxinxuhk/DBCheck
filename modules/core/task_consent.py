@@ -40,7 +40,10 @@ DEFAULT_TTL = 300
 _lock = threading.Lock()
 # {(session_id, ticket_id): {kind, action, target, detail, fingerprint,
 #                            plan, created, ttl, state}}
-_TICKETS = {}
+_TICKETS: dict[tuple[str, str], dict] = {}
+# 同上，类型别名便于 IDE 推断票据条目
+TicketKey = tuple[str, str]
+Ticket = dict
 
 # 已登记但尚未消费的票据（供前端重放时查询）
 KIND_LABELS = {
@@ -57,7 +60,8 @@ def fingerprint(plan) -> str:
     else:
         raw = json.dumps(plan or {}, ensure_ascii=False, sort_keys=True,
                          separators=(',', ':'))
-    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+    # str.encode() 的默认编码即 utf-8（由语言规范保证），无需重复指定
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _purge_expired(now=None):

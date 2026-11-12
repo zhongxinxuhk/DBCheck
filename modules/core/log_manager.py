@@ -31,6 +31,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from modules.core import paths
 
@@ -39,7 +40,7 @@ MONITOR_LOG = Path(paths.PRO_DATA_DIR) / 'monitor.log'
 ARCHIVE_ROOT = LOG_DIR / '_archive'
 POLICY_FILE = Path(paths.DATA_DIR) / 'log_policy.json'
 
-DEFAULT_POLICY = {
+DEFAULT_POLICY: dict[str, Any] = {
     'total_budget_mb': 2048,
     'min_free_mb': 512,
     'sweep_interval_seconds': 1800,
@@ -82,10 +83,10 @@ _ENV = {
 }
 
 _lock = threading.Lock()
-_policy_cache = None
-_policy_mtime = None
-_last_sweep = {}
-_maintenance_thread = None
+_policy_cache: dict[str, Any] | None = None
+_policy_mtime: float | None = None
+_last_sweep: dict[str, Any] = {}
+_maintenance_thread: threading.Thread | None = None
 _stop_event = threading.Event()
 
 _log = logging.getLogger('dbcheck.system')
@@ -115,9 +116,9 @@ def _read_file():
         return {}
 
 
-def _build_policy():
+def _build_policy() -> dict[str, Any]:
     file_cfg = _read_file()
-    policy = {
+    result: dict[str, Any] = {
         'compress': bool(file_cfg.get('compress', DEFAULT_POLICY['compress'])),
         'families': {},
     }
@@ -127,10 +128,10 @@ def _build_policy():
         if env not in (None, ''):
             value = env
         clamped = _clamp(key, value)
-        policy[key] = DEFAULT_POLICY[key] if clamped is None else clamped
+        result[key] = DEFAULT_POLICY[key] if clamped is None else clamped
 
     for name, defaults in DEFAULT_POLICY['families'].items():
-        merged = dict(defaults)
+        merged: dict[str, Any] = dict(defaults)
         incoming = (file_cfg.get('families') or {}).get(name)
         if isinstance(incoming, dict):
             merged.update({k: v for k, v in incoming.items()
@@ -138,11 +139,11 @@ def _build_policy():
         for key in ('max_mb', 'keep', 'keep_days'):
             merged[key] = _clamp(key, merged[key]) or defaults[key]
         merged['daily'] = bool(merged.get('daily', False))
-        policy['families'][name] = merged
-    return policy
+        result['families'][name] = merged
+    return result
 
 
-def policy():
+def policy() -> dict[str, Any]:
     """返回当前生效策略（文件 mtime 变化时自动重载）。"""
     global _policy_cache, _policy_mtime
     try:
@@ -150,18 +151,21 @@ def policy():
     except OSError:
         mtime = None
     with _lock:
-        if _policy_cache is None or mtime != _policy_mtime:
-            _policy_cache = _build_policy()
+        cache = _policy_cache
+        if cache is None or mtime != _policy_mtime:
+            cache = _build_policy()
+            _policy_cache = cache
             _policy_mtime = mtime
-        return _policy_cache
+    return cache
 
 
-def reload_policy():
+def reload_policy() -> dict[str, Any]:
     global _policy_cache, _policy_mtime
     with _lock:
-        _policy_cache = _build_policy()
+        cache = _build_policy()
+        _policy_cache = cache
         _policy_mtime = POLICY_FILE.stat().st_mtime if POLICY_FILE.exists() else None
-    return _policy_cache
+    return cache
 
 
 def _family_of(path):
@@ -176,7 +180,7 @@ def _family_of(path):
     return 'misc'
 
 
-def family_policy(family):
+def family_policy(family: str) -> dict[str, Any]:
     return policy()['families'].get(family, {
         'max_mb': 10, 'keep': 3, 'keep_days': 14, 'compress': True,
     })
@@ -511,7 +515,7 @@ class RotatingLogHandler(logging.Handler):
             super().close()
 
 
-def status():
+def status() -> dict[str, Any]:
     """给运维/接口用的存储概览：各类活跃文件、归档占用、预算与最近一次清理。"""
     cfg = policy()
     families = {}
@@ -577,10 +581,11 @@ def start_maintenance():
         if _maintenance_thread is not None and _maintenance_thread.is_alive():
             return _maintenance_thread
         _stop_event.clear()
-        _maintenance_thread = threading.Thread(
+        thread = threading.Thread(
             target=_maintenance_loop, daemon=True, name='log-maintenance')
-        _maintenance_thread.start()
-    return _maintenance_thread
+        thread.start()
+        _maintenance_thread = thread
+    return thread
 
 
 def stop_maintenance():

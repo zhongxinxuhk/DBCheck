@@ -38,12 +38,15 @@ PREVIEW_LIMIT = 4000
 
 _lock = threading.Lock()
 # {(session_id, ticket_id): {host, purpose, fingerprint, preview, created, ttl, state}}
-_TICKETS = {}
+_TICKETS: dict[tuple[str, str], dict] = {}
+# 同上，类型别名便于 IDE 推断票据条目
+TicketKey = tuple[str, str]
+Ticket = dict
 
 
 def fingerprint(payload):
     """计算待发内容的指纹（UTF-8 原文，不做任何归一化）。"""
-    return hashlib.sha256((payload or '').encode('utf-8')).hexdigest()
+    return hashlib.sha256((payload or '').encode()).hexdigest()
 
 
 def _normalize(text):
@@ -90,7 +93,7 @@ class EgressApprovalRequired(Exception):
             'host': self.host,
             'purpose': self.purpose,
             'fingerprint': self.fingerprint,
-            'bytes': len((self.payload or '').encode('utf-8')),
+            'bytes': len((self.payload or '').encode()),
             'chars': len(self.payload or ''),
             'expires_in': self.expires_in,
             'preview': self.preview,
