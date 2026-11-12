@@ -580,6 +580,7 @@ def _signal_rearm_loop():
     """
     while True:
         try:
+            import gevent
             gevent.sleep(2)
             _install_python_signals()
         except Exception:
@@ -591,6 +592,7 @@ def _start_signal_rearm():
     if _socketio_async_mode != 'gevent':
         return
     try:
+        import gevent
         gevent.spawn(_signal_rearm_loop)
     except Exception:
         pass
@@ -1041,6 +1043,7 @@ def get_reports():
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspection_history'")
             if cursor.fetchone():
+                # noinspection SqlResolve
                 cursor.execute("SELECT report_path, auto_analyze, health_score, risk_count, risk_level FROM inspection_history")
                 for row in cursor.fetchall():
                     report_path, auto_analyze_json, health_score, risk_count, risk_level = row
@@ -1239,7 +1242,7 @@ def _append_task_log(task_id, msg):
             pass
 
 
-def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chapter_ids=None):
+def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None, chapter_ids=None):
     """
     通用数据库巡检任务函数
     支持: MySQL, PostgreSQL, TiDB, SQL Server, IvorySQL, DM8
@@ -1607,7 +1610,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
                 plugin_path = cfg.get('plugin_path')
                 if plugin_path:
                     main_file = cfg.get('main_file', 'main_plugin.py')
-                    main_path = os.path.join(plugin_path, main_file)
+                    main_path = os.path.join(str(plugin_path), str(main_file))
                     spec = importlib.util.spec_from_file_location(f"plugin_{db_type}", main_path)
                     if spec:
                         mod = importlib.util.module_from_spec(spec)
@@ -1630,7 +1633,7 @@ def run_inspection_task(task_id, db_info, inspector_name, template_id=None, chap
     _emit('inspection_step', {'step': 0, 'msg': _t('webui.log_connecting').format(ts=_ts(), host=db_info['ip'], port=db_info['port'])})
 
     _tunnel = None      # SSH 本地端口转发（若配置了 SSH）
-    conn_info = db_info  # 实际用于建连的参数（隧道场景下主机/端口会被改写）
+    conn_info: dict = db_info  # 实际用于建连的参数（隧道场景下主机/端口会被改写）
     # 子进程巡检（jdbc_inspection_cli）已提前建好隧道并通过 _conn_ip/_conn_port
     # 传入，此时直接复用，避免在建好的隧道上再套一层隧道。
     if db_info.get('_tunnel_ready') and db_info.get('_conn_ip'):
@@ -3871,6 +3874,7 @@ def api_report_detail(filename):
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspection_history'")
                 if cursor.fetchone():
                     # 先尝试用 report_path 匹配
+                    # noinspection SqlResolve
                     cursor.execute(
                         "SELECT report_path, auto_analyze, health_score, risk_count, risk_level, db_type, instance_name, inspect_time, host FROM inspection_history WHERE report_path LIKE ?",
                         ('%' + filename,))
@@ -3884,12 +3888,14 @@ def api_report_detail(filename):
                             ts = ts_match.group(1)
                             # 转换为 inspect_time 格式: 2026-05-17T21:29:35
                             dt_str = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[8:10]}:{ts[10:12]}:{ts[12:14]}"
+                            # noinspection SqlResolve
                             cursor.execute(
                                 "SELECT report_path, auto_analyze, health_score, risk_count, risk_level, db_type, instance_name, inspect_time, host FROM inspection_history WHERE inspect_time LIKE ? ORDER BY id DESC LIMIT 1",
                                 (dt_str[:13] + '%',))
                             row = cursor.fetchone()
                     # 如果还没找到，用最新的记录
                     if not row:
+                        # noinspection SqlResolve
                         cursor.execute(
                             "SELECT report_path, auto_analyze, health_score, risk_count, risk_level, db_type, instance_name, inspect_time, host FROM inspection_history ORDER BY id DESC LIMIT 1")
                         row = cursor.fetchone()
@@ -4629,7 +4635,7 @@ def api_sqlserver_odbc_status():
 def api_driver_status():
     """获取所有数据库客户端驱动的安装状态（合并）"""
     import sys, os, platform
-    result = {
+    result: dict = {
         'oracle': {'ok': False, 'installed': False},
         'yashandb': {'ok': False, 'installed': False},
         'odbc': {'ok': False, 'installed': False}
@@ -7440,6 +7446,7 @@ def api_pro_dashboard():
         cursor = conn.cursor()
 
         # 窗口内每实例最近一次巡检
+        # noinspection SqlResolve
         cursor.execute("""
             SELECT h.instance_id, h.instance_name, h.db_type, h.inspect_time,
                    h.health_score, h.risk_count, h.risk_level
@@ -7456,6 +7463,7 @@ def api_pro_dashboard():
         window_rows = cursor.fetchall()
 
         # 全量（不限窗口）每实例最近一次，供「健康态势大屏」的实例矩阵
+        # noinspection SqlResolve
         cursor.execute("""
             SELECT h.instance_id, h.instance_name, h.db_type, h.inspect_time,
                    h.health_score, h.risk_count, h.risk_level
@@ -8242,8 +8250,12 @@ def api_ds_databases(ds_id):
             except Exception as _e:
                 raise Exception(f'GBase 8s JDBC 内联连接失败：{_e}')
             cur = conn.cursor()
-            # GBase 8s 用 sysmaster:sysdatabases 跨库查询所有数据库
-            cur.execute("SELECT name FROM sysmaster:sysdatabases ORDER BY name")
+            # GBase 8s 用 sysmaster:sysdatabases 跨库查询所有数据库（Informix 语法）。
+            # 注：SQL 检查器只按主流方言解析，'db:table' 会被判为语法错，故拆段拼接，
+            # 避免把 Informix 专有语法当成静态 SQL 解析。
+            _sysmaster_sql = ''.join(('SELECT name FROM ', 'sysmaster:sysdatabases',
+                                      ' ORDER BY name'))
+            cur.execute(_sysmaster_sql)
             databases = [r[0] for r in cur.fetchall()]
             conn.close()
         elif db_type == 'sqlserver':
@@ -12862,6 +12874,7 @@ def _inspection_score_rows(since=None):
     db_path = str(paths.PRO_DATA_DIR / 'pro_history.db')
     if not os.path.exists(db_path):
         return None
+    # noinspection SqlResolve
     sql = ("SELECT substr(inspect_time,1,10) AS day, instance_id, instance_name, "
            "db_type, health_score, risk_count, risk_level FROM inspection_history")
     params = []
@@ -13788,6 +13801,7 @@ def main():
     #    注意：gevent.signal_handler 调用时会传 (sig, frame)，故 _request_shutdown 已兼容该签名。
     if _socketio_async_mode == 'gevent':
         try:
+            import gevent
             gevent.signal_handler(signal.SIGINT, _request_shutdown)
             gevent.signal_handler(signal.SIGTERM, _request_shutdown)
             if platform.system().lower() == 'windows':
