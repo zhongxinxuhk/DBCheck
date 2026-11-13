@@ -1384,6 +1384,41 @@ async function deleteInspectionQuery(queryId, queryKey) {
 
 // ==================== 导入/导出 ====================
 
+async function exportFilteredInspectionTemplates() {
+    const ids = [...document.querySelectorAll('.icfg-row')]
+        .filter(row => !row.hidden)
+        .map(row => Number(row.dataset.templateId))
+        .filter(Boolean);
+    if (!ids.length) {
+        toast(it('webui.inspection_export_filtered_empty', '当前筛选结果为空'), 'error');
+        return;
+    }
+    try {
+        const res = await fetch('/api/inspection/templates/batch-export', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ids})
+        });
+        if (!res.ok) {
+            let message = '';
+            try { message = (await res.json()).message || ''; } catch (e) { /* non-JSON error */ }
+            throw new Error(message || it('webui.inspection_export_filtered_failed', '批量导出失败'));
+        }
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        const filename = match?.[1] || `inspection_templates_${Date.now()}.zip`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toastSuccess(itf('webui.inspection_export_filtered_success', '已导出 {n} 个模板', {n: ids.length}));
+    } catch (e) {
+        toast(it('webui.inspection_export_filtered_failed', '批量导出失败') + ': ' + e.message, 'error');
+    }
+}
+
 async function exportInspectionTemplate(templateId) {
     try {
         const res = await fetch(`/api/inspection/templates/${templateId}/export`);
