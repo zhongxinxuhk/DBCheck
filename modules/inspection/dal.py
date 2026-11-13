@@ -402,6 +402,48 @@ def get_all_templates(db_path: str = None) -> List[Dict]:
 
 _BUSINESS_MARKER = '_业务专项巡检_'
 
+# 巡检配置的“标准域”目录：用于列表页显示覆盖度，并暴露缺口。
+# 只匹配章节标题与检查项标题，不扫描章节描述，避免阈值说明里的
+# “备份/安全”等词把未配置的域误判为已覆盖。
+STANDARD_DOMAINS = [
+    ('availability', '可用性与连接',
+     ('实例', '连接', '会话', '健康', '存活', '服务状态', '运行状态', '版本')),
+    ('capacity', '容量与存储',
+     ('空间', '容量', '表空间', '数据文件', '磁盘', '文件系统', '增长',
+      '存储', 'chunks', '内存', '键空间')),
+    ('backup', '备份与恢复',
+     ('备份', '恢复', '归档', '持久化', 'binlog', 'redo', 'wal', '检查点',
+      'rman', 'rto', 'rpo')),
+    ('performance', '性能与等待',
+     ('性能', '等待', '慢', 'sql', 'cpu', '缓存', '命中', '负载', 'qps',
+      '执行计划', 'profiler', '查询治理', '资源')),
+    ('lock', '锁与并发',
+     ('锁', '阻塞', '死锁', '事务', '并发')),
+    ('object', '对象与统计',
+     ('对象', '索引', '统计', '碎片', '表', '视图', '存储过程', '触发器',
+      'parts', 'mutations', '键空间')),
+    ('security', '安全与审计',
+     ('安全', '权限', '账号', '用户', '审计', '口令', '认证', '授权',
+      '加密', '等保')),
+    ('ha', '高可用与集群',
+     ('集群', '复制', '主从', '节点', '守护', 'rac', 'data guard', '分片',
+      '副本', '高可用', '镜像', 'alwayson', 'mgr')),
+    ('config', '配置与基线',
+     ('参数', '配置', '基线', '变量', '字符集')),
+    ('job', '日志与作业',
+     ('日志', '告警', '作业', '任务', '事件', '调度', '错误')),
+    ('ledger', '台账与留痕',
+     ('台账', '基础信息', '采集', '留痕', '版本', '清单')),
+]
+
+def _standard_domain_coverage(parts: List[str]) -> List[Dict]:
+    text = ' '.join(part for part in parts if part).lower()
+    result = []
+    for key, label, keywords in STANDARD_DOMAINS:
+        covered = any(keyword.lower() in text for keyword in keywords)
+        result.append({'key': key, 'label': label, 'covered': bool(covered)})
+    return result
+
 # 业务专项 builder 中部分检查项使用字符串 ID 引用；补上中文名，
 # 避免“W16 W16”这类重复 ID 出现在章节说明与前端指标明细中。
 _ITEM_TITLE_ZH = {
@@ -556,16 +598,21 @@ def get_template_catalog(db_path: str = None, template_id: int = None,
             _catalog_text(template.get('version')),
             _catalog_text(template.get('description')),
         ]
+        coverage_parts: List[str] = []
         for chapter in chapters:
             sql_items = chapter.get('sql_indicators', [])
             sql_ids = {item.get('id') for item in sql_items}
             manual = [item for item in _manual_indicators(chapter.get('description'))
                       if item.get('id') not in sql_ids]
             indicator_count = len(sql_items) + len(manual)
-            search_parts.append(_catalog_text(chapter.get('chapter_title_zh')))
-            search_parts.append(_catalog_text(chapter.get('chapter_title_en')))
-            search_parts.extend(f"{item.get('id', '')} {item.get('title', '')}"
-                                for item in sql_items + manual)
+            chapter_titles = [
+                _catalog_text(chapter.get('chapter_title_zh')),
+                _catalog_text(chapter.get('chapter_title_en')),
+            ]
+            indicator_titles = [f"{item.get('id', '')} {item.get('title', '')}"
+                                for item in sql_items + manual]
+            search_parts.extend(chapter_titles + indicator_titles)
+            coverage_parts.extend(chapter_titles + indicator_titles)
             manual_total += len(manual)
             indicator_total += indicator_count
             if indicator_count == 0:
@@ -598,6 +645,18 @@ def get_template_catalog(db_path: str = None, template_id: int = None,
         template['manual_only_chapter_count'] = manual_only_chapters
         template['coverage_label'] = f'{len(chapter_summary)} 章 / {indicator_total} 项'
         template['search_text'] = ' '.join(part for part in search_parts if part)
+        domains = _standard_domain_coverage(coverage_parts)
+        covered_domains = [item for item in domains if item['covered']]
+        missing_domains = [item for item in domains if not item['covered']]
+        template['standard_domains'] = domains
+        template['standard_domain_count'] = len(domains)
+        template['covered_domain_count'] = len(covered_domains)
+        template['missing_domains'] = [item['label'] for item in missing_domains]
+        template['standard_coverage'] = f'{len(covered_domains)}/{len(domains)}'
+        template['domain_scope'] = 'baseline' if template.get('category') == 'baseline' else 'special'
+        template['has_baseline_gap'] = bool(
+            template['domain_scope'] == 'baseline' and missing_domains
+        )
         result.append(template)
     return result
 

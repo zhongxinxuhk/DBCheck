@@ -152,12 +152,12 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     display: table-row-group;
 }
 
-.icfg-col-template { width: 36%; }
+.icfg-col-template { width: 34%; }
 .icfg-col-db { width: 12%; }
 .icfg-col-type { width: 15%; }
 .icfg-col-num { width: 6%; text-align: center !important; }
 .icfg-col-coverage { width: 10%; text-align: center !important; }
-.icfg-col-status { width: 11%; }
+.icfg-col-status { width: 13%; }
 .icfg-col-actions { width: 10%; text-align: right !important; }
 
 .icfg-row {
@@ -356,6 +356,47 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     white-space: nowrap;
 }
 
+.icfg-status-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+}
+
+.icfg-domain {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.icfg-domain--ok {
+    background: rgba(16, 185, 129, 0.13);
+    color: #047857;
+}
+
+.icfg-domain--mixed {
+    background: rgba(245, 158, 11, 0.14);
+    color: #b45309;
+}
+
+.icfg-domain--warn {
+    background: rgba(239, 68, 68, 0.12);
+    color: #dc2626;
+}
+
+.icfg-domain--special {
+    background: rgba(59, 130, 246, 0.12);
+    color: #1d4ed8;
+}
+
+[data-theme="dark"] .icfg-domain--ok { color: #6ee7b7; }
+[data-theme="dark"] .icfg-domain--mixed { color: #fcd34d; }
+[data-theme="dark"] .icfg-domain--warn { color: #fca5a5; }
+[data-theme="dark"] .icfg-domain--special { color: #93c5fd; }
+
 .icfg-status {
     display: inline-block;
     padding: 2px 7px;
@@ -499,6 +540,68 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     color: var(--text);
     font-size: 14px;
 }
+
+.icfg-domain-panel {
+    margin: -4px 0 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.icfg-domain-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.icfg-domain-hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 400;
+    text-align: right;
+}
+
+.icfg-domain-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.icfg-domain-chip {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.55;
+}
+
+.icfg-domain-chip.is-covered {
+    background: rgba(16, 185, 129, 0.12);
+    color: #047857;
+}
+
+.icfg-domain-chip.is-missing {
+    background: rgba(239, 68, 68, 0.09);
+    color: #dc2626;
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+.icfg-domain-chip.is-special {
+    background: rgba(59, 130, 246, 0.08);
+    color: #1d4ed8;
+}
+
+[data-theme="dark"] .icfg-domain-chip.is-covered { color: #6ee7b7; }
+[data-theme="dark"] .icfg-domain-chip.is-missing { color: #fca5a5; }
+[data-theme="dark"] .icfg-domain-chip.is-special { color: #93c5fd; }
 
 .icfg-chapters {
     display: grid;
