@@ -1671,3 +1671,77 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 }
 
 #page-inspection-config [hidden] { display: none !important; }
+
+/* ==================== 移动端列表卡片（≤640px） ==================== */
+@media (max-width: 640px) {
+    #inspection-config-content { padding: 0; }
+    .inspection-table-card { border-radius: 10px; }
+    .inspection-table-scroll { overflow: visible; }
+
+    .inspection-table,
+    .inspection-table tbody,
+    .inspection-table .inspection-template-list {
+        display: block;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .inspection-table thead { display: none; }
+
+    .icfg-row {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+        align-items: center;
+        gap: 7px 8px;
+        padding: 12px 12px 10px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .icfg-row:hover,
+    .icfg-row.is-open { background: var(--primary-light); }
+    .icfg-row > td {
+        display: block;
+        width: auto !important;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+    }
+
+    .icfg-col-template { grid-column: 1 / -1; margin-bottom: 2px; }
+    .icfg-col-db,
+    .icfg-col-type { display: none; }
+    .icfg-col-num { grid-column: 1; text-align: left !important; }
+    .icfg-col-coverage { grid-column: 2; text-align: left !important; }
+    .icfg-col-coverage .icfg-sub { white-space: normal; }
+    .icfg-col-status { grid-column: 3; min-width: 0; text-align: right; white-space: normal; }
+    .icfg-col-actions {
+        grid-column: 1 / -1;
+        display: flex;
+        width: auto !important;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 4px;
+        margin-top: 3px;
+    }
+
+    .icfg-template-desc { max-width: 100%; }
+    .icfg-detail-row { display: block; }
+    .icfg-detail-row[hidden] { display: none; }
+    .icfg-detail-row > td { display: block; padding: 0; border: 0; }
+    .icfg-detail { padding: 14px 12px; }
+    .icfg-detail-head { flex-direction: column; gap: 10px; }
+    .icfg-detail-head > div:first-child { flex: 0 1 auto; }
+    .icfg-detail-actions { flex-wrap: wrap; justify-content: flex-start; }
+    .icfg-detail-stats { gap: 6px 10px; }
+    .icfg-domain-panel { padding: 10px 12px; }
+    .icfg-domain-panel-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+    .icfg-matrix-table { min-width: 1040px; }
+    .icfg-matrix-table th,
+    .icfg-matrix-table td { padding: 6px 4px; }
+    .icfg-matrix-table .icfg-matrix-template { width: 150px; min-width: 150px; }
+    .icfg-matrix-name { font-size: 10.5px; }
+    .icfg-matrix-meta { font-size: 9.5px; }
+    .icfg-matrix-domain span { font-size: 10px; }
+}
