@@ -1316,37 +1316,196 @@ body.theme-transitioning .hero-stat-card {
 .report-dl-share { background:#00C8A0; }  /* 分享 绿 */
 
 /* ─── Reports Page ─── */
+.reports-page-card { padding: 22px 24px; }
+.reports-hero {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; margin-bottom: 18px;
+}
+.reports-kicker {
+  display: block; margin-bottom: 4px; font-size: 10px; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--text-muted);
+}
+.reports-hero h2 {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 5px;
+  font-size: 20px; letter-spacing: -.01em;
+}
+.reports-hero p { margin: 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.6; }
+.reports-refresh { flex: none; padding: 7px 14px; font-size: 12px; }
+.reports-summary {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.report-stat {
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface2);
+}
+.report-stat span { display: block; font-size: 11px; color: var(--text-muted); }
+.report-stat strong {
+  display: block; margin-top: 3px; font-size: 21px; line-height: 1.2;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.report-stat--warn strong { color: var(--warn); }
+.report-stat-time { font-size: 14px !important; line-height: 1.6 !important; }
+.reports-toolbar {
+  display: grid; align-items: center; gap: 8px;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(0, 1fr)) auto;
+  padding: 12px; margin-bottom: 10px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+}
+.reports-search-box { position: relative; flex: 1 1 280px; min-width: 210px; }
+.reports-search-box svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 15px; height: 15px; fill: none; stroke: var(--text-muted);
+  stroke-width: 2; pointer-events: none;
+}
+.reports-search-box input {
+  width: 100%; height: 34px; padding: 0 10px 0 32px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font-size: 13px;
+}
+.reports-search-box input:focus { border-color: var(--accent); outline: none; }
+.reports-toolbar select {
+  width: 100%; height: 34px; min-width: 0; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font-size: 12.5px;
+}
+.reports-clear { margin-left: auto; padding: 7px 13px; font-size: 12px; }
+.reports-clear:disabled { opacity: .45; cursor: default; }
+.reports-result-line {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 2px 10px; color: var(--text-muted); font-size: 12px;
+}
+.reports-filter-hint { color: var(--accent); }
+.reports-page-size { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.reports-page-size select {
+  height: 27px; padding: 0 5px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text); font-size: 11.5px;
+}
 .reports-list { display: flex; flex-direction: column; gap: 8px; }
 .report-item {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 16px;
+  padding: 12px 15px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  transition: border-color var(--trans);
+  border-radius: 9px;
+  transition: border-color var(--trans), background-color var(--trans);
 }
 .report-item:hover { border-color: var(--accent2); }
 .report-item .ri-icon { font-size: 20px; flex-shrink: 0; }
-.report-item .ri-info { flex: 1; }
-.report-item .ri-name { font-size: 13px; font-weight: 500; }
-.report-item .ri-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-.report-item .btn { flex-shrink: 0; }
-/* 报告复选框 */
-.report-item .ri-checkbox { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
-/* 过滤按钮 */
-.filter-btn {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  transition: all var(--trans);
+.report-item .ri-info { flex: 1; min-width: 0; }
+.report-item .ri-checkbox, #select-all-cb {
+  flex-shrink: 0; width: 17px; height: 17px;
+  appearance: none; -webkit-appearance: none;
+  border: 1.5px solid var(--border); border-radius: 5px;
+  background: var(--surface); cursor: pointer; position: relative;
+  transition: background-color var(--trans), border-color var(--trans);
 }
-.filter-btn:hover { border-color: var(--accent); color: var(--text); }
-.filter-btn.filter-active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+.report-item .ri-checkbox:hover, #select-all-cb:hover { border-color: var(--accent); }
+.report-item .ri-checkbox:checked, #select-all-cb:checked {
+  background: var(--accent); border-color: var(--accent);
+}
+.report-item .ri-checkbox:checked::after, #select-all-cb:checked::after {
+  content: ""; position: absolute; left: 4.5px; top: 1.5px;
+  width: 4px; height: 8px; border: solid #04231f;
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.report-item .ri-checkbox:focus-visible, #select-all-cb:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.ri-title-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.ri-name {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text); font-size: 13.5px; font-weight: 600;
+}
+.ri-meta {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 4px; color: var(--text-muted); font-size: 11px;
+}
+.ri-file {
+  flex: 1 1 220px; min-width: 0; max-width: 440px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  opacity: .72;
+}
+.ri-flag {
+  padding: 1px 6px; border-radius: 4px; color: var(--accent);
+  background: rgba(0, 200, 160, .10); font-size: 10px;
+}
+.ri-clean { color: var(--text-muted); font-size: 11px; }
+.ri-risk { padding: 2px 7px !important; font-size: 10.5px !important; }
+.ri-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.ri-download { padding: 6px 14px; font-size: 12px; }
+.ri-menu { position: relative; }
+.ri-more {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; list-style: none; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); color: var(--text-muted);
+  font-size: 18px; line-height: 1; user-select: none;
+}
+.ri-more::-webkit-details-marker { display: none; }
+.ri-more:hover, .ri-menu[open] .ri-more { color: var(--accent); border-color: var(--accent); }
+.ri-menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 90;
+  min-width: 150px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 9px; box-shadow: 0 14px 32px rgba(0, 0, 0, .38);
+}
+.ri-menu.drop-up .ri-menu-pop { top: auto; bottom: calc(100% + 6px); }
+.ri-menu-pop button {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 7px 9px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text); font-size: 12.5px;
+  text-align: left; cursor: pointer;
+}
+.ri-menu-pop button:hover { background: var(--surface2); }
+.ri-menu-pop button.danger { color: var(--danger); }
+.ri-menu-count {
+  min-width: 18px; padding: 0 5px; border-radius: 9px;
+  background: rgba(239, 68, 68, .12); color: var(--danger);
+  font-size: 10px; text-align: center;
+}
+.reports-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  flex-wrap: wrap; padding: 18px 0 2px;
+}
+.reports-pagination button {
+  min-width: 31px; height: 29px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); color: var(--text-muted);
+  font-size: 12px; cursor: pointer;
+}
+.reports-pagination button:hover { color: var(--accent); border-color: var(--accent); }
+.reports-pagination button.active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.reports-pagination .pg-gap { color: var(--text-muted); font-size: 12px; padding: 0 2px; }
+.reports-pagination .pg-info { margin-left: 7px; color: var(--text-muted); font-size: 11.5px; }
+.reports-empty, .reports-loading {
+  padding: 46px 20px; text-align: center; color: var(--text-muted);
+}
+.reports-empty-icon { font-size: 30px; margin-bottom: 8px; }
+.reports-empty-title { color: var(--text); font-size: 14px; font-weight: 600; }
+.reports-empty p { margin: 6px 0 14px; font-size: 12px; }
+.reports-empty .btn { font-size: 12px; padding: 7px 16px; }
+@media (max-width: 1100px) and (min-width: 901px) {
+  .reports-toolbar { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; }
+  .reports-search-box { grid-column: 1 / -1; }
+  .reports-toolbar select { width: 100%; max-width: none; }
+  .reports-clear { margin-left: 0; }
+}
+@media (max-width: 900px) {
+  .reports-toolbar { display: flex; flex-wrap: wrap; }
+  .reports-search-box { flex: 1 1 100%; }
+  .reports-toolbar select { flex: 1 1 140px; width: auto; max-width: none; }
+  .reports-clear { margin-left: 0; }
+  .reports-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reports-page-size { margin-left: 0; }
+  .report-item { align-items: flex-start; }
+  .ri-file { max-width: 240px; }
+  .ri-actions { flex-direction: column; align-items: flex-end; }
 }
 /* 批量操作栏 */
+
 #batch-bar { display: none; align-items: center; gap: 10px; }
 #batch-bar.show { display: flex; }
 
@@ -1799,7 +1958,9 @@ body { padding-bottom: 32px !important; }
   padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500;
 }
 .tag-mysql { background: rgba(255,152,0,.12); color: #ff9800; }
-.tag-pg    { background: rgba(56,139,253,.12); color: var(--accent2); }
+.tag-default { background: rgba(148,163,184,.12); color: var(--text-muted); }
+.tag-pg    { background: rgba(56,139,253,.14); color: #7cb3ff; }
+[data-theme="light"] .tag-pg { color: #1d4ed8; }
 .tag-oracle { background: rgba(244,67,54,.12); color: #EF4444; }
 .tag-dm    { background: rgba(255,193,7,.12); color: #ffc107; }
 .tag-sqlserver { background: rgba(244,67,54,.12); color: #ff5722; }
@@ -1807,7 +1968,8 @@ body { padding-bottom: 32px !important; }
 .tag-ivorysql { background: rgba(51,103,145,.12); color: #336791; }
 .tag-yashandb { background: rgba(156,39,176,.12); color: #9c27b0; }
 .tag-kingbase { background: rgba(220,20,60,.12); color: #dc143c; }
-    .tag-gbase { background: rgba(0,100,0,.12); color: #006400; }
+    .tag-gbase { background: rgba(34,197,94,.14); color: #4ade80; }
+    [data-theme="light"] .tag-gbase { color: #15803d; }
     .tag-mongodb { background: rgba(76,175,80,.14); color: #43a047; }
 
 /* ─── Responsive ─── */
@@ -9153,27 +9315,74 @@ function wfCloseRunDrawer() {
 
       <!-- ══ Page: Reports ══ -->
       <div class="page" id="page-reports" data-page-node-id="cxMXqrlBD3CKOpKo6rVmQP">
-        <div class="card" data-page-node-id="yrFdqjaCTddFpe2H05otQP">
-          <div class="card-title" data-page-node-id="2HX6MUjA8ueqt16Rp7CTaQ">
-            <span data-page-node-id="YZM4y2zqRE6EoikTJTALo0">📄</span> <span data-i18n="webui.reports_title" data-page-node-id="8JKnD9JSpLK0yz2LkzLXRo">历史巡检报告</span>
-            <button class="btn btn-ghost" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="loadReports()" data-i18n="webui.reports_refresh" data-page-node-id="lF0Tkz0kdrVzM8k1PrEmPn">↻ 刷新</button>
+        <div class="card reports-page-card">
+          <div class="reports-hero">
+            <div class="reports-hero-copy">
+              <span class="reports-kicker">Inspection archive</span>
+              <h2><span aria-hidden="true">📄</span> <span data-i18n="webui.reports_title">数据库巡检历史</span></h2>
+              <p>集中查看、筛选和下载已生成的巡检报告，快速定位高风险实例。</p>
+            </div>
+            <button class="btn btn-ghost reports-refresh" onclick="loadReports()" data-i18n="webui.reports_refresh">↻ 刷新</button>
           </div>
-          <!-- 数据库类型过滤栏 -->
-          <div id="report-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:0 4px" data-page-node-id="s5iWHPszTheIhT20S2JFX3">
-            <button class="filter-btn filter-active" data-type="" onclick="filterReports('')" style="padding:5px 14px;font-size:12px;border-radius:20px;cursor:pointer" data-page-node-id="CtaIEsG10W7B0q4YXkgrFR">全部</button>
-            <!-- 动态数据库类型过滤按钮将由JS生成 -->
+
+          <div class="reports-summary" aria-label="报告概览">
+            <div class="report-stat"><span>报告总数</span><strong id="report-stat-total">—</strong></div>
+            <div class="report-stat"><span>占用空间</span><strong id="report-stat-size">—</strong></div>
+            <div class="report-stat report-stat--warn"><span>含高风险报告</span><strong id="report-stat-risky">—</strong></div>
+            <div class="report-stat"><span>最近生成</span><strong id="report-stat-latest" class="report-stat-time">—</strong></div>
           </div>
-          <!-- 批量操作栏（默认隐藏） -->
-          <div id="batch-bar" style="display:none;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px" data-page-node-id="DZstWyNX019yc2GspYHF9z">
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none" data-page-node-id="pAiTMMZuOKX7wKEzaG1nRd">
-              <input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)" data-page-node-id="jHuDCMgUqHbd2ArnTQRbnF"> 全选
+
+          <div class="reports-toolbar">
+            <div class="reports-search-box">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path></svg>
+              <input id="report-search" type="search" placeholder="搜索文件名、实例或环境" aria-label="搜索巡检报告" autocomplete="off">
+            </div>
+            <select id="report-type-filter" aria-label="数据库类型"><option value="">全部类型</option></select>
+            <select id="report-risk-filter" aria-label="风险筛选">
+              <option value="">全部风险</option>
+              <option value="high">仅含高风险</option>
+              <option value="clean">无高风险</option>
+            </select>
+            <select id="report-time-filter" aria-label="时间范围">
+              <option value="">全部时间</option>
+              <option value="1">今天</option>
+              <option value="7">近 7 天</option>
+              <option value="30">近 30 天</option>
+            </select>
+            <select id="report-sort" aria-label="排序方式">
+              <option value="newest">最新优先</option>
+              <option value="oldest">最早优先</option>
+              <option value="risk">高风险优先</option>
+              <option value="size">文件最大</option>
+            </select>
+            <button class="btn btn-ghost reports-clear" id="report-clear-filters" type="button">重置</button>
+          </div>
+
+          <div class="reports-result-line">
+            <span id="reports-result-count">共 0 条报告</span>
+            <span id="reports-filter-hint" class="reports-filter-hint"></span>
+            <label class="reports-page-size">每页
+              <select id="report-page-size" aria-label="每页显示数量">
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select> 条
             </label>
-            <span id="selected-count" style="font-size:12px;color:var(--text-muted)" data-page-node-id="CWW1zM6GIbJHtz4RtBK8AA">已选 0 项</span>
-            <button class="btn btn-danger" style="margin-left:auto;font-size:12px;padding:6px 16px" onclick="batchDeleteReports()" data-page-node-id="zpQv8pfVqLB3RW3IG6MRI8">🗑️ 批量删除</button>
           </div>
-          <div class="reports-list" id="reports-list" data-page-node-id="jHAtxtOQLNbjsIqX3GWOoT">
-            <div style="text-align:center;color:var(--text-muted);padding:32px" data-i18n="webui.reports_loading" data-page-node-id="QapoMel4e8BOP2YuTcGPDD">正在加载...</div>
+
+          <div id="batch-bar" style="display:none;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none">
+              <input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"> 全选本页
+            </label>
+            <span id="selected-count" style="font-size:12px;color:var(--text-muted)">已选 0 项</span>
+            <button class="btn btn-ghost" type="button" style="font-size:12px;padding:6px 12px" onclick="clearReportSelection()">取消选择</button>
+            <button class="btn btn-danger" style="margin-left:auto;font-size:12px;padding:6px 16px" onclick="batchDeleteReports()">🗑️ 批量删除</button>
           </div>
+
+          <div class="reports-list" id="reports-list">
+            <div class="reports-loading">正在加载报告…</div>
+          </div>
+          <div class="reports-pagination" id="reports-pagination"></div>
         </div>
       </div>
 
@@ -16163,83 +16372,402 @@ async function downloadReportPdf(taskId) {
 }
 
 // ─── Reports ───
-let currentReportFilter = '';   // 当前数据库类型过滤
 let allReportFiles = [];        // 缓存原始文件列表
+let reportFilters = { search: '', type: '', risk: '', time: '', sort: 'newest' };
+let reportPage = 1;
+let reportPageSize = 20;
+let reportSearchTimer = null;
+
+function reportDbType(f) {
+  const n = String((f && f.name) || '');
+  // 以文件名中的引擎名优先，修正历史报告 db_type 被归并为 MySQL 的情况
+  if (/GBase\s*8a/i.test(n)) return 'GBase 8a';
+  if (/SQLServer|MSSQL/i.test(n)) return 'SQLServer';
+  if (/达梦|DM8|^DM巡检/i.test(n)) return 'DM8';
+  if (/Oracle/i.test(n)) return 'Oracle';
+  if (/PostgreSQL|Postgres/i.test(n)) return 'PostgreSQL';
+  if (/IvorySQL/i.test(n)) return 'IvorySQL';
+  if (/MySQL/i.test(n)) return 'MySQL';
+  if (/TiDB/i.test(n)) return 'TiDB';
+  if (/MongoDB/i.test(n)) return 'MongoDB';
+  if (f && f.db_type) return f.db_type;
+  return '其他';
+}
+
+function reportTagClass(type) {
+  const map = {
+    MySQL: 'tag-mysql', PostgreSQL: 'tag-pg', Oracle: 'tag-oracle',
+    DM8: 'tag-dm', SQLServer: 'tag-sqlserver', TiDB: 'tag-tidb',
+    'GBase 8a': 'tag-gbase', IvorySQL: 'tag-pg', MongoDB: 'tag-mongodb'
+  };
+  return map[type] || 'tag-default';
+}
+
+function parseReportTitle(f) {
+  const type = reportDbType(f);
+  const cleanEnv = v => String(v || '')
+    .replace(/-(Oracle|SQLServer|MSSQL|GBase|DM|MySQL|PostgreSQL|master|兼容).*$/i, '')
+    .trim();
+  const base = String(f.name || '').replace(/\.(docx|pdf|html?)$/i, '');
+  const parts = base.split('_').map(x => x.trim()).filter(Boolean);
+  const isHost = p => /^(\d{1,3}\.){3}\d{1,3}$/.test(p)
+    || /^localhost$/i.test(p)
+    || /^[a-zA-Z0-9][\w.-]*\.[a-zA-Z]{2,}$/.test(p)
+    || /^[\w.-]+:\d{2,5}$/.test(p);
+  let host = '';
+  let env = '';
+  const hostIndex = parts.findIndex(isHost);
+  if (hostIndex >= 0) {
+    host = parts[hostIndex];
+    env = cleanEnv(parts[hostIndex + 1]);
+    if (/^\d{8}/.test(env)) env = '';
+  } else {
+    const rest = parts.slice(1).filter(p => !/巡检|报告|JDBC|数据库/i.test(p));
+    if (rest.length) {
+      host = rest[0];
+      env = cleanEnv(rest[1]);
+    }
+  }
+  if (/^\d{8}/.test(env)) env = '';
+  if (!host) return type;
+  return [host, env].filter(Boolean).join(' · ');
+}
+
+function formatReportSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1024 * 1024 * 1024) return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  return (n / 1024).toFixed(1) + ' KB';
+}
+
+function formatReportDate(ts, withYear) {
+  if (!ts) return '—';
+  const d = new Date(Number(ts) * 1000);
+  if (isNaN(d.getTime())) return '—';
+  const pad = n => String(n).padStart(2, '0');
+  const core = pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  return withYear === false ? core : d.getFullYear() + '-' + core;
+}
+
+function reportRiskBadges(f) {
+  const high = Number(f.high) || 0;
+  const mid = Number(f.mid) || 0;
+  const low = Number(f.low) || 0;
+  if (!high && !mid && !low) return '<span class="ri-clean">未发现风险</span>';
+  return [
+    high ? '<span class="severity-tag severity-high ri-risk">高 ' + high + '</span>' : '',
+    mid ? '<span class="severity-tag severity-mid ri-risk">中 ' + mid + '</span>' : '',
+    low ? '<span class="severity-tag severity-low ri-risk">低 ' + low + '</span>' : ''
+  ].join('');
+}
 
 async function loadReports() {
   const list = document.getElementById('reports-list');
-  list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:32px">' + i18n('webui.reports_loading') + '</div>';
+  if (list) list.innerHTML = '<div class="reports-loading">' + i18n('webui.reports_loading') + '</div>';
   try {
     const res = await fetch('/api/reports');
     const data = await res.json();
-    allReportFiles = data.files || [];
+    allReportFiles = Array.isArray(data.files) ? data.files : [];
+    populateReportTypeFilter();
+    renderReportSummary();
     renderReports();
   } catch(e) {
-    list.innerHTML = `<div class="status-banner err">${i18n('webui.reports_load_fail')}: ${escHtml(e.message)}</div>`;
+    if (list) list.innerHTML = `<div class="status-banner err">${i18n('webui.reports_load_fail')}: ${escHtml(e.message)}</div>`;
   }
+}
+
+function renderReportSummary() {
+  const total = allReportFiles.length;
+  const totalBytes = allReportFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+  const risky = allReportFiles.filter(f => (Number(f.high) || 0) > 0).length;
+  const latest = allReportFiles.reduce((max, f) => Math.max(max, Number(f.mtime) || 0), 0);
+  const totalEl = document.getElementById('report-stat-total');
+  const sizeEl = document.getElementById('report-stat-size');
+  const riskyEl = document.getElementById('report-stat-risky');
+  const latestEl = document.getElementById('report-stat-latest');
+  if (totalEl) totalEl.textContent = String(total);
+  if (sizeEl) sizeEl.textContent = formatReportSize(totalBytes);
+  if (riskyEl) riskyEl.textContent = String(risky);
+  if (latestEl) {
+    latestEl.textContent = latest ? formatReportDate(latest, false) : '—';
+    latestEl.title = latest ? formatReportDate(latest) : '';
+  }
+}
+
+function populateReportTypeFilter() {
+  const sel = document.getElementById('report-type-filter');
+  if (!sel) return;
+  const counts = new Map();
+  allReportFiles.forEach(f => {
+    const t = reportDbType(f);
+    counts.set(t, (counts.get(t) || 0) + 1);
+  });
+  const previous = sel.value;
+  sel.innerHTML = '<option value="">全部类型</option>' + Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([t, c]) => `<option value="${escHtml(t)}">${escHtml(t)}（${c}）</option>`)
+    .join('');
+  if (previous && counts.has(previous)) {
+    sel.value = previous;
+  } else {
+    sel.value = '';
+    reportFilters.type = '';
+  }
+}
+
+function filteredReports() {
+  const q = reportFilters.search.trim().toLowerCase();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const now = Date.now() / 1000;
+  let files = allReportFiles.filter(f => {
+    if (reportFilters.type && reportDbType(f) !== reportFilters.type) return false;
+    const high = Number(f.high) || 0;
+    if (reportFilters.risk === 'high' && high === 0) return false;
+    if (reportFilters.risk === 'clean' && high > 0) return false;
+    if (reportFilters.time === '1' && (Number(f.mtime) || 0) * 1000 < todayStart.getTime()) return false;
+    if (reportFilters.time && reportFilters.time !== '1' && (Number(f.mtime) || 0) < now - Number(reportFilters.time) * 86400) return false;
+    if (q) {
+      const hay = (String(f.name || '') + ' ' + parseReportTitle(f) + ' ' + reportDbType(f)).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  switch (reportFilters.sort) {
+    case 'oldest': files.sort((a, b) => (Number(a.mtime) || 0) - (Number(b.mtime) || 0)); break;
+    case 'risk': files.sort((a, b) => {
+      const highDiff = (Number(b.high) || 0) - (Number(a.high) || 0);
+      if (highDiff) return highDiff;
+      const totalDiff = ((Number(b.mid) || 0) + (Number(b.low) || 0)) - ((Number(a.mid) || 0) + (Number(a.low) || 0));
+      if (totalDiff) return totalDiff;
+      return (Number(b.mtime) || 0) - (Number(a.mtime) || 0);
+    }); break;
+    case 'size': files.sort((a, b) => (Number(b.size) || 0) - (Number(a.size) || 0)); break;
+    default: files.sort((a, b) => (Number(b.mtime) || 0) - (Number(a.mtime) || 0));
+  }
+  return files;
+}
+
+function activeReportFilterLabels() {
+  const labels = [];
+  if (reportFilters.search.trim()) labels.push('搜索“' + reportFilters.search.trim() + '”');
+  if (reportFilters.type) labels.push(reportFilters.type);
+  if (reportFilters.risk === 'high') labels.push('仅含高风险');
+  if (reportFilters.risk === 'clean') labels.push('无高风险');
+  if (reportFilters.time) labels.push({ 1: '今天', 7: '近 7 天', 30: '近 30 天' }[reportFilters.time] || '');
+  if (reportFilters.sort !== 'newest') labels.push({ oldest: '最早优先', risk: '高风险优先', size: '文件最大' }[reportFilters.sort] || '');
+  return labels.filter(Boolean);
 }
 
 function renderReports() {
   const list = document.getElementById('reports-list');
-  let files = allReportFiles;
-  if (currentReportFilter) {
-    files = files.filter(f => {
-      const n = f.name;
-      if (currentReportFilter === 'MySQL')      return n.includes('MySQL');
-      if (currentReportFilter === 'PostgreSQL') return n.includes('PostgreSQL') || n.includes('Postgres');
-      if (currentReportFilter === 'Oracle')     return n.includes('Oracle');
-      if (currentReportFilter === 'DM8')        return n.includes('DM8') || n.includes('达梦');
-      if (currentReportFilter === 'SQLServer')  return n.includes('SQLServer');
-      if (currentReportFilter === 'TiDB')       return n.includes('TiDB');
-      if (currentReportFilter === 'IvorySQL')   return n.includes('IvorySQL');
-      return true;
-    });
+  if (!list) return;
+  const files = filteredReports();
+  const total = files.length;
+  const pages = Math.max(1, Math.ceil(total / reportPageSize));
+  if (reportPage > pages) reportPage = pages;
+  if (reportPage < 1) reportPage = 1;
+  const start = (reportPage - 1) * reportPageSize;
+  const pageFiles = files.slice(start, start + reportPageSize);
+
+  const countEl = document.getElementById('reports-result-count');
+  if (countEl) {
+    countEl.textContent = total === allReportFiles.length
+      ? '共 ' + total + ' 条报告'
+      : '筛选结果 ' + total + ' 条 / 共 ' + allReportFiles.length + ' 条';
   }
-  if (files.length === 0) {
-    list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:48px">' + i18n('webui.reports_empty') + '</div>';
+  const hintEl = document.getElementById('reports-filter-hint');
+  if (hintEl) hintEl.textContent = activeReportFilterLabels().join(' · ');
+  const clearBtn = document.getElementById('report-clear-filters');
+  if (clearBtn) clearBtn.disabled = activeReportFilterLabels().length === 0;
+
+  if (!total) {
+    list.innerHTML = allReportFiles.length
+      ? `<div class="reports-empty">
+           <div class="reports-empty-icon">🔎</div>
+           <div class="reports-empty-title">没有匹配的巡检报告</div>
+           <p>试试调整关键词或筛选条件。</p>
+           <button class="btn btn-ghost" type="button" onclick="resetReportFilters()">清除筛选</button>
+         </div>`
+      : `<div class="reports-empty">
+           <div class="reports-empty-icon">📭</div>
+           <div class="reports-empty-title">暂无巡检报告</div>
+           <p>完成一次数据库巡检后，报告会出现在这里。</p>
+           <button class="btn btn-primary" type="button" onclick="showPage('wizard')">去发起巡检</button>
+         </div>`;
+    renderReportsPagination(0);
     updateBatchBar();
     return;
   }
-  list.innerHTML = files.map(f => {
-    const isMySQL = f.name.includes('MySQL');
-    const isPG    = f.name.includes('PostgreSQL') || f.name.includes('Postgres');
-    const isOracle = f.name.includes('Oracle');
-    const isDM    = f.name.includes('DM8') || f.name.includes('达梦');
-    const isSQLServer = f.name.includes('SQLServer');
-    const isTiDB = f.name.includes('TiDB');
-    const isMongoDB = f.name.includes('MongoDB');
-    const tagHtml = isMySQL ? '<span class="tag tag-mysql">' + i18n('webui.db_type_mysql') + '</span>' : isPG ? '<span class="tag tag-pg">' + i18n('webui.db_type_pg') + '</span>' : isOracle ? '<span class="tag tag-oracle">' + i18n('webui.db_type_oracle') + '</span>' : isDM ? '<span class="tag tag-dm">' + i18n('webui.db_type_dm') + '</span>' : isSQLServer ? '<span class="tag tag-sqlserver">' + i18n('webui.db_type_sqlserver') + '</span>' : isTiDB ? '<span class="tag tag-tidb">' + i18n('webui.db_type_tidb') + '</span>' : isMongoDB ? '<span class="tag tag-mongodb">MongoDB</span>' : '';
-    const size = f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1)+' MB' : (f.size/1024).toFixed(1)+' KB';
-    const dt = new Date(f.mtime*1000).toLocaleString('zh-CN');
-    const high = f.high || 0;
-    const mid = f.mid || 0;
-    const low = f.low || 0;
-    const total = high + mid + low;
-    const riskBadges = total > 0
-      ? '<span class="severity-tag severity-high" style="margin-left:8px;font-size:11px;padding:2px 7px">🔴 '+i18n('webui.risk_high')+' '+high+'</span><span class="severity-tag severity-mid" style="margin-left:4px;font-size:11px;padding:2px 7px">🟡 '+i18n('webui.risk_mid')+' '+mid+'</span><span class="severity-tag severity-low" style="margin-left:4px;font-size:11px;padding:2px 7px">🟢 '+i18n('webui.risk_low')+' '+low+'</span>'
-      : '<span style="margin-left:8px;font-size:12px;color:var(--text-muted)">'+i18n('webui.risk_no_issues')+'</span>';
-    const autoAnalyzeB64 = btoa(unescape(encodeURIComponent(f.auto_analyze || '[]')));
-    const issueBtn = total > 0
-      ? '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;margin-left:4px" onclick="showReportIssues(\'' + escHtml(f.name).replace(/'/g, "\\'") + '\', \'' + autoAnalyzeB64 + '\')">'+i18n('webui.btn_report_issues')+'</button>'
-      : '';
-    return `
-      <div class="report-item">
-        <input type="checkbox" class="ri-checkbox" data-name="${escHtml(f.name)}" onchange="updateBatchBar()">
-        <div class="ri-icon">📄</div>
-        <div class="ri-info">
-          <div class="ri-name">${escHtml(f.name)} ${tagHtml} ${riskBadges}</div>
-          <div class="ri-meta">${dt} · ${size}</div>
-        </div>
-        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
-          ${issueBtn}
-          <a class="btn btn-ghost" style="font-size:12px;padding:7px 14px"
-             href="/api/download_file?name=${encodeURIComponent(f.name)}" download>${i18n('webui.btn_download_report')}</a>
-          <button class="btn btn-ghost" style="font-size:12px;padding:7px 12px" onclick="shareReportFile('${escHtml(f.name).replace(/'/g, "\\'")}')">📤 分享</button>
-          <button class="btn btn-danger" style="font-size:12px;padding:7px 12px" onclick="deleteReport('${escHtml(f.name).replace(/'/g, "\\'")}')">${i18n('webui.btn_delete_report')}</button>
-        </div>
-      </div>`;
-  }).join('');
+
+  list.innerHTML = pageFiles.map(reportRow).join('');
+  renderReportsPagination(total);
   updateBatchBar();
+}
+
+function reportRow(f) {
+  const type = reportDbType(f);
+  const title = parseReportTitle(f);
+  const total = (Number(f.high) || 0) + (Number(f.mid) || 0) + (Number(f.low) || 0);
+  const scheduled = /_sched-|scheduled|sched-/i.test(String(f.name || ''));
+  const autoAnalyzeB64 = btoa(unescape(encodeURIComponent(f.auto_analyze || '[]')));
+  const nameAttr = escHtml(f.name);
+  return `<div class="report-item">
+    <input type="checkbox" class="ri-checkbox" data-name="${nameAttr}" onchange="updateBatchBar()">
+    <div class="ri-icon">📄</div>
+    <div class="ri-info">
+      <div class="ri-title-row">
+        <span class="ri-name" title="${nameAttr}">${escHtml(title)}</span>
+        ${title === type ? '' : `<span class="tag ${reportTagClass(type)}">${escHtml(type)}</span>`}
+        ${reportRiskBadges(f)}
+      </div>
+      <div class="ri-meta">
+        <span>${formatReportDate(f.mtime)}</span><span>·</span><span>${formatReportSize(f.size)}</span>
+        ${scheduled ? '<span class="ri-flag">定时</span>' : ''}
+        <span class="ri-file" title="${nameAttr}">${nameAttr}</span>
+      </div>
+    </div>
+    <div class="ri-actions">
+      <a class="btn btn-primary ri-download" href="/api/download_file?name=${encodeURIComponent(f.name)}" download>下载</a>
+      <details class="ri-menu">
+        <summary class="ri-more" aria-label="更多操作">⋯</summary>
+        <div class="ri-menu-pop">
+          ${total > 0 ? `<button type="button" data-report-action="issues" data-report-name="${nameAttr}" data-report-issues="${autoAnalyzeB64}">问题列表 <span class="ri-menu-count">${total}</span></button>` : ''}
+          <button type="button" data-report-action="share" data-report-name="${nameAttr}">分享链接</button>
+          <button type="button" class="danger" data-report-action="delete" data-report-name="${nameAttr}">删除报告</button>
+        </div>
+      </details>
+    </div>
+  </div>`;
+}
+
+function renderReportsPagination(total) {
+  const box = document.getElementById('reports-pagination');
+  if (!box) return;
+  if (!total) { box.innerHTML = ''; return; }
+  const pages = Math.max(1, Math.ceil(total / reportPageSize));
+  const parts = [];
+  if (reportPage > 1) parts.push(`<button type="button" data-report-page="${reportPage - 1}" aria-label="上一页">‹</button>`);
+  const nums = [];
+  const start = Math.max(1, reportPage - 2);
+  const end = Math.min(pages, reportPage + 2);
+  if (start > 1) {
+    nums.push(1);
+    if (start > 2) nums.push('…');
+  }
+  for (let i = start; i <= end; i++) nums.push(i);
+  if (end < pages) {
+    if (end < pages - 1) nums.push('…');
+    nums.push(pages);
+  }
+  nums.forEach(n => {
+    if (n === '…') {
+      parts.push('<span class="pg-gap">…</span>');
+    } else {
+      parts.push(`<button type="button" data-report-page="${n}" class="${n === reportPage ? 'active' : ''}" ${n === reportPage ? 'aria-current="page"' : ''}>${n}</button>`);
+    }
+  });
+  if (reportPage < pages) parts.push(`<button type="button" data-report-page="${reportPage + 1}" aria-label="下一页">›</button>`);
+  parts.push(`<span class="pg-info">第 ${reportPage} / ${pages} 页</span>`);
+  box.innerHTML = parts.join('');
+}
+
+function resetReportFilters() {
+  reportFilters = { search: '', type: '', risk: '', time: '', sort: 'newest' };
+  reportPage = 1;
+  ['report-search', 'report-type-filter', 'report-risk-filter', 'report-time-filter', 'report-sort'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const sortEl = document.getElementById('report-sort');
+  if (sortEl) sortEl.value = 'newest';
+  renderReports();
+}
+
+function clearReportSelection() {
+  document.querySelectorAll('#reports-list .ri-checkbox').forEach(cb => { cb.checked = false; });
+  const all = document.getElementById('select-all-cb');
+  if (all) all.checked = false;
+  updateBatchBar();
+}
+
+function bindReportControls() {
+  const list = document.getElementById('reports-list');
+  if (!list || list.dataset.reportBound === '1') return;
+  list.dataset.reportBound = '1';
+
+  const search = document.getElementById('report-search');
+  if (search) {
+    search.addEventListener('input', () => {
+      clearTimeout(reportSearchTimer);
+      reportSearchTimer = setTimeout(() => {
+        reportFilters.search = search.value;
+        reportPage = 1;
+        renderReports();
+      }, 140);
+    });
+  }
+  const typeSel = document.getElementById('report-type-filter');
+  if (typeSel) typeSel.addEventListener('change', () => { reportFilters.type = typeSel.value; reportPage = 1; renderReports(); });
+  const riskSel = document.getElementById('report-risk-filter');
+  if (riskSel) riskSel.addEventListener('change', () => { reportFilters.risk = riskSel.value; reportPage = 1; renderReports(); });
+  const timeSel = document.getElementById('report-time-filter');
+  if (timeSel) timeSel.addEventListener('change', () => { reportFilters.time = timeSel.value; reportPage = 1; renderReports(); });
+  const sortSel = document.getElementById('report-sort');
+  if (sortSel) sortSel.addEventListener('change', () => { reportFilters.sort = sortSel.value; reportPage = 1; renderReports(); });
+  const clearBtn = document.getElementById('report-clear-filters');
+  if (clearBtn) clearBtn.addEventListener('click', resetReportFilters);
+  const sizeSel = document.getElementById('report-page-size');
+  if (sizeSel) sizeSel.addEventListener('change', () => { reportPageSize = Number(sizeSel.value) || 20; reportPage = 1; renderReports(); });
+
+  const pagination = document.getElementById('reports-pagination');
+  if (pagination) {
+    pagination.addEventListener('click', e => {
+      const btn = e.target.closest('[data-report-page]');
+      if (!btn) return;
+      reportPage = Number(btn.dataset.reportPage) || 1;
+      renderReports();
+      const card = document.querySelector('.reports-page-card');
+      if (card) {
+        const header = document.querySelector('.topbar');
+        const offset = (header ? header.getBoundingClientRect().height : 56) + 14;
+        window.scrollTo({ top: Math.max(0, window.scrollY + card.getBoundingClientRect().top - offset), behavior: 'smooth' });
+      }
+    });
+  }
+
+  list.addEventListener('toggle', e => {
+    const menu = e.target;
+    if (!menu.matches || !menu.matches('.ri-menu')) return;
+    if (menu.open) {
+      document.querySelectorAll('.ri-menu[open]').forEach(d => { if (d !== menu) d.open = false; });
+      const pop = menu.querySelector('.ri-menu-pop');
+      const spaceBelow = window.innerHeight - menu.getBoundingClientRect().bottom;
+      menu.classList.toggle('drop-up', spaceBelow < (pop ? pop.offsetHeight + 16 : 170));
+    } else {
+      menu.classList.remove('drop-up');
+    }
+  }, true);
+
+  list.addEventListener('click', e => {
+    const action = e.target.closest('[data-report-action]');
+    if (!action) return;
+    e.preventDefault();
+    const name = action.dataset.reportName;
+    const menu = action.closest('details');
+    if (menu) menu.open = false;
+    if (action.dataset.reportAction === 'issues') showReportIssues(name, action.dataset.reportIssues);
+    else if (action.dataset.reportAction === 'share') shareReportFile(name);
+    else if (action.dataset.reportAction === 'delete') deleteReport(name);
+  });
+
+  document.addEventListener('click', e => {
+    if (e.target.closest('.ri-menu')) return;
+    document.querySelectorAll('.ri-menu[open]').forEach(d => { d.open = false; });
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.ri-menu[open]').forEach(d => { d.open = false; });
+  });
 }
 
 // ── SQL 审核（MVP2：多库方言 + 执行计划）─────────────────
@@ -18653,16 +19181,6 @@ function renderExecResult(taskId, data) {
     </div>`;
   });
   box.innerHTML = h;
-}
-
-function filterReports(type) {
-  currentReportFilter = type;
-  document.querySelectorAll('#report-filter-bar .filter-btn').forEach(btn => {
-    btn.classList.toggle('filter-active', btn.dataset.type === type);
-  });
-  // 清空已选
-  document.getElementById('select-all-cb').checked = false;
-  renderReports();
 }
 
 function updateBatchBar() {
@@ -30478,8 +30996,6 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
     // 5. 定时巡检任务页面的数据库类型选择（无占位，保持"必选"语义）
     fillGroupedSelect(document.getElementById('job-db-type'), dbTypes, { placeholder: '' });
 
-    // 6. 动态生成reports页面的数据库类型过滤按钮
-    generateReportFilterButtons();
   }
 
   // 动态填充首页「数据库类型图标墙」：把已启用的插件数据库类型追加到硬编码内置项之后
@@ -30542,31 +31058,9 @@ const STATIC_DB_PH_MAP = {'pg':'postgres','ivorysql':'ivorysql','kingbase':'king
     });
   }
 
-  // 动态生成reports页面的数据库类型过滤按钮
-  function generateReportFilterButtons() {
-    const dbTypes = window.dbTypes || [];
-    const filterBar = document.getElementById('report-filter-bar');
-    if (!filterBar) return;
-    
-    // 保留"全部"按钮，删除其他按钮
-    const allBtn = filterBar.querySelector('[data-type=""]');
-    filterBar.innerHTML = '';
-    if (allBtn) filterBar.appendChild(allBtn);
-    
-    // 添加动态按钮（使用 emoji 图标）
-    dbTypes.forEach(t => {
-      const btn = document.createElement('button');
-      btn.className = 'filter-btn';
-      btn.setAttribute('data-type', t.label);
-      btn.onclick = function() { filterReports(t.label); };
-      btn.style = 'padding:5px 14px;font-size:12px;border-radius:20px;cursor:pointer';
-      btn.textContent = `${t.emoji || '📊'} ${t.label}`;
-      filterBar.appendChild(btn);
-    });
-  }
-
   // 页面加载时初始化
   document.addEventListener('DOMContentLoaded', () => {
+    bindReportControls();
     loadDbTypes();
     syncShowAiAssistant();
     initChartResizeObserver();
