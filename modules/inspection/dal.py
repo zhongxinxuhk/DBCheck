@@ -525,6 +525,7 @@ def _query_indicator(query: Dict) -> Dict:
         'query_key': _catalog_text(query.get('query_key')),
         'enabled': 1 if query.get('enabled', 1) else 0,
         'description': detail,
+        'query_sql': _catalog_text(query.get('query_sql')),
     }
 
 
@@ -566,7 +567,7 @@ def get_template_catalog(db_path: str = None, template_id: int = None,
             ORDER BY c.template_id, c.sort_order, c.chapter_number
         """, tuple(template_ids)).fetchall()
         query_rows = conn.execute(f"""
-            SELECT q.chapter_id, q.query_key, q.query_description_zh, q.enabled
+            SELECT q.chapter_id, q.query_key, q.query_description_zh, q.query_sql, q.enabled
             FROM inspection_query q
             JOIN inspection_chapter c ON c.id = q.chapter_id
             WHERE c.template_id IN ({marks}) AND c.enabled = 1 AND q.enabled = 1
