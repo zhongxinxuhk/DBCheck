@@ -5544,7 +5544,7 @@ def api_list_icfg_templates():
     """
     try:
         db_type = request.args.get('db_type')
-        rows = get_template_catalog()
+        rows = get_template_catalog(include_chapter_summary=False, include_domain_details=False)
         if db_type:
             family = get_templates_by_db_type(db_type, include_family=True)
             allowed = {int(r['id']) for r in family}

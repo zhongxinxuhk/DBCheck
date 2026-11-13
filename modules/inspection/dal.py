@@ -538,11 +538,14 @@ def _template_category(template: Dict) -> tuple:
 
 
 def get_template_catalog(db_path: str = None, template_id: int = None,
-                         include_indicators: bool = False) -> List[Dict]:
-    """模板目录：在模板列表上补齐描述、章节摘要与「SQL + 主机」指标覆盖。
+                         include_indicators: bool = False,
+                         include_chapter_summary: bool = True,
+                         include_domain_details: bool = True) -> List[Dict]:
+    """模板目录：在模板列表上补齐分类、覆盖度与搜索文本。
 
-    列表页只返回章节级摘要；打开某个模板时才请求 ``include_indicators=True``，
-    避免 80 个模板、1400+ 条 SQL 描述一次性下发。
+    列表页只需要计数、覆盖度和 ``search_text``，不需要每个章节的描述；
+    传 ``include_chapter_summary=False`` 可把 80 个模板的章节描述从响应中移除。
+    打开某个模板展开明细时才请求 ``include_indicators=True``。
     """
     templates = get_all_templates(db_path)
     if template_id is not None:
@@ -637,7 +640,8 @@ def get_template_catalog(db_path: str = None, template_id: int = None,
         template['category'] = category
         template['cycle'] = cycle
         template['business'] = 1 if category == 'business' else 0
-        template['chapter_summary'] = chapter_summary
+        if include_chapter_summary:
+            template['chapter_summary'] = chapter_summary
         template['sql_count'] = int(template.get('query_count') or 0)
         template['manual_count'] = manual_total
         template['indicator_count'] = indicator_total
@@ -648,12 +652,13 @@ def get_template_catalog(db_path: str = None, template_id: int = None,
         domains = _standard_domain_coverage(coverage_parts)
         covered_domains = [item for item in domains if item['covered']]
         missing_domains = [item for item in domains if not item['covered']]
-        template['standard_domains'] = domains
         template['standard_domain_count'] = len(domains)
         template['covered_domain_count'] = len(covered_domains)
-        template['missing_domains'] = [item['label'] for item in missing_domains]
-        template['missing_domain_keys'] = [item['key'] for item in missing_domains]
         template['standard_coverage'] = f'{len(covered_domains)}/{len(domains)}'
+        if include_domain_details:
+            template['standard_domains'] = domains
+            template['missing_domains'] = [item['label'] for item in missing_domains]
+            template['missing_domain_keys'] = [item['key'] for item in missing_domains]
         template['domain_scope'] = 'baseline' if template.get('category') == 'baseline' else 'special'
         template['has_baseline_gap'] = bool(
             template['domain_scope'] == 'baseline' and missing_domains
