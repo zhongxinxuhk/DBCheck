@@ -9375,7 +9375,7 @@ function wfCloseRunDrawer() {
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path></svg>
               <input id="report-search" type="search" placeholder="搜索文件名、实例或环境" aria-label="搜索巡检报告" autocomplete="off">
             </div>
-            <select id="report-type-filter" aria-label="数据库类型"><option value="">全部类型</option></select>
+            <select id="report-type-filter" aria-label="数据库类型"><option value="" data-i18n="webui.inspection_filter_type_all">全部类型</option></select>
             <select id="report-risk-filter" aria-label="风险筛选">
               <option value="">全部风险</option>
               <option value="high">仅含高风险</option>
@@ -11863,26 +11863,26 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               </div>
               <div class="inspection-toolbar-filters">
                 <div class="inspection-search-bar">
-                  <input id="inspection-template-search" class="form-input" type="search" aria-label="搜索巡检模板" placeholder="搜索模板、章节、数据库或说明" oninput="filterInspectionConfig('template')">
+                  <input id="inspection-template-search" class="form-input" type="search" aria-label="搜索巡检模板" placeholder="搜索模板、章节、数据库或说明" data-i18n="webui.inspection_search_placeholder" oninput="filterInspectionConfig('template')">
                   <select id="inspection-filter-db" class="form-input inspection-filter-select" aria-label="按数据库类型筛选" onchange="filterInspectionConfig('template')">
-                    <option value="">全部数据库</option>
+                    <option value="" data-i18n="webui.inspection_filter_db_all">全部数据库</option>
                   </select>
                   <select id="inspection-filter-category" class="form-input inspection-filter-select" aria-label="按模板类别筛选" onchange="filterInspectionConfig('template')">
-                    <option value="">全部类别</option>
-                    <option value="baseline">通用基线</option>
-                    <option value="business">业务专项</option>
-                    <option value="custom">自定义</option>
+                    <option value="" data-i18n="webui.inspection_filter_category_all">全部类别</option>
+                    <option value="baseline" data-i18n="webui.inspection_category_baseline">通用基线</option>
+                    <option value="business" data-i18n="webui.inspection_category_business">业务专项</option>
+                    <option value="custom" data-i18n="webui.inspection_category_custom">自定义</option>
                   </select>
                   <select id="inspection-filter-cycle" class="form-input inspection-filter-select" aria-label="按巡检类型筛选" onchange="filterInspectionConfig('template')">
                     <option value="">全部类型</option>
                   </select>
                   <select id="inspection-filter-gap" class="form-input inspection-filter-select" aria-label="按标准域覆盖筛选" onchange="filterInspectionConfig('template')">
-                    <option value="">全部覆盖度</option>
-                    <option value="gap">仅看通用基线缺口</option>
-                    <option value="full">标准域全覆盖（全部模板）</option>
+                    <option value="" data-i18n="webui.inspection_filter_coverage_all">全部覆盖度</option>
+                    <option value="gap" data-i18n="webui.inspection_filter_gap_only">仅看通用基线缺口</option>
+                    <option value="full" data-i18n="webui.inspection_filter_full">标准域全覆盖（全部模板）</option>
                   </select>
-                  <button type="button" class="btn btn-sm" onclick="resetInspectionTemplateFilters()">重置</button>
-                  <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('template')">清空搜索</button>
+                  <button type="button" class="btn btn-sm" onclick="resetInspectionTemplateFilters()" data-i18n="webui.inspection_reset">重置</button>
+                  <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('template')" data-i18n="webui.inspection_clear_search">清空搜索</button>
                   <span id="inspection-template-search-status" role="status"></span>
                 </div>
               </div>
@@ -11893,17 +11893,17 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                 <table class="inspection-table">
                   <thead>
                     <tr>
-                      <th class="icfg-col-template">模板</th>
-                      <th class="icfg-col-db">数据库</th>
-                      <th class="icfg-col-type">类别 / 周期</th>
-                      <th class="icfg-col-num">章节</th>
-                      <th class="icfg-col-coverage">检查项覆盖</th>
-                      <th class="icfg-col-status">标准域 / 状态</th>
-                      <th class="icfg-col-actions">操作</th>
+                      <th class="icfg-col-template" data-i18n="webui.inspection_col_template">模板</th>
+                      <th class="icfg-col-db" data-i18n="webui.inspection_col_database">数据库</th>
+                      <th class="icfg-col-type" data-i18n="webui.inspection_col_category_type">类别 / 类型</th>
+                      <th class="icfg-col-num" data-i18n="webui.inspection_col_chapters">章节</th>
+                      <th class="icfg-col-coverage" data-i18n="webui.inspection_col_coverage">检查项覆盖</th>
+                      <th class="icfg-col-status" data-i18n="webui.inspection_col_domain_status">标准域 / 状态</th>
+                      <th class="icfg-col-actions" data-i18n="webui.inspection_col_actions">操作</th>
                     </tr>
                   </thead>
                   <tbody id="inspection-template-list" class="inspection-template-list" data-page-node-id="TYLXMlkGhxQcNNAzPzrl15">
-                    <tr><td colspan="7" class="icfg-loading">正在加载巡检模板…</td></tr>
+                    <tr><td colspan="7" class="icfg-loading" data-i18n="webui.inspection_loading_templates">正在加载巡检模板…</td></tr>
                   </tbody>
                 </table>
               </div>

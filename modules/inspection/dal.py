@@ -652,6 +652,7 @@ def get_template_catalog(db_path: str = None, template_id: int = None,
         template['standard_domain_count'] = len(domains)
         template['covered_domain_count'] = len(covered_domains)
         template['missing_domains'] = [item['label'] for item in missing_domains]
+        template['missing_domain_keys'] = [item['key'] for item in missing_domains]
         template['standard_coverage'] = f'{len(covered_domains)}/{len(domains)}'
         template['domain_scope'] = 'baseline' if template.get('category') == 'baseline' else 'special'
         template['has_baseline_gap'] = bool(
