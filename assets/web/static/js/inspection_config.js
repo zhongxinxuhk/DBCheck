@@ -317,10 +317,9 @@ function renderInspectionTemplateRow(t) {
     const version = t.version ? `<span class="icfg-version">${escapeHtml(t.version)}</span>` : '';
     const desc = t.description ? `<span class="icfg-template-desc">${escapeHtml(t.description)}</span>` : '';
     const cycle = t.cycle ? `<span class="icfg-cycle">${escapeHtml(icfgCycleLabel(t.cycle))}</span>` : '';
-    const chapterTitles = (t.chapter_summary || []).map(c => c.chapter_title).join(' ');
     const searchText = [
         t.search_text, t.template_name, t.template_name_en, t.db_type, dbLabel, t.version,
-        t.description, t.category, categoryLabel, t.cycle, chapterTitles
+        t.description, t.category, categoryLabel, t.cycle
     ].filter(Boolean).join(' ');
     const categoryBadge = t.business ? '' : `<span class="icfg-category">${escapeHtml(categoryLabel)}</span>`;
     const inlineMeta = `<span class="icfg-inline-meta">${dbIcon} ${escapeHtml(dbLabel)}${t.cycle ? ' · ' + escapeHtml(icfgCycleLabel(t.cycle)) : ''}${t.business ? ' · ' + escapeHtml(it('webui.inspection_badge_business', '业务专项')) : ''}</span>`;
