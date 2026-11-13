@@ -1,0 +1,86 @@
+RaccoonX
+Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
+Project: https://github.com/fiyo/DBCheck
+Website: https://dbcheck.top
+Email: sdfiyon@gmail.com
+Licensed under the Apache License, Version 2.0.
+This product includes original authorship and branding of fiyo (Jack Ge).
+
+==============================================================================
+Third-Party Notices
+==============================================================================
+
+This product bundles the following third-party open-source component:
+
+autobackup
+----------
+- Source:   https://github.com/MMCISAGOODMAN/autobackup
+- Version:  v1.1.0
+- License:  MIT
+- Usage:    The disaster recovery / backup module (modules/disaster_recovery/)
+            vendors the single-file engine `autobackup.py` **in-process** to drive
+            MySQL / PostgreSQL / file backups, cron scheduling, retention cleanup
+            and webhook notifications. No sidecar service is started.
+- Location: modules/disaster_recovery/vendor/autobackup.py
+
+------------------------------------------------------------------------------
+autobackup MIT License
+------------------------------------------------------------------------------
+Copyright (c) 2026 MMCISAGOODMAN
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+Redistribution / Derivative Works Notice
+==============================================================================
+
+Any redistribution or derivative work (including works modified using AI tools)
+must retain this NOTICE file and all copyright headers and attribution notices
+(including the author email sdfiyon@gmail.com) present in the source files.
+
+
+==============================================================================
+Derivative Work Attribution / 衍生创作署名
+==============================================================================
+
+DBPulse derivative-work portions contributed by sec.hn.cn (X.U zx):
+  Newly created files (no upstream code):
+    SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+    Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+    Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+    License text : LICENSE-PolyForm-Noncommercial-1.0.0.txt
+    Commercial   : LICENSE-COMMERCIAL.md (written license required for
+                   commercial use; contact xuzhongxin@sec.hn.cn)
+
+  Upstream-derived files (contain fiyo code, incl. modified upstream files):
+    SPDX-License-Identifier: Apache-2.0
+    Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+    Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+This section is ADDITIVE. It does not replace, alter or weaken the original
+copyright, branding and attribution of fiyo (Jack Ge) <sdfiyon@gmail.com>
+stated above, nor the Apache License 2.0 terms. All original headers and
+notices must remain intact.
+
+Dual licensing of the self-developed portions: noncommercial purposes are
+permitted under PolyForm Noncommercial 1.0.0; commercial use (production use in
+a for-profit organization, SaaS/hosted service, bundling, paid delivery,
+white-label/OEM, or other revenue-generating use) requires a separate written
+commercial license. Files that contain or modify upstream fiyo code remain
+under the Apache License 2.0 as required by that license.
