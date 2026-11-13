@@ -145,20 +145,21 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     font-weight: 700;
     letter-spacing: 0.4px;
     text-align: left;
-    white-space: nowrap;
+    white-space: normal;
+    line-height: 1.25;
 }
 
 .inspection-template-list {
     display: table-row-group;
 }
 
-.icfg-col-template { width: 34%; }
-.icfg-col-db { width: 12%; }
-.icfg-col-type { width: 15%; }
-.icfg-col-num { width: 6%; text-align: center !important; }
-.icfg-col-coverage { width: 10%; text-align: center !important; }
-.icfg-col-status { width: 13%; }
-.icfg-col-actions { width: 10%; text-align: right !important; }
+.icfg-col-template { width: 32%; }
+.icfg-col-db { width: 11%; }
+.icfg-col-type { width: 14%; }
+.icfg-col-num { width: 7%; text-align: center !important; }
+.icfg-col-coverage { width: 11%; text-align: center !important; }
+.icfg-col-status { width: 14%; }
+.icfg-col-actions { width: 11%; text-align: right !important; }
 
 .icfg-row {
     cursor: pointer;
@@ -443,11 +444,13 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 }
 
 .icfg-col-actions {
-    white-space: nowrap;
+    white-space: normal;
+    line-height: 1.6;
 }
 
 .icfg-action {
-    margin-left: 2px;
+    display: inline-block;
+    margin: 1px 0 1px 2px;
     padding: 4px 7px;
     border: none;
     border-radius: 6px;
@@ -786,11 +789,11 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     .inspection-table .icfg-col-type {
         display: none;
     }
-    .icfg-col-template { width: 52%; }
-    .icfg-col-num { width: 7%; }
-    .icfg-col-coverage { width: 13%; }
-    .icfg-col-status { width: 14%; }
-    .icfg-col-actions { width: 14%; }
+    .icfg-col-template { width: 41%; }
+    .icfg-col-num { width: 11%; }
+    .icfg-col-coverage { width: 14%; }
+    .icfg-col-status { width: 16%; }
+    .icfg-col-actions { width: 18%; }
     .icfg-inline-meta { display: block; }
 }
 

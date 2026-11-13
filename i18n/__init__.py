@@ -186,12 +186,21 @@ def t(key, lang=None, default=None):
 # ── 便捷函数（供 Web UI 使用）───────────────────────────────────────────────
 
 def get_all_translations(lang=None):
-    """返回指定语言的全部翻译字典"""
+    """返回指定语言的全部翻译字典。
+
+    新增加的巡检配置列表文案先在 zh/en 落地；其它语言缺少这些 key 时
+    回退英文，避免在已本地化的界面里突然出现中文。
+    """
     if lang is None:
         lang = get_lang()
     lang = _normalize_lang(lang)
+    data = dict(_LANGS.get(lang, ZI))
+    if lang not in ('zh', 'en'):
+        for key, value in EN.items():
+            if key.startswith('webui.inspection_') and key not in data:
+                data[key] = value
     return {key: _brand_text(key, str(value))
-            for key, value in _LANGS.get(lang, ZI).items()}
+            for key, value in data.items()}
 
 
 def get_language_display(lang=None):
