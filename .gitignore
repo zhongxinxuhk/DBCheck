@@ -127,10 +127,12 @@ qa-temp/
 # tests/ 下用例仅本地回归使用，不进版本库（CI 不再运行 pytest 步骤）。
 tests/
 
-# 署名机制核心文件：必须纳入版本控制（覆盖上方 *.md / check_*.py 全局忽略）
+# 署名与授权核心文件：必须纳入版本控制（覆盖上方 *.md / check_*.py 全局忽略）
 # AGENTS.md = 给 AI 编码助手的强制署名约束；scripts/check_license_headers.py = CI 检测脚本
+# LICENSE-COMMERCIAL.md = 根许可证检查引用的商业授权说明
 !AGENTS.md
 !/.github/UPSTREAM_SYNC.md
+!LICENSE-COMMERCIAL.md
 !scripts/check_license_headers.py
 
 # 目录结构重构：data 统一收口
