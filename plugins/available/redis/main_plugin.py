@@ -198,6 +198,7 @@ class RedisInspector(RedisCommonMixin, BaseInspectionEngine):
                 ('_collect_keyspace', '键空间'),
                 ('_collect_slowlog', '慢查询'),
                 ('_check_baselines', '配置基线'),
+                ('_collect_security', '安全与访问控制'),
             ]
             total = len(steps) + 1
             for i, (method, label) in enumerate(steps, 1):
