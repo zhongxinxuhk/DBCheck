@@ -397,6 +397,17 @@ SELECT COUNT(*) AS total_sessions,
        SUM(CASE WHEN is_user_process = 1 THEN 1 ELSE 0 END)  AS user_sessions,
        (SELECT @@MAX_CONNECTIONS) AS max_connections
 FROM sys.dm_exec_sessions"""),
+    'W03b': ('W03b_buffer_cache', '缓冲池命中率与页生命周期（缓存健康）', """
+SELECT ROUND(SUM(CASE WHEN counter_name = 'Buffer cache hit ratio'
+                      THEN cntr_value END) * 100.0 /
+             NULLIF(SUM(CASE WHEN counter_name = 'Buffer cache hit ratio base'
+                             THEN cntr_value END), 0), 2) AS buffer_cache_hit_pct,
+       MAX(CASE WHEN counter_name = 'Page life expectancy'
+                THEN cntr_value END) AS page_life_expectancy_sec,
+       MAX(CASE WHEN counter_name = 'Page reads/sec'
+                THEN cntr_value END) AS page_reads_per_sec
+FROM sys.dm_os_performance_counters
+WHERE object_name LIKE '%Buffer Manager%'"""),
     'W04': ('W04_errorlog_recent', '错误日志中的 Error 级记录（sp_readerrorlog）', """
 EXEC master.dbo.sp_readerrorlog 0, 1, N'Error'"""),
     'W05': ('W05_backup_history_7d', '近 7 天备份历史（类型/大小/耗时）', """
@@ -964,6 +975,47 @@ ORDER BY DATA_LENGTH DESC
 LIMIT 20"""),
     'W07': ('W07_backup_param', '备份工具与路径参数配置', """
 SHOW VARIABLES LIKE '%backup%'"""),
+    'W08': ('W08_cluster_nodes', '数据节点在线状态与分片角色（逐节点执行）', 'SHOW NODES'),
+    'W10': ('W10_object_health', '对象健康：无主键表与异常对象清单', """
+SELECT T.TABLE_SCHEMA, T.TABLE_NAME, T.TABLE_ROWS,
+       ROUND(IFNULL(T.DATA_LENGTH,0)/1024/1024, 2) AS data_mb
+FROM information_schema.TABLES T
+WHERE T.TABLE_TYPE = 'BASE TABLE'
+  AND T.TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema')
+  AND NOT EXISTS (
+      SELECT 1 FROM information_schema.STATISTICS S
+      WHERE S.TABLE_SCHEMA = T.TABLE_SCHEMA AND S.TABLE_NAME = T.TABLE_NAME
+        AND S.INDEX_NAME = 'PRIMARY')
+ORDER BY T.DATA_LENGTH DESC
+LIMIT 50"""),
+    'W12': ('W12_stats_stale', '统计信息缺失或行数异常的表（ANALYZE 待执行判断）', """
+SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS, DATA_LENGTH, UPDATE_TIME
+FROM information_schema.TABLES
+WHERE TABLE_TYPE = 'BASE TABLE'
+  AND TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema')
+  AND (TABLE_ROWS IS NULL OR TABLE_ROWS = 0)
+ORDER BY DATA_LENGTH DESC
+LIMIT 50"""),
+    'W13': ('W13_events', '调度事件清单与最近执行结果', """
+SELECT EVENT_SCHEMA, EVENT_NAME, STATUS, EVENT_TYPE,
+       INTERVAL_VALUE, INTERVAL_FIELD, LAST_EXECUTED, STARTS, ENDS
+FROM information_schema.EVENTS
+ORDER BY LAST_EXECUTED DESC"""),
+    'W14': ('W14_locks', '锁等待与非空闲会话（按等待时长排序）', """
+SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 200) AS SQL_TEXT
+FROM information_schema.PROCESSLIST
+WHERE COMMAND <> 'Sleep'
+  AND (STATE LIKE '%lock%' OR STATE LIKE '%wait%' OR STATE LIKE '%metadata%')
+ORDER BY TIME DESC"""),
+    'W15': ('W15_long_sql', '长时间执行 SQL（超过 60 秒）', """
+SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 300) AS SQL_TEXT
+FROM information_schema.PROCESSLIST
+WHERE COMMAND <> 'Sleep' AND TIME > 60
+ORDER BY TIME DESC"""),
+    'W16': ('W16_global_status', '全局状态与资源指标（连接/查询/缓存/错误）', 'SHOW GLOBAL STATUS'),
+    'W19': ('W19_database_info', '数据库基础信息（版本/主机/账号/采集时间）', """
+SELECT VERSION() AS version, @@hostname AS host_name,
+       CURRENT_USER() AS login_user, NOW() AS collected_at"""),
     'W06': ('W06_schema_space', '各库数据量汇总（容量趋势基线）', """
 SELECT TABLE_SCHEMA, COUNT(*) AS table_count,
        SUM(TABLE_ROWS) AS total_rows,
@@ -1058,6 +1110,24 @@ ALIAS = {
     'M10': 'W04', 'M13': 'W18', 'M14': 'W20', 'W19b': 'W20',
 }
 
+# 事件驱动/季度/年度模板中以字符串引用的检查项，补中文名避免出现“W15 W15”。
+ITEM_TITLES_ZH = {
+    'W01': '实例运行状态', 'W02': '客户端远程登录可用性',
+    'W03': '实时会话连接数', 'W03b': '缓存/连接容量',
+    'W04': '告警与错误日志', 'W05': '备份任务结果', 'W06': '空间与容量水位',
+    'W07': '备份可用性校验', 'W08': '集群节点状态', 'W09': '参数与配置一致性',
+    'W10': '对象有效性与失效索引', 'W11': '逻辑存储空间',
+    'W12': '统计信息新鲜度', 'W13': '作业与定时任务', 'W14': '锁与阻塞',
+    'W15': '慢查询 TOP N', 'W16': '等待事件与资源', 'W17': '账号与权限',
+    'W18': '日志与审计留存', 'W19': '数据库基础信息', 'W20': '采集时间戳留痕',
+    'H14': '索引有效性', 'H15': '存储过程/触发器/视图有效性',
+    'H17': '冗余索引与对象治理', 'H20': '磁盘空间与 IO',
+    'H22': '核心等待事件', 'H23': 'CPU 使用率', 'H24': '缓冲与共享池命中率',
+    'H25': '备份增量变化', 'H26': '备份窗口稳定性', 'H27': '备份可用性验证',
+    'M01': '参数文件完整性', 'M02': '核心元数据文件', 'M06': '存储全量明细',
+    'M07': '容量趋势基线', 'M11': '归档日志完整性', 'M12': '参数基线',
+}
+
 
 def _resolve_sql(product, item_id):
     """按 item_id 取 SQL，支持别名复用。"""
@@ -1104,7 +1174,7 @@ def _chapter(num, title_zh, title_en, desc, items, product):
         if isinstance(entry, str):
             item_id = entry
             hit_title = _resolve_sql(product, entry)
-            item_title = hit_title[1] if hit_title else entry
+            item_title = hit_title[1] if hit_title else ITEM_TITLES_ZH.get(entry, entry)
         else:
             item_id, item_title = entry
         hit = _resolve_sql(product, item_id)
@@ -1668,6 +1738,46 @@ def ensure_business_defaults(db_path=None):
                 if new_sql != row['query_sql']:
                     conn.execute('UPDATE inspection_baseline SET query_sql=? WHERE id=?', (new_sql,row['id']))
             conn.execute('INSERT INTO inspection_builtin_migration VALUES (?)', (revision,))
+        coverage_revision = 'business-indicator-coverage-20261113-v3'
+        if not conn.execute('SELECT 1 FROM inspection_builtin_migration WHERE revision=?', (coverage_revision,)).fetchone():
+            # 一次性补齐内置业务专项模板后来新增的 SQL 检查项；已有 query_key 不覆盖，
+            # 用户改过的 SQL / 删除的章节仍保持原样。
+            for product, name, _desc, builder in build_template_specs(cd_per_product=True):
+                cfg = make_template_config(product, name, '', builder)
+                template = conn.execute(
+                    'SELECT id FROM inspection_template WHERE db_type=? AND template_name_zh=?',
+                    (product, cfg['template_name'])).fetchone()
+                if not template:
+                    continue
+                tid = template['id']
+                for ch in cfg['chapters']:
+                    chapter = conn.execute(
+                        'SELECT id, description FROM inspection_chapter '
+                        'WHERE template_id=? AND chapter_number=?',
+                        (tid, ch['chapter_number'])).fetchone()
+                    if not chapter:
+                        continue
+                    cid = chapter['id']
+                    for q in ch['queries']:
+                        exists = conn.execute(
+                            'SELECT 1 FROM inspection_query WHERE chapter_id=? AND query_key=?',
+                            (cid, q['query_key'])).fetchone()
+                        if not exists:
+                            conn.execute(
+                                'INSERT INTO inspection_query '
+                                '(chapter_id,query_key,query_sql,query_description_zh,enabled,sort_order) '
+                                'VALUES (?,?,?,?,?,?)',
+                                (cid, q['query_key'], q['query_sql'],
+                                 q['query_description_zh'], 1, q['sort_order']))
+                    # 修正历史说明中的“Wxx Wxx”重复标题，只做精确行替换。
+                    description = chapter['description'] or ''
+                    fixed = description
+                    for item_id, title in ITEM_TITLES_ZH.items():
+                        fixed = fixed.replace(f'- {item_id} {item_id}', f'- {item_id} {title}')
+                    if fixed != description:
+                        conn.execute('UPDATE inspection_chapter SET description=? WHERE id=?',
+                                     (fixed, cid))
+            conn.execute('INSERT INTO inspection_builtin_migration VALUES (?)', (coverage_revision,))
         for product, items in PARAM_BASELINES.items():
             for param, sql, op, expected, risk, zh, en in items:
                 conn.execute('INSERT INTO inspection_baseline '
