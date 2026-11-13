@@ -893,7 +893,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 .icfg-matrix-table {
     width: 100%;
-    min-width: 1180px;
+    min-width: 1220px;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 11px;
@@ -916,6 +916,50 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     font-weight: 650;
     line-height: 1.3;
     white-space: normal;
+}
+
+.icfg-matrix-domain {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    cursor: pointer;
+}
+
+.icfg-matrix-domain span {
+    border-bottom: 1px dashed transparent;
+}
+
+.icfg-matrix-domain:hover span,
+.icfg-matrix-domain.is-active span {
+    border-bottom-color: currentColor;
+    color: var(--primary);
+}
+
+.icfg-matrix-domain em {
+    color: #dc2626;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.icfg-matrix-domain.is-zero em {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.icfg-matrix-empty {
+    padding: 32px 12px !important;
+    color: var(--text-muted);
+    text-align: center;
 }
 
 .icfg-matrix-table tbody tr:hover td {

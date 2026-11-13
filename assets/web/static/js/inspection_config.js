@@ -1451,35 +1451,82 @@ async function showInspectionDomainMatrix() {
         if (!body) return;
         const domains = matrix.domains || [];
         const rows = matrix.rows || [];
-        body.innerHTML = `
-            <div class="icfg-matrix-scroll">
-                <table class="icfg-matrix-table">
-                    <thead><tr>
-                        <th class="icfg-matrix-template">${escapeHtml(it('webui.inspection_matrix_template', '模板'))}</th>
-                        ${domains.map(domain => `<th title="${escapeHtml(icfgDomainLabel(domain))}">${escapeHtml(icfgDomainLabel(domain))}</th>`).join('')}
-                        <th>${escapeHtml(it('webui.inspection_matrix_coverage', '覆盖'))}</th>
-                    </tr></thead>
-                    <tbody>${rows.map(row => `
-                        <tr class="${row.missing?.length ? 'is-gap' : ''}">
-                            <td class="icfg-matrix-template">
-                                <span class="icfg-matrix-name">${escapeHtml(row.template_name)}</span>
-                                <span class="icfg-matrix-meta">${escapeHtml(icfgDbLabel(row.db_type))}${row.version ? ' · ' + escapeHtml(row.version) : ''}</span>
-                            </td>
-                            ${(row.cells || []).map((covered, index) => `<td class="icfg-matrix-cell ${covered ? 'is-covered' : 'is-missing'}"
-                                title="${escapeHtml(domains[index] ? icfgDomainLabel(domains[index]) : '')}">${covered ? '✓' : '—'}</td>`).join('')}
-                            <td class="icfg-matrix-coverage">${escapeHtml(row.coverage || '')}</td>
-                        </tr>`).join('')}</tbody>
-                </table>
-            </div>
-            <div class="icfg-sql-footer">
-                <span>${escapeHtml(itf('webui.inspection_matrix_gap_count', '{n} 个基线存在缺口', {n: matrix.gap_count || 0}))}</span>
-                <div>
-                    <button type="button" class="btn btn-sm" data-matrix-csv>${escapeHtml(it('webui.inspection_export_gaps', '导出缺口 CSV'))}</button>
-                    <button type="button" class="btn btn-sm btn-primary" data-matrix-close>${escapeHtml(it('webui.inspection_close', '关闭'))}</button>
+        const gapCounts = Object.fromEntries(domains.map(domain => [
+            domain.key, rows.filter(row => (row.missing || []).includes(domain.key)).length
+        ]));
+        let activeDomain = null;
+        let gapsOnly = false;
+        const renderMatrix = () => {
+            const visible = rows.filter(row => {
+                const missing = row.missing || [];
+                return (!gapsOnly || missing.length) && (!activeDomain || missing.includes(activeDomain));
+            });
+            const showingText = itf('webui.inspection_matrix_showing', '显示 {shown} / {total} 个基线',
+                {shown: visible.length, total: rows.length});
+            body.innerHTML = `
+                <div class="icfg-matrix-scroll">
+                    <table class="icfg-matrix-table">
+                        <thead><tr>
+                            <th class="icfg-matrix-template">${escapeHtml(it('webui.inspection_matrix_template', '模板'))}</th>
+                            ${domains.map(domain => `<th>
+                                <button type="button" class="icfg-matrix-domain ${activeDomain === domain.key ? 'is-active' : ''} ${gapCounts[domain.key] ? '' : 'is-zero'}"
+                                    data-domain-filter="${escapeHtml(domain.key)}"
+                                    title="${escapeHtml(it('webui.inspection_matrix_filter_domain', '只看缺少该标准域的模板'))}">
+                                    <span>${escapeHtml(icfgDomainLabel(domain))}</span><em>${gapCounts[domain.key] || 0}</em>
+                                </button>
+                            </th>`).join('')}
+                            <th>${escapeHtml(it('webui.inspection_matrix_coverage', '覆盖'))}</th>
+                            <th>${escapeHtml(it('webui.inspection_col_actions', '操作'))}</th>
+                        </tr></thead>
+                        <tbody>${visible.map(row => `
+                            <tr class="${row.missing?.length ? 'is-gap' : ''}">
+                                <td class="icfg-matrix-template">
+                                    <span class="icfg-matrix-name">${escapeHtml(row.template_name)}</span>
+                                    <span class="icfg-matrix-meta">${escapeHtml(icfgDbLabel(row.db_type))}${row.version ? ' · ' + escapeHtml(row.version) : ''}</span>
+                                </td>
+                                ${(row.cells || []).map((covered, index) => `<td class="icfg-matrix-cell ${covered ? 'is-covered' : 'is-missing'}"
+                                    title="${escapeHtml(domains[index] ? icfgDomainLabel(domains[index]) : '')}">${covered ? '✓' : '—'}</td>`).join('')}
+                                <td class="icfg-matrix-coverage">${escapeHtml(row.coverage || '')}</td>
+                                <td><button type="button" class="icfg-action" data-matrix-edit="${row.id}">${escapeHtml(it('webui.inspection_edit', '编辑'))}</button></td>
+                            </tr>`).join('') || `<tr><td colspan="${domains.length + 3}" class="icfg-matrix-empty">${escapeHtml(it((activeDomain || gapsOnly)
+                                    ? 'webui.inspection_matrix_no_match' : 'webui.inspection_matrix_no_gaps',
+                                    (activeDomain || gapsOnly) ? '当前筛选无匹配模板' : '没有基线缺口'))}</td></tr>`}</tbody>
+                    </table>
                 </div>
-            </div>`;
-        body.querySelector('[data-matrix-csv]')?.addEventListener('click', () => downloadInspectionGapCsv(matrix));
-        body.querySelectorAll('[data-matrix-close]').forEach(btn => btn.addEventListener('click', close));
+                <div class="icfg-sql-footer">
+                    <span>${escapeHtml(showingText)} · ${escapeHtml(itf('webui.inspection_matrix_gap_count', '{n} 个基线存在缺口', {n: matrix.gap_count || 0}))}</span>
+                    <div>
+                        <button type="button" class="btn btn-sm" aria-pressed="${gapsOnly}" data-matrix-toggle-gaps>${escapeHtml(it(gapsOnly
+                            ? 'webui.inspection_matrix_show_all' : 'webui.inspection_matrix_show_gaps_only',
+                            gapsOnly ? '显示全部' : '仅看缺口'))}</button>
+                        ${activeDomain ? `<button type="button" class="btn btn-sm" data-matrix-clear>${escapeHtml(it('webui.inspection_matrix_clear_filter', '清除筛选'))}</button>` : ''}
+                        <button type="button" class="btn btn-sm" data-matrix-csv>${escapeHtml(it('webui.inspection_export_gaps', '导出缺口 CSV'))}</button>
+                        <button type="button" class="btn btn-sm btn-primary" data-matrix-close>${escapeHtml(it('webui.inspection_close', '关闭'))}</button>
+                    </div>
+                </div>`;
+            body.querySelector('[data-matrix-csv]')?.addEventListener('click', () => downloadInspectionGapCsv(matrix));
+            body.querySelector('[data-matrix-toggle-gaps]')?.addEventListener('click', () => {
+                gapsOnly = !gapsOnly;
+                renderMatrix();
+            });
+            body.querySelector('[data-matrix-clear]')?.addEventListener('click', () => {
+                activeDomain = null;
+                renderMatrix();
+            });
+            body.querySelectorAll('[data-domain-filter]').forEach(btn => btn.addEventListener('click', () => {
+                const key = btn.dataset.domainFilter;
+                activeDomain = activeDomain === key ? null : key;
+                renderMatrix();
+            }));
+            body.querySelectorAll('[data-matrix-edit]').forEach(btn => btn.addEventListener('click', () => {
+                const templateId = Number(btn.dataset.matrixEdit);
+                close();
+                editInspectionTemplate(templateId);
+                window.scrollTo({top: 0, behavior: 'smooth'});
+            }));
+            body.querySelectorAll('[data-matrix-close]').forEach(btn => btn.addEventListener('click', close));
+        };
+        renderMatrix();
     } catch (e) {
         const body = backdrop.querySelector('[data-matrix-body]');
         if (body) body.innerHTML = `<div class="icfg-detail-error">${escapeHtml(e.message || it('webui.inspection_matrix_load_failed', '矩阵加载失败'))}</div>`;
