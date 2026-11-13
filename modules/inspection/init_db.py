@@ -4452,6 +4452,37 @@ YASHANDB_DEFAULT_CHAPTERS = [
 
 
 # Version-specific metadata stays in the existing inspection metric catalog.
+SQLSERVER_LOCK_CHAPTER = {
+    'chapter_number': 18,
+    'chapter_title_zh': '锁与阻塞',
+    'chapter_title_en': 'Lock & Blocking',
+    'description': '当前锁等待、阻塞会话与锁资源（SQL Server 2005+ DMV）',
+    'queries': [{
+        'key': 'sqlserver_lock',
+        'sql': """SELECT TOP 50
+    r.session_id,
+    r.blocking_session_id,
+    r.wait_type,
+    r.wait_time,
+    r.wait_resource,
+    r.status,
+    DB_NAME(r.database_id) AS database_name,
+    s.login_name,
+    s.host_name,
+    SUBSTRING(t.text, (r.statement_start_offset / 2) + 1,
+        ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(t.text)
+          ELSE r.statement_end_offset END - r.statement_start_offset) / 2) + 1) AS current_sql
+FROM sys.dm_exec_requests AS r
+LEFT JOIN sys.dm_exec_sessions AS s ON s.session_id = r.session_id
+OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) AS t
+WHERE r.session_id <> @@SPID
+  AND (r.blocking_session_id <> 0 OR r.wait_type LIKE 'LCK%')
+ORDER BY r.wait_time DESC;""",
+        'desc_zh': '当前锁等待与阻塞会话',
+        'desc_en': 'Current lock waits and blocking sessions',
+    }],
+}
+
 COMPATIBILITY_QUERIES = {'oracle': {'version': "SELECT BANNER FROM V$VERSION WHERE BANNER LIKE 'Oracle%'",
             'instance': 'SELECT INSTANCE_NAME, STATUS, DATABASE_STATUS, STARTUP_TIME FROM V$INSTANCE',
             'sessions': 'SELECT STATUS, COUNT(*) AS CONNECTION_COUNT FROM V$SESSION GROUP BY STATUS',
@@ -4511,7 +4542,8 @@ COMPATIBILITY_QUERIES = {'oracle': {'version': "SELECT BANNER FROM V$VERSION WHE
                              "IS_SRVROLEMEMBER('serveradmin') AS IS_SERVERADMIN, "
                              "IS_SRVROLEMEMBER('dbcreator') AS IS_DBCREATOR, IS_MEMBER('db_owner') AS "
                              "IS_DBOWNER, IS_MEMBER('db_datawriter') AS IS_DATAWRITER, "
-                             "IS_MEMBER('db_ddladmin') AS IS_DDLADMIN"},
+                             "IS_MEMBER('db_ddladmin') AS IS_DDLADMIN",
+               'lock': SQLSERVER_LOCK_CHAPTER['queries'][0]['sql']},
  'dm': {'version': 'SELECT * FROM V$VERSION',
         'instance': 'SELECT * FROM V$INSTANCE',
         'sessions': 'SELECT STATE,COUNT(*) AS CONNECTION_COUNT FROM V$SESSIONS GROUP BY STATE',
@@ -4555,12 +4587,13 @@ def compatibility_chapters(family, version=None):
            'files':'数据文件与容量','archive':'归档与恢复模式','backups':'备份任务',
            'waits':'等待事件','cache':'缓存命中指标','statistics':'统计信息新鲜度',
            'indexes':'索引状态','slow_sql':'慢SQL与执行资源','cluster_nodes':'集群节点',
-           'shared_pool':'共享内存与库缓存','privileges':'巡检账号授权'}
+           'shared_pool':'共享内存与库缓存','privileges':'巡检账号授权','lock':'锁与阻塞'}
+    names_en={'lock':'Lock & Blocking'}
     statements=dict(COMPATIBILITY_QUERIES[family])
     if family=='sqlserver' and version=='2014':
         statements['shared_pool']='SELECT TOP 100 TYPE,PAGES_KB FROM SYS.DM_OS_MEMORY_CLERKS'
-    return [dict(chapter_number=str(number),chapter_title_zh=names[key],chapter_title_en=key,
-                 description=names[key],queries=[dict(key=family+'_'+key,sql=sql,desc_zh=names[key],desc_en=key)])
+    return [dict(chapter_number=str(number),chapter_title_zh=names[key],chapter_title_en=names_en.get(key,key),
+                 description=names[key],queries=[dict(key=family+'_'+key,sql=sql,desc_zh=names[key],desc_en=names_en.get(key,key))])
             for number,(key,sql) in enumerate(statements.items(),1)]
 
 

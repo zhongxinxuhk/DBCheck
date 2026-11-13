@@ -275,6 +275,12 @@ def init_database(db_path: str = None):
     except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
         print(f"[巡检] 日志盘章节补齐失败（已忽略）: {e}")
 
+    # 补齐 SQL Server 2005/2008/2014 预置模板后来新增的锁等待章节。
+    try:
+        ensure_sqlserver_lock_chapters(db_path=db_path)
+    except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
+        print(f"[巡检] SQL Server 锁等待章节补齐失败（已忽略）: {e}")
+
 
     from modules.inspection.business_templates import ensure_business_defaults
     ensure_business_defaults(db_path=db_path)
@@ -2782,6 +2788,70 @@ def ensure_oceanbase_log_disk_chapter(db_path: str = None) -> int:
 
     except Exception as e:  # 降级：补齐失败不阻断启动
         print(f"[巡检] 日志盘章节补齐跳过: {e}")
+        return 0
+
+
+def ensure_sqlserver_lock_chapters(db_path: str = None) -> int:
+    """为已播种的 SQL Server 2005/2008/2014 预置模板补齐「锁与阻塞」章节。
+
+    这些模板在旧版本中固定为 17 章，缺锁等待章节；仅新增章节和查询，
+    不覆盖用户已有章节或 SQL。章节号优先使用 18，被占用时顺延。
+    """
+    try:
+        from modules.inspection.init_db import SQLSERVER_LOCK_CHAPTER
+        query = SQLSERVER_LOCK_CHAPTER['queries'][0]
+        conn = get_db_connection(db_path)
+        try:
+            templates = conn.execute(
+                "SELECT id, version FROM inspection_template "
+                "WHERE db_type='sqlserver' AND is_preset=1 "
+                "AND version IN ('2005','2008','2014') ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+        created = 0
+        for tmpl in templates:
+            tid = tmpl['id']
+            conn = get_db_connection(db_path)
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM inspection_query q "
+                    "JOIN inspection_chapter c ON c.id=q.chapter_id "
+                    "WHERE c.template_id=? AND q.query_key=?",
+                    (tid, query['key']),
+                ).fetchone()
+                if exists:
+                    continue
+                chapter_no = int(SQLSERVER_LOCK_CHAPTER.get('chapter_number') or 18)
+                occupied = conn.execute(
+                    "SELECT 1 FROM inspection_chapter WHERE template_id=? AND chapter_number=?",
+                    (tid, chapter_no),
+                ).fetchone()
+                if occupied:
+                    row = conn.execute(
+                        "SELECT COALESCE(MAX(chapter_number),0) FROM inspection_chapter "
+                        "WHERE template_id=?", (tid,)
+                    ).fetchone()
+                    chapter_no = int(row[0] or 0) + 1
+            finally:
+                conn.close()
+            chapter_id = create_chapter(
+                tid, chapter_no,
+                SQLSERVER_LOCK_CHAPTER['chapter_title_zh'],
+                SQLSERVER_LOCK_CHAPTER.get('chapter_title_en'),
+                SQLSERVER_LOCK_CHAPTER.get('description'),
+                db_path=db_path,
+            )
+            create_query(
+                chapter_id, query['key'], query['sql'],
+                query.get('desc_zh'), query.get('desc_en'),
+                db_path=db_path,
+            )
+            created += 1
+            print(f"[巡检] 已为 SQL Server {tmpl['version']} 模板补齐「锁与阻塞」章节（第 {chapter_no} 章）")
+        return created
+    except Exception as e:
+        print(f"[巡检] SQL Server 锁等待章节补齐跳过: {e}")
         return 0
 
 
