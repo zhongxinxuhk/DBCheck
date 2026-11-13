@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /DBCheck/
+Sitemap: https://zhongxinxuhk.github.io/DBCheck/sitemap.xml

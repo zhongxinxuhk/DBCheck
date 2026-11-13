@@ -1,0 +1,189 @@
+{
+  "releases": [
+    {
+      "tag_name": "v1.0.4",
+      "published_at": "2026-11-13T15:19:27Z",
+      "html_url": "https://github.com/zhongxinxuhk/DBCheck/releases/tag/v1.0.4",
+      "body": "<!-- dbpulse-release-pipeline:v1 -->\n# DBPulse v1.0.4\n\n源提交为 `c28887de98feecd6751410341ddc4cb192f5a021`。迭代范围为 `v1.0.3` 至 `c28887de98fe`。迭代详情按提交标题自动归类。\n\n## 迭代详情\n\n### 新增功能\n\n- feat(inspection): 补齐 MongoDB 错误日志与后台任务章节 ([b4a225e](https://github.com/zhongxinxuhk/DBCheck/commit/b4a225e7d6e4a634e92cb59370c4ba0e17b6f816))\n- feat(inspection): 补齐 DB2 备份安全与 HADR 章节 ([14eac9c](https://github.com/zhongxinxuhk/DBCheck/commit/14eac9cdacfdbb50485806b170e22f76695711e5))\n- feat(inspection): 补齐 Redis 安全与访问控制章节 ([2e3375e](https://github.com/zhongxinxuhk/DBCheck/commit/2e3375ec783d66929a6c1c65c1d0dcf7178edb8b))\n- feat(inspection): 补齐 GBase 8a 锁与高可用章节 ([ef3e1bd](https://github.com/zhongxinxuhk/DBCheck/commit/ef3e1bd3baa32be971eee8b8be892051f38ede33))\n- feat(inspection): 补齐 ClickHouse 备份安全并发与错误日志章节 ([128d838](https://github.com/zhongxinxuhk/DBCheck/commit/128d8386a6ed972fcb18e8da716a682a33c2e42b))\n- feat(inspection): 补齐 DM8 数据守护与集群状态章节 ([a2b28c2](https://github.com/zhongxinxuhk/DBCheck/commit/a2b28c2766e3be7bacc47f46bce23206ed1ad3aa))\n- feat(inspection): 补齐 SQL Server JDBC 模板作业章节 ([9cf4769](https://github.com/zhongxinxuhk/DBCheck/commit/9cf476929638ecb9de442d7560dbc5959cf579ec))\n- feat(inspection): 补齐 SQL Server 兼容模板锁等待章节 ([34840fc](https://github.com/zhongxinxuhk/DBCheck/commit/34840fcceca3a74b535703c64ae18c8d5dab210d))\n- feat(inspection): 巡检配置页适配移动端抽屉与卡片布局 ([8a6cebb](https://github.com/zhongxinxuhk/DBCheck/commit/8a6cebb557fb67d84abeb64dc8e07f6068cae904))\n- feat(inspection): 标准域矩阵支持缺口筛选与模板跳转 ([3f2c346](https://github.com/zhongxinxuhk/DBCheck/commit/3f2c346a048d393658e24a6563972528993a9511))\n- feat(inspection): 增加标准域覆盖矩阵与缺口导出 ([91cf8c3](https://github.com/zhongxinxuhk/DBCheck/commit/91cf8c3936b36918f18743de9668ce4fb34314df))\n- feat(inspection): 支持按当前筛选批量导出模板 ZIP ([fee8e0d](https://github.com/zhongxinxuhk/DBCheck/commit/fee8e0d6cc52478f7c699b3e2c30305cc2d8f5af))\n- feat(inspection): 展开明细支持 SQL 只读预览 ([ee49e5c](https://github.com/zhongxinxuhk/DBCheck/commit/ee49e5c9f0fd44f82e1b20f2c053d3d6989da2a8))\n- feat(inspection): 支持模板另存为与列表设为默认 ([eaa88c1](https://github.com/zhongxinxuhk/DBCheck/commit/eaa88c168e7104bfac0a5c2603dbce5ac0e51407))\n- feat(inspection): 增加标准域覆盖矩阵与基线缺口筛选 ([174b286](https://github.com/zhongxinxuhk/DBCheck/commit/174b286b9550889ff19d3c1c7a27d58ab791369b))\n- feat(inspection): 重构巡检配置模板列表与指标覆盖 ([015313f](https://github.com/zhongxinxuhk/DBCheck/commit/015313fc136e351f836c5ca041eb06eb4385282f))\n- feat(system-info): 重构系统信息页并增加授权与设备激活 ([65fdc76](https://github.com/zhongxinxuhk/DBCheck/commit/65fdc769e270be3c118f60acfa8d63f81843abdf))\n- feat(doc-kb): 扩充六类数据库官方知识库并修正长表布局 ([8133f84](https://github.com/zhongxinxuhk/DBCheck/commit/8133f84c4889e0f711e16e33865413e278c88d1e))\n- feat(reports-ui): 重构数据库巡检历史页筛选与列表体验 ([cc7dee8](https://github.com/zhongxinxuhk/DBCheck/commit/cc7dee819c9760976182e4c26554a79dba99222c))\n- feat(cluster-ui): 集群页页头卡片化并强化添加集群入口 ([50f2627](https://github.com/zhongxinxuhk/DBCheck/commit/50f26279716561093c7009c50ad221c57652b940))\n- feat(batch-ui): 重构多数据源整体巡检的选择与编排界面 ([31318f4](https://github.com/zhongxinxuhk/DBCheck/commit/31318f4ad61cd69c310c67c390eec7e085408130))\n- fix(cluster-ui): 添加集群弹窗恢复视口居中 ([9b48923](https://github.com/zhongxinxuhk/DBCheck/commit/9b489231887a71a51e15b32fe4939cb787dddeca))\n- feat(ui): 引入全局命令面板与高端交互层 ([d7d466f](https://github.com/zhongxinxuhk/DBCheck/commit/d7d466fb6ba1cb3e11e47aad228a06e78cadf142))\n- feat(token-ui): API Key 管理页支持范围、有效期与轮换 ([c34525e](https://github.com/zhongxinxuhk/DBCheck/commit/c34525e060b9366986e597f7420c1b61dec405cf))\n- feat(audit-ui): 新增审计日志页（筛选、分页、详情、CSV 导出、哈希链校验） ([f3ff098](https://github.com/zhongxinxuhk/DBCheck/commit/f3ff0981efe07cda36c685d375691fc9c2ba900d))\n- feat(dr-ui): 容灾备份页接入恢复验证（计划行验证按钮、验证记录与状态摘要） ([579d3ed](https://github.com/zhongxinxuhk/DBCheck/commit/579d3ed857d28d5c3d6849e5729ffec5783eb7e6))\n- feat(api): Prometheus /metrics 与 API Token 管理 ([1c5e5fb](https://github.com/zhongxinxuhk/DBCheck/commit/1c5e5fbc9b4c31674456dbd915f68a8d1d0eeba6))\n- feat(audit): 统一审计事件流（append-only + 哈希链） ([d3eaa18](https://github.com/zhongxinxuhk/DBCheck/commit/d3eaa18e029738c4139076fee95ec7601a96a440))\n- feat(dr): 备份可恢复性验证（Restore Drill） ([6208069](https://github.com/zhongxinxuhk/DBCheck/commit/6208069f7750e156f4a4a16224942f3c45a6c9c5))\n- feat(desktop): 深度美化 Windows 状态窗口 ([5943540](https://github.com/zhongxinxuhk/DBCheck/commit/5943540bb3f8e6d2aeeda7d543a63d7786fea903))\n\n### 功能改动\n\n- perf(inspection): 列表接口按需下发章节与域明细 ([658250c](https://github.com/zhongxinxuhk/DBCheck/commit/658250c764d5486f333d2de06581a9fa7d51256c))\n\n### BUG 修复\n\n- fix(release): publish Windows and Linux packages with iteration details ([c28887d](https://github.com/zhongxinxuhk/DBCheck/commit/c28887de98feecd6751410341ddc4cb192f5a021))\n- fix(ci): 登记审计日志菜单并补齐多语言名称 ([18be6d8](https://github.com/zhongxinxuhk/DBCheck/commit/18be6d8bec2b4632c0db8c102d6124543e789565))\n- fix(ci): 同步模板查询数断言 ([d4835d1](https://github.com/zhongxinxuhk/DBCheck/commit/d4835d1953bc6ec18820139998d6c3b75a064308))\n- fix(ci): 修正系统信息页已移除的 Host 断言 ([67494e9](https://github.com/zhongxinxuhk/DBCheck/commit/67494e94d31bc57d846d2ba84b85093391bc486c))\n- fix(ci): 修复商业授权说明被忽略导致许可证检查失败 ([f5a1303](https://github.com/zhongxinxuhk/DBCheck/commit/f5a1303f2b7dfb50f9cb521e7eeef4ca723dc8c5))\n- fix(inspection): 恢复 enabled 插件的章节筛选与依赖提示 ([3f40e7a](https://github.com/zhongxinxuhk/DBCheck/commit/3f40e7abdc2801327e077637e1bb7c60b3954ea6))\n- fix(inspection): 模板写操作按管理员权限显示 ([90106d0](https://github.com/zhongxinxuhk/DBCheck/commit/90106d03aaa706d504a03230568d172a204eb041))\n- fix(inspection): 补齐配置列表国际化并修正巡检类型语义 ([d7a9d29](https://github.com/zhongxinxuhk/DBCheck/commit/d7a9d295e3501a64f6bd9833b0f1e11871b4aa96))\n- fix(wizard): 修复测试连接未识别 SSH 隧道 ([ec891b0](https://github.com/zhongxinxuhk/DBCheck/commit/ec891b055974c108279fc73321f3562a8d2de114))\n- fix(metrics): 去重 HELP/TYPE 并修正 API Key 校验返回值解包 ([1aac253](https://github.com/zhongxinxuhk/DBCheck/commit/1aac253ddf25bced8dfe375b27aea61162467b94))\n- fix: 修复巡检扫描发现的未定义名与变量遮蔽缺陷 ([eda125b](https://github.com/zhongxinxuhk/DBCheck/commit/eda125b19e6921167c928f56e796b2f42945c8ba))\n- fix(web): 消除 IDE 检查告警，修正 gevent 局部引用与运行期 SQL 误报 ([760ce0d](https://github.com/zhongxinxuhk/DBCheck/commit/760ce0d723ea850af58112a8846a8312d670653c))\n- fix(jdbc): 消除 JPype 虚拟 java 包导致的未解析引用，收紧异常捕获 ([ac07fb7](https://github.com/zhongxinxuhk/DBCheck/commit/ac07fb7eb5472c506f185ebf09978ed789d349f5))\n- fix(core): 消除 IDE 误报的 Python 2.7 兼容性告警与类型推断问题 ([1cfead7](https://github.com/zhongxinxuhk/DBCheck/commit/1cfead71a581e9aa907353b950e53c29ce0f4e77))\n\n### 其他更新\n\n- 自研部分改为 PolyForm Noncommercial 1.0.0 + 商业授权 ([ae8f374](https://github.com/zhongxinxuhk/DBCheck/commit/ae8f374d247eb28b68ee82223b72ccba3c4672aa))\n\n[查看完整变更记录](https://github.com/zhongxinxuhk/DBCheck/compare/94ec3b598e29f2099f60ad36be2192fe2e0de352...c28887de98feecd6751410341ddc4cb192f5a021)\n\n## 安装包与平台\n\n| 安装包 | 适用平台 |\n| --- | --- |\n| `DBPulse-v1.0.4-windows-x86_64.zip` | Windows x64 |\n| `DBPulse-v1.0.4-linux-x86_64.zip` | Linux x64，glibc 2.28 及以上 |\n| `DBPulse-v1.0.4-linux-arm64.zip` | Linux ARM64，glibc 2.28 及以上 |\n| `DBPulse-v1.0.4-Windows-Linux-Portable.zip` | Windows x64、Linux x64 / ARM64 共用便携目录 |\n\n## 安装与升级说明\n\n- Windows 双击 `start.bat`，Linux 执行 `bash start.sh`。\n- 首次安装账号 `admin`，密码 `admin123`。\n- 各平台包含 Java 运行时，共用 data、数据库密码密钥、台账、账号、任务、报告和自定义规则。\n- 升级前停止服务并备份整个原目录，保留 `data/` 与其中的密码密钥。\n- Windows 配置迁移至 Linux 时，停止软件后复制整个 Windows-Linux-Portable 目录，再执行 `bash start.sh`。\n- 下载后使用 `SHA256SUMS.txt` 校验文件。\n\n## 发布验证\n\nWindows x64、Linux x64 和 Linux ARM64 的运行时检查与 Windows 配置迁移验证全部通过后发布。\n",
+      "assets": [
+        {
+          "name": "DBPulse-v1.0.4-linux-arm64.zip",
+          "size": 322866998,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.4/DBPulse-v1.0.4-linux-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.4-linux-x86_64.zip",
+          "size": 341768404,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.4/DBPulse-v1.0.4-linux-x86_64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.4-Windows-Linux-Portable.zip",
+          "size": 641296508,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.4/DBPulse-v1.0.4-Windows-Linux-Portable.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.4-windows-x86_64.zip",
+          "size": 291090784,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.4/DBPulse-v1.0.4-windows-x86_64.zip"
+        },
+        {
+          "name": "release-manifest.json",
+          "size": 1091,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.4/release-manifest.json"
+        },
+        {
+          "name": "SHA256SUMS.txt",
+          "size": 491,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.4/SHA256SUMS.txt"
+        }
+      ]
+    },
+    {
+      "tag_name": "v1.0.3",
+      "published_at": "2026-11-13T00:54:27Z",
+      "html_url": "https://github.com/zhongxinxuhk/DBCheck/releases/tag/v1.0.3",
+      "body": "<!-- dbpulse-release-pipeline:v1 -->\nDBPulse v1.0.3\n\n本版本由推送后的检查与原生编译工作流生成，源提交为 `94ec3b598e29f2099f60ad36be2192fe2e0de352`。\n\n- macOS ARM64、Linux x64 / ARM64、Windows x64 启动包。\n- Windows-Linux-Portable 包包含 Windows x64、Linux x64 和 Linux ARM64 程序。工程师可在 Windows 配置后停止软件，将整个目录复制到 Linux，执行 `bash start.sh`。\n- 所有平台共用 data、数据库密码密钥、台账、账号、任务、报告和自定义规则，包含 Java 运行时。\n- Windows 双击 start.bat，macOS 双击 start.command。首次安装账号 admin，密码 admin123。\n- Linux 要求 glibc 2.28 及以上。SHA256SUMS.txt 提供下载校验值。\n\n四个平台的运行时检查与 Windows 配置迁移验证全部通过后发布。\n",
+      "assets": [
+        {
+          "name": "DBPulse-v1.0.3-linux-arm64.zip",
+          "size": 322700662,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/DBPulse-v1.0.3-linux-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.3-linux-x86_64.zip",
+          "size": 341602712,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/DBPulse-v1.0.3-linux-x86_64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.3-macos-arm64.zip",
+          "size": 302721852,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/DBPulse-v1.0.3-macos-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.3-Windows-Linux-Portable.zip",
+          "size": 640916212,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/DBPulse-v1.0.3-Windows-Linux-Portable.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.3-windows-x86_64.zip",
+          "size": 290912907,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/DBPulse-v1.0.3-windows-x86_64.zip"
+        },
+        {
+          "name": "release-manifest.json",
+          "size": 1313,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/release-manifest.json"
+        },
+        {
+          "name": "SHA256SUMS.txt",
+          "size": 588,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.3/SHA256SUMS.txt"
+        }
+      ]
+    },
+    {
+      "tag_name": "v1.0.2",
+      "published_at": "2026-11-12T08:04:31Z",
+      "html_url": "https://github.com/zhongxinxuhk/DBCheck/releases/tag/v1.0.2",
+      "body": "<!-- dbpulse-release-pipeline:v1 -->\nDBPulse v1.0.2\n\n本版本由推送后的检查与原生编译工作流生成，源提交为 `8cdfb15c3759dac661767f26bd7f66c77084bebe`。\n\n- macOS ARM64、Linux x64 / ARM64、Windows x64 启动包。\n- Windows-Linux-Portable 包包含 Windows x64、Linux x64 和 Linux ARM64 程序。工程师可在 Windows 配置后停止软件，将整个目录复制到 Linux，执行 `bash start.sh`。\n- 所有平台共用 data、数据库密码密钥、台账、账号、任务、报告和自定义规则，包含 Java 运行时。\n- Windows 双击 start.bat，macOS 双击 start.command。首次安装账号 admin，密码 admin123。\n- Linux 要求 glibc 2.28 及以上。SHA256SUMS.txt 提供下载校验值。\n\n四个平台的运行时检查与 Windows 配置迁移验证全部通过后发布。\n",
+      "assets": [
+        {
+          "name": "DBPulse-v1.0.2-linux-arm64.zip",
+          "size": 322698066,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/DBPulse-v1.0.2-linux-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.2-linux-x86_64.zip",
+          "size": 341602625,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/DBPulse-v1.0.2-linux-x86_64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.2-macos-arm64.zip",
+          "size": 302721279,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/DBPulse-v1.0.2-macos-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.2-Windows-Linux-Portable.zip",
+          "size": 640915965,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/DBPulse-v1.0.2-Windows-Linux-Portable.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.2-windows-x86_64.zip",
+          "size": 290915347,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/DBPulse-v1.0.2-windows-x86_64.zip"
+        },
+        {
+          "name": "release-manifest.json",
+          "size": 1313,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/release-manifest.json"
+        },
+        {
+          "name": "SHA256SUMS.txt",
+          "size": 588,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.2/SHA256SUMS.txt"
+        }
+      ]
+    },
+    {
+      "tag_name": "v1.0.1",
+      "published_at": "2026-11-12T05:41:11Z",
+      "html_url": "https://github.com/zhongxinxuhk/DBCheck/releases/tag/v1.0.1",
+      "body": "<!-- dbpulse-release-pipeline:v1 -->\nDBPulse v1.0.1\n\n本版本由推送后的检查与原生编译工作流生成，源提交为 `600eaad8bb59091a9def1252d8d914c5339158ae`。\n\n- macOS ARM64、Linux x64 / ARM64、Windows x64 启动包。\n- Windows-Linux-Portable 包包含 Windows x64、Linux x64 和 Linux ARM64 程序。工程师可在 Windows 配置后停止软件，将整个目录复制到 Linux，执行 `bash start.sh`。\n- 所有平台共用 data、数据库密码密钥、台账、账号、任务、报告和自定义规则，包含 Java 运行时。\n- Windows 双击 start.bat，macOS 双击 start.command。首次安装账号 admin，密码 admin123。\n- Linux 要求 glibc 2.28 及以上。SHA256SUMS.txt 提供下载校验值。\n\n四个平台的运行时检查与 Windows 配置迁移验证全部通过后发布。\n",
+      "assets": [
+        {
+          "name": "DBPulse-v1.0.1-linux-arm64.zip",
+          "size": 322687910,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/DBPulse-v1.0.1-linux-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.1-linux-x86_64.zip",
+          "size": 341588790,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/DBPulse-v1.0.1-linux-x86_64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.1-macos-arm64.zip",
+          "size": 302709505,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/DBPulse-v1.0.1-macos-arm64.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.1-Windows-Linux-Portable.zip",
+          "size": 640897608,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/DBPulse-v1.0.1-Windows-Linux-Portable.zip"
+        },
+        {
+          "name": "DBPulse-v1.0.1-windows-x86_64.zip",
+          "size": 290902316,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/DBPulse-v1.0.1-windows-x86_64.zip"
+        },
+        {
+          "name": "release-manifest.json",
+          "size": 1313,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/release-manifest.json"
+        },
+        {
+          "name": "SHA256SUMS.txt",
+          "size": 588,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v1.0.1/SHA256SUMS.txt"
+        }
+      ]
+    },
+    {
+      "tag_name": "v26.11.5.1",
+      "published_at": "2026-11-09T12:41:46Z",
+      "html_url": "https://github.com/zhongxinxuhk/DBCheck/releases/tag/v26.11.5.1",
+      "body": "**Full Changelog**: https://github.com/zhongxinxuhk/DBCheck/commits/v26.11.5.1\n---\n\n## ✨ 主要更新\n### 新增：运维服务管理模块（资产 · 计划 · SLA · 审批 · 证据）\n\n- 新增 `modules/service_management`：服务资产与标识、周期采集计划、SLA 判定、make-checker 审批流、不可篡改证据链、隔离采集子进程与报表输出。\n- 采集走受控入口：客户数据模式下禁用历史直连巡检入口，改为受控采集 + 审批。\n- 独立子进程执行 JDBC 采集，超时与异常一律 fail-closed，凭据不落日志。\n- 页面：`web_templates/service_management.html` + 配套样式/脚本；`scripts/verify_service_management.py` 覆盖审批、SLA、证据、加密、越权等场景。\n\n### 新增：客户数据安全边界（共用鉴权 · CSRF · 身份一致性）\n\n- 新增 `modules/core/web_security.py` 作为统一边界：会话/JWT/API Key 三种身份、浏览器 CSRF、历史报告租户隔离、公开分享关闭。\n- **身份不一致不再静默降级**：当 `Authorization: Bearer` 指向与签名 Cookie 会话不同的账户（另一个标签页登录了别人、或 localStorage 残留旧 token），以 Cookie 会话为准并回 `X-Auth-Identity-Adjusted`，前端清理残留 token。此前该场景会让整站 API 401、弹窗空白。\n- 前端角色不再只信 session 快照：首页按 `user_id` 实时解析角色，界面权限与后端判定强制一致。\n\n### 移除：强制默认口令轮换\n\n- 删除 `/security/rotate-password` 页面、`/api/auth/skip-password-rotation` 跳过接口、`needs_rotation` 闸门（页面 302 / 接口 428）与「本机激活码」校验。\n- 该机制拦住的只有自己人，没有实际安全收益；口令是否更改交由用户中心自助处理。安装期随机初始口令（16 位下限）保留。\n\n### 修复：PostgreSQL 实例趋势图整块空白\n\n- 现象：历史趋势分析选实例后「关键指标趋势图」一片空白。\n- 根因（三处叠加）：① 指标提取的 PG 分支只认 `postgres`/`postgresql`，而实例表与历史表记录的是 **`pg`**，整段提取被静默跳过；② 连接数按 `used_connections` 取，采集器实际给的是 `total_connections`（7 个连接被记成 0）；③ 前端读 `metrics.risk_count`，后端只把风险数放在顶层 `risk_counts`。\n- 修复：新增 `driver_registry.db_family()` 作为**唯一库族口径**（pg / highgo / hgdb / opengauss / kingbase / ivorysql / vastbase / greenplum / uxdb / halodb → `postgresql`；mysql / mariadb / tdsqlc_mysql → `mysql`），指标提取、skill 自包含副本均改为按库族分派，避免同类问题在其它国产库上重复出现。\n\n### 改进：趋势数据「缺什么就说缺什么」\n\n- 未采集一律写 `NULL` 而非 `0`——0 会被当成「真的 0%」，是误导。\n- `get_trend` 不再把 NULL 折成 0，过滤条件改为「是否真的采到」；补齐 `risk_count` 指标。\n- 绘图支持单点、零方差（Y 轴留白 + 数值标注）与缺测断线；缺测指标在页面逐项说明依赖（主机侧需 SSH 采集 / 连接类需统计视图权限）与补齐方式，不再用一块空白卡片糊过去。\n\n### 改进：品牌与界面\n\n- 统一 DBPulse 商标（横版 / 方形 / 浅色版）与 9 语言文案。\n- **标签页图标重绘**：原图标是「圆角砖 + 大 D + 数据库圆柱 + 心跳线 + 盾牌」的精细插画，16×16 下糊成一团。改为小尺寸专用标记（品牌蓝圆角砖 + 白色心跳线），`favicon.ico` 含 16/32/48/64/128 五档，新增 256 PNG 与 180 apple-touch-icon；8 个页面统一 icon 声明。\n- 监控大屏顶栏改用横版 logo 并对齐顶栏高度，背景加入克制的光晕/网格/流光动效（遵守 `prefers-reduced-motion`）。\n\n### 其它\n\n- i18n 9 语言同步；新增 `docs/database-compatibility.md`、`modules/db_types/compatibility.py`、GBase 8A 入口。\n- 构建 spec、依赖清单与校验脚本同步更新；`.gitignore` 收敛运行期产物（`*-shm` / `*-wal` / `*.bak-*` / `history.db` / 私有素材）。\n\n### 修复：模板章节号与报告不一致（OceanBase 独有）\n\n- 现象（用户反馈）：OceanBase 巡检报告里「日志盘容量」显示为**第 18 章**，而模板管理页是**第 22 章**，怀疑巡检没按模板执行。\n- 根因：报告渲染会把**空章节剔除后连续重排章节号**（`inspection_engine` 的 `if not queries: continue` + 重排 1..N，注释原话「报告中章节序号必须连续」）。OceanBase 模板继承自 MySQL 骨架，当年只删了查询、留下 4 个章节壳，其查询数均为 0：\n  - 第 4 章 性能分析（OB 无对应状态变量）\n  - 第 7 章 复制状态检查（OB 分布式无主从）\n  - 第 13 章 索引使用情况（OB 不支持 performance_schema）\n  - 第 14 章 主从复制延迟（OB 无主从）\n  - 于是模板 22 章 → 报告 18 章。**其余 22 种库型的模板均无空章节，编号天然一致**，故只有 OB 暴露此问题。\n- 修复（`init_db.py`）：内置 OB 模板**删除这 4 个空壳章节并重排为 1..17**，日志盘容量固定为**第 18 章**，模板与报告逐章对齐。\n- 存量库迁移（`dal.py::ensure_oceanbase_no_empty_chapters`，启动时自动执行）：\n  - 只删「**查询数为 0 且标题命中 `OCEANBASE_PRUNABLE_CHAPTER_TITLES` 白名单**」的章节，**用户自建的空章节一律不动**。\n  - 章节号重排用**两阶段更新**（先全部挪到临时号段再写回），避开 `UNIQUE(template_id, chapter_number)` 约束冲突。\n  - 覆盖该库型下所有 OB 模板（含用户复制的副本），幂等，失败仅告警不影响启动。\n  - 调用顺序排在日志盘章节补齐（`ensure_oceanbase_log_disk_chapter`）之前，保证新章落到第 18 章。\n\n### 修复：模板页查询显示占位 SQL\n\n- 现象（用户反馈）：模板管理页里日志盘三个查询全是 `SELECT 'N/A' AS note FROM DUAL WHERE 1=0`（实测数据本身是真实采集的，只是模板页 SQL 与执行的 SQL 不一致）。\n- 根因：v26.11.5.0 初版为集中处理 OB 版本差异，把真实 SQL 只放在采集钩子里，模板章节里播种的是占位符。\n- 修复：模板章节改存**真实 SQL**（模板页所见即实际执行）；采集钩子改为**条件注入**——仅当该 key 缺失（老库未迁移）或仍是旧占位 SQL 时注入，**用户在 UI 改过的 SQL 以用户为准、不再覆盖**。\n- 存量库迁移：`ensure_oceanbase_log_disk_chapter` 增加占位迁移，把仍是占位的行**逐 key 原位更新**为真实 SQL，用户改过的不动，且不重复插入章节。\n\n### 验证\n\n- `scripts/verify_oceanbase_log_disk.py` 扩至 **87 项断言**，全通过：模板无空章节、章节号连续 1..N、日志盘=末章（18）、老库 22→18 迁移、二次调用幂等、**用户自建空章节被保留**、章节存真实 SQL、钩子兜底注入、占位迁移幂等且不覆盖用户修改。\n- 三步验证：`compileall` EXIT=0；`import modules.web.app` OK；`discover_plugins()` = 12；OB 规则 16 条（含 `ob_log_disk` 4 条）。\n- 本机 `data/inspection.db` 实况：18 章、编号连续、0 空章节、末章为日志盘容量。\n\n## 🐳 Docker 镜像\n\nGitHub Container Registry：\n\n```bash\ndocker pull ghcr.io/zhongxinxuhk/dbpulse:26.11.5.1\ndocker pull ghcr.io/zhongxinxuhk/dbpulse:latest\n```\n\n运行示例：\n\n```bash\ndocker run -d -p 5003:5003 --name dbpulse ghcr.io/zhongxinxuhk/dbpulse:26.11.5.1\n```\n\n> 镜像同时支持 `linux/amd64` 与 `linux/arm64`（ARM64 信创主机）。\n\n## ⚠️ 安装注意事项\n- **macOS**：当前分发包**未做 Apple 公证（二进制未签名）**。首次打开若被 Gatekeeper 拦截，请右键点击 App / 可执行文件 →「打开」并在弹窗中确认即可运行；如需彻底消除提示，后续可接入 Apple 开发者证书做正式公证。\n- **Windows**：解压后双击 `start.bat` 启动，浏览器访问 http://localhost:5003 。\n- **Linux**：客户端安装包暂未发布，当前仅提供 Windows / macOS 安装包；Linux 用户请直接使用上方 Docker 镜像。\n\n## 📦 二进制包\n下方 Assets 提供 Windows / macOS 客户端压缩包；需要源码编译的请下载 `Source code`。\n",
+      "assets": [
+        {
+          "name": "DBPulse-macOS-x86_64-v26.11.5.1.tar.gz",
+          "size": 211164899,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v26.11.5.1/DBPulse-macOS-x86_64-v26.11.5.1.tar.gz"
+        },
+        {
+          "name": "DBPulse-Windows-x86_64-v26.11.5.1.zip",
+          "size": 214131078,
+          "browser_download_url": "https://github.com/zhongxinxuhk/DBCheck/releases/download/v26.11.5.1/DBPulse-Windows-x86_64-v26.11.5.1.zip"
+        }
+      ]
+    }
+  ]
+}
