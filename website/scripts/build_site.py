@@ -122,7 +122,7 @@ def shell(page, title, description, content, latest, base):
 <title>{esc(title)} · DBPulse</title><meta name="description" content="{esc(description)}">
 <meta name="theme-color" content="#0b1114"><link rel="canonical" href="{canonical}">
 <meta property="og:type" content="website"><meta property="og:title" content="{esc(title)} · DBPulse"><meta property="og:description" content="{esc(description)}"><meta property="og:url" content="{canonical}">
-<link rel="stylesheet" href="{link('assets/site.css')}"><link rel="icon" href="{link('assets/logo-light.png')}" type="image/png">
+<link rel="stylesheet" href="{link('assets/site.css')}"><link rel="icon" href="{link('assets/favicon.png')}" type="image/png">
 <script src="{link('assets/site.js')}" defer></script>
 </head>
 <body data-page="{page}" data-base="{base}">
