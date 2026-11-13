@@ -282,6 +282,44 @@ class RedisCommonMixin:
             self.context['redis_config'] = [{'PARAM_NAME': 'requirepass', 'PARAM_VALUE': ''}]
 
     # ──────────────────────────────────────────────
+    # 采集：安全与访问控制
+    # ──────────────────────────────────────────────
+    def _collect_security(self):
+        """采集认证与访问控制状态；密码和 ACL 哈希只返回是否设置。"""
+        rows = []
+        try:
+            cfg = self.client.config_get('*')
+            requirepass = cfg.get('requirepass', '')
+            rows.extend([
+                {'ITEM': 'requirepass', 'VALUE': '******' if requirepass else '未设置'},
+                {'ITEM': 'protected-mode', 'VALUE': cfg.get('protected-mode', '')},
+                {'ITEM': 'bind', 'VALUE': cfg.get('bind', '')},
+                {'ITEM': 'aclfile', 'VALUE': cfg.get('aclfile', '') or '未配置'},
+            ])
+        except Exception as e:
+            rows.append({'ITEM': 'CONFIG', 'VALUE': f'读取失败: {str(e)[:160]}'})
+
+        try:
+            acl = self.client.execute_command('ACL', 'LIST')
+            if isinstance(acl, (bytes, str)):
+                acl = [acl]
+            for line in acl or []:
+                text = line.decode('utf-8', 'replace') if isinstance(line, bytes) else str(line)
+                parts = text.split()
+                if len(parts) < 2 or parts[0] != 'user':
+                    continue
+                flags = set(parts[2:])
+                rows.append({
+                    'ITEM': f'ACL 用户 {parts[1]}',
+                    'VALUE': ('已启用' if 'on' in flags else '已禁用') +
+                             (' / 免密' if 'nopass' in flags else ' / 已设置口令'),
+                })
+        except Exception as e:
+            rows.append({'ITEM': 'ACL', 'VALUE': f'当前版本不支持或读取失败: {str(e)[:120]}'})
+
+        self.context['redis_security'] = rows
+
+    # ──────────────────────────────────────────────
     # 集群采集（仅 redis-cluster 调用）
     # ──────────────────────────────────────────────
     def _collect_cluster(self):

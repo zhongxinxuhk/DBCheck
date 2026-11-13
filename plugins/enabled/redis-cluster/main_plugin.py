@@ -52,9 +52,8 @@ class RedisClusterInspector(RedisCommonMixin, BaseInspectionEngine):
     """Redis 集群巡检器。"""
 
     def __init__(self, host, port, user=None, password=None, database=None,
-                 ssh_info=None, template_id=None, chapter_ids=None):
-        super().__init__(host, port, user, password, database, ssh_info, template_id,
-                         chapter_ids=chapter_ids)
+                 ssh_info=None, template_id=None):
+        super().__init__(host, port, user, password, database, ssh_info, template_id)
         self.db_type = 'redis-cluster'
         self._tag = 'RedisCluster'
         self.client = None
@@ -97,12 +96,6 @@ class RedisClusterInspector(RedisCommonMixin, BaseInspectionEngine):
         try:
             import redis
             from redis.cluster import RedisCluster, ClusterNode
-        except ModuleNotFoundError:
-            _msg = ("缺少依赖 redis（redis-py）。请先安装：pip install \"redis>=5.0.0\"；"
-                    "若运行的是打包版 DBCheck，请使用已包含 redis 的安装包（构建配置已修复）。")
-            print(f"[{self._tag}] 连接失败: {_msg}")
-            return False, _msg
-        try:
             seeds = self._seed_nodes_list() or [{'host': self.host, 'port': int(self.port) or 6379}]
             # redis-py >=5 接受 dict 列表，>=8 要求 ClusterNode 实例；统一包装以兼容两版本
             startup = [ClusterNode(host=d['host'], port=d['port']) for d in seeds]
@@ -158,10 +151,6 @@ class RedisClusterInspector(RedisCommonMixin, BaseInspectionEngine):
     # 模板 / 章节（兜底）
     # ════════════════════════════════════════════════
     def _load_chapters_from_db(self):
-        # 说明：章节来自本地 sql_templates.json（非 inspection.db），无 DB id 字段，
-        # 无法用 build_chapter_filter_sql 的 SQL 片段过滤。最终报告章节由基类
-        # _render_context -> get_chapters_by_template(chapter_ids=self.chapter_ids)
-        # 统一过滤（固定四章另行追加），「章节可选」经继承链路生效，无需注入 SQL。
         try:
             tp = Path(__file__).parent / 'sql_templates.json'
             if not tp.exists():
@@ -237,6 +226,7 @@ class RedisClusterInspector(RedisCommonMixin, BaseInspectionEngine):
                 ('_collect_cluster', '集群状态'),
                 ('_collect_slowlog', '慢查询'),
                 ('_check_baselines', '配置基线'),
+                ('_collect_security', '安全与访问控制'),
             ]
             total = len(steps) + 1
             for i, (method, label) in enumerate(steps, 1):

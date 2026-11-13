@@ -181,6 +181,21 @@
           "category": "security"
         }
       ]
+    },
+    {
+      "chapter_number": 14,
+      "chapter_title_zh": "安全与访问控制",
+      "chapter_title_en": "Security & Access Control",
+      "description": "认证方式、ACL 用户与访问控制配置（密码仅显示是否设置）",
+      "queries": [
+        {
+          "key": "redis_security",
+          "desc_zh": "认证与访问控制（requirepass / ACL / protected-mode / bind）",
+          "desc_en": "Authentication and access control (requirepass / ACL / protected-mode / bind)",
+          "command": "CONFIG GET requirepass; ACL LIST; CONFIG GET protected-mode; CONFIG GET bind",
+          "category": "security"
+        }
+      ]
     }
   ]
 }
