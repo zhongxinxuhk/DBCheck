@@ -5556,6 +5556,42 @@ def api_list_icfg_templates():
         return jsonify({'success': False, 'message': str(e)})
 
 
+@app.route('/api/inspection/domain-matrix', methods=['GET'])
+def api_inspection_domain_matrix():
+    """通用基线的标准域覆盖矩阵（模板 × 标准域），用于逐库补缺口。"""
+    try:
+        rows = get_template_catalog(include_chapter_summary=False)
+        baseline = [row for row in rows if row.get('category') == 'baseline']
+        domains = [
+            {'key': item['key'], 'label': item['label']}
+            for item in (baseline[0].get('standard_domains', []) if baseline else [])
+        ]
+        data = []
+        for row in baseline:
+            covered = {item['key'] for item in row.get('standard_domains', []) if item['covered']}
+            missing = [domain['key'] for domain in domains if domain['key'] not in covered]
+            data.append({
+                'id': row['id'],
+                'db_type': row.get('db_type'),
+                'template_name': row.get('template_name'),
+                'version': row.get('version'),
+                'coverage': row.get('standard_coverage'),
+                'covered': row.get('covered_domain_count', 0),
+                'total': row.get('standard_domain_count', len(domains)),
+                'cells': [1 if domain['key'] in covered else 0 for domain in domains],
+                'missing': missing,
+                'missing_labels': [item['label'] for item in row.get('standard_domains', [])
+                                   if not item['covered']],
+            })
+        return jsonify({'success': True, 'data': {
+            'domains': domains,
+            'rows': data,
+            'gap_count': sum(1 for row in data if row['missing']),
+        }})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
 @app.route('/api/inspection/templates/<int:tid>/coverage', methods=['GET'])
 def api_get_icfg_template_coverage(tid):
     """模板完整章节与指标明细（列表页展开时按需加载）。"""
