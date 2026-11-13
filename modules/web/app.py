@@ -3607,6 +3607,15 @@ def _dispatch_conn_test(db_type, data, flavor):
     return _plugin_conn_fallback(data, flavor)
 
 
+def _as_bool_flag(value):
+    """把前端/SQLite 传来的 1/'1'/'true' 等统一成布尔值。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return bool(value)
+
+
 def _conn_test_with_timeout(db_type, data, flavor, timeout=None):
     """在独立 OS 线程中执行连接测试，规避 C 层 DB 驱动（oracledb / dmPython /
     psycopg2 / pyodbc）在 gevent 模式下阻塞事件循环 hub，导致响应写不回、
@@ -3630,34 +3639,68 @@ def _conn_test_with_timeout(db_type, data, flavor, timeout=None):
     def _runner():
         _tnl = None
         try:
-            # 配置了 SSH 时，「测试连接」同样要经跳板：否则数据库只监听远端
-            # 127.0.0.1 的场景下测试永远失败，而实际巡检（走隧道）却能成功。
+            # 配置了 SSH 隧道时，「测试连接」必须与巡检一样经跳板：否则
+            # 数据库只监听远端 127.0.0.1 的场景下测试永远失败，而实际巡检
+            # （走隧道）却能成功。开关值兼容 true/1/'1'/'true' 等旧格式。
             _data = data
-            if data.get('ssh_host') and data.get('ssh_tunnel', False):
+            _ssh_host = str(data.get('ssh_host') or '').strip()
+            _ssh_tunnel = _as_bool_flag(data.get('ssh_tunnel', False))
+            if _ssh_tunnel and not _ssh_host:
+                result['value'] = {
+                    'ok': False,
+                    'error': '已启用 SSH 隧道，但未配置 SSH 主机地址',
+                }
+                return
+            if _ssh_host and _ssh_tunnel:
                 from modules.ssh import open_db_tunnel
-                _opened = open_db_tunnel({
-                    'ip': data.get('host'), 'port': data.get('port'),
-                    'ssh_host': data.get('ssh_host'),
-                    'ssh_port': data.get('ssh_port', 22),
-                    'ssh_user': data.get('ssh_user', 'root'),
-                    'ssh_password': data.get('ssh_password', ''),
-                    'ssh_key_file': data.get('ssh_key_file', ''),
-                    'ssh_key_password': data.get('ssh_key_password', ''),
-                }, log=lambda m: None)
-                if _opened:
-                    _tnl, _lh, _lp = _opened
-                    _data = dict(data)
-                    _data['host'] = _lh
-                    _data['port'] = _lp
-                    # 端点已换成本机转发端口 —— 必须显式标记，否则下游
-                    # compatibility.needs_own_tunnel / clickhouse_jdbc 会把
-                    # 127.0.0.1:转发端口当成 SSH 主机上的真实地址，再建一条
-                    # 指向 SSH 主机自身该端口的隧道（远端无服务）→ 必失败。
-                    _data['_tunnel_ready'] = True
-                    _data['ssh_tunnel'] = False
+                _tunnel_logs = []
+                try:
+                    _opened = open_db_tunnel({
+                        'ip': data.get('host'), 'port': data.get('port'),
+                        'ssh_host': _ssh_host,
+                        'ssh_port': data.get('ssh_port', 22),
+                        'ssh_user': data.get('ssh_user', 'root'),
+                        'ssh_password': data.get('ssh_password', ''),
+                        'ssh_key_file': data.get('ssh_key_file', ''),
+                        'ssh_key_password': data.get('ssh_key_password', ''),
+                    }, log=lambda m: _tunnel_logs.append(str(m)))
+                except Exception as tunnel_error:  # noqa: BLE001
+                    # 绝不回退直连：那只会把 SSH 认证/网络失败伪装成
+                    # 「127.0.0.1:5432 Connection refused」，误导用户去查数据库。
+                    result['value'] = {
+                        'ok': False,
+                        'error': 'SSH 隧道建立失败（%s:%s）：%s: %s' % (
+                            _ssh_host, data.get('ssh_port', 22),
+                            type(tunnel_error).__name__, tunnel_error,
+                        ),
+                        'ssh_tunnel_failed': True,
+                    }
+                    return
+                if not _opened:
+                    result['value'] = {
+                        'ok': False,
+                        'error': 'SSH 隧道建立失败：未返回本地转发端点',
+                        'ssh_tunnel_failed': True,
+                    }
+                    return
+                _tnl, _lh, _lp = _opened
+                _data = dict(data)
+                _data['host'] = _lh
+                _data['port'] = _lp
+                # 端点已换成本机转发端口 —— 必须显式标记，否则下游
+                # compatibility.needs_own_tunnel / clickhouse_jdbc 会把
+                # 127.0.0.1:转发端口当成 SSH 主机上的真实地址，再建一条
+                # 指向 SSH 主机自身该端口的隧道（远端无服务）→ 必失败。
+                _data['_tunnel_ready'] = True
+                _data['ssh_tunnel'] = False
             r = _dispatch_conn_test(db_type, _data, flavor)
-            result['value'] = r if r is not None else {
-                'ok': False, 'error': f'不支持的数据库类型: {db_type}'}
+            if r is None:
+                r = {'ok': False, 'error': f'不支持的数据库类型: {db_type}'}
+            if _tnl is not None and isinstance(r, dict):
+                r = dict(r)
+                r['via_ssh_tunnel'] = True
+                r['ssh_tunnel_target'] = '%s:%s' % (_ssh_host, data.get('ssh_port', 22))
+            result['value'] = r
         except Exception as e:  # noqa: BLE001 - 连接测试异常需转成前端可读错误
             result['value'] = {'ok': False, 'error': str(e)}
         finally:
