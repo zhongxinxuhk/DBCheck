@@ -127,11 +127,13 @@ function filterInspectionTemplateState() {
     const db = document.getElementById('inspection-filter-db');
     const category = document.getElementById('inspection-filter-category');
     const cycle = document.getElementById('inspection-filter-cycle');
+    const gap = document.getElementById('inspection-filter-gap');
     return {
         words: (input?.value || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean),
         dbType: db?.value || '',
         category: category?.value || '',
-        cycle: cycle?.value || ''
+        cycle: cycle?.value || '',
+        gap: gap?.value || ''
     };
 }
 
@@ -146,7 +148,10 @@ function applyInspectionTemplateFilters() {
         const match = state.words.every(word => searchText.includes(word))
             && (!state.dbType || row.dataset.dbType === state.dbType)
             && (!state.category || row.dataset.category === state.category)
-            && (!state.cycle || row.dataset.cycle === state.cycle);
+            && (!state.cycle || row.dataset.cycle === state.cycle)
+            && (!state.gap || (state.gap === 'gap'
+                ? row.dataset.baselineGap === '1'
+                : row.dataset.domainFull === '1'));
         row.hidden = !match;
         if (match) count++;
         if (!match) {
@@ -171,7 +176,8 @@ function applyInspectionTemplateFilters() {
 }
 
 function resetInspectionTemplateFilters() {
-    ['inspection-template-search', 'inspection-filter-db', 'inspection-filter-category', 'inspection-filter-cycle']
+    ['inspection-template-search', 'inspection-filter-db', 'inspection-filter-category',
+     'inspection-filter-cycle', 'inspection-filter-gap']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     filterInspectionConfig('template');
     document.getElementById('inspection-template-search')?.focus();
@@ -208,16 +214,27 @@ function populateInspectionTemplateFilters(templates) {
 }
 
 function inspectionTemplateStatus(t) {
+    const domainTotal = Number(t.standard_domain_count) || 0;
+    const domainCovered = Number(t.covered_domain_count) || 0;
+    const isBaseline = t.category === 'baseline';
+    const hasGap = isBaseline && domainTotal > 0 && domainCovered < domainTotal;
+    const domainTone = !hasGap
+        ? (isBaseline ? 'ok' : 'special')
+        : (domainCovered >= Math.ceil(domainTotal * 0.75) ? 'mixed' : 'warn');
+    const domainBadge = domainTotal
+        ? `<span class="icfg-domain icfg-domain--${domainTone}">标准域 ${domainCovered}/${domainTotal}</span>`
+        : '';
+    let modeBadge;
     if (t.empty_chapter_count > 0) {
-        return `<span class="icfg-status icfg-status--warn">${t.empty_chapter_count} 个空章节</span>`;
+        modeBadge = `<span class="icfg-status icfg-status--warn">${t.empty_chapter_count} 个空章节</span>`;
+    } else if (t.manual_only_chapter_count > 0) {
+        modeBadge = `<span class="icfg-status icfg-status--manual">${t.manual_only_chapter_count} 个主机采集章节</span>`;
+    } else if (t.manual_count > 0) {
+        modeBadge = '<span class="icfg-status icfg-status--mixed">SQL + 主机采集</span>';
+    } else {
+        modeBadge = '<span class="icfg-status icfg-status--ok">SQL 全覆盖</span>';
     }
-    if (t.manual_only_chapter_count > 0) {
-        return `<span class="icfg-status icfg-status--manual">${t.manual_only_chapter_count} 个主机采集章节</span>`;
-    }
-    if (t.manual_count > 0) {
-        return '<span class="icfg-status icfg-status--mixed">SQL + 主机采集</span>';
-    }
-    return '<span class="icfg-status icfg-status--ok">SQL 全覆盖</span>';
+    return `<span class="icfg-status-stack">${domainBadge}${modeBadge}</span>`;
 }
 
 function renderInspectionTemplateRow(t) {
@@ -260,6 +277,8 @@ function renderInspectionTemplateRow(t) {
     return `
     <tr class="icfg-row" data-template-id="${t.id}" data-db-type="${escapeHtml(t.db_type || '')}"
         data-category="${escapeHtml(t.category || '')}" data-cycle="${escapeHtml(t.cycle || '')}"
+        data-baseline-gap="${t.has_baseline_gap ? '1' : '0'}"
+        data-domain-full="${(Number(t.covered_domain_count) || 0) >= (Number(t.standard_domain_count) || 0) && Number(t.standard_domain_count) ? '1' : '0'}"
         data-search-text="${escapeHtml(searchText)}" tabindex="0" aria-expanded="false"
         aria-controls="${detailId}">
         <td class="icfg-col-template">
@@ -310,6 +329,8 @@ function renderInspectionTemplateList(templates) {
     container.innerHTML = inspectionTemplateCatalog.map(renderInspectionTemplateRow).join('');
     const business = inspectionTemplateCatalog.filter(t => t.business).length;
     const chapterTotal = inspectionTemplateCatalog.reduce((sum, t) => sum + (Number(t.chapter_count) || 0), 0);
+    const baselineCount = inspectionTemplateCatalog.filter(t => t.category === 'baseline').length;
+    const baselineFull = inspectionTemplateCatalog.filter(t => t.category === 'baseline' && !t.has_baseline_gap).length;
     const sqlTotal = inspectionTemplateCatalog.reduce((sum, t) => sum + (Number(t.sql_count) || 0), 0);
     const indicatorTotal = inspectionTemplateCatalog.reduce((sum, t) => sum + (Number(t.indicator_count) || 0), 0);
     const dbTotal = new Set(inspectionTemplateCatalog.map(t => t.db_type)).size;
@@ -322,6 +343,8 @@ function renderInspectionTemplateList(templates) {
             <span class="icfg-summary-chip"><b>${chapterTotal}</b> 个章节</span>
             <span class="icfg-summary-chip"><b>${sqlTotal}</b> 条 SQL</span>
             <span class="icfg-summary-chip"><b>${indicatorTotal}</b> 个检查项</span>
+            <span class="icfg-summary-chip"><b>${baselineCount}</b> 个通用基线 · <b>${baselineFull}</b> 个全覆盖</span>
+            <span class="icfg-summary-chip"><b>${inspectionTemplateCatalog.filter(t => t.has_baseline_gap).length}</b> 个基线缺口</span>
             <span class="icfg-summary-chip icfg-summary-chip--muted">当前显示 <b id="inspection-list-visible-count">${inspectionTemplateCatalog.length}</b> 个</span>`;
     }
     applyInspectionTemplateFilters();
@@ -378,6 +401,17 @@ function renderInspectionTemplateCoverage(t) {
             <span><b>${sqlTotal}</b> 条 SQL 自动采集</span>
             <span><b>${manualTotal}</b> 项主机/命令行采集</span>
             <span><b>${t.indicator_count || 0}</b> 个检查项</span>
+            <span><b>${t.standard_coverage || '0/0'}</b> 标准域覆盖</span>
+        </div>
+        <div class="icfg-domain-panel">
+            <div class="icfg-domain-panel-head">
+                <span>${t.category === 'baseline' ? '标准巡检域' : '巡检域（专项按场景裁剪）'}</span>
+                <span class="icfg-domain-hint">${t.missing_domains?.length
+                    ? (t.category === 'baseline' ? '缺口：' : '未纳入：') + t.missing_domains.map(escapeHtml).join('、')
+                    : '全部覆盖'}</span>
+            </div>
+            <div class="icfg-domain-list">${(t.standard_domains || []).map(domain =>
+                `<span class="icfg-domain-chip ${domain.covered ? 'is-covered' : (t.category === 'baseline' ? 'is-missing' : 'is-special')}">${escapeHtml(domain.label)}</span>`).join('')}</div>
         </div>`;
     if (!chapters.length) {
         return html + '<div class="icfg-detail-error">该模板暂无启用章节。</div>';

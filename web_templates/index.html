@@ -11873,8 +11873,13 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                     <option value="business">业务专项</option>
                     <option value="custom">自定义</option>
                   </select>
-                  <select id="inspection-filter-cycle" class="form-input inspection-filter-select" aria-label="按巡检周期筛选" onchange="filterInspectionConfig('template')">
-                    <option value="">全部周期</option>
+                  <select id="inspection-filter-cycle" class="form-input inspection-filter-select" aria-label="按巡检类型筛选" onchange="filterInspectionConfig('template')">
+                    <option value="">全部类型</option>
+                  </select>
+                  <select id="inspection-filter-gap" class="form-input inspection-filter-select" aria-label="按标准域覆盖筛选" onchange="filterInspectionConfig('template')">
+                    <option value="">全部覆盖度</option>
+                    <option value="gap">仅看通用基线缺口</option>
+                    <option value="full">标准域全覆盖（全部模板）</option>
                   </select>
                   <button type="button" class="btn btn-sm" onclick="resetInspectionTemplateFilters()">重置</button>
                   <button type="button" class="btn btn-sm" onclick="clearInspectionConfigSearch('template')">清空搜索</button>
@@ -11893,7 +11898,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
                       <th class="icfg-col-type">类别 / 周期</th>
                       <th class="icfg-col-num">章节</th>
                       <th class="icfg-col-coverage">检查项覆盖</th>
-                      <th class="icfg-col-status">状态</th>
+                      <th class="icfg-col-status">标准域 / 状态</th>
                       <th class="icfg-col-actions">操作</th>
                     </tr>
                   </thead>
