@@ -36,7 +36,8 @@ def main():
     # 系统信息页只展示版本及运行信息。
     for removed in ('sysInfoUpdCardX1', 'sysInfoLogoCardX1', 'sysInfoOssCardX1', 'system-update-link', 'sysinfo-announce-list'):
         assert removed not in template, removed
-    assert 'id="sysinfo-lang"' in template and 'id="sysinfo-host"' in template
+    # Host 行已在系统信息页重构时移除，仅保留当前页面存在的语言字段作为校验锚点。
+    assert 'id="sysinfo-lang"' in template
     assert 'GitHub Releases →' not in template
     visible_template = template.split('-->', 1)[-1]
     assert 'about-credit-row' not in visible_template or 'aboutCreditUpstreamX1' not in visible_template
