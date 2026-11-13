@@ -1630,9 +1630,12 @@ def import_template(template_config: Dict, db_path: str = None,
 
         # 创建新模板
         cursor.execute("""
-            INSERT INTO inspection_template (db_type, template_name_zh, version, description, is_default, is_preset)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (db_type, template_name, version,
+            INSERT INTO inspection_template
+                (db_type, template_name_zh, template_name_en, version, description, is_default, is_preset)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (db_type, template_name,
+              template_config.get('template_name_en'),
+              version,
               template_config.get('description'),
               is_default_val,
               0))  # is_preset 强制为 0，导入的模板一律非预置，确保可删除
@@ -1699,6 +1702,30 @@ def import_template(template_config: Dict, db_path: str = None,
         raise e
     finally:
         conn.close()
+
+
+def clone_template(template_id: int, template_name: str = None,
+                   version: str = None, db_path: str = None) -> int:
+    """把现有模板（含预置模板）复制为一个新的非预置模板。
+
+    预置模板不能改名，因此“基于预置模板做一套自己的模板”不能走编辑，
+    只能复制。这里复用 export/import，保证章节、SQL、排序和启用状态
+    完整迁移；新模板永远不会继承 is_default。
+    """
+    name = (template_name or '').strip()
+    if not name:
+        raise ValueError('模板名称不能为空')
+    if len(name) > 200:
+        raise ValueError('模板名称不能超过 200 个字符')
+
+    config = export_template(template_id, db_path=db_path)
+    source_name_en = (config.get('template_name_en') or '').strip()
+    config['template_name'] = name
+    config['template_name_en'] = f'{source_name_en} Copy'.strip() if source_name_en else name
+    if version:
+        config['version'] = version
+    config['is_default'] = 0
+    return import_template(config, db_path=db_path)
 
 
 # ==================== 辅助函数 ====================
