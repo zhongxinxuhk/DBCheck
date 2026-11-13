@@ -55,8 +55,9 @@ class RedisInspector(RedisCommonMixin, BaseInspectionEngine):
     """Redis 单机巡检器。"""
 
     def __init__(self, host, port, user=None, password=None, database=None,
-                 ssh_info=None, template_id=None):
-        super().__init__(host, port, user, password, database, ssh_info, template_id)
+                 ssh_info=None, template_id=None, chapter_ids=None):
+        super().__init__(host, port, user, password, database, ssh_info, template_id,
+                         chapter_ids=chapter_ids)
         self.db_type = 'redis'
         self._tag = 'Redis'
         self.client = None
@@ -68,6 +69,12 @@ class RedisInspector(RedisCommonMixin, BaseInspectionEngine):
         self._acl_warning = ''
         try:
             import redis
+        except ModuleNotFoundError:
+            _msg = ("缺少依赖 redis（redis-py）。请先安装：pip install \"redis>=5.0.0\"；"
+                    "若运行的是打包版 DBCheck，请使用已包含 redis 的安装包（构建配置已修复）。")
+            print(f"[{self._tag}] 连接失败: {_msg}")
+            return False, _msg
+        try:
             _kw = dict(
                 host=self.host,
                 port=int(self.port) or 6379,
@@ -121,6 +128,10 @@ class RedisInspector(RedisCommonMixin, BaseInspectionEngine):
     # 模板 / 章节（兜底：真正报告走 inspection.db 模板）
     # ════════════════════════════════════════════════
     def _load_chapters_from_db(self):
+        # 说明：章节来自本地 sql_templates.json（非 inspection.db），无 DB id 字段，
+        # 无法用 build_chapter_filter_sql 的 SQL 片段过滤。最终报告章节由基类
+        # _render_context -> get_chapters_by_template(chapter_ids=self.chapter_ids)
+        # 统一过滤（固定四章另行追加），「章节可选」经继承链路生效，无需注入 SQL。
         try:
             tp = Path(__file__).parent / 'sql_templates.json'
             if not tp.exists():
