@@ -25,6 +25,7 @@ from modules.core.paths import INSPECTION_DB
 import sqlite3
 import json
 import os
+import re
 import sys
 import shutil
 from datetime import datetime
@@ -379,6 +380,7 @@ def get_all_templates(db_path: str = None) -> List[Dict]:
                    t.template_name_en,
                    t.db_type,
                    t.version,
+                   t.description,
                    t.is_default,
                    t.is_preset,
                    t.created_at,
@@ -395,6 +397,216 @@ def get_all_templates(db_path: str = None) -> List[Dict]:
         
     finally:
         conn.close()
+
+
+
+_BUSINESS_MARKER = '_业务专项巡检_'
+
+# 业务专项 builder 中部分检查项使用字符串 ID 引用；补上中文名，
+# 避免“W16 W16”这类重复 ID 出现在章节说明与前端指标明细中。
+_ITEM_TITLE_ZH = {
+    'W01': '实例运行状态', 'W02': '客户端远程登录可用性',
+    'W03': '实时会话连接数', 'W03b': '缓存/连接容量',
+    'W04': '告警与错误日志', 'W05': '备份任务结果',
+    'W06': '空间与容量水位', 'W07': '备份可用性校验',
+    'W08': '集群节点状态', 'W09': '参数与配置一致性',
+    'W10': '对象有效性与失效索引', 'W11': '逻辑存储空间',
+    'W12': '统计信息新鲜度', 'W13': '作业与定时任务',
+    'W14': '锁与阻塞', 'W15': '慢查询 TOP N',
+    'W16': '等待事件与资源', 'W17': '账号与权限',
+    'W18': '日志与审计留存', 'W19': '数据库基础信息',
+    'W20': '采集时间戳留痕', 'H14': '索引有效性',
+    'H15': '存储过程/触发器/视图有效性', 'H17': '冗余索引与对象治理',
+    'H20': '磁盘空间与 IO', 'H22': '核心等待事件',
+    'H23': 'CPU 使用率', 'H24': '缓冲与共享池命中率',
+    'H25': '备份增量变化', 'H26': '备份窗口稳定性',
+    'H27': '备份可用性验证', 'M01': '参数文件完整性',
+    'M02': '核心元数据文件', 'M06': '存储全量明细',
+    'M07': '容量趋势基线', 'M11': '归档日志完整性',
+    'M12': '参数基线', 'C_NODES': '数据节点',
+    'C_COORD': '协调节点', 'C_MONIT': '集群组件',
+    'C_POOL': '节点资源池', 'C_DISK': '节点存储配额',
+}
+
+
+def _catalog_text(value) -> str:
+    return '' if value is None else str(value).strip()
+
+
+def _manual_indicators(description: str) -> List[Dict]:
+    """从章节说明中解析主机/命令行检查项，供列表与展开明细展示。"""
+    text = _catalog_text(description)
+    match = re.search(r'【(?:主机/命令行|命令行)采集项[^】]*】', text)
+    if not match:
+        return []
+    tail = text[match.end():]
+    tail = tail.split('【', 1)[0]
+    items: List[Dict] = []
+    for line in tail.splitlines():
+        item = re.match(r'^\s*-\s*([A-Za-z][A-Za-z0-9_.-]*)\s*(.*)$', line)
+        if not item:
+            continue
+        item_id = item.group(1)
+        title = item.group(2).strip() or _ITEM_TITLE_ZH.get(item_id, '')
+        if title == item_id:
+            title = _ITEM_TITLE_ZH.get(item_id, '')
+        items.append({
+            'id': item_id,
+            'title': title or '主机/命令行检查项',
+            'mode': 'manual',
+        })
+    if not items:
+        note = ' '.join(line.strip() for line in tail.splitlines() if line.strip())
+        if note:
+            items.append({'id': 'MANUAL', 'title': note[:160], 'mode': 'manual'})
+    return items
+
+
+def _query_indicator(query: Dict) -> Dict:
+    """把 SQL 查询描述规范为「[编号] 名称：说明」结构。"""
+    raw = _catalog_text(query.get('query_description_zh'))
+    item_id = _catalog_text(query.get('query_key'))
+    title, detail = raw, ''
+    hit = re.match(r'^\[([^\]]+)\]\s*(.*)$', raw, re.S)
+    if hit:
+        item_id = hit.group(1).strip()
+        raw = hit.group(2).strip()
+        parts = re.split(r'[：:]', raw, 1)
+        title = parts[0].strip()
+        detail = parts[1].strip() if len(parts) > 1 else ''
+    else:
+        title = _ITEM_TITLE_ZH.get(item_id, raw) or item_id
+    return {
+        'id': item_id,
+        'title': title or _ITEM_TITLE_ZH.get(item_id, item_id),
+        'mode': 'sql',
+        'query_key': _catalog_text(query.get('query_key')),
+        'enabled': 1 if query.get('enabled', 1) else 0,
+        'description': detail,
+    }
+
+
+def _template_category(template: Dict) -> tuple:
+    name = _catalog_text(template.get('template_name'))
+    if _BUSINESS_MARKER in name:
+        return 'business', name.split(_BUSINESS_MARKER, 1)[1] or '业务专项'
+    if template.get('is_preset'):
+        return 'baseline', ''
+    return 'custom', ''
+
+
+def get_template_catalog(db_path: str = None, template_id: int = None,
+                         include_indicators: bool = False) -> List[Dict]:
+    """模板目录：在模板列表上补齐描述、章节摘要与「SQL + 主机」指标覆盖。
+
+    列表页只返回章节级摘要；打开某个模板时才请求 ``include_indicators=True``，
+    避免 80 个模板、1400+ 条 SQL 描述一次性下发。
+    """
+    templates = get_all_templates(db_path)
+    if template_id is not None:
+        templates = [t for t in templates if int(t.get('id', 0)) == int(template_id)]
+    if not templates:
+        return []
+
+    template_ids = [int(t['id']) for t in templates]
+    marks = ','.join('?' * len(template_ids))
+    conn = get_db_connection(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        chapter_rows = conn.execute(f"""
+            SELECT c.id, c.template_id, c.chapter_number, c.chapter_title_zh,
+                   c.chapter_title_en, c.description, c.enabled, c.sort_order
+            FROM inspection_chapter c
+            WHERE c.template_id IN ({marks}) AND c.enabled = 1
+            ORDER BY c.template_id, c.sort_order, c.chapter_number
+        """, tuple(template_ids)).fetchall()
+        query_rows = conn.execute(f"""
+            SELECT q.chapter_id, q.query_key, q.query_description_zh, q.enabled
+            FROM inspection_query q
+            JOIN inspection_chapter c ON c.id = q.chapter_id
+            WHERE c.template_id IN ({marks}) AND c.enabled = 1 AND q.enabled = 1
+            ORDER BY q.chapter_id, q.sort_order, q.query_key
+        """, tuple(template_ids)).fetchall()
+    finally:
+        conn.close()
+
+    chapters_by_template: Dict[int, List[Dict]] = {}
+    for row in chapter_rows:
+        chapter = dict(row)
+        chapter['sql_indicators'] = []
+        chapters_by_template.setdefault(int(chapter['template_id']), []).append(chapter)
+    chapter_map = {int(ch['id']): ch for chs in chapters_by_template.values() for ch in chs}
+    for row in query_rows:
+        chapter = chapter_map.get(int(row['chapter_id']))
+        if chapter is not None:
+            chapter['sql_indicators'].append(_query_indicator(dict(row)))
+
+    result: List[Dict] = []
+    for template in templates:
+        chapters = chapters_by_template.get(int(template['id']), [])
+        chapter_summary: List[Dict] = []
+        manual_total = 0
+        indicator_total = 0
+        empty_chapters = 0
+        manual_only_chapters = 0
+        search_parts = [
+            _catalog_text(template.get('template_name')),
+            _catalog_text(template.get('template_name_en')),
+            _catalog_text(template.get('db_type')),
+            _catalog_text(template.get('version')),
+            _catalog_text(template.get('description')),
+        ]
+        for chapter in chapters:
+            sql_items = chapter.get('sql_indicators', [])
+            sql_ids = {item.get('id') for item in sql_items}
+            manual = [item for item in _manual_indicators(chapter.get('description'))
+                      if item.get('id') not in sql_ids]
+            indicator_count = len(sql_items) + len(manual)
+            search_parts.append(_catalog_text(chapter.get('chapter_title_zh')))
+            search_parts.append(_catalog_text(chapter.get('chapter_title_en')))
+            search_parts.extend(f"{item.get('id', '')} {item.get('title', '')}"
+                                for item in sql_items + manual)
+            manual_total += len(manual)
+            indicator_total += indicator_count
+            if indicator_count == 0:
+                empty_chapters += 1
+            if not sql_items and manual:
+                manual_only_chapters += 1
+            item = {
+                'id': int(chapter['id']),
+                'chapter_number': chapter.get('chapter_number'),
+                'chapter_title': _catalog_text(chapter.get('chapter_title_zh')),
+                'chapter_title_en': _catalog_text(chapter.get('chapter_title_en')),
+                'description': _catalog_text(chapter.get('description')),
+                'sql_count': len(sql_items),
+                'manual_count': len(manual),
+                'indicator_count': indicator_count,
+            }
+            if include_indicators:
+                item['indicators'] = sql_items + manual
+            chapter_summary.append(item)
+
+        category, cycle = _template_category(template)
+        template['category'] = category
+        template['cycle'] = cycle
+        template['business'] = 1 if category == 'business' else 0
+        template['chapter_summary'] = chapter_summary
+        template['sql_count'] = int(template.get('query_count') or 0)
+        template['manual_count'] = manual_total
+        template['indicator_count'] = indicator_total
+        template['empty_chapter_count'] = empty_chapters
+        template['manual_only_chapter_count'] = manual_only_chapters
+        template['coverage_label'] = f'{len(chapter_summary)} 章 / {indicator_total} 项'
+        template['search_text'] = ' '.join(part for part in search_parts if part)
+        result.append(template)
+    return result
+
+
+def get_template_coverage(template_id: int, db_path: str = None) -> Optional[Dict]:
+    """单个模板的完整章节与指标明细（用于列表展开）。"""
+    rows = get_template_catalog(db_path=db_path, template_id=template_id,
+                                include_indicators=True)
+    return rows[0] if rows else None
 
 
 def family_db_types(db_type: str, db_path: str = None) -> List[str]:

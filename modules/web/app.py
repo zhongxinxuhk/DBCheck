@@ -5352,6 +5352,7 @@ def api_start_inspection():
 
 from modules.inspection.dal import (
     get_all_templates, get_template, get_templates_by_db_type,
+    get_template_catalog, get_template_coverage,
     create_template, update_template,
     delete_template, get_chapters_by_template, get_chapter, create_chapter,
     update_chapter, delete_chapter, reorder_chapters,
@@ -5543,11 +5544,26 @@ def api_list_icfg_templates():
     """
     try:
         db_type = request.args.get('db_type')
+        rows = get_template_catalog()
         if db_type:
-            rows = get_templates_by_db_type(db_type, include_family=True)
-        else:
-            rows = get_all_templates()
+            family = get_templates_by_db_type(db_type, include_family=True)
+            allowed = {int(r['id']) for r in family}
+            rows = [r for r in rows if int(r['id']) in allowed]
+            order = {int(r['id']): index for index, r in enumerate(family)}
+            rows.sort(key=lambda r: order.get(int(r['id']), len(order)))
         return jsonify({'success': True, 'data': rows})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/inspection/templates/<int:tid>/coverage', methods=['GET'])
+def api_get_icfg_template_coverage(tid):
+    """模板完整章节与指标明细（列表页展开时按需加载）。"""
+    try:
+        row = get_template_coverage(tid)
+        if row:
+            return jsonify({'success': True, 'data': row})
+        return jsonify({'success': False, 'message': '模板不存在'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

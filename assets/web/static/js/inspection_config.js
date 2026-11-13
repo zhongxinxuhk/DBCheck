@@ -15,6 +15,9 @@ let currentInspectionTemplateId = null;
 let currentInspectionChapterId = null;
 let inspectionQueryUnsaved = false;  // 查询内联编辑是否有未保存内容
 let currentInspectionIsPreset = false;  // 当前编辑的模板是否为预置模板
+let inspectionTemplateCatalog = [];     // 模板目录（含章节/指标摘要）
+const inspectionTemplateDetails = new Map();  // 已加载的展开明细
+const ICFG_CATEGORY_LABELS = { baseline: '通用基线', business: '业务专项', custom: '自定义' };
 
 // 写操作（保存/删除/创建）需要登录：index.html 通过 Jinja 注入 window._IS_ADMIN
 // 已放宽限制：所有登录用户都可使用 SQL 查询的查看、新增、保存、删除功能
@@ -24,8 +27,8 @@ const IS_LOGGED_IN = window._IS_ADMIN !== undefined;  // 所有登录用户都�
 
 // 搜索仅控制已加载条目的显示，保留内联编辑内容与完整列表顺序。
 function filterInspectionConfig(kind) {
+    if (kind === 'template') { applyInspectionTemplateFilters(); return; }
     const settings = {
-        template: ['inspection-template-search', 'inspection-template-list', '.inspection-template-card'],
         chapter: ['inspection-chapter-search', 'inspection-chapter-list', '.chapter-item'],
         query: ['inspection-query-search', 'inspection-query-list', '.query-item']
     };
@@ -55,7 +58,6 @@ function clearInspectionConfigSearch(kind) {
 
 function indexInspectionConfigRows(kind, records, fields) {
     const config = {
-        template: ['inspection-template-list', '.inspection-template-card'],
         chapter: ['inspection-chapter-list', '.chapter-item'],
         query: ['inspection-query-list', '.query-item']
     };
@@ -103,6 +105,10 @@ async function showInspectionTemplateList() {
 // ==================== 模板列表 ====================
 
 async function loadInspectionTemplates() {
+    const container = document.getElementById('inspection-template-list');
+    if (container && !container.children.length) {
+        container.innerHTML = '<tr><td colspan="7" class="icfg-loading">正在加载巡检模板…</td></tr>';
+    }
     try {
         const res = await fetch('/api/inspection/templates');
         const data = await res.json();
@@ -116,61 +122,331 @@ async function loadInspectionTemplates() {
     }
 }
 
+function filterInspectionTemplateState() {
+    const input = document.getElementById('inspection-template-search');
+    const db = document.getElementById('inspection-filter-db');
+    const category = document.getElementById('inspection-filter-category');
+    const cycle = document.getElementById('inspection-filter-cycle');
+    return {
+        words: (input?.value || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean),
+        dbType: db?.value || '',
+        category: category?.value || '',
+        cycle: cycle?.value || ''
+    };
+}
+
+function applyInspectionTemplateFilters() {
+    const container = document.getElementById('inspection-template-list');
+    if (!container) return;
+    const state = filterInspectionTemplateState();
+    const rows = [...container.querySelectorAll('.icfg-row')];
+    let count = 0;
+    rows.forEach(row => {
+        const searchText = (row.dataset.searchText || row.textContent || '').toLocaleLowerCase();
+        const match = state.words.every(word => searchText.includes(word))
+            && (!state.dbType || row.dataset.dbType === state.dbType)
+            && (!state.category || row.dataset.category === state.category)
+            && (!state.cycle || row.dataset.cycle === state.cycle);
+        row.hidden = !match;
+        if (match) count++;
+        if (!match) {
+            row.classList.remove('is-open');
+            const detail = document.getElementById('icfg-detail-' + row.dataset.templateId);
+            if (detail) detail.hidden = true;
+        }
+    });
+    const status = document.getElementById('inspection-template-search-status');
+    if (status) status.textContent = rows.length ? `显示 ${count} / ${rows.length} 个模板` : '';
+    const visible = document.getElementById('inspection-list-visible-count');
+    if (visible) visible.textContent = count;
+    const scroll = document.getElementById('inspection-table-scroll');
+    if (scroll) scroll.hidden = rows.length > 0 && count === 0;
+    const empty = document.getElementById('inspection-list-empty');
+    if (empty) {
+        empty.hidden = count !== 0;
+        if (count === 0 && rows.length) {
+            empty.textContent = '没有匹配的巡检模板，请调整搜索或筛选条件。';
+        }
+    }
+}
+
+function resetInspectionTemplateFilters() {
+    ['inspection-template-search', 'inspection-filter-db', 'inspection-filter-category', 'inspection-filter-cycle']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    filterInspectionConfig('template');
+    document.getElementById('inspection-template-search')?.focus();
+}
+
+function populateInspectionTemplateFilters(templates) {
+    const dbSelect = document.getElementById('inspection-filter-db');
+    const cycleSelect = document.getElementById('inspection-filter-cycle');
+    const dbLabels = {
+        mysql: 'MySQL', postgresql: 'PostgreSQL', oracle: 'Oracle', sqlserver: 'SQL Server',
+        dm8: 'DM8 达梦', tidb: 'TiDB', ivorysql: 'IvorySQL', mariadb: 'MariaDB',
+        oceanbase: 'OceanBase', clickhouse: 'ClickHouse', db2: 'DB2', gbase: 'GBase 8s',
+        gbase8a: 'GBase 8a', halodb: 'HaloDB', hgdb: 'HGDB', kingbase: 'KingbaseES',
+        mongodb: 'MongoDB', redis: 'Redis', 'redis-cluster': 'Redis Cluster',
+        uxdb: 'UXDB', vastbase: 'Vastbase', yashandb: 'YashanDB', oracle_jdbc: 'Oracle JDBC',
+        sqlserver_jdbc: 'SQL Server JDBC'
+    };
+    if (dbSelect) {
+        const current = dbSelect.value;
+        const dbs = [...new Set(templates.map(t => t.db_type).filter(Boolean))]
+            .sort((a, b) => (dbLabels[a] || a).localeCompare(dbLabels[b] || b, 'zh-CN'));
+        dbSelect.innerHTML = '<option value="">全部数据库</option>' + dbs.map(db =>
+            `<option value="${escapeHtml(db)}">${escapeHtml(dbLabels[db] || db)}</option>`).join('');
+        dbSelect.value = dbs.includes(current) ? current : '';
+    }
+    if (cycleSelect) {
+        const current = cycleSelect.value;
+        const cycles = [...new Set(templates.filter(t => t.business).map(t => t.cycle).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b, 'zh-CN'));
+        cycleSelect.innerHTML = '<option value="">全部周期</option>' + cycles.map(cycle =>
+            `<option value="${escapeHtml(cycle)}">${escapeHtml(cycle)}</option>`).join('');
+        cycleSelect.value = cycles.includes(current) ? current : '';
+    }
+}
+
+function inspectionTemplateStatus(t) {
+    if (t.empty_chapter_count > 0) {
+        return `<span class="icfg-status icfg-status--warn">${t.empty_chapter_count} 个空章节</span>`;
+    }
+    if (t.manual_only_chapter_count > 0) {
+        return `<span class="icfg-status icfg-status--manual">${t.manual_only_chapter_count} 个主机采集章节</span>`;
+    }
+    if (t.manual_count > 0) {
+        return '<span class="icfg-status icfg-status--mixed">SQL + 主机采集</span>';
+    }
+    return '<span class="icfg-status icfg-status--ok">SQL 全覆盖</span>';
+}
+
+function renderInspectionTemplateRow(t) {
+    const dbTypeMap = {
+        mysql: 'MySQL', postgresql: 'PostgreSQL', oracle: 'Oracle',
+        sqlserver: 'SQL Server', dm8: 'DM8 达梦', tidb: 'TiDB', ivorysql: 'IvorySQL',
+        mariadb: 'MariaDB', oceanbase: 'OceanBase', clickhouse: 'ClickHouse',
+        db2: 'DB2', gbase: 'GBase 8s', gbase8a: 'GBase 8a', halodb: 'HaloDB',
+        hgdb: 'HGDB', kingbase: 'KingbaseES', mongodb: 'MongoDB', redis: 'Redis',
+        'redis-cluster': 'Redis Cluster', uxdb: 'UXDB', vastbase: 'Vastbase',
+        yashandb: 'YashanDB', oracle_jdbc: 'Oracle JDBC', sqlserver_jdbc: 'SQL Server JDBC'
+    };
+    const dbTypeIconMap = {
+        mysql: '🐬', postgresql: '🦴', oracle: '🔶', sqlserver: '🗄️', dm8: '💎',
+        tidb: '🌊', ivorysql: '🐘', mariadb: '🐬', oceanbase: '🌊',
+        clickhouse: '⚡', db2: '🗃️', gbase: '🗄️', gbase8a: '🧮', halodb: '🪐',
+        hgdb: '🐘', kingbase: '🐘', mongodb: '🍃', redis: '🧱',
+        'redis-cluster': '🧱', uxdb: '🐘', vastbase: '🐘', yashandb: '🔷',
+        oracle_jdbc: '🔶', sqlserver_jdbc: '🗄️'
+    };
+    const dbLabel = dbTypeMap[t.db_type] || t.db_type || '—';
+    const dbIcon = dbTypeIconMap[t.db_type] || '📋';
+    const categoryLabel = ICFG_CATEGORY_LABELS[t.category] || t.category || '—';
+    const presetBadge = t.is_preset == 1 ? '<span class="icfg-badge icfg-badge--preset">预置</span>' : '';
+    const defaultBadge = t.is_default ? '<span class="icfg-badge icfg-badge--default">默认</span>' : '';
+    const businessBadge = t.business ? '<span class="icfg-badge icfg-badge--business">业务专项</span>' : '';
+    const version = t.version ? `<span class="icfg-version">${escapeHtml(t.version)}</span>` : '';
+    const desc = t.description ? `<span class="icfg-template-desc">${escapeHtml(t.description)}</span>` : '';
+    const cycle = t.cycle ? `<span class="icfg-cycle">${escapeHtml(t.cycle)}</span>` : '';
+    const chapterTitles = (t.chapter_summary || []).map(c => c.chapter_title).join(' ');
+    const searchText = [
+        t.search_text, t.template_name, t.template_name_en, t.db_type, dbLabel, t.version,
+        t.description, t.category, categoryLabel, t.cycle, chapterTitles
+    ].filter(Boolean).join(' ');
+    const categoryBadge = t.business ? '' : `<span class="icfg-category">${escapeHtml(categoryLabel)}</span>`;
+    const inlineMeta = `<span class="icfg-inline-meta">${dbIcon} ${escapeHtml(dbLabel)}${t.cycle ? ' · ' + escapeHtml(t.cycle) : ''}${t.business ? ' · 业务专项' : ''}</span>`;
+    const deleteButton = (IS_LOGGED_IN && !t.is_preset)
+        ? '<button type="button" class="icfg-action icfg-action--danger" data-icfg-action="delete">删除</button>' : '';
+    const detailId = 'icfg-detail-' + t.id;
+    return `
+    <tr class="icfg-row" data-template-id="${t.id}" data-db-type="${escapeHtml(t.db_type || '')}"
+        data-category="${escapeHtml(t.category || '')}" data-cycle="${escapeHtml(t.cycle || '')}"
+        data-search-text="${escapeHtml(searchText)}" tabindex="0" aria-expanded="false"
+        aria-controls="${detailId}">
+        <td class="icfg-col-template">
+            <div class="icfg-template-cell">
+                <span class="icfg-caret" aria-hidden="true">›</span>
+                <span class="icfg-template-main">
+                    <span class="icfg-template-title">${escapeHtml(t.template_name)}${version}</span>
+                    ${desc}
+                    ${inlineMeta}
+                </span>
+            </div>
+        </td>
+        <td class="icfg-col-db"><span class="icfg-db"><span class="icfg-db-icon">${dbIcon}</span>${escapeHtml(dbLabel)}</span></td>
+        <td class="icfg-col-type">${businessBadge}${categoryBadge}${cycle}${presetBadge}${defaultBadge}</td>
+        <td class="icfg-col-num"><span class="icfg-num">${t.chapter_count || 0}</span><span class="icfg-unit">章</span></td>
+        <td class="icfg-col-coverage">
+            <span class="icfg-num">${t.indicator_count || 0}</span><span class="icfg-unit">项</span>
+            <span class="icfg-sub">SQL ${t.sql_count || 0} · 主机 ${t.manual_count || 0}</span>
+        </td>
+        <td class="icfg-col-status">${inspectionTemplateStatus(t)}</td>
+        <td class="icfg-col-actions">
+            <button type="button" class="icfg-action" data-icfg-action="edit">编辑</button>
+            <button type="button" class="icfg-action" data-icfg-action="export">导出</button>
+            ${deleteButton}
+        </td>
+    </tr>
+    <tr class="icfg-detail-row" id="${detailId}" hidden>
+        <td colspan="7">
+            <div class="icfg-detail"><div class="icfg-detail-loading">展开后加载章节与指标明细…</div></div>
+        </td>
+    </tr>`;
+}
+
 function renderInspectionTemplateList(templates) {
     const container = document.getElementById('inspection-template-list');
     if (!container) return;
-    if (!templates || templates.length === 0) {
-        container.innerHTML = '<div class="empty-state">暂无巡检模板，请点击"创建模板"按钮添加。</div>';
-        filterInspectionConfig('template');
+    inspectionTemplateCatalog = Array.isArray(templates) ? templates : [];
+    inspectionTemplateDetails.clear();
+    const empty = document.getElementById('inspection-list-empty');
+    if (!inspectionTemplateCatalog.length) {
+        container.innerHTML = '';
+        if (empty) { empty.hidden = false; empty.textContent = '暂无巡检模板，请点击“创建模板”按钮添加。'; }
+        applyInspectionTemplateFilters();
         return;
     }
-    let html = '';
-    templates.forEach(t => {
-        const dbTypeMap = {
-            'mysql': 'MySQL', 'postgresql': 'PostgreSQL', 'oracle': 'Oracle',
-            'sqlserver': 'SQL Server', 'dm8': 'DM8 达梦', 'tidb': 'TiDB', 'ivorysql': 'IvorySQL'
-        };
-        const dbTypeIconMap = {
-            'mysql': '🐬', 'postgresql': '🦴', 'oracle': '🔶',
-            'sqlserver': '🗄️', 'dm8': '💎', 'tidb': '🌊', 'ivorysql': '🐘'
-        };
-        const dbTypeLabel = dbTypeMap[t.db_type] || t.db_type;
-        const dbTypeIcon = dbTypeIconMap[t.db_type] || '📋';
-        const isDefault = t.is_default;
-        const isPreset = t.is_preset == 1;
-        const presetLabel = isPreset ? '<span class="card-tag card-tag--preset">预置</span>' : '';
-        const defaultLabel = isDefault ? '<span class="card-tag card-tag--default">默认</span>' : '';
-        const versionLabel = t.version && t.version !== 'v1' ? `<span class="card-version">${escapeHtml(t.version)}</span>` : '';
-        html += `
-        <div class="inspection-template-card" data-preset="${isPreset ? '1' : '0'}" onclick="editInspectionTemplate(${t.id})">
-            <div class="card-accent-bar"></div>
-            <div class="card-content">
-                <div class="card-top">
-                    <div class="card-title-group">
-                        <span class="card-icon">${dbTypeIcon}</span>
-                        <h3>${escapeHtml(t.template_name)}</h3>
-                        ${versionLabel}
-                    </div>
-                    <div class="card-tags">${presetLabel}${defaultLabel}</div>
-                </div>
-                ${t.description ? `<p class="card-desc">${escapeHtml(t.description)}</p>` : ''}
-                <div class="card-stats">
-                    <span class="stat-item"><span class="stat-num">${t.chapter_count || 0}</span> 章节</span>
-                    <span class="stat-dot"></span>
-                    <span class="stat-item"><span class="stat-num">${t.query_count || 0}</span> 查询</span>
-                    <span class="stat-dot"></span>
-                    <span class="stat-item stat-type">${dbTypeLabel}</span>
-                </div>
-            </div>
-            <div class="card-actions">
-                <button class="card-action-btn card-action-btn--export" onclick="event.stopPropagation(); exportInspectionTemplate(${t.id})">导出</button>
-                ${IS_LOGGED_IN && !t.is_preset ? `<button class="card-action-btn card-action-btn--delete" onclick="event.stopPropagation(); deleteInspectionTemplate(${t.id}, '${escapeHtml(t.template_name)}')">删除</button>` : ''}
-            </div>
-        </div>`;
-    });
-    container.innerHTML = html;
-    indexInspectionConfigRows('template', templates, ['template_name','template_name_zh','template_name_en','db_type','version','description','description_zh','description_en']);
+    if (empty) empty.hidden = true;
+    populateInspectionTemplateFilters(inspectionTemplateCatalog);
+    container.innerHTML = inspectionTemplateCatalog.map(renderInspectionTemplateRow).join('');
+    const business = inspectionTemplateCatalog.filter(t => t.business).length;
+    const chapterTotal = inspectionTemplateCatalog.reduce((sum, t) => sum + (Number(t.chapter_count) || 0), 0);
+    const sqlTotal = inspectionTemplateCatalog.reduce((sum, t) => sum + (Number(t.sql_count) || 0), 0);
+    const indicatorTotal = inspectionTemplateCatalog.reduce((sum, t) => sum + (Number(t.indicator_count) || 0), 0);
+    const dbTotal = new Set(inspectionTemplateCatalog.map(t => t.db_type)).size;
+    const summary = document.getElementById('inspection-list-summary');
+    if (summary) {
+        summary.innerHTML = `
+            <span class="icfg-summary-chip"><b>${inspectionTemplateCatalog.length}</b> 个模板</span>
+            <span class="icfg-summary-chip"><b>${business}</b> 个业务专项</span>
+            <span class="icfg-summary-chip"><b>${dbTotal}</b> 个数据库类型</span>
+            <span class="icfg-summary-chip"><b>${chapterTotal}</b> 个章节</span>
+            <span class="icfg-summary-chip"><b>${sqlTotal}</b> 条 SQL</span>
+            <span class="icfg-summary-chip"><b>${indicatorTotal}</b> 个检查项</span>
+            <span class="icfg-summary-chip icfg-summary-chip--muted">当前显示 <b id="inspection-list-visible-count">${inspectionTemplateCatalog.length}</b> 个</span>`;
+    }
+    applyInspectionTemplateFilters();
 }
+
+async function toggleInspectionTemplateRow(templateId) {
+    const row = document.querySelector(`.icfg-row[data-template-id="${templateId}"]`);
+    const detail = document.getElementById('icfg-detail-' + templateId);
+    if (!row || !detail) return;
+    if (!detail.hidden) {
+        detail.hidden = true;
+        row.classList.remove('is-open');
+        row.setAttribute('aria-expanded', 'false');
+        return;
+    }
+    detail.hidden = false;
+    row.classList.add('is-open');
+    row.setAttribute('aria-expanded', 'true');
+    if (detail.dataset.loaded === '1') return;
+    detail.dataset.loaded = '1';
+    const body = detail.querySelector('.icfg-detail');
+    body.innerHTML = '<div class="icfg-detail-loading">正在加载章节与指标明细…</div>';
+    try {
+        const res = await fetch(`/api/inspection/templates/${templateId}/coverage`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || '加载模板明细失败');
+        inspectionTemplateDetails.set(Number(templateId), data.data);
+        body.innerHTML = renderInspectionTemplateCoverage(data.data);
+        requestAnimationFrame(() => detail.scrollIntoView({ block: 'nearest' }));
+    } catch (e) {
+        detail.dataset.loaded = '0';
+        body.innerHTML = `<div class="icfg-detail-error">${escapeHtml(e.message || '加载模板明细失败')}</div>`;
+    }
+}
+
+function renderInspectionTemplateCoverage(t) {
+    const chapters = t.chapter_summary || [];
+    const sqlTotal = Number(t.sql_count) || 0;
+    const manualTotal = Number(t.manual_count) || 0;
+    let html = `
+        <div class="icfg-detail-head">
+            <div>
+                <span class="icfg-detail-kicker">模板 #${t.id} · ${escapeHtml(ICFG_CATEGORY_LABELS[t.category] || t.category || '')}${t.cycle ? ' · ' + escapeHtml(t.cycle) : ''}</span>
+                <h3>${escapeHtml(t.template_name)}</h3>
+                ${t.description ? `<p>${escapeHtml(t.description)}</p>` : ''}
+            </div>
+            <div class="icfg-detail-actions">
+                <button type="button" class="btn btn-sm btn-primary" data-icfg-action="edit">编辑模板</button>
+                <button type="button" class="btn btn-sm" data-icfg-action="export">导出模板</button>
+            </div>
+        </div>
+        <div class="icfg-detail-stats">
+            <span><b>${chapters.length}</b> 章节</span>
+            <span><b>${sqlTotal}</b> 条 SQL 自动采集</span>
+            <span><b>${manualTotal}</b> 项主机/命令行采集</span>
+            <span><b>${t.indicator_count || 0}</b> 个检查项</span>
+        </div>`;
+    if (!chapters.length) {
+        return html + '<div class="icfg-detail-error">该模板暂无启用章节。</div>';
+    }
+    html += '<div class="icfg-chapters">' + chapters.map(ch => {
+        const indicators = ch.indicators || [];
+        const indicatorHtml = indicators.length
+            ? indicators.map(item => `
+                <span class="icfg-indicator icfg-indicator--${escapeHtml(item.mode)}" title="${escapeHtml(item.description || item.title || '')}">
+                    <span class="icfg-indicator-id">${escapeHtml(item.id || '—')}</span>
+                    <span class="icfg-indicator-title">${escapeHtml(item.title || '未命名检查项')}</span>
+                    <span class="icfg-indicator-mode">${item.mode === 'sql' ? 'SQL' : '主机'}</span>
+                </span>`).join('')
+            : '<span class="icfg-chapter-empty">未配置检查项</span>';
+        const note = ch.description
+            ? `<details class="icfg-chapter-note"><summary>查看章节说明与阈值</summary><pre>${escapeHtml(ch.description)}</pre></details>`
+            : '';
+        return `
+            <section class="icfg-chapter">
+                <header class="icfg-chapter-head">
+                    <span class="icfg-chapter-num">${escapeHtml(String(ch.chapter_number))}</span>
+                    <h4>${escapeHtml(ch.chapter_title || '未命名章节')}</h4>
+                    <span class="icfg-chapter-counts">SQL ${ch.sql_count || 0} · 主机 ${ch.manual_count || 0}</span>
+                </header>
+                <div class="icfg-indicators">${indicatorHtml}</div>
+                ${note}
+            </section>`;
+    }).join('') + '</div>';
+    return html;
+}
+
+function deleteInspectionTemplateById(templateId) {
+    const t = inspectionTemplateCatalog.find(item => Number(item.id) === Number(templateId));
+    if (t) deleteInspectionTemplate(t.id, t.template_name);
+}
+
+function onInspectionTemplateListClick(event) {
+    const actionButton = event.target.closest('[data-icfg-action]');
+    const row = event.target.closest('.icfg-row');
+    if (actionButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const actionRow = actionButton.closest('.icfg-row')
+            || actionButton.closest('.icfg-detail-row')?.previousElementSibling;
+        if (!actionRow) return;
+        const templateId = Number(actionRow.dataset.templateId);
+        const action = actionButton.dataset.icfgAction;
+        if (action === 'edit') editInspectionTemplate(templateId);
+        if (action === 'export') exportInspectionTemplate(templateId);
+        if (action === 'delete') deleteInspectionTemplateById(templateId);
+        return;
+    }
+    if (row) toggleInspectionTemplateRow(Number(row.dataset.templateId));
+}
+
+function onInspectionTemplateListKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('.icfg-row');
+    if (!row) return;
+    event.preventDefault();
+    toggleInspectionTemplateRow(Number(row.dataset.templateId));
+}
+
+(function bindInspectionTemplateListEvents() {
+    const container = document.getElementById('inspection-template-list');
+    if (!container) return;
+    container.addEventListener('click', onInspectionTemplateListClick);
+    container.addEventListener('keydown', onInspectionTemplateListKeydown);
+})();
 
 
 // ==================== 模板编辑 ====================
