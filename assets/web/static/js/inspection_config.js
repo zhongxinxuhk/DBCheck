@@ -67,8 +67,8 @@ function icfgListSeparator() {
 
 // 写操作（保存/删除/创建）需要登录：index.html 通过 Jinja 注入 window._IS_ADMIN
 // 已放宽限制：所有登录用户都可使用 SQL 查询的查看、新增、保存、删除功能
-const IS_ADMIN = window._IS_ADMIN !== undefined;
-const IS_LOGGED_IN = window._IS_ADMIN !== undefined;  // 所有登录用户都可以操作
+const IS_ADMIN = window._IS_ADMIN === true;
+const IS_LOGGED_IN = window._IS_ADMIN !== undefined;  // 所有登录用户都可以查看
 
 
 // 搜索仅控制已加载条目的显示，保留内联编辑内容与完整列表顺序。
@@ -323,11 +323,11 @@ function renderInspectionTemplateRow(t) {
     ].filter(Boolean).join(' ');
     const categoryBadge = t.business ? '' : `<span class="icfg-category">${escapeHtml(categoryLabel)}</span>`;
     const inlineMeta = `<span class="icfg-inline-meta">${dbIcon} ${escapeHtml(dbLabel)}${t.cycle ? ' · ' + escapeHtml(icfgCycleLabel(t.cycle)) : ''}${t.business ? ' · ' + escapeHtml(it('webui.inspection_badge_business', '业务专项')) : ''}</span>`;
-    const cloneButton = IS_LOGGED_IN
+    const cloneButton = IS_ADMIN
         ? `<button type="button" class="icfg-action" data-icfg-action="clone">${escapeHtml(it('webui.inspection_clone', '另存为'))}</button>` : '';
-    const defaultButton = (IS_LOGGED_IN && !t.business && !Number(t.is_default))
+    const defaultButton = (IS_ADMIN && !t.business && !Number(t.is_default))
         ? `<button type="button" class="icfg-action" data-icfg-action="default">${escapeHtml(it('webui.inspection_set_default', '设为默认'))}</button>` : '';
-    const deleteButton = (IS_LOGGED_IN && !t.is_preset)
+    const deleteButton = (IS_ADMIN && !t.is_preset)
         ? `<button type="button" class="icfg-action icfg-action--danger" data-icfg-action="delete">${escapeHtml(it('webui.inspection_delete', '删除'))}</button>` : '';
     const detailId = 'icfg-detail-' + t.id;
     return `
@@ -459,8 +459,8 @@ function renderInspectionTemplateCoverage(t) {
             <div class="icfg-detail-actions">
                 <button type="button" class="btn btn-sm btn-primary" data-icfg-action="edit">${escapeHtml(it('webui.inspection_edit_template', '编辑模板'))}</button>
                 <button type="button" class="btn btn-sm" data-icfg-action="export">${escapeHtml(it('webui.inspection_export_template', '导出模板'))}</button>
-                ${IS_LOGGED_IN ? `<button type="button" class="btn btn-sm" data-icfg-action="clone">${escapeHtml(it('webui.inspection_clone_template', '另存为模板'))}</button>` : ''}
-                ${(IS_LOGGED_IN && !t.business && !Number(t.is_default)) ? `<button type="button" class="btn btn-sm" data-icfg-action="default">${escapeHtml(it('webui.inspection_set_default', '设为默认'))}</button>` : ''}
+                ${IS_ADMIN ? `<button type="button" class="btn btn-sm" data-icfg-action="clone">${escapeHtml(it('webui.inspection_clone_template', '另存为模板'))}</button>` : ''}
+                ${(IS_ADMIN && !t.business && !Number(t.is_default)) ? `<button type="button" class="btn btn-sm" data-icfg-action="default">${escapeHtml(it('webui.inspection_set_default', '设为默认'))}</button>` : ''}
             </div>
         </div>
         <div class="icfg-detail-stats">
