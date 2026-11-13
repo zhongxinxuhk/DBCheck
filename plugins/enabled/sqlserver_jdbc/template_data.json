@@ -161,6 +161,26 @@
           "query_description_en": "Backup history (last 7 days)"
         }
       ]
+    },
+    {
+      "chapter_number": 9,
+      "chapter_title_zh": "作业与代理",
+      "chapter_title_en": "Jobs & Agent",
+      "description": "SQL Server Agent 作业配置与最近执行历史",
+      "queries": [
+        {
+          "query_key": "mssql_agent_jobs",
+          "query_sql": "SELECT job_id, name, enabled, date_created, date_modified FROM msdb.dbo.sysjobs ORDER BY name",
+          "query_description_zh": "SQL Agent 作业清单",
+          "query_description_en": "SQL Agent job inventory"
+        },
+        {
+          "query_key": "mssql_job_history",
+          "query_sql": "SELECT TOP 100 j.name AS job_name, h.step_id, h.step_name, h.run_status, h.run_date, h.run_time, h.run_duration, h.message FROM msdb.dbo.sysjobhistory h JOIN msdb.dbo.sysjobs j ON j.job_id = h.job_id ORDER BY h.run_date DESC, h.run_time DESC",
+          "query_description_zh": "最近 100 条作业执行历史",
+          "query_description_en": "Latest 100 job execution history rows"
+        }
+      ]
     }
   ]
 }
