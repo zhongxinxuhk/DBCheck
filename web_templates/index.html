@@ -19,26 +19,59 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <!-- ─── 系统信息页样式（沿用全局设计变量，浅色主题自动适配）─── -->
 <style>
-.sysinfo-wrap { max-width: 1080px; width: 100%; margin: 0 auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
-.sysinfo-wrap .card { padding: 20px 24px; margin-bottom: 0; }
-.sysinfo-wrap .card-title { margin-bottom: 16px; padding-bottom: 12px; }
-.sysinfo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 900px) { .sysinfo-grid { grid-template-columns: 1fr; } }
-.sysinfo-hero { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
-.sysinfo-logo-plate { flex: 0 0 240px; max-width: 100%; background: #fff; border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.sysinfo-wrap { max-width: 1120px; width: 100%; margin: 0 auto; padding: 22px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+.sysinfo-wrap .card { padding: 22px 24px; margin-bottom: 0; }
+.sysinfo-hero { position: relative; overflow: hidden; display: flex; align-items: center; gap: 26px; flex-wrap: wrap; background: linear-gradient(135deg, rgba(0,200,160,.08), rgba(10,42,110,.20) 58%, var(--surface)); }
+.sysinfo-hero::after { content: ""; position: absolute; width: 300px; height: 300px; right: -120px; top: -170px; border-radius: 50%; background: radial-gradient(circle, rgba(0,200,160,.22), transparent 68%); pointer-events: none; }
+[data-theme="light"] .sysinfo-hero { background: linear-gradient(135deg, rgba(0,200,160,.10), rgba(10,42,110,.06) 58%, #fff); }
+.sysinfo-logo-plate { position: relative; z-index: 1; flex: 0 0 222px; max-width: 100%; background: #fff; border-radius: 14px; padding: 14px 16px; box-shadow: 0 10px 28px rgba(0,0,0,.20); }
 .sysinfo-logo-plate img { display: block; width: 100%; height: auto; }
-.sysinfo-hero-text { flex: 1; min-width: 220px; }
-.sysinfo-hero-text h2 { font-size: 26px; font-weight: 800; letter-spacing: -.5px; margin: 0 0 4px; color: var(--text); }
+.sysinfo-hero-text { position: relative; z-index: 1; flex: 1; min-width: 220px; }
+.sysinfo-kicker { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 7px; }
+.sysinfo-hero-text h2 { font-size: 28px; font-weight: 800; letter-spacing: -.6px; margin: 0 0 5px; color: var(--text); }
 .sysinfo-hero-sub { font-size: 12.5px; color: var(--text-muted); line-height: 1.7; }
-.sysinfo-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.sysinfo-pill { display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 20px; font-size: 11px; font-weight: 600; background: rgba(0,200,160,.14); color: var(--accent); border: 1px solid rgba(0,200,160,.32); }
-.sysinfo-pill--ghost { background: var(--surface2); color: var(--text-muted); border-color: var(--border); }
-.sysinfo-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 9px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.sysinfo-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
+.sysinfo-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; background: rgba(0,200,160,.14); color: var(--accent); border: 1px solid rgba(0,200,160,.32); }
+.sysinfo-pill--status { background: rgba(148,163,184,.12); color: var(--text-muted); border-color: var(--border); }
+.sysinfo-pill--status.is-success { background: rgba(0,200,160,.14); color: var(--accent); border-color: rgba(0,200,160,.36); }
+.sysinfo-pill--status.is-danger { background: rgba(239,68,68,.13); color: #ef6b6b; border-color: rgba(239,68,68,.34); }
+.sysinfo-pill--status.is-warning { background: rgba(245,158,11,.13); color: var(--warn); border-color: rgba(245,158,11,.34); }
+.sysinfo-pill--status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px rgba(148,163,184,.10); }
+.sysinfo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .sysinfo-grid { grid-template-columns: 1fr; } }
+.sysinfo-card-title { display: flex; align-items: center; gap: 9px; min-height: 25px; margin: 0 0 12px; padding-bottom: 13px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; color: var(--text); }
+.sysinfo-card-title .icon { display: inline-flex; align-items: center; justify-content: center; width: 25px; height: 25px; border-radius: 7px; background: var(--surface2); font-size: 13px; }
+.sysinfo-card-title .tail { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.sysinfo-rows { display: flex; flex-direction: column; }
+.sysinfo-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); align-items: start; gap: 16px; padding: 9px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
 .sysinfo-row:last-child { border-bottom: none; }
-.sysinfo-row .k { color: var(--text-muted); flex: 0 0 auto; }
-.sysinfo-row .v { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
-.sysinfo-row a { color: var(--accent); text-decoration: none; }
-.sysinfo-row a:hover { text-decoration: underline; }
+.sysinfo-row .k { color: var(--text-muted); font-size: 12.5px; }
+.sysinfo-row .v { color: var(--text); font-weight: 600; text-align: left; word-break: break-all; line-height: 1.5; }
+.sysinfo-row .v.muted { color: var(--text-muted); font-weight: 500; }
+.sysinfo-row .v.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; letter-spacing: .2px; }
+.sysinfo-status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(148,163,184,.12); color: var(--text-muted); }
+.sysinfo-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sysinfo-status.is-success { background: rgba(0,200,160,.13); color: var(--accent); }
+.sysinfo-status.is-danger { background: rgba(239,68,68,.13); color: #ef6b6b; }
+.sysinfo-status.is-warning { background: rgba(245,158,11,.13); color: var(--warn); }
+.sysinfo-activate-grid { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.28fr); gap: 26px; align-items: start; }
+@media (max-width: 1100px) { .sysinfo-activate-grid { grid-template-columns: 1fr; gap: 20px; } }
+.sysinfo-device-box { padding: 15px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface2); }
+.sysinfo-device-label { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); }
+.sysinfo-serial { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.sysinfo-serial code { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 600; letter-spacing: .4px; word-break: break-all; }
+.sysinfo-btn-sm { padding: 7px 11px !important; font-size: 12px !important; white-space: nowrap; }
+.sysinfo-hint { margin-top: 10px; color: var(--text-muted); font-size: 11.5px; line-height: 1.7; }
+.sysinfo-hint a { color: var(--accent); text-decoration: none; }
+.sysinfo-hint a:hover { text-decoration: underline; }
+.sysinfo-label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.sysinfo-code-input { width: 100%; min-height: 68px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; resize: vertical; outline: none; transition: border-color var(--trans), box-shadow var(--trans); }
+.sysinfo-code-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,200,160,.12); }
+.sysinfo-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 10px; }
+.sysinfo-msg { min-height: 18px; margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.sysinfo-msg.is-error { color: #ef6b6b; }
+.sysinfo-msg.is-success { color: var(--accent); }
+@media (max-width: 560px) { .sysinfo-wrap { padding: 16px 14px 36px; } .sysinfo-wrap .card { padding: 18px 16px; } .sysinfo-logo-plate { flex-basis: 180px; } .sysinfo-hero-text h2 { font-size: 24px; } .sysinfo-row { grid-template-columns: 105px minmax(0, 1fr); gap: 10px; } }
 </style>
 <style>
 /* ─── Reset & Base ─── */
@@ -10035,11 +10068,12 @@ function wfCloseRunDrawer() {
               <img src="/dbpulse_logo.png" alt="{{ product_name }} Logo" data-page-node-id="sysInfoLogoX1">
             </div>
             <div class="sysinfo-hero-text" data-page-node-id="sysInfoHeroTextX1">
+              <div class="sysinfo-kicker" data-page-node-id="sysInfoKickerX1">SYSTEM &amp; AUTHORIZATION</div>
               <h2 data-page-node-id="sysInfoHeroTitleX1">{{ product_name }}</h2>
               <div class="sysinfo-hero-sub" data-page-node-id="sysInfoHeroSubX1">{{ product_full_name }} · {{ product_tagline }}</div>
               <div class="sysinfo-pills" data-page-node-id="sysInfoHeroPillsX1">
                 <span class="sysinfo-pill" data-page-node-id="sysInfoPillVerX1">{{ version }}</span>
-                <span class="sysinfo-pill sysinfo-pill--ghost" data-page-node-id="sysInfoPillEditionX1">{% if edition == 'professional' %}专业版 / Professional{% else %}社区版 / Community{% endif %}</span>
+                <span class="sysinfo-pill sysinfo-pill--status" id="sysinfo-hero-status" data-page-node-id="sysInfoPillStatusX1">授权状态加载中</span>
               </div>
             </div>
           </div>
@@ -10048,27 +10082,217 @@ function wfCloseRunDrawer() {
 
             <!-- 系统版本 -->
             <div class="card" data-page-node-id="sysInfoVerCardX1">
-              <div class="card-title" data-page-node-id="sysInfoVerTitleX1"><span data-page-node-id="sysInfoVerIconX1">🧩</span> <span data-i18n="webui.system_info_version" data-page-node-id="sysInfoVerTitleTxtX1">系统版本</span> / Version</div>
-              <div class="sysinfo-row"><span class="k">版本号 / Version</span><span class="v">{{ version }}</span></div>
-              <div class="sysinfo-row"><span class="k">产品名 / Product</span><span class="v">{{ product_name }}</span></div>
-              <div class="sysinfo-row"><span class="k">完整名称 / Full Name</span><span class="v">{{ product_full_name }}</span></div>
-              <div class="sysinfo-row"><span class="k">中文名称</span><span class="v">{{ product_name_zh }}</span></div>
-              <div class="sysinfo-row"><span class="k">发行版本 / Edition</span><span class="v">{% if edition == 'professional' %}专业版 · Professional{% else %}社区版 · Community{% endif %}</span></div>
-              <div class="sysinfo-row"><span class="k">界面语言 / UI Language</span><span class="v" id="sysinfo-lang">--</span></div>
-              <div class="sysinfo-row"><span class="k">访问地址 / Host</span><span class="v" id="sysinfo-host">--</span></div>
+              <div class="sysinfo-card-title" data-page-node-id="sysInfoVerTitleX1"><span class="icon" data-page-node-id="sysInfoVerIconX1">🧩</span> 系统版本 <span class="tail">Version</span></div>
+              <div class="sysinfo-rows">
+                <div class="sysinfo-row"><span class="k">版本号 / Version</span><span class="v">{{ version }}</span></div>
+                <div class="sysinfo-row"><span class="k">产品名 / Product</span><span class="v">{{ product_name }}</span></div>
+                <div class="sysinfo-row"><span class="k">完整名称 / Full Name</span><span class="v">{{ product_full_name }}</span></div>
+                <div class="sysinfo-row"><span class="k">中文名称</span><span class="v">{{ product_name_zh }}</span></div>
+                <div class="sysinfo-row"><span class="k">界面语言 / UI Language</span><span class="v" id="sysinfo-lang">--</span></div>
+              </div>
             </div>
 
+            <!-- 授权信息 -->
+            <div class="card" data-page-node-id="sysInfoAuthCardX1">
+              <div class="sysinfo-card-title" data-page-node-id="sysInfoAuthTitleX1"><span class="icon" data-page-node-id="sysInfoAuthIconX1">🛡️</span> 授权信息 <span class="tail" id="sysinfo-auth-tail">未激活</span></div>
+              <div class="sysinfo-rows">
+                <div class="sysinfo-row"><span class="k">激活状态</span><span class="v"><span class="sysinfo-status is-muted" id="sysinfo-status">加载中</span></span></div>
+                <div class="sysinfo-row"><span class="k">授权类型</span><span class="v muted" id="sysinfo-license-type">—</span></div>
+                <div class="sysinfo-row"><span class="k">授权对象</span><span class="v muted" id="sysinfo-licensed-to">—</span></div>
+                <div class="sysinfo-row"><span class="k">部署单位</span><span class="v muted" id="sysinfo-deployment-org">—</span></div>
+                <div class="sysinfo-row"><span class="k">授权版本</span><span class="v muted" id="sysinfo-license-edition">—</span></div>
+                <div class="sysinfo-row"><span class="k">激活时间</span><span class="v muted" id="sysinfo-activated-at">—</span></div>
+                <div class="sysinfo-row"><span class="k">到期时间</span><span class="v muted" id="sysinfo-expires-at">—</span></div>
+                <div class="sysinfo-row"><span class="k">授权编号</span><span class="v muted mono" id="sysinfo-license-id">—</span></div>
+              </div>
+            </div>
 
+          </div>
+
+          <!-- 设备与激活 -->
+          <div class="card" data-page-node-id="sysInfoActivateCardX1">
+            <div class="sysinfo-card-title" data-page-node-id="sysInfoActivateTitleX1"><span class="icon" data-page-node-id="sysInfoActivateIconX1">🔐</span> 设备与激活 <span class="tail" id="sysinfo-activate-tail">未激活</span></div>
+            <div class="sysinfo-activate-grid">
+              <div class="sysinfo-device-box" data-page-node-id="sysInfoDeviceBoxX1">
+                <div class="sysinfo-device-label">设备序列号 / Device Serial</div>
+                <div class="sysinfo-serial">
+                  <code id="sysinfo-device-serial" data-page-node-id="sysInfoSerialX1">读取中...</code>
+                  <button class="btn btn-ghost sysinfo-btn-sm" type="button" onclick="copySystemSerial()" data-page-node-id="sysInfoCopySerialX1">复制</button>
+                </div>
+                <div class="sysinfo-hint">激活码与设备序列号绑定。更换服务器、重装系统或清除运行时数据后，序列号可能变化，需要重新签发激活码。</div>
+                <div class="sysinfo-hint">授权咨询：<a href="mailto:xuzhongxin@sec.hn.cn">xuzhongxin@sec.hn.cn</a></div>
+              </div>
+              <div data-page-node-id="sysInfoActivateFormX1">
+                <label class="sysinfo-label" for="sysinfo-activation-code">激活码 / Activation Code</label>
+                <textarea id="sysinfo-activation-code" class="sysinfo-code-input" spellcheck="false" placeholder="粘贴授权方提供的激活码，例如 DBP1.xxxxx.xxxxxxxx" data-page-node-id="sysInfoCodeInputX1"></textarea>
+                <div class="sysinfo-actions">
+                  <button class="btn btn-primary" type="button" id="sysinfo-activate-btn" onclick="activateSystemLicense()" data-page-node-id="sysInfoActivateBtnX1">立即激活</button>
+                  <button class="btn btn-ghost" type="button" onclick="loadSystemInfo()" data-page-node-id="sysInfoRefreshBtnX1">刷新状态</button>
+                </div>
+                <div id="sysinfo-activation-msg" class="sysinfo-msg" data-page-node-id="sysInfoActivateMsgX1"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <script>
-      function loadSystemInfo() {
+      const SYSINFO_TONE_CLASS = {
+        success: 'is-success',
+        danger: 'is-danger',
+        warning: 'is-warning',
+        muted: 'is-muted'
+      };
+
+      function sysinfoToneClass(tone) {
+        return SYSINFO_TONE_CLASS[tone] || SYSINFO_TONE_CLASS.muted;
+      }
+
+      function sysinfoSetText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value || '—';
+      }
+
+      function sysinfoSetValue(id, value) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const text = value || '—';
+        el.textContent = text;
+        el.classList.toggle('muted', text === '—');
+      }
+
+      function renderSystemInfo(data) {
+        const info = data || {};
+        const lic = info.license || {};
+        const status = info.status || 'unactivated';
+        const tone = sysinfoToneClass(info.status_tone);
+        const label = info.status_label || '未激活';
+
+        const hero = document.getElementById('sysinfo-hero-status');
+        if (hero) {
+          hero.textContent = label;
+          hero.className = 'sysinfo-pill sysinfo-pill--status ' + tone;
+        }
+        const statusEl = document.getElementById('sysinfo-status');
+        if (statusEl) {
+          statusEl.textContent = label;
+          statusEl.className = 'sysinfo-status ' + tone;
+        }
+
+        sysinfoSetText('sysinfo-auth-tail', label);
+        sysinfoSetText('sysinfo-activate-tail', label);
+        sysinfoSetText('sysinfo-device-serial', info.device_serial || '—');
+        sysinfoSetValue('sysinfo-license-type', lic.licensed_to_type_label || '—');
+        sysinfoSetValue('sysinfo-licensed-to', lic.licensed_to || '—');
+        sysinfoSetValue('sysinfo-deployment-org', lic.deployment_org || '—');
+        sysinfoSetValue('sysinfo-license-edition', lic.edition || '—');
+        sysinfoSetValue('sysinfo-activated-at', lic.activated_at || '—');
+        sysinfoSetValue('sysinfo-expires-at', lic.expires_at || '—');
+        sysinfoSetValue('sysinfo-license-id', lic.license_id || '—');
+
+        const btn = document.getElementById('sysinfo-activate-btn');
+        if (btn) {
+          btn.textContent = (status === 'activated' || status === 'expired') ? '更新授权' : '立即激活';
+        }
+      }
+
+      async function loadSystemInfo() {
         const language = document.getElementById('sysinfo-lang');
         if (language) language.textContent = document.documentElement.lang || '--';
-        const host = document.getElementById('sysinfo-host');
-        if (host) host.textContent = location.host;
+        try {
+          const res = await fetch('/api/system-info/status', {cache: 'no-store'});
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || '授权状态读取失败');
+          renderSystemInfo(data);
+        } catch (e) {
+          const statusEl = document.getElementById('sysinfo-status');
+          if (statusEl) {
+            statusEl.textContent = '读取失败';
+            statusEl.className = 'sysinfo-status is-danger';
+          }
+          sysinfoSetText('sysinfo-hero-status', '读取失败');
+          sysinfoSetText('sysinfo-auth-tail', '读取失败');
+          sysinfoSetText('sysinfo-activate-tail', '读取失败');
+        }
+      }
+
+      function copySystemSerial() {
+        const serialEl = document.getElementById('sysinfo-device-serial');
+        const text = serialEl ? serialEl.textContent.trim() : '';
+        if (!text || text === '读取中...' || text === '—') {
+          toastError('设备序列号尚未加载');
+          return;
+        }
+        const done = function() { toastSuccess('设备序列号已复制'); };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(done).catch(function() { toastError('复制失败，请手动选择复制'); });
+          return;
+        }
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        temp.style.position = 'fixed';
+        temp.style.opacity = '0';
+        document.body.appendChild(temp);
+        temp.select();
+        try {
+          document.execCommand('copy');
+          done();
+        } catch (e) {
+          toastError('复制失败，请手动选择复制');
+        }
+        document.body.removeChild(temp);
+      }
+
+      async function activateSystemLicense() {
+        const input = document.getElementById('sysinfo-activation-code');
+        const msg = document.getElementById('sysinfo-activation-msg');
+        const btn = document.getElementById('sysinfo-activate-btn');
+        const code = input ? input.value.trim() : '';
+        if (!code) {
+          if (msg) {
+            msg.textContent = '请先输入激活码';
+            msg.className = 'sysinfo-msg is-error';
+          }
+          toastError('请先输入激活码');
+          return;
+        }
+
+        const oldLabel = btn ? btn.textContent : '立即激活';
+        let succeeded = false;
+        if (btn) { btn.disabled = true; btn.textContent = '激活中...'; }
+        if (msg) { msg.textContent = '正在校验激活码...'; msg.className = 'sysinfo-msg'; }
+        try {
+          const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+          const res = await fetch('/api/system-info/activate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': csrfMeta ? csrfMeta.content : ''
+            },
+            body: JSON.stringify({code: code})
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || '激活失败');
+          succeeded = true;
+          renderSystemInfo(data);
+          if (input) input.value = '';
+          if (msg) {
+            msg.textContent = '授权已生效，信息已更新。';
+            msg.className = 'sysinfo-msg is-success';
+          }
+          toastSuccess('授权已激活');
+        } catch (e) {
+          if (msg) {
+            msg.textContent = e.message || '激活失败';
+            msg.className = 'sysinfo-msg is-error';
+          }
+          toastError(e.message || '激活失败');
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            if (!succeeded) btn.textContent = oldLabel;
+          }
+        }
       }
       </script>
 
@@ -14108,7 +14332,7 @@ function showPage(name) {
     'fleet': ['智能基线 · Smart Baseline', '无监督基线学习 + 漂移检测 + 容量预测：从单点巡检到全库智能（P1）'],
     'xinchuang': [i18n('menu.xinchuang') || '信创合规', i18n('webui.xinchuang_subtitle') || '对纳管实例做信创化程度盘点：国产（信创）占比、国外数据库待替换清单、库型分布。'],
     'run-log': [i18n('menu.run-log') || '运行日志', i18n('webui.run_log_subtitle') || '统一汇聚巡检 / 定时巡检 / 智能诊断 / 监控 的运行日志，可按分类过滤。'],
-    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本、发行版本与运行信息'],
+    'system-info': [i18n('webui.nav_system_info') || '系统信息', '系统版本、授权信息与设备激活'],
   };
   const menuLabel = document.querySelector('#nav-' + CSS.escape(name) + ' span:not(.icon)')?.textContent.trim();
   const t = titles[name] || [menuLabel || name, ''];

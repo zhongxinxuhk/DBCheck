@@ -893,6 +893,8 @@ from modules.clusters.routes import bp as clusters_bp
 app.register_blueprint(clusters_bp)
 from modules.operations.routes import bp as operations_bp
 app.register_blueprint(operations_bp)
+from modules.system_info import bp as system_info_bp
+app.register_blueprint(system_info_bp)
 
 def get_admin_token():
     return _ADMIN_TOKEN
