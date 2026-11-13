@@ -496,7 +496,12 @@ function renderInspectionTemplateCoverage(t) {
                 <span class="icfg-indicator icfg-indicator--${escapeHtml(item.mode)}" title="${escapeHtml(item.description || item.title || '')}">
                     <span class="icfg-indicator-id">${escapeHtml(item.id || '—')}</span>
                     <span class="icfg-indicator-title">${escapeHtml(item.title || it('webui.inspection_untitled_item', '未命名检查项'))}</span>
-                    <span class="icfg-indicator-mode">${item.mode === 'sql' ? 'SQL' : escapeHtml(it('webui.inspection_manual_mode', '主机'))}</span>
+                    ${item.mode === 'sql' && item.query_sql
+                        ? `<span class="icfg-indicator-mode icfg-sql-trigger" role="button" tabindex="0"
+                               data-icfg-sql="${escapeHtml(item.query_sql)}"
+                               data-sql-title="${escapeHtml((item.id ? '[' + item.id + '] ' : '') + (item.title || ''))}"
+                               title="${escapeHtml(it('webui.inspection_view_sql', '查看 SQL'))}">SQL</span>`
+                        : `<span class="icfg-indicator-mode">${item.mode === 'sql' ? 'SQL' : escapeHtml(it('webui.inspection_manual_mode', '主机'))}</span>`}
                 </span>`).join('')
             : `<span class="icfg-chapter-empty">${escapeHtml(it('webui.inspection_no_items', '未配置检查项'))}</span>`;
         const note = ch.description
@@ -561,12 +566,64 @@ async function setInspectionTemplateDefault(templateId) {
     }
 }
 
+function showInspectionSqlPreview(title, sql) {
+    if (!sql) return;
+    const modalId = 'icfg-sql-modal-' + Date.now();
+    const titleId = modalId + '-title';
+    document.documentElement.insertAdjacentHTML('beforeend', `
+        <div id="${modalId}" class="icfg-sql-backdrop">
+            <div class="icfg-sql-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+                <div class="icfg-sql-head">
+                    <div>
+                        <h3 id="${titleId}">${escapeHtml(title || it('webui.inspection_sql_preview', 'SQL 预览'))}</h3>
+                        <p>${escapeHtml(it('webui.inspection_sql_preview_hint', '只读预览，不会在此执行。'))}</p>
+                    </div>
+                    <button type="button" class="icfg-sql-close" data-sql-close aria-label="${escapeHtml(it('webui.inspection_close', '关闭'))}">×</button>
+                </div>
+                <pre class="icfg-sql-body">${escapeHtml(sql)}</pre>
+                <div class="icfg-sql-footer">
+                    <span>${escapeHtml(it('webui.inspection_sql_preview', 'SQL 预览'))}</span>
+                    <div>
+                        <button type="button" class="btn btn-sm" data-sql-copy>${escapeHtml(it('webui.inspection_copy_sql', '复制 SQL'))}</button>
+                        <button type="button" class="btn btn-sm btn-primary" data-sql-close>${escapeHtml(it('webui.inspection_close', '关闭'))}</button>
+                    </div>
+                </div>
+            </div>
+        </div>`);
+    const backdrop = document.getElementById(modalId);
+    if (!backdrop) return;
+    const close = () => {
+        document.removeEventListener('keydown', onKey);
+        backdrop.remove();
+    };
+    const onKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKey);
+    backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+    backdrop.querySelectorAll('[data-sql-close]').forEach(btn => btn.addEventListener('click', close));
+    backdrop.querySelector('[data-sql-copy]')?.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(sql);
+            toastSuccess(it('webui.inspection_sql_copied', 'SQL 已复制'));
+        } catch (e) {
+            toast(it('webui.inspection_copy_sql', '复制 SQL') + ': ' + e.message, 'error');
+        }
+    });
+    backdrop.querySelector('[data-sql-close]')?.focus();
+}
+
 function deleteInspectionTemplateById(templateId) {
     const t = inspectionTemplateCatalog.find(item => Number(item.id) === Number(templateId));
     if (t) deleteInspectionTemplate(t.id, t.template_name);
 }
 
 function onInspectionTemplateListClick(event) {
+    const sqlTrigger = event.target.closest('[data-icfg-sql]');
+    if (sqlTrigger) {
+        event.preventDefault();
+        event.stopPropagation();
+        showInspectionSqlPreview(sqlTrigger.dataset.sqlTitle || '', sqlTrigger.dataset.icfgSql || '');
+        return;
+    }
     const actionButton = event.target.closest('[data-icfg-action]');
     const row = event.target.closest('.icfg-row');
     if (actionButton) {

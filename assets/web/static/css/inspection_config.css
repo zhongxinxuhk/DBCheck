@@ -774,6 +774,117 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     padding: 28px 16px;
 }
 
+.icfg-indicator-mode.icfg-sql-trigger {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+
+.icfg-indicator-mode.icfg-sql-trigger:hover {
+    color: var(--primary);
+}
+
+.icfg-sql-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(2, 6, 23, 0.72);
+    backdrop-filter: blur(3px);
+}
+
+.icfg-sql-dialog {
+    width: min(920px, 100%);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+}
+
+.icfg-sql-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.icfg-sql-head h3 {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+.icfg-sql-head p {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.icfg-sql-close {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.icfg-sql-close:hover {
+    background: var(--surface2);
+    color: var(--text);
+}
+
+.icfg-sql-body {
+    margin: 0;
+    padding: 16px 18px;
+    overflow: auto;
+    max-height: 58vh;
+    color: var(--text);
+    background: var(--surface2);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.icfg-sql-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.icfg-sql-footer > div {
+    display: flex;
+    gap: 8px;
+}
+
+@media (max-width: 640px) {
+    .icfg-sql-backdrop { padding: 8px; }
+    .icfg-sql-dialog { max-height: 92vh; }
+    .icfg-sql-body { max-height: 62vh; padding: 12px; }
+    .icfg-sql-footer { align-items: flex-start; flex-direction: column; }
+}
+
 [data-theme="dark"] .icfg-action:hover {
     background: rgba(148, 163, 184, 0.14);
 }
