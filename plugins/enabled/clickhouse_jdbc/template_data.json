@@ -139,6 +139,80 @@
           "query_description_en": "Top tables by bytes"
         }
       ]
+    },
+    {
+      "chapter_number": 7,
+      "chapter_title_zh": "备份与恢复",
+      "chapter_title_en": "Backup & Restore",
+      "description": "BACKUP/RESTORE 操作状态与失败原因（system.backups）",
+      "queries": [
+        {
+          "query_key": "clickhouse_backups",
+          "query_sql": "SELECT id, name, status, start_time, end_time, num_files, total_size, error FROM system.backups ORDER BY start_time DESC LIMIT 50",
+          "query_description_zh": "备份与恢复操作状态",
+          "query_description_en": "Backup and restore operation status"
+        }
+      ]
+    },
+    {
+      "chapter_number": 8,
+      "chapter_title_zh": "并发查询与变更",
+      "chapter_title_en": "Concurrent Queries & Mutations",
+      "description": "运行中的查询和未完成 mutation；ClickHouse 不暴露行级锁等待",
+      "queries": [
+        {
+          "query_key": "clickhouse_processes",
+          "query_sql": "SELECT query_id, user, elapsed, read_rows, read_bytes, memory_usage, is_cancelled, substring(query,1,500) AS query FROM system.processes WHERE query_id != '' ORDER BY elapsed DESC LIMIT 50",
+          "query_description_zh": "运行中查询与资源占用",
+          "query_description_en": "Running queries and resource usage"
+        },
+        {
+          "query_key": "clickhouse_pending_mutations",
+          "query_sql": "SELECT database, table, mutation_id, command, create_time, parts_to_do, is_done, latest_fail_reason FROM system.mutations WHERE is_done = 0 ORDER BY create_time LIMIT 50",
+          "query_description_zh": "未完成的 mutation 与失败原因",
+          "query_description_en": "Pending mutations and failure reasons"
+        }
+      ]
+    },
+    {
+      "chapter_number": 9,
+      "chapter_title_zh": "安全与访问控制",
+      "chapter_title_en": "Security & Access Control",
+      "description": "用户认证方式、登录来源与授权明细（system.users / system.grants）",
+      "queries": [
+        {
+          "query_key": "clickhouse_users",
+          "query_sql": "SELECT name, storage, auth_type, host_ip, default_database FROM system.users ORDER BY name",
+          "query_description_zh": "用户认证方式与允许登录来源",
+          "query_description_en": "User authentication and allowed hosts"
+        },
+        {
+          "query_key": "clickhouse_grants",
+          "query_sql": "SELECT user_name, role_name, access_type, database, table, grant_option FROM system.grants ORDER BY user_name, access_type LIMIT 500",
+          "query_description_zh": "用户与角色授权明细",
+          "query_description_en": "User and role grants"
+        }
+      ]
+    },
+    {
+      "chapter_number": 10,
+      "chapter_title_zh": "错误日志与异常",
+      "chapter_title_en": "Error Log & Exceptions",
+      "description": "最近 7 天查询异常与系统错误计数（system.query_log / system.errors）",
+      "queries": [
+        {
+          "query_key": "clickhouse_query_errors",
+          "query_sql": "SELECT event_time, query_id, user, exception_code, substring(exception,1,500) AS exception, substring(query,1,300) AS query FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND event_date >= today() - 7 ORDER BY event_time DESC LIMIT 50",
+          "query_description_zh": "最近 7 天查询异常",
+          "query_description_en": "Query exceptions in the last 7 days"
+        },
+        {
+          "query_key": "clickhouse_errors",
+          "query_sql": "SELECT name, code, value, last_error_time, substring(last_error_message,1,500) AS message FROM system.errors ORDER BY value DESC LIMIT 50",
+          "query_description_zh": "系统错误计数与最近错误信息",
+          "query_description_en": "System error counters and latest messages"
+        }
+      ]
     }
   ]
 }
