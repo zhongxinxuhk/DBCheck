@@ -3112,6 +3112,7 @@ JA.update({
     "menu.monitor-screen": "Monitor Screen",
     "menu.notifier": "Notification Management",
     "menu.run-log": "Runtime Logs",
+    "menu.audit": "監査ログ",
     "menu.sql-audit": "SQL Audit",
     "menu.twin": "Topology Inspection",
     "menu.xinchuang": "Xinchuang Compliance",

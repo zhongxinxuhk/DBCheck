@@ -3614,6 +3614,7 @@ ZI.update({
     "menu.server-thresholds": "阈值设置",
     "menu.shares": "共享管理",
     "menu.sql-editor": "SQL编辑器",
+    "menu.audit": "审计日志",
     "menu.sql-audit": "SQL审计",
     "menu.autonomy": "安全自治",
     "menu.fleet": "智能基线",

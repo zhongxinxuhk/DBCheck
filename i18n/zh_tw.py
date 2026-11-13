@@ -3271,6 +3271,7 @@ ZH_TW.update({
     "menu.notifier": "Notification Management",
     "menu.run-log": "Runtime Logs",
     "menu.shares": "Share Management",
+    "menu.audit": "審計日誌",
     "menu.sql-audit": "SQL Audit",
     "menu.twin": "Topology Inspection",
     "menu.xinchuang": "Xinchuang Compliance",

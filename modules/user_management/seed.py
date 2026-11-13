@@ -59,6 +59,7 @@ menus_data = [
     ('oracle-client',    'menu.oracle-client',   0, 54),
     ('notifier',         'menu.notifier',        0, 55),
     ('apikey',           'menu.apikey',          0, 56),
+    ('audit',            'menu.audit',           0, 56),
     ('shares',           'menu.shares',          0, 57),
     ('intelligence',      'menu.intelligence',     0, 58),
     ('bicqa',             'menu.bicqa',            0, 582),
