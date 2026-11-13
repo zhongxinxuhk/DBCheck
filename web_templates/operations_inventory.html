@@ -302,11 +302,73 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           width: 100%;
         }
       }
-      #batch-sources [hidden] {display:none!important;}
-      #batch-sources {
-        max-height: 260px;
-        overflow: auto;
-      }
+      /* ── 批量巡检：任务编排与数据源选择 ───────────────────── */
+      .batch-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;padding:2px 2px 18px;border-bottom:1px solid #e8eef6}
+      .batch-hero>div:first-child{flex:1 1 620px;min-width:0}
+      .batch-kicker{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.16em;color:#5d82ab;text-transform:uppercase}
+      .batch-hero h2{margin:5px 0 7px;font-size:23px;letter-spacing:-.02em;color:#17324f}
+      .batch-hero p{max-width:none;margin:0;color:#6c7d90;font-size:12.5px;line-height:1.7}
+      .batch-hero-stats{display:flex;gap:8px;flex-wrap:wrap}
+      .batch-hero-stat{min-width:94px;padding:10px 14px;border:1px solid #e2eaf4;border-radius:10px;background:#f8fafd;text-align:center}
+      .batch-hero-stat strong{display:block;font-size:21px;line-height:1.15;color:#1d3b5c;font-variant-numeric:tabular-nums}
+      .batch-hero-stat span{display:block;margin-top:2px;font-size:11px;color:#75879b}
+      .batch-hero-stat--accent{background:#eef5ff;border-color:#cfe0f7}
+      .batch-hero-stat--accent strong{color:#195db7}
+      .batch-section{margin-top:22px;padding-top:20px;border-top:1px solid #e8eef6}
+      .batch-section-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+      .batch-section-title h3{margin:0;font-size:15px;color:#1f3550}
+      .batch-section-title span{font-size:11.5px;color:#7b8da2}
+      .batch-selection-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+      .batch-search-box{position:relative;flex:1 1 280px;min-width:220px}
+      .batch-search-box svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;stroke:#8a9bb0;fill:none;stroke-width:2;pointer-events:none}
+      .batch-search-box input{width:100%;height:38px;padding:0 12px 0 34px;border:1px solid #cfdbe9;border-radius:9px;background:#fff;font-size:13px;color:#23374d}
+      .batch-search-box input:focus{border-color:#195db7;box-shadow:0 0 0 3px rgba(25,93,183,.12);outline:none}
+      .batch-selection-bar button{height:36px;padding:0 13px;border-radius:8px;font-size:12.5px}
+      .batch-count{margin-left:auto;padding:6px 12px;border-radius:99px;background:#f1f5fa;color:#6c7d90;font-size:12px;white-space:nowrap}
+      .batch-count strong{color:#195db7;font-size:14px}
+      .batch-chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
+      .batch-chip{display:inline-flex;align-items:center;gap:6px;max-width:240px;padding:4px 6px 4px 10px;border:1px solid #cfe0f7;border-radius:99px;background:#eef5ff;color:#24558f;font-size:11.5px}
+      .batch-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .batch-chip button{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:transparent;color:#5b7fa6;font-size:13px;line-height:1;cursor:pointer}
+      .batch-chip button:hover{background:#d6e6fb;color:#17324f}
+      .batch-chip-more{background:#f1f5fa;border-color:#e0e8f2;color:#6c7d90}
+      .batch-source-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;max-height:420px;overflow:auto;padding:2px 4px 4px 2px;scrollbar-width:thin}
+      .batch-source-card{display:flex;align-items:flex-start;gap:10px;min-height:72px;padding:12px 13px;border:1px solid #dce5ef;border-radius:10px;background:#fff;cursor:pointer;transition:border-color .16s,background .16s,box-shadow .16s}
+      .batch-source-card:hover{border-color:#a9c1de;box-shadow:0 4px 12px rgba(28,63,104,.07)}
+      .batch-source-card.is-selected{border-color:#195db7;background:#f4f9ff;box-shadow:0 0 0 1px #195db7 inset}
+      .batch-source-card[hidden]{display:none!important}
+      .batch-source-card input[type="checkbox"]{width:16px;height:16px;margin:2px 0 0;flex:none;accent-color:#195db7}
+      .batch-source-main{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+      .batch-source-top{display:flex;align-items:center;gap:7px;min-width:0}
+      .batch-source-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;font-weight:600;line-height:1.4;color:#1f3550;overflow-wrap:anywhere}
+      .batch-type-badge{flex:none;padding:2px 7px;border-radius:99px;background:#eef2f7;color:#4a6684;font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+      .batch-source-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:11px;color:#74859a}
+      .batch-source-host{padding:1px 5px;border-radius:4px;background:#f5f8fc;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px}
+      .batch-source-off{color:#b42735}
+      .batch-cluster-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+      .batch-cluster-card{display:flex;align-items:flex-start;gap:10px;padding:13px 14px;border:1px solid #dce5ef;border-radius:10px;background:#fff;cursor:pointer;transition:border-color .16s,background .16s}
+      .batch-cluster-card:hover{border-color:#a9c1de}
+      .batch-cluster-card.is-selected{border-color:#195db7;background:#f4f9ff;box-shadow:0 0 0 1px #195db7 inset}
+      .batch-cluster-card input{width:16px;height:16px;margin:2px 0 0;flex:none;accent-color:#195db7}
+      .batch-cluster-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+      .batch-cluster-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#1f3550}
+      .batch-cluster-main span{font-size:11px;color:#74859a}
+      .batch-empty{padding:30px 16px;border:1px dashed #d7e2ef;border-radius:10px;background:#fafcff;color:#7b8da2;text-align:center;font-size:12px}
+      .batch-empty.hidden{display:none!important}
+      .batch-details{margin-top:12px;padding:0 14px;border:1px solid #e2eaf4;border-radius:10px;background:#fbfcfe}
+      .batch-details summary{padding:12px 0;font-size:12.5px;color:#405d7c}
+      .batch-details .grid{padding-bottom:14px}
+      .batch-details .muted{padding-bottom:12px}
+      .batch-check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;color:#405d7c;cursor:pointer}
+      .batch-check input{width:15px;height:15px;accent-color:#195db7}
+      .batch-weekdays{display:flex;flex-wrap:wrap;gap:6px 12px;margin:6px 0 4px;font-size:12px;color:#52687e}
+      .batch-weekdays label{display:inline-flex;align-items:center;gap:5px}
+      .batch-submit-bar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:24px -20px -20px;padding:14px 20px;border-top:1px solid #e2eaf4;border-radius:0 0 10px 10px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px)}
+      .batch-submit-copy{font-size:12px;color:#6c7d90}
+      .batch-submit-copy strong{font-size:18px;margin-right:4px;color:#195db7}
+      .batch-submit-bar .actions{margin:0}
+      @media(max-width:850px){.batch-hero{align-items:flex-start}.batch-hero-stats{width:100%}.batch-source-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
+      @media(max-width:550px){.batch-source-grid,.batch-cluster-grid{grid-template-columns:1fr}.batch-submit-bar{margin-left:-14px;margin-right:-14px;padding:12px 14px}.batch-count{margin-left:0}}
       .credential-value {
         font-family: ui-monospace, monospace;
         white-space: pre-wrap;
@@ -363,12 +425,41 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         </div>
       </section>
       <section id="batch-panel" class="{{ '' if batch_view else 'hidden' }}">
-        <div class="card">
-          <h2>发起整体巡检</h2>
-          <p class="muted">
-            所选数据源与集群成员自动去重。各库采用当前默认巡检模板，也可按库型单独选择模板。任务结束后下载一份包含汇总与各库完整明细的
-            Word 报告。
-          </p>
+        <div class="card batch-shell">
+          <div class="batch-hero">
+            <div>
+              <span class="batch-kicker">Multi-source inspection</span>
+              <h2>发起整体巡检</h2>
+              <p>所选数据源与集群成员自动去重。各库采用当前默认巡检模板，也可按库型单独选择模板；任务结束后下载一份包含汇总与各库完整明细的 Word 报告。</p>
+            </div>
+            <div class="batch-hero-stats">
+              <div class="batch-hero-stat"><strong id="batch-stat-sources">0</strong><span>可用数据源</span></div>
+              <div class="batch-hero-stat batch-hero-stat--accent"><strong id="batch-stat-selected">0</strong><span>已选择</span></div>
+              <div class="batch-hero-stat"><strong id="batch-stat-clusters">0</strong><span>纳入集群</span></div>
+            </div>
+          </div>
+          <section class="batch-section">
+            <div class="batch-section-title"><h3>选择数据源</h3><span>支持名称、类型与地址搜索；勾选后自动统计</span></div>
+            <div class="batch-selection-bar">
+              <div class="batch-search-box">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path></svg>
+                <input id="batch-search" type="search" placeholder="搜索数据源名称、类型或地址" aria-label="搜索整体巡检数据源">
+              </div>
+              <button id="batch-select-visible" type="button">选中搜索结果</button>
+              <button id="batch-clear-selected" type="button">清空选择</button>
+              <span class="batch-count"><strong id="batch-selected-count">0</strong> / <span id="batch-total-count">0</span></span>
+            </div>
+            <div id="selected-summary" class="muted">尚未选择数据源，可从下方勾选或按集群纳入。</div>
+            <div id="batch-selected-chips" class="batch-chips hidden"></div>
+            <div id="batch-sources" class="batch-source-grid" role="group" aria-label="数据源列表"></div>
+            <div id="batch-sources-empty" class="batch-empty hidden">没有匹配的数据源</div>
+          </section>
+          <section class="batch-section">
+            <div class="batch-section-title"><h3>按集群纳入成员</h3><span>适合 RAC / Data Guard / DMDSC 等集群架构</span></div>
+            <div id="batch-clusters" class="batch-cluster-grid"></div>
+          </section>
+          <section class="batch-section">
+            <div class="batch-section-title"><h3>任务设置</h3><span>基础信息、并发与执行策略</span></div>
           <div class="grid">
             <label class="field"
               >任务名称<input id="batch-name" value="数据库整体巡检" /></label
@@ -387,28 +478,25 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
               </select></label
             >
           </div>
-          <details style="margin-top:12px"><summary>执行时段与负载控制</summary><div class="grid">
+          <details class="batch-details"><summary>执行时段与负载控制</summary><div class="grid">
             <label class="field">单库最长执行秒数<input id="batch-timeout" type="number" min="30" max="86400" value="1800"></label>
             <label class="field">同一集群最大并发<input id="batch-cluster-limit" type="number" min="1" max="8" value="1"></label>
             <label class="field">单条查询超时秒数<input id="batch-query-timeout" type="number" min="1" max="15" value="15"></label>
             <label class="field">单次查询最多返回行数<input id="batch-row-limit" type="number" min="1" max="1000" value="1000"></label>
             <label class="field">新数据源启动时段（北京时间）<span><input id="batch-window-start" type="time"> 至 <input id="batch-window-end" type="time"></span></label>
-          </div><div id="batch-weekdays">允许日期 <label><input type="checkbox" data-weekday="0" checked>周一</label> <label><input type="checkbox" data-weekday="1" checked>周二</label> <label><input type="checkbox" data-weekday="2" checked>周三</label> <label><input type="checkbox" data-weekday="3" checked>周四</label> <label><input type="checkbox" data-weekday="4" checked>周五</label> <label><input type="checkbox" data-weekday="5" checked>周六</label> <label><input type="checkbox" data-weekday="6" checked>周日</label> </div><p class="muted">时段留空可全天执行。时段结束后暂停启动后续数据源，已启动的数据源按超时限制收尾。</p></details>
-          <details><summary>按业务分组与条件纳入</summary><button id="batch-manage-groups" type="button">维护巡检分组</button><div id="batch-grouping"></div></details>
-          <label><input id="batch-notify" type="checkbox">完成后按通知设置发送整体报告与分组摘要</label>
-          <h3>已选数据源</h3>
-          <div id="selected-summary" class="muted"></div>
-          <div class="toolbar"><input id="batch-search" type="search" placeholder="搜索数据源名称、类型或地址" aria-label="搜索整体巡检数据源"><button id="batch-select-visible" type="button">选中搜索结果</button><button id="batch-clear-selected" type="button">清空选择</button></div>
-          <div id="batch-sources" class="cluster-list"></div>
-          <h3>按集群纳入成员</h3>
-          <div id="batch-clusters" class="cluster-list"></div>
-          <details>
+          </div><div id="batch-weekdays" class="batch-weekdays">允许日期 <label><input type="checkbox" data-weekday="0" checked>周一</label> <label><input type="checkbox" data-weekday="1" checked>周二</label> <label><input type="checkbox" data-weekday="2" checked>周三</label> <label><input type="checkbox" data-weekday="3" checked>周四</label> <label><input type="checkbox" data-weekday="4" checked>周五</label> <label><input type="checkbox" data-weekday="5" checked>周六</label> <label><input type="checkbox" data-weekday="6" checked>周日</label> </div><p class="muted">时段留空可全天执行。时段结束后暂停启动后续数据源，已启动的数据源按超时限制收尾。</p></details>
+          <details class="batch-details"><summary>按业务分组与条件纳入</summary><button id="batch-manage-groups" type="button">维护巡检分组</button><div id="batch-grouping"></div></details>
+          <label class="batch-check"><input id="batch-notify" type="checkbox">完成后按通知设置发送整体报告与分组摘要</label>
+          </section>
+          <details class="batch-details">
             <summary>按数据库类型指定模板</summary>
             <div id="batch-templates" class="grid"></div>
           </details>
-          <div class="actions" style="margin-top: 18px">
-            <button id="schedule-batch">设为定时任务</button><button id="start-batch" class="primary">开始整体巡检</button
-            ><span class="muted">单库异常会单独记录，其他数据源继续执行。</span>
+          <div class="batch-submit-bar">
+            <div class="batch-submit-copy"><strong id="batch-submit-count">0</strong> 个数据源 · <span id="batch-submit-clusters">0</span> 个集群待巡检 · 单库异常会单独记录，其他数据源继续执行</div>
+            <div class="actions">
+              <button id="schedule-batch">设为定时任务</button><button id="start-batch" class="primary">开始整体巡检</button>
+            </div>
           </div>
         </div>
         <div class="card">
@@ -862,23 +950,94 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             .join("\n\n") || "暂无变更记录";
         $("history-dialog").showModal();
       }
+      function batchSelectedRecords() {
+        return state.records.filter((record) => state.selected.has(record.id));
+      }
+      function updateBatchSummary() {
+        const total = state.records.length;
+        const selected = state.selected.size;
+        const clusters = state.clusters.size;
+        const setText = (id, value) => {
+          const node = $(id);
+          if (node) node.textContent = value;
+        };
+        setText("batch-stat-sources", total);
+        setText("batch-stat-selected", selected);
+        setText("batch-stat-clusters", clusters);
+        setText("batch-total-count", total);
+        setText("batch-selected-count", selected);
+        setText("batch-submit-count", selected);
+        setText("batch-submit-clusters", clusters);
+        const summary = $("selected-summary");
+        if (summary) {
+          summary.textContent = selected
+            ? `已选择 ${selected} 个数据源${clusters ? `，另纳入 ${clusters} 个集群` : ""}。`
+            : "尚未选择数据源，可从下方勾选或按集群纳入。";
+        }
+        const chips = $("batch-selected-chips");
+        if (!chips) return;
+        const chosen = batchSelectedRecords();
+        chips.classList.toggle("hidden", chosen.length === 0);
+        chips.innerHTML =
+          chosen
+            .slice(0, 8)
+            .map(
+              (record) =>
+                `<span class="batch-chip"><span>${esc(record.source.name)}</span><button type="button" data-remove-source="${esc(record.id)}" aria-label="移除 ${esc(record.source.name)}">&times;</button></span>`,
+            )
+            .join("") +
+          (chosen.length > 8
+            ? `<span class="batch-chip batch-chip-more">+${chosen.length - 8}</span>`
+            : "");
+      }
+      function batchSourceCard(record) {
+        const source = record.source || {};
+        const metadata = record.metadata || {};
+        const name = source.name || "未命名数据源";
+        const type = source.db_type || "unknown";
+        const host = [source.host, source.port]
+          .filter((value) => value !== undefined && value !== null && value !== "")
+          .join(":");
+        const context = [metadata.environment, metadata.system]
+          .filter(Boolean)
+          .join(" · ");
+        const selected = state.selected.has(record.id);
+        return `<label class="batch-source-card${selected ? " is-selected" : ""}" data-search="${esc(
+          [name, type, host, context].join(" ").toLowerCase(),
+        )}">
+          <input type="checkbox" data-batch-source="${esc(record.id)}" ${selected ? "checked" : ""} aria-label="选择 ${esc(name)}">
+          <span class="batch-source-main">
+            <span class="batch-source-name">${esc(name)}</span>
+            <span class="batch-source-meta"><span class="batch-type-badge">${esc(type)}</span><span class="batch-source-host">${esc(host || "未登记地址")}</span>${context ? `<span>${esc(context)}</span>` : ""}${source.enabled === false ? '<span class="batch-source-off">已停用</span>' : ""}</span>
+          </span>
+        </label>`;
+      }
       function renderSelection() {
-        $("selected-summary").textContent =
-          `已选择 ${state.selected.size} 个数据源，也可在下方勾选其他数据源或集群。`;
         $("batch-sources").innerHTML = state.records
-          .map(
-            (r) =>
-              `<label><input type="checkbox" data-batch-source="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""}>${esc(r.source.name)} <span class="muted">${esc(r.source.db_type)} · ${esc(r.source.host)}</span></label>`,
-          )
+          .map(batchSourceCard)
           .join("");
+        $("batch-sources-empty").textContent = state.records.length
+          ? "没有匹配的数据源，试试其他关键词。"
+          : "暂无数据源，请先在数据库运维台账中添加。";
         $("batch-clusters").innerHTML =
           state.options.clusters
-            .map(
-              (c) =>
-                `<label><input type="checkbox" data-batch-cluster="${esc(c.id)}" ${state.clusters.has(c.id) ? "checked" : ""}>${esc(c.name)}（${c.instance_ids.length}个数据源）</label>`,
-            )
+            .map((cluster) => {
+              const checked = state.clusters.has(cluster.id);
+              const kinds = {
+                oracle_rac: "Oracle RAC",
+                oracle_dg: "Oracle Data Guard",
+                dm_dsc: "DM DMDSC",
+                dm_guard: "DM 数据守护",
+              };
+              const kind = cluster.kind || cluster.spec?.kind || "";
+              const kindLabel = kinds[kind] || kind || "集群";
+              return `<label class="batch-cluster-card${checked ? " is-selected" : ""}">
+                <input type="checkbox" data-batch-cluster="${esc(cluster.id)}" ${checked ? "checked" : ""} aria-label="纳入 ${esc(cluster.name)}">
+                <span class="batch-cluster-main"><strong>${esc(cluster.name)}</strong><span>${esc(kindLabel)} · ${cluster.instance_ids.length} 个数据源</span></span>
+              </label>`;
+            })
             .join("") ||
-          '<span class="muted">暂无已配置集群，可直接选择多个数据源。</span>';
+          '<div class="batch-empty" style="grid-column:1/-1">暂无已配置集群，可直接选择多个数据源。</div>';
         const kinds = [...new Set(state.records.map((r) => r.source.db_type))];
         const saved = Object.fromEntries(
           [...$("batch-templates").querySelectorAll("select")].map((s) => [
@@ -904,17 +1063,34 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
                 .join("")}</select></label>`,
           )
           .join("");
+        filterBatchSources();
+        updateBatchSummary();
       }
       function filterBatchSources() {
         const query = $('batch-search').value.trim().toLowerCase();
-        $('batch-sources').querySelectorAll('label').forEach(label => {label.hidden = !label.textContent.toLowerCase().includes(query);});
+        let visible = 0;
+        [...$('batch-sources').querySelectorAll('.batch-source-card')].forEach(card => {
+          const match = !query || (card.dataset.search || '').includes(query);
+          card.hidden = !match;
+          if (match) visible += 1;
+        });
+        const empty = $('batch-sources-empty');
+        if (empty) empty.classList.toggle('hidden', visible > 0);
+        const selectVisible = $('batch-select-visible');
+        if (selectVisible) selectVisible.disabled = visible === 0;
       }
       $('batch-search').oninput = filterBatchSources;
       $('batch-select-visible').onclick = () => {
-        $('batch-sources').querySelectorAll('label:not([hidden]) input').forEach(input => state.selected.add(input.dataset.batchSource));
-        renderSelection(); filterBatchSources();
+        [...$('batch-sources').querySelectorAll('.batch-source-card:not([hidden]) input[data-batch-source]')].forEach(input => state.selected.add(input.dataset.batchSource));
+        renderSelection();
       };
-      $('batch-clear-selected').onclick = () => {state.selected.clear(); renderSelection(); filterBatchSources();};
+      $('batch-clear-selected').onclick = () => {state.selected.clear(); renderSelection();};
+      $('batch-selected-chips').addEventListener('click', event => {
+        const button = event.target.closest('[data-remove-source]');
+        if (!button) return;
+        state.selected.delete(button.dataset.removeSource);
+        renderSelection();
+      });
       function executionPolicy() {
         const start = $('batch-window-start').value, end = $('batch-window-end').value;
         if (!!start !== !!end) throw new Error('请同时填写时段开始和结束时间');
@@ -1089,14 +1265,20 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           const id = d.select || d.batchSource;
           e.checked ? state.selected.add(id) : state.selected.delete(id);
           renderRecords();
-          if (d.batchSource)
-            $("selected-summary").textContent =
-              `已选择 ${state.selected.size} 个数据源`;
+          if (d.batchSource) {
+            const card = e.closest('.batch-source-card');
+            if (card) card.classList.toggle('is-selected', e.checked);
+            updateBatchSummary();
+          }
         }
-        if (d.batchCluster)
+        if (d.batchCluster) {
           e.checked
             ? state.clusters.add(d.batchCluster)
             : state.clusters.delete(d.batchCluster);
+          const card = e.closest('.batch-cluster-card');
+          if (card) card.classList.toggle('is-selected', e.checked);
+          updateBatchSummary();
+        }
         if (d.table) state.tables[d.table][Number(d.row)][d.column] = e.value;
         if (d.scope === "source" && d.key === "db_type" && !state.editing) {
           const meta = state.options.db_types.find((m) => m.key === e.value);
