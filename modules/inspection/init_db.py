@@ -2965,6 +2965,22 @@ DM8_DEFAULT_CHAPTERS = [
              'desc_zh': '系统权限分配', 'desc_en': 'System privilege assignments'},
         ]
     },
+    {
+        'chapter_number': 19,
+        'chapter_title_zh': '数据守护与集群状态',
+        'chapter_title_en': 'Data Guard & Cluster Status',
+        'description': '数据守护、MAL 链路、归档与集群运行状态；单机部署返回空集',
+        'queries': [
+            {'key': 'dm_watcher', 'sql': "SELECT * FROM V$DMWATCHER;",
+             'desc_zh': '数据守护组与守护进程状态', 'desc_en': 'Data guard group and watcher status'},
+            {'key': 'dm_mal_link', 'sql': "SELECT * FROM V$MAL_LINK_STATUS;",
+             'desc_zh': 'MAL 链路连接状态', 'desc_en': 'MAL link status'},
+            {'key': 'dm_mal_info', 'sql': "SELECT * FROM V$MAL_INFO;",
+             'desc_zh': 'MAL 配置与实例信息', 'desc_en': 'MAL configuration and instance info'},
+            {'key': 'dm_arch_status', 'sql': "SELECT * FROM V$ARCH_STATUS;",
+             'desc_zh': '归档与集群归档状态', 'desc_en': 'Archive and cluster archive status'},
+        ]
+    },
 ]
 
 # 临时文件：TiDB 29 章配置（1-21 章完全参照 MySQL + 22-29 章 TiDB 特性）

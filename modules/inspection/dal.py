@@ -281,6 +281,11 @@ def init_database(db_path: str = None):
     except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
         print(f"[巡检] SQL Server 锁等待章节补齐失败（已忽略）: {e}")
 
+    try:
+        ensure_dm8_ha_chapters(db_path=db_path)
+    except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
+        print(f"[巡检] DM8 高可用章节补齐失败（已忽略）: {e}")
+
 
     from modules.inspection.business_templates import ensure_business_defaults
     ensure_business_defaults(db_path=db_path)
@@ -2852,6 +2857,71 @@ def ensure_sqlserver_lock_chapters(db_path: str = None) -> int:
         return created
     except Exception as e:
         print(f"[巡检] SQL Server 锁等待章节补齐跳过: {e}")
+        return 0
+
+
+def ensure_dm8_ha_chapters(db_path: str = None) -> int:
+    """为已播种的 DM8 单机预置模板补齐「数据守护与集群状态」章节。
+
+    旧版 DM8 模板缺数据守护/MAL/归档运行状态，HA 域无法覆盖；仅新增章节和
+    查询，不覆盖用户已有章节或 SQL。章节号优先使用 19，被占用时顺延。
+    """
+    try:
+        from modules.inspection.init_db import DM8_DEFAULT_CHAPTERS
+        chapter = next(c for c in DM8_DEFAULT_CHAPTERS if c['chapter_number'] == 19)
+        first_key = chapter['queries'][0]['key']
+        conn = get_db_connection(db_path)
+        try:
+            templates = conn.execute(
+                "SELECT id FROM inspection_template "
+                "WHERE db_type='dm8' AND is_preset=1 AND version='v1' ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+        created = 0
+        for tmpl in templates:
+            tid = tmpl['id']
+            conn = get_db_connection(db_path)
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM inspection_query q "
+                    "JOIN inspection_chapter c ON c.id=q.chapter_id "
+                    "WHERE c.template_id=? AND q.query_key=?",
+                    (tid, first_key),
+                ).fetchone()
+                if exists:
+                    continue
+                chapter_no = int(chapter.get('chapter_number') or 19)
+                occupied = conn.execute(
+                    "SELECT 1 FROM inspection_chapter WHERE template_id=? AND chapter_number=?",
+                    (tid, chapter_no),
+                ).fetchone()
+                if occupied:
+                    row = conn.execute(
+                        "SELECT COALESCE(MAX(chapter_number),0) FROM inspection_chapter "
+                        "WHERE template_id=?", (tid,)
+                    ).fetchone()
+                    chapter_no = int(row[0] or 0) + 1
+            finally:
+                conn.close()
+            chapter_id = create_chapter(
+                tid, chapter_no,
+                chapter['chapter_title_zh'],
+                chapter.get('chapter_title_en'),
+                chapter.get('description'),
+                db_path=db_path,
+            )
+            for query in chapter['queries']:
+                create_query(
+                    chapter_id, query['key'], query['sql'],
+                    query.get('desc_zh'), query.get('desc_en'),
+                    db_path=db_path,
+                )
+            created += 1
+            print(f"[巡检] 已为 DM8 模板补齐「数据守护与集群状态」章节（第 {chapter_no} 章）")
+        return created
+    except Exception as e:
+        print(f"[巡检] DM8 高可用章节补齐跳过: {e}")
         return 0
 
 
