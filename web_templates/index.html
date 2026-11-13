@@ -538,6 +538,7 @@ async function executeFixSql(taskId, sql) {
 .main {
   margin-left: 228px;
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -3132,6 +3133,10 @@ async function executeFixSql(taskId, sql) {
 }
 .table tbody tr:hover { background: rgba(55,138,221,.06); }
 .table tbody tr:last-child td { border-bottom: none; }
+
+/* DocKB 长键名/长值不撑破桌面布局；窄屏仍在 .table-wrap 内横向滚动 */
+#page-doc-kb .table td:nth-child(5) code { white-space: normal; word-break: break-word; }
+#page-doc-kb .table td:nth-child(9) .btn { padding-left: 6px; padding-right: 6px; }
 
 /* ─── 健康分数环 ─── */
 .health-ring-wrap {
@@ -10988,7 +10993,18 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
             <button class="btn btn-ghost" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="loadDocKb()" data-page-node-id="1Mj19XHDXYWSG0KmNPoS4D">↻ 刷新</button>
           </div>
           <div class="table-wrap" style="overflow-x:auto" data-page-node-id="leE1GFR7mIX2HwUD5EtnBX">
-            <table class="table" style="width:100%;font-size:13px;min-width:920px" data-page-node-id="hThFs3DEtfCrQ1CBeV1Q0n">
+            <table class="table" style="width:100%;font-size:13px;min-width:960px;table-layout:fixed" data-page-node-id="hThFs3DEtfCrQ1CBeV1Q0n">
+              <colgroup>
+                <col style="width:52px">
+                <col style="width:78px">
+                <col style="width:56px">
+                <col style="width:64px">
+                <col style="width:22%">
+                <col>
+                <col style="width:84px">
+                <col style="width:72px">
+                <col style="width:116px">
+              </colgroup>
               <thead data-page-node-id="5DiZuJoQ0InJpE8x60a6Bg"><tr data-page-node-id="EmCoay90yiCmbLYyJM76Do">
                 <th style="white-space:nowrap" data-page-node-id="dIUibOlBbokI8Krn3YdXfM">ID</th>
                 <th style="white-space:nowrap" data-page-node-id="feBRUhid0VvkLBzPYXR2UO">库类型</th>
