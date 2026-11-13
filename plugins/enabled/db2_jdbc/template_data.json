@@ -121,6 +121,60 @@
           "query_description_en": "RUNSTATS freshness"
         }
       ]
+    },
+    {
+      "chapter_number": 7,
+      "chapter_title_zh": "备份与恢复",
+      "chapter_title_en": "Backup & Restore",
+      "description": "DB2 备份/恢复历史与最近结果（SYSIBMADM.DB_HISTORY）",
+      "queries": [
+        {
+          "query_key": "db2_backup_history",
+          "query_sql": "SELECT START_TIME, END_TIME, OPERATION, OPERATIONTYPE, OBJECTTYPE, ENTRY_STATUS, SQLCODE, LOCATION, DEVICETYPE, NUM_TBSPS FROM SYSIBMADM.DB_HISTORY ORDER BY START_TIME DESC FETCH FIRST 100 ROWS ONLY",
+          "query_description_zh": "备份/恢复历史与结果",
+          "query_description_en": "Backup/restore history and results"
+        }
+      ]
+    },
+    {
+      "chapter_number": 8,
+      "chapter_title_zh": "安全与审计",
+      "chapter_title_en": "Security & Audit",
+      "description": "数据库级授权与审计策略状态（SYSCAT.DBAUTH / SYSCAT.AUDITPOLICIES）",
+      "queries": [
+        {
+          "query_key": "db2_dbauth",
+          "query_sql": "SELECT GRANTEE, GRANTEETYPE, CONNECTAUTH, CREATETABAUTH, DBADMAUTH, SECURITYADMAUTH, DATAACCESSAUTH, ACCESSCTRLAUTH, EXPLAINAUTH FROM SYSCAT.DBAUTH ORDER BY GRANTEE",
+          "query_description_zh": "数据库级用户/组授权",
+          "query_description_en": "Database-level user/group authorities"
+        },
+        {
+          "query_key": "db2_audit_policies",
+          "query_sql": "SELECT AUDITPOLICYNAME, AUDITSTATUS, CONTEXTSTATUS, VALIDATESTATUS, CHECKINGSTATUS, SYSADMINSTATUS, OBJMAINTSTATUS, SECMAINTSTATUS, EXECUTESTATUS, ERRORTYPE FROM SYSCAT.AUDITPOLICIES ORDER BY AUDITPOLICYNAME",
+          "query_description_zh": "审计策略与审计状态",
+          "query_description_en": "Audit policies and status"
+        }
+      ]
+    },
+    {
+      "chapter_number": 9,
+      "chapter_title_zh": "高可用与 HADR",
+      "chapter_title_en": "HA & HADR",
+      "description": "HADR 运行状态与数据库配置（MON_GET_HADR / SYSIBMADM.DBCFG）",
+      "queries": [
+        {
+          "query_key": "db2_hadr",
+          "query_sql": "SELECT HADR_ROLE, HADR_STATE, HADR_SYNCMODE, HADR_CONNECT_STATUS, PRIMARY_MEMBER_HOST, STANDBY_MEMBER_HOST, LOG_HADR_WAIT_CUR, STANDBY_REPLAY_DELAY, READS_ON_STANDBY_ENABLED FROM TABLE(SYSPROC.MON_GET_HADR(NULL)) AS T",
+          "query_description_zh": "HADR 角色、状态与复制延迟",
+          "query_description_en": "HADR role, state and replay delay"
+        },
+        {
+          "query_key": "db2_hadr_config",
+          "query_sql": "SELECT NAME, VALUE FROM SYSIBMADM.DBCFG WHERE NAME LIKE 'hadr%' ORDER BY NAME",
+          "query_description_zh": "HADR 数据库配置参数",
+          "query_description_en": "HADR database configuration parameters"
+        }
+      ]
     }
   ]
 }
