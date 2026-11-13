@@ -78,7 +78,7 @@ class MongodbInspector(BaseInspectionEngine):
     """
 
     def __init__(self, host, port, user=None, password=None, database=None,
-                 ssh_info=None, template_id=None, chapter_ids=None):
+                 ssh_info=None, template_id=None):
         """初始化 MongoDB 巡检器。
 
         Args:
@@ -89,14 +89,8 @@ class MongodbInspector(BaseInspectionEngine):
             database: 要连接的数据库名（可选，默认 'admin'）
             ssh_info: SSH 连接信息字典（可选，也传递 MongoDB 专用参数）
             template_id: 巡检模板 ID（可选）
-            chapter_ids: 章节可选 - 用户勾选的章节 ID 列表（可选）。
-                         None/不传=全量；列表=仅巡检选中章。
-                         注意：本插件章节来自本地 sql_templates.json，最终报告章节由
-                         基类 _render_context -> get_chapters_by_template(chapter_ids=...)
-                         统一过滤（共享 helper 为 SQL 专用，此处走继承链路，无需注入 SQL）。
         """
-        super().__init__(host, port, user, password, database, ssh_info, template_id,
-                         chapter_ids=chapter_ids)
+        super().__init__(host, port, user, password, database, ssh_info, template_id)
         self.db_type = 'mongodb'
         self.client = None
         self.db = None
@@ -196,13 +190,7 @@ class MongodbInspector(BaseInspectionEngine):
             return None
 
     def _load_chapters_from_db(self):
-        """从 sql_templates.json 加载章节结构（覆盖父类方法）。
-
-        说明：本插件章节来自本地 sql_templates.json（非 inspection.db），且 JSON 章节
-        无 DB id 字段，无法用 build_chapter_filter_sql 的 SQL 片段过滤。最终报告章节由
-        基类 _render_context -> get_chapters_by_template(chapter_ids=self.chapter_ids)
-        统一过滤（固定四章另行追加），故「章节可选」通过继承链路生效，无需在此注入 SQL。
-        """
+        """从 sql_templates.json 加载章节结构（覆盖父类方法）。"""
         try:
             template_path = Path(__file__).parent / 'sql_templates.json'
             if not template_path.exists():
@@ -288,6 +276,7 @@ class MongodbInspector(BaseInspectionEngine):
                 ('_collect_balancer_status', '均衡器状态'),
                 ('_collect_profile', 'Profiler'),
                 ('_collect_slow_queries', '慢查询'),
+                ('_collect_jobs', '后台任务与日志'),
             ]
             total = len(collect_steps) + 1  # +1 用于基线检查
             for i, (method, label) in enumerate(collect_steps, 1):
@@ -982,6 +971,69 @@ class MongodbInspector(BaseInspectionEngine):
     # 基线检查（覆盖父类方法）
     # ════════════════════════════════════════════════════════════
 
+    def _collect_jobs(self):
+        """采集当前活动操作、全局日志尾部和启动告警（日志与作业域）。"""
+        try:
+            result = self.db.command('currentOp', active=True)
+            ops = []
+            for op in result.get('inprog', []):
+                if not isinstance(op, dict):
+                    continue
+                command = op.get('command') or {}
+                ops.append({
+                    'OPID': op.get('opid', ''),
+                    'OP': op.get('op', ''),
+                    'NS': op.get('ns', ''),
+                    'SECONDS_RUNNING': op.get('secs_running', 0),
+                    'DESC': str(op.get('desc') or '')[:200],
+                    'CLIENT': str(op.get('client') or '')[:120],
+                    'COMMAND': json.dumps(command, ensure_ascii=False, default=str)[:400] if command else '',
+                })
+            self.context['mongodb_current_ops'] = ops or [{
+                'OPID': '-', 'OP': '-', 'NS': '-', 'SECONDS_RUNNING': 0,
+                'DESC': '当前无活动操作', 'CLIENT': '', 'COMMAND': '',
+            }]
+        except Exception as e:
+            self.context['mongodb_current_ops'] = [{'ERROR': str(e)[:200]}]
+
+        def _parse_log_lines(lines):
+            rows = []
+            for line in lines or []:
+                text = line.decode('utf-8', 'replace') if isinstance(line, bytes) else str(line)
+                try:
+                    item = json.loads(text)
+                except Exception:
+                    rows.append({'TIME': '', 'SEVERITY': '', 'COMPONENT': '', 'MESSAGE': text[:500]})
+                    continue
+                raw_time = item.get('t') or {}
+                if isinstance(raw_time, dict):
+                    raw_time = raw_time.get('$date', '')
+                rows.append({
+                    'TIME': str(raw_time)[:40],
+                    'SEVERITY': str(item.get('s', '')),
+                    'COMPONENT': str(item.get('c', '')),
+                    'MESSAGE': str(item.get('msg', ''))[:500],
+                })
+            return rows
+
+        try:
+            log = self.db.command('getLog', 'global')
+            rows = _parse_log_lines((log.get('log') or [])[-100:])
+            self.context['mongodb_log_tail'] = list(reversed(rows)) or [{
+                'TIME': '', 'SEVERITY': '', 'COMPONENT': '', 'MESSAGE': '日志为空',
+            }]
+        except Exception as e:
+            self.context['mongodb_log_tail'] = [{'ERROR': str(e)[:200]}]
+
+        try:
+            warnings = self.db.command('getLog', 'startupWarnings')
+            rows = _parse_log_lines(warnings.get('log') or [])
+            self.context['mongodb_startup_warnings'] = rows or [{
+                'TIME': '', 'SEVERITY': '', 'COMPONENT': '', 'MESSAGE': '无启动告警',
+            }]
+        except Exception as e:
+            self.context['mongodb_startup_warnings'] = [{'ERROR': str(e)[:200]}]
+
     def _check_baselines(self):
         """执行基线配置检查，结果存入 self.context['baseline_results']。
 
@@ -1000,7 +1052,7 @@ class MongodbInspector(BaseInspectionEngine):
             # 优先从 baselines.json 加载基线配置
             baselines = self._load_baselines()
             if not baselines:
-                # 降级到 inspection.dal
+                # 降级到 inspection_dal
                 try:
                     from modules.inspection.dal import get_baselines_by_db_type
                     baselines = get_baselines_by_db_type(self.db_type, enabled_only=True)

@@ -258,6 +258,35 @@
           "category": "storage"
         }
       ]
+    },
+    {
+      "chapter_number": 13,
+      "chapter_title_zh": "错误日志与后台任务",
+      "chapter_title_en": "Error Log & Background Tasks",
+      "description": "当前活动操作、全局日志尾部和启动告警（currentOp / getLog）",
+      "queries": [
+        {
+          "key": "mongodb_current_ops",
+          "desc_zh": "当前活动操作与后台任务（currentOp）",
+          "desc_en": "Active operations and background tasks (currentOp)",
+          "command": "db.adminCommand({currentOp:1, active:true})",
+          "category": "job"
+        },
+        {
+          "key": "mongodb_log_tail",
+          "desc_zh": "全局日志最近 100 条（getLog global）",
+          "desc_en": "Latest 100 global log lines (getLog global)",
+          "command": "db.adminCommand({getLog:\"global\"})",
+          "category": "job"
+        },
+        {
+          "key": "mongodb_startup_warnings",
+          "desc_zh": "启动告警日志（getLog startupWarnings）",
+          "desc_en": "Startup warning log (getLog startupWarnings)",
+          "command": "db.adminCommand({getLog:\"startupWarnings\"})",
+          "category": "job"
+        }
+      ]
     }
   ]
 }
