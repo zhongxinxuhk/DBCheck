@@ -286,6 +286,11 @@ def init_database(db_path: str = None):
     except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
         print(f"[巡检] DM8 高可用章节补齐失败（已忽略）: {e}")
 
+    try:
+        ensure_gbase8a_lock_ha_chapters(db_path=db_path)
+    except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
+        print(f"[巡检] GBase 8a 锁/高可用章节补齐失败（已忽略）: {e}")
+
 
     from modules.inspection.business_templates import ensure_business_defaults
     ensure_business_defaults(db_path=db_path)
@@ -2922,6 +2927,80 @@ def ensure_dm8_ha_chapters(db_path: str = None) -> int:
         return created
     except Exception as e:
         print(f"[巡检] DM8 高可用章节补齐跳过: {e}")
+        return 0
+
+
+def ensure_gbase8a_lock_ha_chapters(db_path: str = None) -> int:
+    """为已播种的 GBase 8a MPP 预置模板补齐锁与高可用章节。
+
+    旧版模板只有 14 章，缺 TABLE_LOCKS 和 CLUSTER_MONIT_INFO；仅新增章节和
+    查询，不覆盖用户已有章节或 SQL。章节号使用当前最大章节号顺延。
+    """
+    try:
+        from modules.inspection.init_db import compatibility_chapters
+        wanted = {
+            ch['queries'][0]['key']: ch
+            for ch in compatibility_chapters('gbase8a')
+            if ch['queries'][0]['key'] in ('gbase8a_lock', 'gbase8a_ha')
+        }
+        conn = get_db_connection(db_path)
+        try:
+            templates = conn.execute(
+                "SELECT id FROM inspection_template "
+                "WHERE db_type='gbase8a' AND is_preset=1 AND version='8a' "
+                "AND template_name_zh='GBase 8a MPP集群巡检模板' ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+        created = 0
+        for tmpl in templates:
+            tid = tmpl['id']
+            for query_key, chapter in wanted.items():
+                conn = get_db_connection(db_path)
+                try:
+                    exists = conn.execute(
+                        "SELECT 1 FROM inspection_query q "
+                        "JOIN inspection_chapter c ON c.id=q.chapter_id "
+                        "WHERE c.template_id=? AND q.query_key=?",
+                        (tid, query_key),
+                    ).fetchone()
+                    if exists:
+                        continue
+                    existing_chapter = conn.execute(
+                        "SELECT id FROM inspection_chapter WHERE template_id=? AND chapter_title_zh=? "
+                        "ORDER BY id LIMIT 1",
+                        (tid, chapter['chapter_title_zh']),
+                    ).fetchone()
+                    if existing_chapter:
+                        chapter_id = existing_chapter['id']
+                    else:
+                        row = conn.execute(
+                            "SELECT COALESCE(MAX(chapter_number),0) FROM inspection_chapter "
+                            "WHERE template_id=?", (tid,)
+                        ).fetchone()
+                        chapter_no = int(row[0] or 0) + 1
+                        chapter_id = None
+                finally:
+                    conn.close()
+                if not existing_chapter:
+                    chapter_id = create_chapter(
+                        tid, chapter_no,
+                        chapter['chapter_title_zh'],
+                        chapter.get('chapter_title_en'),
+                        chapter.get('description'),
+                        db_path=db_path,
+                    )
+                query = chapter['queries'][0]
+                create_query(
+                    chapter_id, query['key'], query['sql'],
+                    query.get('desc_zh'), query.get('desc_en'),
+                    db_path=db_path,
+                )
+                created += 1
+                print(f"[巡检] 已为 GBase 8a 模板补齐「{chapter['chapter_title_zh']}」章节")
+        return created
+    except Exception as e:
+        print(f"[巡检] GBase 8a 锁/高可用章节补齐跳过: {e}")
         return 0
 
 

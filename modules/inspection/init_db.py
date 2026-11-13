@@ -4594,7 +4594,13 @@ COMPATIBILITY_QUERIES = {'oracle': {'version': "SELECT BANNER FROM V$VERSION WHE
                         'INFORMATION_SCHEMA.STATISTICS LIMIT 100',
              'slow_sql': 'SELECT COORDINATOR_NAME,ID,COMMAND,TIME,STATE FROM '
                          'INFORMATION_SCHEMA.COORDINATORS_TASK_INFORMATION ORDER BY TIME DESC LIMIT 30',
-             'privileges': 'SHOW GRANTS FOR CURRENT_USER'}}
+             'privileges': 'SHOW GRANTS FOR CURRENT_USER',
+             'lock': 'SELECT VC,DB,TableName,InsertFlag,CommitFlag,RDLCKs,WRLCKs,RecWRLCKs,ExLCK,ExWRLCK,Sessions '
+                     'FROM INFORMATION_SCHEMA.TABLE_LOCKS '
+                     'WHERE RDLCKs>0 OR WRLCKs>0 OR RecWRLCKs>0 OR ExLCK>0 OR ExWRLCK>0',
+             'ha': 'SELECT HOST,GCWARE_STATE,GCLUSTER_STATE,GNODE_STATE,SYNCSERVER_STATE,'
+                   'COORSERVER_DATA_STATUS,DATASERVER_DATA_STATUS,CLUSTER_STATUS,CLUSTER_MODE '
+                   'FROM PERFORMANCE_SCHEMA.CLUSTER_MONIT_INFO'}}
 
 def compatibility_chapters(family, version=None):
     """Fixed metadata indicators for native template selection and report chapters."""
@@ -4603,8 +4609,9 @@ def compatibility_chapters(family, version=None):
            'files':'数据文件与容量','archive':'归档与恢复模式','backups':'备份任务',
            'waits':'等待事件','cache':'缓存命中指标','statistics':'统计信息新鲜度',
            'indexes':'索引状态','slow_sql':'慢SQL与执行资源','cluster_nodes':'集群节点',
-           'shared_pool':'共享内存与库缓存','privileges':'巡检账号授权','lock':'锁与阻塞'}
-    names_en={'lock':'Lock & Blocking'}
+           'shared_pool':'共享内存与库缓存','privileges':'巡检账号授权','lock':'锁与阻塞',
+           'ha':'高可用与集群状态'}
+    names_en={'lock':'Lock & Blocking','ha':'HA & Cluster Status'}
     statements=dict(COMPATIBILITY_QUERIES[family])
     if family=='sqlserver' and version=='2014':
         statements['shared_pool']='SELECT TOP 100 TYPE,PAGES_KB FROM SYS.DM_OS_MEMORY_CLERKS'
