@@ -62,6 +62,16 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
 #cluster-workspace .form-grid{grid-template-columns:1fr}
 #cluster-workspace .toolbar,#cluster-workspace header{align-items:flex-start;gap:12px;flex-wrap:wrap}}
 #cluster-workspace[data-embedded="true"] main {max-width:none;margin:0;padding:0;}
+/* ── 集群页头：工具条卡片化 ─────────────────────────────────────── */
+#cluster-workspace .page-toolbar{
+  background:#fff;border:1px solid #d9e2ed;border-radius:12px;
+  padding:16px 18px;box-shadow:0 6px 18px rgba(21,44,73,.05);
+}
+#cluster-workspace .toolbar-copy{min-width:0}
+#cluster-workspace .toolbar-copy strong{display:block;margin-bottom:2px;font-size:15px;color:#17324f}
+#cluster-workspace .toolbar-copy .muted{margin:0;max-width:900px}
+#cluster-workspace #new-cluster{flex:none;padding:9px 16px;font-weight:600;box-shadow:0 4px 12px rgba(23,90,197,.22)}
+#cluster-workspace #new-cluster:hover{background:#134aa3;border-color:#134aa3}
 /* ── 添加/编辑集群弹窗：Apple 极简 + 毛玻璃，仅作用于本弹窗 ────────── */
 #cluster-workspace dialog#cluster-dialog{
   position:fixed;inset:0;margin:auto;
@@ -199,7 +209,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
 {% if not is_embedded %}</head><body style="margin:0">{% endif %}
 <div id="cluster-workspace" data-embedded="{{ 'true' if is_embedded else 'false' }}">
 {% if not is_embedded %}<header><div><h1>DBPulse 集群管理</h1><p>Oracle RAC / Data Guard · 达梦 DMDSC / 数据守护</p></div><a href="/">返回数据库管理</a></header>{% endif %}
-<main><div class="toolbar"><p class="muted">集群引用已有数据源。每个节点保留独立连接和权限，预期节点数用于核对采集覆盖率。</p><button id="new-cluster" class="primary">添加集群</button></div>
+<main><div class="toolbar page-toolbar"><div class="toolbar-copy"><strong>集群拓扑与采集</strong><p class="muted">集群引用已有数据源。每个节点保留独立连接和权限，预期节点数用于核对采集覆盖率。</p></div><button id="new-cluster" class="primary"><span aria-hidden="true">＋</span> 添加集群</button></div>
 <div id="page-message" class="message" role="status"></div><div class="layout"><aside id="cluster-list" aria-label="集群列表"></aside><section id="cluster-detail" aria-live="polite"><div class="panel">选择一个集群查看成员、监控和巡检结果。</div></section></div></main>
 <dialog id="cluster-dialog"><form id="cluster-form">
 <div class="dlg-head">
