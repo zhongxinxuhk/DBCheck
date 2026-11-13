@@ -5,6 +5,7 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -153,7 +154,9 @@ def test_failed_asset_upload_leaves_release_as_draft(tmp_path):
             raise OSError("upload interrupted")
 
     client = FakeGitHub()
-    with patch.object(release, "GitHub", return_value=client), pytest.raises(OSError):
+    with patch.object(release, "GitHub", return_value=client), patch.object(
+        release, "release_notes", return_value="fixture iteration details"
+    ), pytest.raises(OSError):
         release.publish(tmp_path, "v1.0.1", "source")
     assert any(data and data.get("draft") is True for _, _, data in client.operations)
     assert not any(
@@ -260,3 +263,152 @@ def test_extraction_normalizes_alias_paths_before_containment_checks(tmp_path):
             archive, fixture, "windows-x86_64", tmp_path / "verification.json"
         )
     assert (physical / "extracted/DBPulse/data/fixture.json").is_file()
+
+
+@pytest.fixture
+def notes_repository(tmp_path):
+    def git(*arguments):
+        return subprocess.check_output(
+            ["git", *arguments], cwd=tmp_path, text=True, encoding="utf-8"
+        ).strip()
+
+    git("init", "-q")
+    git("config", "user.name", "Release tests")
+    git("config", "user.email", "release@example.invalid")
+    git("commit", "--allow-empty", "-qm", "feat: 已发布的旧功能")
+    git("tag", "-a", "v1.0.1", "-m", "previous release")
+    for subject in (
+        "feat(desktop): 增加授权客户名称",
+        "refactor(ui): 调整授权信息布局",
+        "fix(inspection): 修复巡检报告生成失败",
+        "docs: 补充升级说明",
+    ):
+        git("commit", "--allow-empty", "-qm", subject)
+    return tmp_path
+
+
+def test_notes_group_actual_iteration_and_exclude_previous_release(notes_repository):
+    notes = release.release_notes("v1.0.2", "HEAD", "v1.0.1", notes_repository)
+    assert "已发布的旧功能" not in notes
+    assert "### 新增功能\n\n- feat(desktop): 增加授权客户名称" in notes
+    assert "### 功能改动\n\n- refactor(ui): 调整授权信息布局" in notes
+    assert "### BUG 修复\n\n- fix(inspection): 修复巡检报告生成失败" in notes
+    assert "### 其他更新\n\n- docs: 补充升级说明" in notes
+    baseline = release.git_output(notes_repository, "rev-parse", "v1.0.1^{commit}")
+    assert "/compare/" + baseline + "..." in notes
+    assert "DBPulse-v1.0.2-Windows-Linux-Portable.zip" in notes
+
+
+def test_notes_use_exact_version_and_ignore_stale_unreleased(notes_repository):
+    path = notes_repository / "CHANGELOG.md"
+    path.write_text(
+        "## 未发布\n\n- 过期未发布说明\n\n"
+        "## v1.0.20\n\n- 其他版本内容\n\n"
+        "## [v1.0.2] (2026-11-13)\n\n"
+        "### 新增功能\n\n- 支持客户姓名及单位展示。\n\n"
+        "### BUG 修复\n\n- 修复报告输出问题。\n\n"
+        "## v1.0.1\n\n- 上版详情\n", encoding="utf-8",
+    )
+    notes = release.release_notes("v1.0.2", "HEAD", "v1.0.1", notes_repository)
+    assert "支持客户姓名及单位展示。" in notes
+    assert "修复报告输出问题。" in notes
+    assert "feat(desktop)" not in notes
+    assert "其他版本内容" not in notes
+    assert "过期未发布说明" not in notes
+    assert "上版详情" not in notes
+    assert release.changelog_section("v1.0.3", notes_repository) == ""
+
+
+def test_notes_initial_release_and_empty_iteration(notes_repository):
+    first = release.release_notes("v1.0.2", "HEAD", root=notes_repository)
+    assert "首次正式发布" in first
+    assert "已发布的旧功能" in first
+    empty = release.release_notes("v1.0.2", "HEAD", "HEAD", notes_repository)
+    assert empty.count("本次无相关提交记录。") == 4
+
+
+def test_previous_release_excludes_draft_prerelease_and_unrelated_branch(notes_repository):
+    def git(*arguments):
+        return release.git_output(notes_repository, *arguments)
+
+    head = git("rev-parse", "HEAD")
+    git("tag", "v1.0.2")
+    git("checkout", "--orphan", "unrelated")
+    git("commit", "--allow-empty", "-qm", "unrelated release")
+    git("tag", "v1.0.8")
+    releases = [
+        {"tag_name": "v1.0.1", "draft": False, "published_at": "2026-11-11"},
+        {"tag_name": "v1.0.2", "draft": True, "published_at": "2026-11-12"},
+        {"tag_name": "v1.0.8", "draft": False, "published_at": "2026-11-13"},
+        {"tag_name": "v1.0.9", "draft": False, "prerelease": True},
+    ]
+    assert release.previous_release(releases, "v1.0.3", head, notes_repository) == "v1.0.1"
+    assert release.previous_release([], "v1.0.3", head, notes_repository) == ""
+
+
+def test_publish_uses_same_notes_for_draft_final_release_and_local_preview(tmp_path):
+    assets(tmp_path)
+
+    class FakeGitHub:
+        def __init__(self):
+            self.operations = []
+
+        def pages(self, path):
+            return []
+
+        def request(self, path, method="GET", data=None):
+            self.operations.append((path, method, data))
+            if path.startswith("git/ref/"):
+                return {"object": {"sha": "source"}}
+            return {"id": 1, "html_url": "https://fixture.invalid"}
+
+        def upload(self, release_id, path):
+            pass
+
+    client = FakeGitHub()
+    notes = "### 新增功能\n\n- 客户名称展示\n\n### BUG 修复\n\n- 修复报告输出"
+    with patch.object(release, "GitHub", return_value=client), patch.object(
+        release, "release_notes", return_value=notes
+    ):
+        release.publish(tmp_path, "v1.0.1", "source")
+    bodies = [data["body"] for _, _, data in client.operations if data and "body" in data]
+    assert bodies == [notes, notes]
+    assert (tmp_path / "release-notes.md").read_text(encoding="utf-8") == notes
+
+
+def test_notes_failure_happens_before_remote_writes(tmp_path):
+    assets(tmp_path)
+    from unittest.mock import Mock
+
+    client = Mock()
+    client.pages.return_value = []
+    client.request.return_value = {"object": {"sha": "source"}}
+    with patch.object(release, "GitHub", return_value=client), patch.object(
+        release, "release_notes", side_effect=ValueError("invalid notes source")
+    ), pytest.raises(ValueError, match="invalid notes source"):
+        release.publish(tmp_path, "v1.0.1", "source")
+    assert all(call.args[0].startswith("git/ref/") for call in client.request.call_args_list)
+    client.upload.assert_not_called()
+
+
+def test_workflow_builds_and_verifies_only_windows_and_linux():
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / '.github/workflows/portable-release.yml').read_text())
+    for job_name in ('native', 'verify-transfer'):
+        matrix = workflow['jobs'][job_name]['strategy']['matrix']['include']
+        assert {item['platform'] for item in matrix} == set(release.TARGETS)
+        assert all(not item['runner'].startswith('macos') for item in matrix)
+    notes = release.release_notes('v1.0.2', 'HEAD', 'HEAD', root=ROOT)
+    assert 'macos-arm64.zip' not in notes
+    assert 'macOS' not in notes
+
+
+def test_release_requires_exact_windows_linux_packages(tmp_path):
+    manifest = assets(tmp_path)
+    assert len(manifest['assets']) == 4
+    release.verify_assets(tmp_path, 'v1.0.1', 'source')
+    manifest['assets'][-1] = manifest['assets'][0]
+    (tmp_path / 'release-manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='Windows x64, Linux x64, Linux ARM64'):
+        release.verify_assets(tmp_path, 'v1.0.1', 'source')

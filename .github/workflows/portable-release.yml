@@ -26,7 +26,6 @@ jobs:
       matrix:
         include:
           - {platform: windows-x86_64, runner: windows-latest, python_arch: x64, collect: DBPulse-Windows}
-          - {platform: macos-arm64, runner: macos-15, python_arch: arm64, collect: DBPulse-macOS}
           - {platform: linux-x86_64, runner: ubuntu-24.04, python_arch: x64, collect: DBPulse-Linux, image: quay.io/pypa/manylinux_2_28_x86_64}
           - {platform: linux-arm64, runner: ubuntu-24.04-arm, python_arch: arm64, collect: DBPulse-Linux, image: quay.io/pypa/manylinux_2_28_aarch64}
     env:
@@ -50,8 +49,8 @@ jobs:
         run: |
           python build/portable_release.py drivers --cache .portable-build/downloads
           python build/portable_bundle.py runtime --platform '${{ matrix.platform }}' --cache .portable-build/downloads
-      - name: Build Windows or macOS binary
-        if: ${{ !startsWith(matrix.platform, 'linux-') }}
+      - name: Build Windows binary
+        if: matrix.platform == 'windows-x86_64'
         shell: bash
         run: python build/portable_release.py native --platform '${{ matrix.platform }}'
       - name: Build Linux against glibc 2.28 on its native CPU
@@ -71,8 +70,8 @@ jobs:
             --component '.portable-build/native/${{ matrix.platform }}/${{ matrix.collect }}' \
             --runtime "$JAVA_ARCHIVE" --receipt '.portable-build/downloads/${{ matrix.platform }}-java.json'
           cp '.portable-build/downloads/${{ matrix.platform }}-java.json' '.portable-build/staged/DBPulse-Portable/runtime/${{ matrix.platform }}/receipt.json'
-      - name: Verify Windows or macOS runtime and application
-        if: ${{ !startsWith(matrix.platform, 'linux-') }}
+      - name: Verify Windows runtime and application
+        if: matrix.platform == 'windows-x86_64'
         shell: bash
         run: python build/release_pipeline.py check-component --bundle .portable-build/staged/DBPulse-Portable --platform '${{ matrix.platform }}' --output '.portable-build/staged/DBPulse-Portable/verification/${{ matrix.platform }}.json'
       - name: Verify Linux runtime on Debian 11
@@ -157,7 +156,6 @@ jobs:
           - {platform: windows-x86_64, runner: windows-latest, archive: Windows-Linux-Portable}
           - {platform: linux-x86_64, runner: ubuntu-24.04, archive: Windows-Linux-Portable}
           - {platform: linux-arm64, runner: ubuntu-24.04-arm, archive: Windows-Linux-Portable}
-          - {platform: macos-arm64, runner: macos-15, archive: macos-arm64}
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       PYTHONUTF8: '1'

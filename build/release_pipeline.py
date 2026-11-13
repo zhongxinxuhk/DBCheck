@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "build"))
 from portable_bundle import stage_resources, add_component, archive_bundle, digest
 
-TARGETS = ("macos-arm64", "linux-x86_64", "linux-arm64", "windows-x86_64")
-TRANSFER_TARGETS = ("windows-x86_64", "linux-x86_64", "linux-arm64")
+TARGETS = ("windows-x86_64", "linux-x86_64", "linux-arm64")
+TRANSFER_TARGETS = TARGETS
 TRAIN = re.compile(r"^v1\.0\.(\d+)$")
 MARKER = "<!-- dbpulse-release-pipeline:v1 -->"
 
@@ -376,9 +376,14 @@ def verify_assets(directory, version, sha):
     manifest = json.loads((directory / "release-manifest.json").read_text())
     if manifest["version"] != version or manifest["source_commit"] != sha:
         raise ValueError("Release artifacts belong to a different version or commit")
-    if len(manifest["assets"]) != 5:
+    expected = {
+        f"DBPulse-{version}-{label}.zip"
+        for label in (*TARGETS, "Windows-Linux-Portable")
+    }
+    names = [asset["name"] for asset in manifest["assets"]]
+    if len(names) != len(expected) or set(names) != expected:
         raise ValueError(
-            "Release needs four native packages and the Windows/Linux bundle"
+            "Release needs Windows x64, Linux x64, Linux ARM64 and the Windows/Linux bundle"
         )
     for asset in manifest["assets"]:
         path = directory / asset["name"]
@@ -405,11 +410,142 @@ def verify_assets(directory, version, sha):
     return manifest
 
 
+def git_output(root, *arguments):
+    return subprocess.check_output(
+        ["git", *arguments], cwd=root, text=True, encoding="utf-8"
+    ).strip()
+
+
+def previous_release(releases, version, sha, root=ROOT):
+    """Find the latest published release belonging to this commit's history."""
+    candidates = sorted(
+        (
+            item for item in releases
+            if item["tag_name"] != version
+            and not item["draft"]
+            and not item.get("prerelease", False)
+        ),
+        key=lambda item: item.get("published_at") or "",
+        reverse=True,
+    )
+    for item in candidates:
+        tag = item["tag_name"]
+        commit = git_output(
+            root, "rev-parse", "--verify", "refs/tags/" + tag + "^{commit}"
+        )
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, sha], cwd=root,
+            check=False,
+        )
+        if result.returncode == 0:
+            return tag
+        if result.returncode != 1:
+            raise RuntimeError("Cannot determine release ancestry: " + tag)
+    return ""
+
+
+def changelog_section(version, root=ROOT):
+    path = root / "CHANGELOG.md"
+    if not path.is_file():
+        return ""
+    match = re.search(
+        r"^##[ \t]+\[?" + re.escape(version) + r"\]?(?=[ \t\r\n]|$)[^\n]*\n(.*?)(?=^## |\Z)",
+        path.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL,
+    )
+    return match[1].strip() if match else ""
+
+
+def release_notes(version, sha, base="", root=ROOT, repository=None):
+    """Prefer version-specific editorial notes, otherwise group actual commits."""
+    repository = repository or os.environ.get("GITHUB_REPOSITORY", "zhongxinxuhk/DBCheck")
+    # Resolve revisions before invoking log, including annotated release tags.
+    head = git_output(root, "rev-parse", "--verify", sha + "^{commit}")
+    baseline = (
+        git_output(root, "rev-parse", "--verify", base + "^{commit}") if base else ""
+    )
+    revision = baseline + ".." + head if baseline else head
+    comparison = (
+        f"https://github.com/{repository}/compare/{baseline}...{head}"
+        if base else f"https://github.com/{repository}/commits/{head}"
+    )
+    details = changelog_section(version, root)
+    origin = (
+        f"迭代范围为 `{base}` 至 `{head[:12]}`。"
+        if base else "首次正式发布，汇总截至本次提交的记录。"
+    )
+    if details:
+        origin += "迭代详情取自 CHANGELOG.md 对应版本。"
+    else:
+        groups = {name: [] for name in ("新增功能", "功能改动", "BUG 修复", "其他更新")}
+        commits = git_output(root, "log", "--no-merges", "--format=%H%x09%s", revision)
+        records = commits.splitlines() if commits else []
+        for record in records[:200]:
+            commit, subject = record.split("\t", 1)
+            match = re.match(r"(\w+)(?:\([^)]*\))?!?:\s*(.*)", subject)
+            kind, title = (match[1].lower(), match[2]) if match else ("", subject)
+            if kind == "feat" or re.match(r"^(新增|增加|添加)", title):
+                group = "新增功能"
+            elif kind in ("fix", "bugfix", "hotfix", "revert") or re.match(
+                r"^(修复|修正|解决)", title
+            ):
+                group = "BUG 修复"
+            elif kind in ("perf", "refactor", "style") or re.match(
+                r"^(调整|优化|改进|变更|重构|更新)", title
+            ):
+                group = "功能改动"
+            else:
+                group = "其他更新"
+            groups[group].append(
+                f"- {subject} ([{commit[:7]}](https://github.com/{repository}/commit/{commit}))"
+            )
+        details = "\n\n".join(
+            "### " + name + "\n\n" + ("\n".join(items) if items else "- 本次无相关提交记录。")
+            for name, items in groups.items()
+        )
+        origin += "迭代详情按提交标题自动归类。"
+        if len(records) > 200:
+            details += f"\n\n共 {len(records)} 条提交，展示最近 200 条，其余见完整变更记录。"
+    return f"""{MARKER}
+# DBPulse {version}
+
+源提交为 `{head}`。{origin}
+
+## 迭代详情
+
+{details}
+
+[查看完整变更记录]({comparison})
+
+## 安装包与平台
+
+| 安装包 | 适用平台 |
+| --- | --- |
+| `DBPulse-{version}-windows-x86_64.zip` | Windows x64 |
+| `DBPulse-{version}-linux-x86_64.zip` | Linux x64，glibc 2.28 及以上 |
+| `DBPulse-{version}-linux-arm64.zip` | Linux ARM64，glibc 2.28 及以上 |
+| `DBPulse-{version}-Windows-Linux-Portable.zip` | Windows x64、Linux x64 / ARM64 共用便携目录 |
+
+## 安装与升级说明
+
+- Windows 双击 `start.bat`，Linux 执行 `bash start.sh`。
+- 首次安装账号 `admin`，密码 `admin123`。
+- 各平台包含 Java 运行时，共用 data、数据库密码密钥、台账、账号、任务、报告和自定义规则。
+- 升级前停止服务并备份整个原目录，保留 `data/` 与其中的密码密钥。
+- Windows 配置迁移至 Linux 时，停止软件后复制整个 Windows-Linux-Portable 目录，再执行 `bash start.sh`。
+- 下载后使用 `SHA256SUMS.txt` 校验文件。
+
+## 发布验证
+
+Windows x64、Linux x64 和 Linux ARM64 的运行时检查与 Windows 配置迁移验证全部通过后发布。
+"""
+
+
 def publish(directory, version, sha):
     manifest = verify_assets(directory, version, sha)
     github = GitHub()
+    releases = github.pages("releases")
     release = next(
-        (value for value in github.pages("releases") if value["tag_name"] == version),
+        (value for value in releases if value["tag_name"] == version),
         None,
     )
     try:
@@ -422,21 +558,11 @@ def publish(directory, version, sha):
         raise ValueError("Release tag already points at another commit")
     if release and (MARKER not in release.get("body", "") or not release["draft"]):
         raise ValueError("Existing published/manual release cannot be overwritten")
+    base = previous_release(releases, version, sha)
+    notes = release_notes(version, sha, base)
+    (directory / "release-notes.md").write_text(notes, encoding="utf-8")
     if ref is None:
         github.request("git/refs", "POST", {"ref": "refs/tags/" + version, "sha": sha})
-    notes = f"""{MARKER}
-DBPulse {version}
-
-本版本由推送后的检查与原生编译工作流生成，源提交为 `{sha}`。
-
-- macOS ARM64、Linux x64 / ARM64、Windows x64 启动包。
-- Windows-Linux-Portable 包包含 Windows x64、Linux x64 和 Linux ARM64 程序。工程师可在 Windows 配置后停止软件，将整个目录复制到 Linux，执行 `bash start.sh`。
-- 所有平台共用 data、数据库密码密钥、台账、账号、任务、报告和自定义规则，包含 Java 运行时。
-- Windows 双击 start.bat，macOS 双击 start.command。首次安装账号 admin，密码 admin123。
-- Linux 要求 glibc 2.28 及以上。SHA256SUMS.txt 提供下载校验值。
-
-四个平台的运行时检查与 Windows 配置迁移验证全部通过后发布。
-"""
     if release is None:
         release = github.request(
             "releases",
@@ -470,6 +596,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("plan")
+    notes_command = commands.add_parser("notes", help="Preview release notes without publishing")
+    notes_command.add_argument("--version", required=True)
+    notes_command.add_argument("--sha", default="HEAD")
+    notes_command.add_argument("--base", default="")
+    notes_command.add_argument("--output", type=Path, required=True)
     stamp_command = commands.add_parser("stamp")
     stamp_command.add_argument("--version", required=True)
     check = commands.add_parser("check-component")
@@ -496,6 +627,10 @@ def main():
     args = parser.parse_args()
     if args.command == "plan":
         plan()
+    elif args.command == "notes":
+        args.output.write_text(
+            release_notes(args.version, args.sha, args.base), encoding="utf-8"
+        )
     elif args.command == "stamp":
         stamp(args.version)
     elif args.command == "check-component":
