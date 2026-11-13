@@ -5655,6 +5655,66 @@ def api_export_icfg_template(tid):
         return jsonify({'success': False, 'message': str(e)})
 
 
+@app.route('/api/inspection/templates/batch-export', methods=['POST'])
+def api_batch_export_icfg_templates():
+    """把当前筛选出的模板打包为 ZIP（每个模板一个 JSON）。"""
+    import zipfile
+    try:
+        d = request.get_json(silent=True) or {}
+        raw_ids = d.get('ids') or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({'success': False, 'message': '请选择要导出的模板'}), 400
+        if len(raw_ids) > 200:
+            return jsonify({'success': False, 'message': '一次最多导出 200 个模板'}), 400
+        ids = []
+        for value in raw_ids:
+            try:
+                tid = int(value)
+            except (TypeError, ValueError):
+                continue
+            if tid not in ids:
+                ids.append(tid)
+        if not ids:
+            return jsonify({'success': False, 'message': '请选择要导出的模板'}), 400
+
+        buffer = io.BytesIO()
+        used_names = set()
+        exported = 0
+        errors = []
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for tid in ids:
+                try:
+                    cfg = export_template(tid)
+                except Exception as exc:
+                    errors.append(f'{tid}: {exc}')
+                    continue
+                name = '_'.join(str(cfg.get(key) or '') for key in
+                                 ('db_type', 'template_name', 'version')).strip('_')
+                name = re.sub(r'[\\/:*?"<>|]+', '_', name)[:120] or f'template_{tid}'
+                filename = f'{name}.json'
+                suffix = 2
+                while filename in used_names:
+                    filename = f'{name}_{suffix}.json'
+                    suffix += 1
+                used_names.add(filename)
+                archive.writestr(filename, json.dumps(cfg, ensure_ascii=False, indent=2))
+                exported += 1
+            if errors:
+                archive.writestr('export_errors.txt', '\n'.join(errors))
+        if not exported:
+            return jsonify({'success': False, 'message': '没有可导出的模板'}), 404
+        buffer.seek(0)
+        stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        return send_file(
+            buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'inspection_templates_{stamp}.zip',
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/inspection/templates/<int:tid>/clone', methods=['POST'])
 def api_clone_icfg_template(tid):
     """把现有模板复制为新的非预置模板。"""
