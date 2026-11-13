@@ -276,6 +276,7 @@ class MongodbInspector(BaseInspectionEngine):
                 ('_collect_balancer_status', '均衡器状态'),
                 ('_collect_profile', 'Profiler'),
                 ('_collect_slow_queries', '慢查询'),
+                ('_collect_jobs', '后台任务与日志'),
             ]
             total = len(collect_steps) + 1  # +1 用于基线检查
             for i, (method, label) in enumerate(collect_steps, 1):
@@ -969,6 +970,69 @@ class MongodbInspector(BaseInspectionEngine):
     # ════════════════════════════════════════════════════════════
     # 基线检查（覆盖父类方法）
     # ════════════════════════════════════════════════════════════
+
+    def _collect_jobs(self):
+        """采集当前活动操作、全局日志尾部和启动告警（日志与作业域）。"""
+        try:
+            result = self.db.command('currentOp', active=True)
+            ops = []
+            for op in result.get('inprog', []):
+                if not isinstance(op, dict):
+                    continue
+                command = op.get('command') or {}
+                ops.append({
+                    'OPID': op.get('opid', ''),
+                    'OP': op.get('op', ''),
+                    'NS': op.get('ns', ''),
+                    'SECONDS_RUNNING': op.get('secs_running', 0),
+                    'DESC': str(op.get('desc') or '')[:200],
+                    'CLIENT': str(op.get('client') or '')[:120],
+                    'COMMAND': json.dumps(command, ensure_ascii=False, default=str)[:400] if command else '',
+                })
+            self.context['mongodb_current_ops'] = ops or [{
+                'OPID': '-', 'OP': '-', 'NS': '-', 'SECONDS_RUNNING': 0,
+                'DESC': '当前无活动操作', 'CLIENT': '', 'COMMAND': '',
+            }]
+        except Exception as e:
+            self.context['mongodb_current_ops'] = [{'ERROR': str(e)[:200]}]
+
+        def _parse_log_lines(lines):
+            rows = []
+            for line in lines or []:
+                text = line.decode('utf-8', 'replace') if isinstance(line, bytes) else str(line)
+                try:
+                    item = json.loads(text)
+                except Exception:
+                    rows.append({'TIME': '', 'SEVERITY': '', 'COMPONENT': '', 'MESSAGE': text[:500]})
+                    continue
+                raw_time = item.get('t') or {}
+                if isinstance(raw_time, dict):
+                    raw_time = raw_time.get('$date', '')
+                rows.append({
+                    'TIME': str(raw_time)[:40],
+                    'SEVERITY': str(item.get('s', '')),
+                    'COMPONENT': str(item.get('c', '')),
+                    'MESSAGE': str(item.get('msg', ''))[:500],
+                })
+            return rows
+
+        try:
+            log = self.db.command('getLog', 'global')
+            rows = _parse_log_lines((log.get('log') or [])[-100:])
+            self.context['mongodb_log_tail'] = list(reversed(rows)) or [{
+                'TIME': '', 'SEVERITY': '', 'COMPONENT': '', 'MESSAGE': '日志为空',
+            }]
+        except Exception as e:
+            self.context['mongodb_log_tail'] = [{'ERROR': str(e)[:200]}]
+
+        try:
+            warnings = self.db.command('getLog', 'startupWarnings')
+            rows = _parse_log_lines(warnings.get('log') or [])
+            self.context['mongodb_startup_warnings'] = rows or [{
+                'TIME': '', 'SEVERITY': '', 'COMPONENT': '', 'MESSAGE': '无启动告警',
+            }]
+        except Exception as e:
+            self.context['mongodb_startup_warnings'] = [{'ERROR': str(e)[:200]}]
 
     def _check_baselines(self):
         """执行基线配置检查，结果存入 self.context['baseline_results']。
