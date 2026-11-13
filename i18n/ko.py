@@ -3104,6 +3104,7 @@ KO.update({
     "menu.fleet": "Smart Baseline",
     "menu.monitor-screen": "Monitor Screen",
     "menu.run-log": "Runtime Logs",
+    "menu.audit": "감사 로그",
     "menu.sql-audit": "SQL Audit",
     "menu.twin": "Topology Inspection",
     "menu.xinchuang": "Xinchuang Compliance",

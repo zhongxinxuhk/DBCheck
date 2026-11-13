@@ -3584,6 +3584,7 @@ EN.update({
     "menu.server-thresholds": "Threshold Settings",
     "menu.shares": "Share Management",
     "menu.sql-editor": "SQL Editor",
+    "menu.audit": "Audit Log",
     "menu.sql-audit": "SQL Audit",
     "menu.autonomy": "Safe Autonomy",
     "menu.fleet": "Smart Baseline",
