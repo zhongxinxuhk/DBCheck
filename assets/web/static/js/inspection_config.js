@@ -18,6 +18,18 @@ let currentInspectionIsPreset = false;  // 当前编辑的模板是否为预置�
 let inspectionTemplateCatalog = [];     // 模板目录（含章节/指标摘要）
 const inspectionTemplateDetails = new Map();  // 已加载的展开明细
 const ICFG_CATEGORY_LABELS = { baseline: '通用基线', business: '业务专项', custom: '自定义' };
+const ICFG_DB_LABELS = {
+    mysql: 'MySQL', postgresql: 'PostgreSQL', oracle: 'Oracle', sqlserver: 'SQL Server',
+    dm8: 'DM8 达梦', tidb: 'TiDB', ivorysql: 'IvorySQL', mariadb: 'MariaDB',
+    oceanbase: 'OceanBase', clickhouse: 'ClickHouse', db2: 'DB2', gbase: 'GBase 8s',
+    gbase8a: 'GBase 8a', halodb: 'HaloDB', hgdb: 'HGDB', kingbase: 'KingbaseES',
+    mongodb: 'MongoDB', redis: 'Redis', 'redis-cluster': 'Redis Cluster',
+    uxdb: 'UXDB', vastbase: 'Vastbase', yashandb: 'YashanDB', oracle_jdbc: 'Oracle JDBC',
+    sqlserver_jdbc: 'SQL Server JDBC'
+};
+function icfgDbLabel(dbType) {
+    return ICFG_DB_LABELS[dbType] || dbType || '—';
+}
 const ICFG_DOMAIN_KEYS = {
     availability: 'availability', capacity: 'capacity', backup: 'backup',
     performance: 'performance', lock: 'lock', object: 'object',
@@ -1383,6 +1395,96 @@ async function deleteInspectionQuery(queryId, queryKey) {
 
 
 // ==================== 导入/导出 ====================
+
+function downloadInspectionGapCsv(matrix) {
+    const rows = (matrix.rows || []).filter(row => (row.missing || []).length);
+    if (!rows.length) {
+        toast(it('webui.inspection_matrix_no_gaps', '没有基线缺口'), 'success');
+        return;
+    }
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const lines = [['db_type', 'template_name', 'version', 'coverage', 'missing_domains'].map(escapeCsv).join(',')];
+    rows.forEach(row => {
+        const missing = (row.missing || []).map(key => icfgDomainLabel({key})).join('; ');
+        lines.push([row.db_type, row.template_name, row.version, row.coverage, missing].map(escapeCsv).join(','));
+    });
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type: 'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inspection_domain_gaps_${Date.now()}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toastSuccess(it('webui.inspection_export_gaps_success', '缺口清单已导出'));
+}
+
+async function showInspectionDomainMatrix() {
+    const modalId = 'icfg-matrix-modal-' + Date.now();
+    document.documentElement.insertAdjacentHTML('beforeend', `
+        <div id="${modalId}" class="icfg-sql-backdrop">
+            <div class="icfg-sql-dialog icfg-matrix-dialog" role="dialog" aria-modal="true">
+                <div class="icfg-sql-head">
+                    <div>
+                        <h3>${escapeHtml(it('webui.inspection_domain_matrix_title', '标准域覆盖矩阵'))}</h3>
+                        <p>${escapeHtml(it('webui.inspection_domain_matrix_desc', '仅统计通用基线模板；红色为缺口。'))}</p>
+                    </div>
+                    <button type="button" class="icfg-sql-close" data-matrix-close aria-label="${escapeHtml(it('webui.inspection_close', '关闭'))}">×</button>
+                </div>
+                <div class="icfg-matrix-body" data-matrix-body>
+                    <div class="icfg-detail-loading">${escapeHtml(it('webui.inspection_loading_detail', '正在加载章节与指标明细…'))}</div>
+                </div>
+            </div>
+        </div>`);
+    const backdrop = document.getElementById(modalId);
+    if (!backdrop) return;
+    const close = () => { document.removeEventListener('keydown', onKey); backdrop.remove(); };
+    const onKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKey);
+    backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+    backdrop.querySelectorAll('[data-matrix-close]').forEach(btn => btn.addEventListener('click', close));
+    try {
+        const res = await fetch('/api/inspection/domain-matrix');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || it('webui.inspection_matrix_load_failed', '矩阵加载失败'));
+        const matrix = data.data;
+        const body = backdrop.querySelector('[data-matrix-body]');
+        if (!body) return;
+        const domains = matrix.domains || [];
+        const rows = matrix.rows || [];
+        body.innerHTML = `
+            <div class="icfg-matrix-scroll">
+                <table class="icfg-matrix-table">
+                    <thead><tr>
+                        <th class="icfg-matrix-template">${escapeHtml(it('webui.inspection_matrix_template', '模板'))}</th>
+                        ${domains.map(domain => `<th title="${escapeHtml(icfgDomainLabel(domain))}">${escapeHtml(icfgDomainLabel(domain))}</th>`).join('')}
+                        <th>${escapeHtml(it('webui.inspection_matrix_coverage', '覆盖'))}</th>
+                    </tr></thead>
+                    <tbody>${rows.map(row => `
+                        <tr class="${row.missing?.length ? 'is-gap' : ''}">
+                            <td class="icfg-matrix-template">
+                                <span class="icfg-matrix-name">${escapeHtml(row.template_name)}</span>
+                                <span class="icfg-matrix-meta">${escapeHtml(icfgDbLabel(row.db_type))}${row.version ? ' · ' + escapeHtml(row.version) : ''}</span>
+                            </td>
+                            ${(row.cells || []).map((covered, index) => `<td class="icfg-matrix-cell ${covered ? 'is-covered' : 'is-missing'}"
+                                title="${escapeHtml(domains[index] ? icfgDomainLabel(domains[index]) : '')}">${covered ? '✓' : '—'}</td>`).join('')}
+                            <td class="icfg-matrix-coverage">${escapeHtml(row.coverage || '')}</td>
+                        </tr>`).join('')}</tbody>
+                </table>
+            </div>
+            <div class="icfg-sql-footer">
+                <span>${escapeHtml(itf('webui.inspection_matrix_gap_count', '{n} 个基线存在缺口', {n: matrix.gap_count || 0}))}</span>
+                <div>
+                    <button type="button" class="btn btn-sm" data-matrix-csv>${escapeHtml(it('webui.inspection_export_gaps', '导出缺口 CSV'))}</button>
+                    <button type="button" class="btn btn-sm btn-primary" data-matrix-close>${escapeHtml(it('webui.inspection_close', '关闭'))}</button>
+                </div>
+            </div>`;
+        body.querySelector('[data-matrix-csv]')?.addEventListener('click', () => downloadInspectionGapCsv(matrix));
+        body.querySelectorAll('[data-matrix-close]').forEach(btn => btn.addEventListener('click', close));
+    } catch (e) {
+        const body = backdrop.querySelector('[data-matrix-body]');
+        if (body) body.innerHTML = `<div class="icfg-detail-error">${escapeHtml(e.message || it('webui.inspection_matrix_load_failed', '矩阵加载失败'))}</div>`;
+    }
+}
 
 async function exportFilteredInspectionTemplates() {
     const ids = [...document.querySelectorAll('.icfg-row')]

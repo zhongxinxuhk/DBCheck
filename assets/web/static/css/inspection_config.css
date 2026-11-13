@@ -878,6 +878,105 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     gap: 8px;
 }
 
+.icfg-matrix-dialog {
+    width: min(1240px, 100%);
+}
+
+.icfg-matrix-body {
+    overflow: hidden;
+}
+
+.icfg-matrix-scroll {
+    overflow: auto;
+    max-height: 62vh;
+}
+
+.icfg-matrix-table {
+    width: 100%;
+    min-width: 1180px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 11px;
+}
+
+.icfg-matrix-table th,
+.icfg-matrix-table td {
+    padding: 7px 6px;
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+    vertical-align: middle;
+}
+
+.icfg-matrix-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-weight: 650;
+    line-height: 1.3;
+    white-space: normal;
+}
+
+.icfg-matrix-table tbody tr:hover td {
+    background: var(--surface2);
+}
+
+.icfg-matrix-table tbody tr.is-gap td {
+    background: rgba(239, 68, 68, 0.04);
+}
+
+.icfg-matrix-table .icfg-matrix-template {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    width: 270px;
+    min-width: 220px;
+    text-align: left;
+    background: var(--surface);
+}
+
+.icfg-matrix-table thead .icfg-matrix-template {
+    z-index: 3;
+    background: var(--surface2);
+}
+
+.icfg-matrix-name {
+    display: block;
+    color: var(--text);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.icfg-matrix-meta {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.icfg-matrix-cell {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.icfg-matrix-cell.is-covered {
+    color: #059669;
+}
+
+.icfg-matrix-cell.is-missing {
+    color: #dc2626;
+}
+
+[data-theme="dark"] .icfg-matrix-cell.is-covered { color: #6ee7b7; }
+[data-theme="dark"] .icfg-matrix-cell.is-missing { color: #fca5a5; }
+
+.icfg-matrix-coverage {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 @media (max-width: 640px) {
     .icfg-sql-backdrop { padding: 8px; }
     .icfg-sql-dialog { max-height: 92vh; }
