@@ -323,6 +323,10 @@ function renderInspectionTemplateRow(t) {
     ].filter(Boolean).join(' ');
     const categoryBadge = t.business ? '' : `<span class="icfg-category">${escapeHtml(categoryLabel)}</span>`;
     const inlineMeta = `<span class="icfg-inline-meta">${dbIcon} ${escapeHtml(dbLabel)}${t.cycle ? ' · ' + escapeHtml(icfgCycleLabel(t.cycle)) : ''}${t.business ? ' · ' + escapeHtml(it('webui.inspection_badge_business', '业务专项')) : ''}</span>`;
+    const cloneButton = IS_LOGGED_IN
+        ? `<button type="button" class="icfg-action" data-icfg-action="clone">${escapeHtml(it('webui.inspection_clone', '另存为'))}</button>` : '';
+    const defaultButton = (IS_LOGGED_IN && !t.business && !Number(t.is_default))
+        ? `<button type="button" class="icfg-action" data-icfg-action="default">${escapeHtml(it('webui.inspection_set_default', '设为默认'))}</button>` : '';
     const deleteButton = (IS_LOGGED_IN && !t.is_preset)
         ? `<button type="button" class="icfg-action icfg-action--danger" data-icfg-action="delete">${escapeHtml(it('webui.inspection_delete', '删除'))}</button>` : '';
     const detailId = 'icfg-detail-' + t.id;
@@ -354,6 +358,8 @@ function renderInspectionTemplateRow(t) {
         <td class="icfg-col-actions">
             <button type="button" class="icfg-action" data-icfg-action="edit">${escapeHtml(it('webui.inspection_edit', '编辑'))}</button>
             <button type="button" class="icfg-action" data-icfg-action="export">${escapeHtml(it('webui.inspection_export', '导出'))}</button>
+            ${cloneButton}
+            ${defaultButton}
             ${deleteButton}
         </td>
     </tr>
@@ -453,6 +459,8 @@ function renderInspectionTemplateCoverage(t) {
             <div class="icfg-detail-actions">
                 <button type="button" class="btn btn-sm btn-primary" data-icfg-action="edit">${escapeHtml(it('webui.inspection_edit_template', '编辑模板'))}</button>
                 <button type="button" class="btn btn-sm" data-icfg-action="export">${escapeHtml(it('webui.inspection_export_template', '导出模板'))}</button>
+                ${IS_LOGGED_IN ? `<button type="button" class="btn btn-sm" data-icfg-action="clone">${escapeHtml(it('webui.inspection_clone_template', '另存为模板'))}</button>` : ''}
+                ${(IS_LOGGED_IN && !t.business && !Number(t.is_default)) ? `<button type="button" class="btn btn-sm" data-icfg-action="default">${escapeHtml(it('webui.inspection_set_default', '设为默认'))}</button>` : ''}
             </div>
         </div>
         <div class="icfg-detail-stats">
@@ -508,6 +516,51 @@ function renderInspectionTemplateCoverage(t) {
     return html;
 }
 
+async function cloneInspectionTemplate(templateId) {
+    const t = inspectionTemplateCatalog.find(item => Number(item.id) === Number(templateId));
+    if (!t) return;
+    const defaultName = `${t.template_name}${it('webui.inspection_clone_suffix', ' 副本')}`;
+    const name = await showPromptDialog(
+        it('webui.inspection_clone_prompt_title', '另存为模板'),
+        it('webui.inspection_clone_prompt_message', '输入新模板名称。新模板会复制当前模板的全部章节和 SQL，原模板保持不变。'),
+        defaultName
+    );
+    if (name === null) return;
+    const trimmed = String(name).trim();
+    if (!trimmed) {
+        toast(it('webui.inspection_clone_failed', '另存为模板失败') + ': ' + it('webui.inspection_template_name', '模板名称') + '不能为空', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/inspection/templates/${templateId}/clone`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({template_name: trimmed})
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || it('webui.inspection_clone_failed', '另存为模板失败'));
+        toastSuccess(itf('webui.inspection_clone_success', '已创建模板：{name}',
+            {name: data.data?.template_name || trimmed}));
+        await showInspectionTemplateList();
+    } catch (e) {
+        toast(it('webui.inspection_clone_failed', '另存为模板失败') + ': ' + e.message, 'error');
+    }
+}
+
+async function setInspectionTemplateDefault(templateId) {
+    try {
+        const res = await fetch(`/api/inspection/templates/${templateId}`, {
+            method: 'PUT', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({is_default: 1})
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || it('webui.inspection_set_default_failed', '设为默认模板失败'));
+        toastSuccess(it('webui.inspection_set_default_success', '已设为默认模板'));
+        await loadInspectionTemplates();
+    } catch (e) {
+        toast(it('webui.inspection_set_default_failed', '设为默认模板失败') + ': ' + e.message, 'error');
+    }
+}
+
 function deleteInspectionTemplateById(templateId) {
     const t = inspectionTemplateCatalog.find(item => Number(item.id) === Number(templateId));
     if (t) deleteInspectionTemplate(t.id, t.template_name);
@@ -526,6 +579,8 @@ function onInspectionTemplateListClick(event) {
         const action = actionButton.dataset.icfgAction;
         if (action === 'edit') editInspectionTemplate(templateId);
         if (action === 'export') exportInspectionTemplate(templateId);
+        if (action === 'clone') cloneInspectionTemplate(templateId);
+        if (action === 'default') setInspectionTemplateDefault(templateId);
         if (action === 'delete') deleteInspectionTemplateById(templateId);
         return;
     }

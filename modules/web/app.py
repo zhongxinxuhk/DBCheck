@@ -5357,7 +5357,7 @@ from modules.inspection.dal import (
     delete_template, get_chapters_by_template, get_chapter, create_chapter,
     update_chapter, delete_chapter, reorder_chapters,
     get_queries_by_chapter, get_query, create_query, update_query,
-    delete_query, export_template, import_template,
+    delete_query, export_template, import_template, clone_template,
     init_database as icfg_init_db,
     create_baseline, get_baselines_by_db_type, get_baseline,
     update_baseline, delete_baseline, init_default_baselines, force_reset_baselines,
@@ -5651,6 +5651,23 @@ def api_export_icfg_template(tid):
     try:
         data = export_template(tid)
         return jsonify({'success': True, 'data': data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/inspection/templates/<int:tid>/clone', methods=['POST'])
+def api_clone_icfg_template(tid):
+    """把现有模板复制为新的非预置模板。"""
+    try:
+        if not session.get("is_admin", False):
+            return jsonify({"success": False, "message": "只有管理员才能执行此操作"}), 403
+        d = request.get_json(silent=True) or {}
+        name = (d.get('template_name') or '').strip()
+        if not name:
+            return jsonify({'success': False, 'message': '模板名称不能为空'})
+        new_id = clone_template(tid, name, d.get('version'))
+        return jsonify({'success': True, 'message': '模板已另存为副本',
+                        'data': {'id': new_id, 'template_name': name}})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
