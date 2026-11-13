@@ -13751,6 +13751,11 @@ let ebpfEnabled = true;
 // 默认关闭：SSH 只承担系统信息采集；需要隧道连库（堡垒机/仅内网监听）时手动开启。
 let sshTunnelEnabled = false;
 let _inspSshPassword = '';  // 缓存数据源SSH密码，供testSsh使用
+// 数据源 SQLite/JSON 里布尔字段可能是 true/1/'1'/'true'，统一归一化，
+// 避免「已启用 SSH 隧道」被字符串 '0' 或旧字段类型误判。
+function _flagOn(value) {
+  return value === true || value === 1 || value === '1' || value === 'true' || value === 'on';
+}
 let currentTaskId = null;
 let pollTimer = null;
 let logOffset = 0;
@@ -15303,7 +15308,7 @@ async function onDatasourceChange() {
         if (fdv0) fdv0.value = '';
       }
       // 自动填充 SSH 配置
-      if (ds.ssh_enabled || ds.ssh_host) {
+      if (_flagOn(ds.ssh_enabled) || ds.ssh_host || _flagOn(ds.ssh_tunnel)) {
         document.getElementById('f-ssh-host').value = ds.ssh_host || '';
         document.getElementById('f-ssh-port').value = ds.ssh_port || 22;
         document.getElementById('f-ssh-user').value = ds.ssh_user || 'root';
@@ -15311,8 +15316,10 @@ async function onDatasourceChange() {
         document.getElementById('f-ssh-key').value = ds.ssh_key_file || '';
         document.getElementById('f-ssh-key-password').value = ds.ssh_key_password || '';
         _inspSshPassword = ds.ssh_password || '';  // 缓存供 testSsh 兜底
-        // 隧道开关回填：数据源里没存过该字段时按「默认关闭」处理
-        sshTunnelEnabled = (ds.ssh_tunnel === true || ds.ssh_tunnel === 1 || ds.ssh_tunnel === '1');
+        // 隧道开关回填：数据源里没存过该字段时按「默认关闭」处理。
+        // 有些旧数据源 ssh_enabled=0 但 ssh_tunnel=1；此时仍必须启用 SSH，
+        // 否则测试连接只会直连 127.0.0.1，永远不会走跳板。
+        sshTunnelEnabled = _flagOn(ds.ssh_tunnel);
         _syncSshTunnelUi();
         // 自动启用 SSH
         if (!sshEnabled) toggleSsh();
@@ -15541,34 +15548,56 @@ async function testDb() {
       else if (dbType === 'mongodb') fDbVal = 'admin';
       else if (dbType === 'clickhouse') fDbVal = 'default';
     }
+    const body = {
+      db_type: dbType,
+      host:     host,
+      port:     parseInt(document.getElementById('f-port').value) || (dbType==='oracle'?1521:(dbType==='mysql'?3306:5432)),
+      user:     user,
+      password: document.getElementById('f-password').value,
+      database: fDbVal,
+      tenant:   (dbType === 'oceanbase') ? (document.getElementById('f-tenant').value.trim() || '') : '',
+      service_name: document.getElementById('f-service-name') ? document.getElementById('f-service-name').value.trim() : null,
+      sysdba: document.getElementById('f-sysdba').checked,
+      use_sid: document.getElementById('f-use-sid') ? document.getElementById('f-use-sid').checked : false,
+      driver_version: document.getElementById('f-driver-version')?.value || null,
+      jdbc_url: document.getElementById('f-jdbc-url')?.value.trim() || null,
+      connect_mode: document.getElementById('f-connect-mode')?.value || 'standard',
+      auth_source: document.getElementById('f-auth-source')?.value.trim() || 'admin',
+      auth_mechanism: document.getElementById('f-auth-mechanism')?.value.trim() || '',
+      replica_set: document.getElementById('f-replica-set')?.value.trim() || '',
+      tls: document.getElementById('f-tls')?.checked || false,
+      tls_ca_file: document.getElementById(dbType === 'gbase8a' ? 'f-gbase8a-ca' : 'f-tls-ca-file')?.value.trim() || '',
+      tls_cert_key_file: document.getElementById('f-tls-cert-key-file')?.value.trim() || '',
+      tls_allow_invalid_certs: document.getElementById('f-tls-allow-invalid')?.checked || false,
+      connection_mode: document.getElementById('f-connection-mode')?.value || 'jdbc',
+      encrypt: document.getElementById('f-encrypt')?.checked || false,
+      trust_server_certificate: document.getElementById('f-trust-server-cert')?.checked || false,
+    };
+
+    // 测试连接必须与巡检使用同一套 SSH 隧道参数。此前这里只提交数据库字段，
+    // 导致「SSH 隧道连库」的数据源测试时仍直连 127.0.0.1:5432，误报
+    // Connection refused；巡检本身却因为 startInspection() 带 SSH 字段而成功。
+    const sshHost = (document.getElementById('f-ssh-host')?.value || '').trim();
+    const sshTunnelOn = _flagOn(sshTunnelEnabled);
+    if (sshEnabled || sshTunnelOn) {
+      if (sshTunnelOn && !sshHost) {
+        el.innerHTML = '<div class="status-banner err">' + i18n('webui.connection_fail') + '：已启用 SSH 隧道，但未填写 SSH 主机地址</div>';
+        return;
+      }
+      body.ssh_host = sshHost;
+      body.ssh_port = parseInt(document.getElementById('f-ssh-port').value) || 22;
+      body.ssh_user = (document.getElementById('f-ssh-user').value || '').trim() || 'root';
+      body.ssh_password = (document.getElementById('f-ssh-password').value || _inspSshPassword || '');
+      body.ssh_key_file = (document.getElementById('f-ssh-key').value || '').trim();
+      body.ssh_key_password = (document.getElementById('f-ssh-key-password').value || '').trim();
+      body.ssh_tunnel = sshTunnelOn;
+      body.ssh_ebpf = !!ebpfEnabled;
+    }
+
     const res = await fetch('/api/test_db', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        db_type: dbType,
-        host:     host,
-        port:     parseInt(document.getElementById('f-port').value) || (dbType==='oracle'?1521:(dbType==='mysql'?3306:5432)),
-        user:     user,
-        password: document.getElementById('f-password').value,
-        database: fDbVal,
-        tenant:   (dbType === 'oceanbase') ? (document.getElementById('f-tenant').value.trim() || '') : '',
-        service_name: document.getElementById('f-service-name') ? document.getElementById('f-service-name').value.trim() : null,
-        sysdba: document.getElementById('f-sysdba').checked,
-        use_sid: document.getElementById('f-use-sid') ? document.getElementById('f-use-sid').checked : false,
-        driver_version: document.getElementById('f-driver-version')?.value || null,
-        jdbc_url: document.getElementById('f-jdbc-url')?.value.trim() || null,
-        connect_mode: document.getElementById('f-connect-mode')?.value || 'standard',
-        auth_source: document.getElementById('f-auth-source')?.value.trim() || 'admin',
-        auth_mechanism: document.getElementById('f-auth-mechanism')?.value.trim() || '',
-        replica_set: document.getElementById('f-replica-set')?.value.trim() || '',
-        tls: document.getElementById('f-tls')?.checked || false,
-        tls_ca_file: document.getElementById(dbType === 'gbase8a' ? 'f-gbase8a-ca' : 'f-tls-ca-file')?.value.trim() || '',
-        tls_cert_key_file: document.getElementById('f-tls-cert-key-file')?.value.trim() || '',
-        tls_allow_invalid_certs: document.getElementById('f-tls-allow-invalid')?.checked || false,
-        connection_mode: document.getElementById('f-connection-mode')?.value || 'jdbc',
-        encrypt: document.getElementById('f-encrypt')?.checked || false,
-        trust_server_certificate: document.getElementById('f-trust-server-cert')?.checked || false,
-      })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if (data.ok) {
@@ -15582,9 +15611,13 @@ async function testDb() {
         </div>`;
         autoSelectOracleTemplate(ver, 'f-template');
       }
-      el.innerHTML = `<div class="status-banner ok">${i18n('webui.connection_ok')}：${escHtml(data.msg)}</div>${extraHtml}`;
+      const viaTunnel = data.via_ssh_tunnel
+        ? '<span style="margin-left:8px;font-size:11px;color:var(--accent)">🚇 经 SSH 隧道</span>'
+        : '';
+      el.innerHTML = `<div class="status-banner ok">${i18n('webui.connection_ok')}：${escHtml(data.msg)}${viaTunnel}</div>${extraHtml}`;
     } else {
-      el.innerHTML = `<div class="status-banner err">${i18n('webui.connection_fail')}：${escHtml(data.msg)}</div>`;
+      const errText = data.msg || data.error || data.message || '未知错误';
+      el.innerHTML = `<div class="status-banner err">${i18n('webui.connection_fail')}：${escHtml(errText)}</div>`;
     }
   } catch(e) {
     el.innerHTML = `<div class="status-banner err">${i18n('webui.connection_fail')}：${escHtml(e.message)}</div>`;
