@@ -4193,6 +4193,67 @@ async function executeFixSql(taskId, sql) {
   .hero-brand-logo { width: 168px; }
   .hero-tagline { padding-left: 12px; }
 }
+
+/* ─── Mobile navigation drawer ─── */
+.mobile-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mobile-nav-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.mobile-nav-backdrop { display: none; }
+
+@media (max-width: 760px) {
+  .sidebar {
+    width: 228px;
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.25s;
+    z-index: 1200;
+  }
+  .app-shell.mobile-nav-open .sidebar {
+    visibility: visible;
+    transform: translateX(0);
+    transition-delay: 0s;
+  }
+  .app-shell.mobile-nav-open .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(2, 6, 23, 0.55);
+    backdrop-filter: blur(2px);
+  }
+  body.mobile-nav-open { overflow: hidden; }
+  .main,
+  .app-shell.sidebar-collapsed .main { margin-left: 0 !important; }
+  .topbar { padding: 0 10px; gap: 6px; }
+  .topbar-title {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+  .topbar-sub { display: none; }
+  .mobile-nav-toggle { display: inline-flex; }
+  #topbar-user { margin-left: 0 !important; }
+  #topbar-user-name,
+  #topbar-user-role { display: none; }
+  #lang-select { max-width: 64px; }
+  .content { padding: 18px 12px; }
+  .sidebar-toggle { display: none; }
+}
 </style>
 
   <link rel="stylesheet" href="/static/codemirror/lib/codemirror.css" data-page-node-id="EX6LoBPcFDjvnbg1FpjV9k">
@@ -8579,10 +8640,12 @@ function wfCloseRunDrawer() {
       <button class="sidebar-toggle" onclick="toggleSidebar()" title="折叠/展开菜单" id="sidebar-toggle-btn" data-page-node-id="Q5vaeknFdsUWAFeDzj5MCq">«</button>
     </div>
   </aside>
+  <div class="mobile-nav-backdrop" aria-hidden="true" onclick="closeMobileNav()"></div>
 
   <!-- ─── Main ─── -->
   <div class="main" data-page-node-id="ufCIefs11xdWoIV1GmhUWa">
     <div class="topbar" data-page-node-id="e8GBsoViPB0eQYdczWOPRj">
+      <button class="mobile-nav-toggle" type="button" onclick="toggleMobileNav()" aria-label="菜单 / Menu" aria-expanded="false" title="菜单 / Menu">☰</button>
       <span class="topbar-title" id="topbar-title" data-page-node-id="YGKe36vm4tUQ4sdgYG1Zc5">首页</span>
       <span class="topbar-sub" id="topbar-sub" data-page-node-id="p7LaPgc2KzYGSzwO4PCF5Y">欢迎使用 {{ product_name }} 数据库巡检工具</span>
       <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;" data-page-node-id="C38MN7wDt1mMrxlFVKgMV7">
@@ -30551,14 +30614,32 @@ function mkdirRemote() {
       appShell.classList.toggle('sidebar-collapsed');
 
       var isCollapsed = sidebar.classList.contains('collapsed');
-      btn.textContent = isCollapsed ? '»' : '«';
+      if (btn) btn.textContent = isCollapsed ? '»' : '«';
       localStorage.setItem('dbcheck_sidebar_collapsed', isCollapsed);
     }
+
+    /* ─── Mobile navigation drawer (<=760px) ─── */
+    function toggleMobileNav(force) {
+      var shell = document.querySelector('.app-shell');
+      if (!shell) return;
+      var open = typeof force === 'boolean' ? force : !shell.classList.contains('mobile-nav-open');
+      shell.classList.toggle('mobile-nav-open', open);
+      document.body.classList.toggle('mobile-nav-open', open);
+      var btn = document.querySelector('.mobile-nav-toggle');
+      if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function closeMobileNav() { toggleMobileNav(false); }
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') closeMobileNav();
+    });
+    window.addEventListener('resize', function() {
+      if (window.innerWidth > 760) closeMobileNav();
+    });
 
     // 页面加载时恢复折叠状态
     document.addEventListener('DOMContentLoaded', function() {
       var collapsed = localStorage.getItem('dbcheck_sidebar_collapsed') === 'true';
-      if (collapsed) {
+      if (collapsed && window.innerWidth > 760) {
         document.querySelector('.sidebar').classList.add('collapsed');
         document.querySelector('.app-shell').classList.add('sidebar-collapsed');
         var btn = document.getElementById('sidebar-toggle-btn');
@@ -30572,6 +30653,9 @@ function mkdirRemote() {
         if (label) {
           items[i].title = label.textContent.trim();
         }
+        items[i].addEventListener('click', function() {
+          if (window.innerWidth <= 760) closeMobileNav();
+        });
       }
     });
   </script>

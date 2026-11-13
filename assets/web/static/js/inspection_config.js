@@ -448,7 +448,14 @@ async function toggleInspectionTemplateRow(templateId) {
         if (!data.success) throw new Error(data.message || it('webui.inspection_detail_failed', '加载模板明细失败'));
         inspectionTemplateDetails.set(Number(templateId), data.data);
         body.innerHTML = renderInspectionTemplateCoverage(data.data);
-        requestAnimationFrame(() => detail.scrollIntoView({ block: 'nearest' }));
+        requestAnimationFrame(() => {
+            if (window.innerWidth <= 640) {
+                const top = detail.getBoundingClientRect().top + window.scrollY - 70;
+                window.scrollTo({top, behavior: 'smooth'});
+            } else {
+                detail.scrollIntoView({ block: 'nearest' });
+            }
+        });
     } catch (e) {
         detail.dataset.loaded = '0';
         body.innerHTML = `<div class="icfg-detail-error">${escapeHtml(e.message || it('webui.inspection_detail_failed', '加载模板明细失败'))}</div>`;
