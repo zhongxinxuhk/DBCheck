@@ -2289,9 +2289,11 @@ class BaseInspectionEngine:
             if not baselines:
                 print(f"[INFO] 未找到 {self.db_type} 的基线配置")
                 self.context['baseline_results'] = []
+                self.context['baseline_issues'] = []
                 return
             
             results = []
+            baseline_issues = []
             for bl in baselines:
                 param_name = bl['param_name']
                 query_sql = bl['query_sql']
@@ -2513,8 +2515,14 @@ class BaseInspectionEngine:
                                     else f"-- 请调整参数 {param_name}\nALTER SYSTEM SET {param_name} = {expected_value} SCOPE=BOTH;")
                     }
                     self.context['auto_analyze'].append(issue_item)
+                    baseline_issues.append(issue_item)
                     existing_items.add(param_name)
             
+            # 基线问题单独留一份。部分插件在 _check_baselines() 之后会用
+            # smart_analyze_* 整体覆盖 auto_analyze，只保留 auto_analyze 会导致
+            # 基线 FAIL/ERROR 在最终报告和巡检历史中全部消失。
+            self.context['baseline_issues'] = baseline_issues
+
             if self.context.get('auto_analyze'):
                 print(f"[INFO] 已将基线失败项添加到风险与建议，共 {len(self.context['auto_analyze'])} 项")
             
@@ -2522,6 +2530,7 @@ class BaseInspectionEngine:
             print(f"[ERROR] 基线检查失败: {e}")
             import traceback; traceback.print_exc(file=sys.stdout)
             self.context['baseline_results'] = []
+            self.context['baseline_issues'] = []
 
     def _set_paragraph_shading(self, paragraph, fill_hex):
         """为段落设置背景底纹。python-docx 无原生 API，需直接操作 OOXML（w:shd 元素）。"""

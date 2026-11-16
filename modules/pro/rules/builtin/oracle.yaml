@@ -94,6 +94,8 @@ rules:
       hit_ratio: "${context.library_cache_hit_ratio}"
     message: "库缓存命中率 {hit:.1f}%，SQL 重复解析开销大"
     message_zh: "库缓存命中率 {hit:.1f}%，SQL 重复解析开销大"
+    fix_params:
+      hit: "hit_ratio"
     fix_sql: "-- 检查共享池大小：\nSELECT * FROM V$SGASTAT WHERE POOL = 'shared pool';\nALTER SYSTEM SET shared_pool_size = '1G' SCOPE=SPFILE;"
 
   - id: oracle_long_running_query
@@ -152,6 +154,8 @@ rules:
       undo_retention: "${context.undo_retention}"
     message: "UNDO 保留时间仅 {val} 秒，可能无法支持 Flashback Query"
     message_zh: "UNDO 保留时间仅 {val} 秒，可能无法支持 Flashback Query"
+    fix_params:
+      val: "undo_retention"
     fix_sql: "ALTER SYSTEM SET UNDO_RETENTION = 900 SCOPE=SPFILE;"
 
   - id: oracle_temp_space_low

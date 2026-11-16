@@ -3422,6 +3422,7 @@ def collect_issues(db_type: str, context, analyzer_fn: str = '') -> list:
         return items
 
     _add(context.get('auto_analyze'))
+    _add(context.get('baseline_issues'))
     _add(context.get('issues'))
 
     # 推导并合并「智能分析」结果（best-effort，异常/签名不符时忽略）

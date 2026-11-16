@@ -73,9 +73,14 @@ def _record_inspection(db_type, db_info, ret, report_path):
         # 计算风险数量：优先沿用检查器给出的 risk_count，否则按问题条数
         risk_count = ret.get('risk_count', 0) or len(issues)
 
-        # 根据健康状态计算评分
+        # 根据健康状态计算评分；有问题项时必须按问题数扣分，
+        # 不能沿用巡检早期的“优秀”状态。
         health_status = ret.get('health_status', '')
-        if '优秀' in health_status or 'Excellent' in health_status:
+        if risk_count:
+            health_score = max(0, 100 - risk_count * 5)
+            health_status = ('良好' if health_score >= 80 else
+                             '一般' if health_score >= 60 else '需关注')
+        elif '优秀' in health_status or 'Excellent' in health_status:
             health_score = 100
         elif '良好' in health_status or 'Good' in health_status:
             health_score = 80
