@@ -239,20 +239,19 @@ def _adapt_checkpointer_columns(text: str, parsed: PostgreSqlVersion) -> str:
     """PostgreSQL 17 起检查点统计从 pg_stat_bgwriter 拆到独立视图。"""
     if parsed.major < 17 or 'PG_STAT_BGWRITER' not in text.upper():
         return text
-    pattern = re.compile(
-        r'(?is)^\s*SELECT\s+\*\s+FROM\s+pg_stat_bgwriter\s*;?\s*$')
-    if not pattern.match(text):
-        return text
-    return (
+    compatible_view = (
         'SELECT b.*, '
-        'c.num_timed AS checkpoints_timed, '
-        'c.num_requested AS checkpoints_requested, '
-        'c.write_time AS checkpoint_write_time, '
-        'c.sync_time AS checkpoint_sync_time, '
-        'c.buffers_written AS buffers_checkpoint, '
-        'c.stats_reset AS checkpointer_stats_reset '
-        'FROM pg_stat_bgwriter AS b CROSS JOIN pg_stat_checkpointer AS c'
+        '(SELECT num_timed FROM pg_stat_checkpointer) AS checkpoints_timed, '
+        '(SELECT num_requested FROM pg_stat_checkpointer) AS checkpoints_req, '
+        '(SELECT num_requested FROM pg_stat_checkpointer) AS checkpoints_requested, '
+        '(SELECT write_time FROM pg_stat_checkpointer) AS checkpoint_write_time, '
+        '(SELECT sync_time FROM pg_stat_checkpointer) AS checkpoint_sync_time, '
+        '(SELECT buffers_written FROM pg_stat_checkpointer) AS buffers_checkpoint, '
+        '(SELECT stats_reset FROM pg_stat_checkpointer) AS checkpointer_stats_reset '
+        'FROM pg_stat_bgwriter AS b'
     )
+    return re.sub(r'(?i)\bFROM\s+pg_stat_bgwriter\b',
+                  'FROM (' + compatible_view + ') AS dbpulse_bgwriter', text)
 
 
 def _adapt_slow_query_columns(text: str, parsed: PostgreSqlVersion) -> str:

@@ -176,20 +176,23 @@ class Services(unittest.TestCase):
                 with self.assertRaises(ValueError):connect_secure({'user':'SYSDBA'}, {'db_type':family})
         with self.assertRaises(ValueError):connect_secure({'user':'readonly'}, {'db_type':'sqlserver','version':'2005','least_privilege_reference':'fixture'})
 
-    def test_reports_cover_all_requirements_and_redact(self):
+    def test_reports_omit_requirement_appendix_and_redact(self):
         snapshot=overview(self.store,OWNER,self.catalog)
         html=render_html(self.catalog,snapshot,'隔离验证报告')
         content=render_docx(self.catalog,snapshot,'隔离验证报告')
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             document=archive.read('word/document.xml').decode()
-        for req in self.catalog['requirements']:
-            self.assertIn(req['id'],html)
-            self.assertIn(req['id'],document)
+        for text in ('客户服务要求覆盖与验收证据', '需求来源'):
+            self.assertNotIn(text,html)
+            self.assertNotIn(text,document)
+        for text in ('服务响应时限', '故障时限', '台账变更追溯', '资产台账与参数明细', '服务执行与闭环记录'):
+            self.assertIn(text,html)
+            self.assertIn(text,document)
         self.assertNotIn('192.0.2.123',html)
         self.assertNotIn('192.0.2.123',document)
         self.assertNotIn('基于 RaccoonX / DBCheck',document)
         self.assertNotIn('DBPulse 衍生维护',document)
-        self.assertIn('未采集',document)
+        self.assertIn('未采集',html)
 
     def test_schedule_lease_prevents_duplicate_collection(self):
         now='2026-11-09T00:00:00+00:00'
@@ -438,8 +441,8 @@ class ExistingSystemIntegration(unittest.TestCase):
     def test_gbase8a_native_engine_verifies_family(self):
         from unittest.mock import MagicMock
         from modules.entrypoints.main_gbase8a import GBase8aInspector
-        for banner,expected in [('GBase 8a MPP Cluster',True),('MySQL 8.0',False)]:
-            connection=MagicMock();connection.cursor.return_value.fetchone.return_value=(banner,'')
+        for banner,expected in [('GBase 8a MPP Cluster 9.5.3.28',True),('MySQL 8.0',False)]:
+            connection=MagicMock();connection.cursor.return_value.fetchall.return_value=[(banner,'')]
             with patch('modules.entrypoints.main_gbase8a.connect_gbase8a',return_value=connection):
                 inspector=GBase8aInspector('fixture',5258,'reader','fixture')
                 self.assertEqual(inspector.connect()[0],expected)

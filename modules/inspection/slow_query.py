@@ -29,9 +29,14 @@ AI 诊断：
   生成"根因分析 → 优化建议"格式的诊断报告。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import time
 import re
 import json
+from decimal import Decimal
 
 
 # ═══════════════════════════════════════════════════════════
@@ -932,13 +937,13 @@ class MySQLSlowQueryAnalyzer(BaseSlowQueryAnalyzer):
         for row in raw.get('top_by_latency', []):
             r.top_sql_by_latency.append({
                 'query_text': self._digest_text(row.get('query_sample_text', '')),
-                'exec_count': row.get('exec_count', 0),
+                'exec_count': int(Decimal(str(row.get('exec_count') or 0))),
                 'total_time_sec': round(float(row.get('total_latency_sec') or 0), 3),
                 'avg_time_sec': round(float(row.get('avg_latency_sec') or 0), 3),
-                'rows_scanned': row.get('rows_scanned', 0),
-                'rows_sent': row.get('rows_sent', 0),
-                'tmp_disk_tables': row.get('tmp_disk_tables', 0),
-                'sort_merge_passes': row.get('sort_merge_passes', 0),
+                'rows_scanned': int(Decimal(str(row.get('rows_scanned') or 0))),
+                'rows_sent': int(Decimal(str(row.get('rows_sent') or 0))),
+                'tmp_disk_tables': int(Decimal(str(row.get('tmp_disk_tables') or 0))),
+                'sort_merge_passes': int(Decimal(str(row.get('sort_merge_passes') or 0))),
             })
 
         for row in raw.get('full_table_scan', []):
@@ -986,7 +991,7 @@ class MySQLSlowQueryAnalyzer(BaseSlowQueryAnalyzer):
         """将 DIGEST_TEXT 标准化：去除多余空白，便于阅读"""
         if not text:
             return ''
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r'\s+', ' ', str(text)).strip()
         return text[:300]  # 截断超长 query
 
 

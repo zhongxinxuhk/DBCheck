@@ -214,6 +214,22 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(info['host_model'], 'Huawei 2288H V5')
         self.assertEqual(info['storage_platform'], '华为 OceanStor')
         self.assertEqual(info['charset'], 'ZHS16GBK')
+        self.assertEqual(eng.context['_basic_info_observed']['charset'], 'AL32UTF8')
+        self.assertEqual(eng.context['_basic_info_observed']['location'], '')
+
+    def test_inventory_candidates_use_observed_version_before_override(self):
+        from modules.operations.inventory_sync import build_candidates
+        bi.OVERRIDE_FILE.write_text(json.dumps({
+            'defaults': {'version_patch': '过期版本', 'backup_policy': '人工策略'},
+        }), encoding='utf-8')
+        eng = _engine('mysql', context={'basic_info_db': {
+            'version_patch': '8.4.7', 'backup_policy': '实测策略',
+        }})
+        info = bi.build(eng)
+        self.assertEqual(info['version_patch'], '过期版本')
+        candidates = build_candidates(eng.context['_basic_info_observed'])
+        self.assertEqual(candidates['auto_fields']['version'], '8.4.7')
+        self.assertEqual(candidates['observed_fields']['backup_policy'], '实测策略')
 
     def test_system_info_supplies_os_and_host_model(self):
         eng = _engine('mysql', context={'system_info': {

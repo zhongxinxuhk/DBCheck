@@ -265,6 +265,22 @@ class InventoryFirstInspectionTests(unittest.TestCase):
 
 
 class InventorySpecializedObservationTests(unittest.TestCase):
+    def test_failed_queries_and_initialized_lists_are_not_empty_findings(self):
+        from modules.operations.inventory_sync import build_specialized_observation
+        specialized = build_specialized_observation({
+            'tablespace': [], 'users': [], 'W17_users': [],
+            '_query_status': {'W17_users': {'status': 'error', 'reason': 'denied'}},
+        })
+        self.assertEqual(specialized, {})
+
+    def test_sqlserver_logical_file_names_are_recognized(self):
+        from modules.operations.inventory_sync import build_specialized_observation
+        specialized = build_specialized_observation({
+            'mssql_tablespaces': [{'logical_name': 'master', 'size_mb': 8}],
+        })
+        row = specialized['tablespaces']['rows'][0]
+        self.assertEqual(row, {'name': 'master', 'size': '8 MB'})
+
     def test_tablespace_and_account_rows_are_normalized_without_secrets(self):
         from modules.operations.inventory_sync import build_specialized_observation
 

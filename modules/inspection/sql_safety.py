@@ -213,12 +213,16 @@ class InspectionCursor:
                     + str(ROW_LIMIT + 1)
                 )
             elif self.connection.family in {"mysql", "postgresql", "clickhouse"}:
-                clean = (
-                    "SELECT * FROM ("
-                    + clean
-                    + ") AS DBPULSE_BOUNDED LIMIT "
-                    + str(ROW_LIMIT + 1)
-                )
+                # GBase 8a 不支持把无 FROM 的标量查询嵌入派生表，该类查询仅返回一行。
+                scalar_gbase = (self.connection.kind == 'gbase8a'
+                                and not re.search(r'\b(?:FROM|UNION)\b', clean, re.I))
+                if not scalar_gbase:
+                    clean = (
+                        "SELECT * FROM ("
+                        + clean
+                        + ") AS DBPULSE_BOUNDED LIMIT "
+                        + str(ROW_LIMIT + 1)
+                    )
             elif self.connection.family == "db2":
                 clean = (
                     "SELECT * FROM ("

@@ -962,6 +962,11 @@ class MssqlJdbcInspector(BaseInspectionEngine):
                                'total_gb': 0, 'used_gb': 0, 'free_gb': 0, 'usage_percent': 0}]
             }})
 
+        # 核心属性与通用引擎采用相同采集及合并路径，保留台账同步的实测来源。
+        from modules.inspection.basic_info import collect_db, build
+        self.context['basic_info_db'] = collect_db(self.cursor, self.db_type, self.database)
+        self.context['basic_info'] = build(self)
+
         # 报告章节（从 inspection.db 加载并执行模板 query）
         try:
             self._load_chapters_from_db()

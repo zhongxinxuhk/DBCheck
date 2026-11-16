@@ -53,7 +53,7 @@ _PLACEHOLDERS = {
 # 专项实测只做对照，不写回人工台账；限制单次载荷大小，避免巡检结果撑爆台账库。
 _SPECIAL_LIMIT = 300
 _TS_NAME_KEYS = (
-    "tablespace_name", "tablespace", "ts_name", "space_name", "name",
+    "tablespace_name", "tablespace", "ts_name", "space_name", "logical_name", "name",
 )
 _TS_SIZE_KEYS = (
     "total_mb", "size_mb", "total_size_mb", "allocated_mb", "total_gb",
@@ -200,11 +200,17 @@ def _account_score(key):
 
 def _collect_section(context, normalizer, scorer, name_key):
     candidates = []
+    query_status = context.get('_query_status') or {}
     for key, rows in (context or {}).items():
         if not isinstance(key, str) or not isinstance(rows, list):
             continue
         score = scorer(key.lower())
         if score <= 0:
+            continue
+        status = query_status.get(key) or {}
+        if status.get('status') in {'error', 'not_applicable'}:
+            continue
+        if not rows and query_status and key not in query_status:
             continue
         total = len(rows)
         items = []

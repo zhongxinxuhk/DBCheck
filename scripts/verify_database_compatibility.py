@@ -90,6 +90,7 @@ class CompatibilityTests(unittest.TestCase):
     def test_legacy_feature_gates(self):
         engine=BaseInspectionEngine('localhost',1433,'test','test')
         engine.db_type='sqlserver';engine._db_version_major=9
+        engine._server_version_cache='Microsoft SQL Server 2005 - 9.00.5000.00'
         cur=Mock()
         result=engine._execute_query_safe(cur,'SELECT * FROM sys.dm_hadr_availability_replica_states','ag')
         cur.execute.assert_not_called()
