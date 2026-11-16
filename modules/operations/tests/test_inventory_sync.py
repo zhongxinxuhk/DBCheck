@@ -408,3 +408,145 @@ class InventorySpecializedStoreTests(unittest.TestCase):
             self.assertEqual(
                 record["metadata"]["tables"]["tablespaces"][0]["size"], "人工值"
             )
+
+
+class InventoryObservationApplyTests(unittest.TestCase):
+    def _inventory(self, directory):
+        import os
+        import sqlite3
+
+        from modules.operations.inventory import Inventory
+
+        class Manager:
+            def __init__(self, path):
+                self.instances_db = path
+
+            def _bump_rev(self, path):
+                return None
+
+            def _load_data(self):
+                return None
+
+        path = os.path.join(directory, "instances.db")
+        with sqlite3.connect(path) as db:
+            db.execute(
+                'CREATE TABLE instances (id TEXT PRIMARY KEY, name TEXT, db_type TEXT, '
+                'host TEXT, port INTEGER, "user" TEXT, password TEXT, "database" TEXT, '
+                'service_name TEXT, tags TEXT, updated_at TEXT, enabled INTEGER)'
+            )
+            db.execute(
+                "INSERT INTO instances VALUES('abc','test','oracle','127.0.0.1',"
+                "1521,'system','','XE','','[]','2026-01-01',1)"
+            )
+        return Inventory(Manager(path))
+
+    def test_apply_only_adds_missing_rows_and_fills_empty_size(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            inventory = self._inventory(directory)
+            actor = SimpleNamespace(id=1, tenant_id=1, is_admin=True,
+                                    roles=["admin"], username="admin")
+            current = inventory.get("abc")
+            inventory.save(
+                actor,
+                {"revision": current["revision"], "metadata": {"tables": {
+                    "tablespaces": [
+                        {"name": "SYSTEM", "size": "900 MB"},
+                        {"name": "EMPTY"},
+                    ],
+                    "accounts": [{"username": "APP", "purpose": "手工用途"}],
+                }}},
+                iid="abc",
+            )
+            current = inventory.get("abc")
+            specialized = {
+                "tablespaces": {
+                    "status": "collected", "source": "W06_tablespace_usage",
+                    "rows": [
+                        {"name": "SYSTEM", "size": "1 GB"},
+                        {"name": "EMPTY", "size": "5 MB"},
+                        {"name": "NEW", "size": "2 MB"},
+                    ],
+                    "total": 2, "truncated": False,
+                },
+                "accounts": {
+                    "status": "collected", "source": "W17_users_status",
+                    "rows": [
+                        {"username": "APP", "status": "OPEN"},
+                        {"username": "NEWUSER", "status": "OPEN"},
+                    ],
+                    "total": 2, "truncated": False,
+                },
+            }
+            inventory.record_inspection(
+                actor, "abc", "task-apply", "/tmp/report.docx", {}, {},
+                observed_tables=specialized,
+            )
+            result = inventory.apply_observation(
+                actor, "abc", {
+                    "task_id": "task-apply",
+                    "revision": inventory.get("abc")["revision"],
+                    "sections": {
+                        "tablespaces": ["SYSTEM", "EMPTY", "NEW"],
+                        "accounts": ["APP", "NEWUSER"],
+                    },
+                },
+            )
+            self.assertEqual(result["status"], "applied")
+            tables = result["record"]["metadata"]["tables"]
+            self.assertEqual(
+                {row["name"] for row in tables["tablespaces"]}, {"SYSTEM", "EMPTY", "NEW"}
+            )
+            system = next(row for row in tables["tablespaces"] if row["name"] == "SYSTEM")
+            self.assertEqual(system["size"], "900 MB")
+            new = next(row for row in tables["tablespaces"] if row["name"] == "NEW")
+            self.assertEqual(new["size"], "2 MB")
+            app = next(row for row in tables["accounts"] if row["username"] == "APP")
+            self.assertEqual(app["purpose"], "手工用途")
+            self.assertEqual(
+                {row["username"] for row in tables["accounts"]}, {"APP", "NEWUSER"}
+            )
+            self.assertEqual(result["sections"]["tablespaces"]["protected"], 1)
+            self.assertEqual(result["sections"]["tablespaces"]["filled"], 1)
+            self.assertEqual(result["sections"]["tablespaces"]["added"], 1)
+            empty = next(
+                row for row in tables["tablespaces"] if row["name"] == "EMPTY"
+            )
+            self.assertEqual(empty["size"], "5 MB")
+            self.assertEqual(result["sections"]["accounts"]["added"], 1)
+            actions = [item["action"] for item in inventory.history(actor, {"abc"})]
+            self.assertIn("inspection_observation_apply", actions)
+
+    def test_stale_task_id_is_rejected(self):
+        import tempfile
+
+        from modules.operations.inventory import Conflict
+
+        with tempfile.TemporaryDirectory() as directory:
+            inventory = self._inventory(directory)
+            actor = SimpleNamespace(id=1, tenant_id=1, is_admin=True,
+                                    roles=["admin"], username="admin")
+            specialized = {
+                "tablespaces": {
+                    "status": "collected", "source": "W06",
+                    "rows": [{"name": "NEW", "size": "2 MB"}],
+                    "total": 1, "truncated": False,
+                },
+            }
+            inventory.record_inspection(
+                actor, "abc", "task-old", "", {}, {},
+                observed_tables=specialized,
+            )
+            inventory.record_inspection(
+                actor, "abc", "task-new", "", {}, {},
+                observed_tables=specialized,
+            )
+            with self.assertRaises(Conflict):
+                inventory.apply_observation(
+                    actor, "abc", {
+                        "task_id": "task-old",
+                        "revision": inventory.get("abc")["revision"],
+                        "sections": {"tablespaces": ["NEW"]},
+                    },
+                )

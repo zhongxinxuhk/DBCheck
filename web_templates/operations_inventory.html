@@ -553,7 +553,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         <div class="section" id="observation-section">
           <h3>最近巡检实测</h3>
           <p class="muted">
-            自动同步仅覆盖版本、补丁、实例名、字符集、库大小、归档、存储模式及目标主机信息；表空间、账号、备份策略、容灾和集群属性仅作差异对照，不覆盖人工台账。
+            自动同步仅覆盖版本、补丁、实例名、字符集、库大小、归档、存储模式及目标主机信息；表空间、账号、备份策略、容灾和集群属性仅作差异对照，不覆盖人工台账。可在实测表内勾选后手工补录未登记项或空大小。
           </p>
           <div id="observation-content"></div>
         </div>
@@ -831,9 +831,15 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           }
           const ledgerMap = ledgerRows(section.key, section.nameField);
           let registered = 0;
+          let actionableCount = 0;
           const rows = (block.rows || []).map((row) => {
             const values = Object.fromEntries(section.columns.map(([key]) => [key, row[key] ?? ""]));
-            const ledgerRow = ledgerMap.get(String(row[section.nameField] ?? "").trim().toLowerCase());
+            const name = String(row[section.nameField] ?? "").trim();
+            const ledgerRow = ledgerMap.get(name.toLowerCase());
+            const ledgerSize = String(ledgerRow?.size ?? "").trim();
+            const observedSize = String(row.size ?? "").trim();
+            const actionable = !ledgerRow
+              || (section.key === "tablespaces" && Boolean(observedSize) && !ledgerSize);
             values.ledger = ledgerRow ? "已登记" : "未登记";
             values.ledger_size = ledgerRow?.size ?? "";
             values.ledger_purpose = ledgerRow?.purpose || ledgerRow?.privileges || "";
@@ -843,7 +849,11 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
                 && String(row.size) !== String(ledgerRow.size),
             );
             if (ledgerRow) registered += 1;
-            return `<tr>${section.columns.map(([key]) => {
+            if (actionable) actionableCount += 1;
+            const pick = canWrite
+              ? `<td><input type="checkbox" data-special-pick="${esc(section.key)}" data-special-name="${esc(name)}" ${actionable ? "checked" : "disabled"} title="${actionable ? "补录未登记对象或空大小" : "已有台账值，不覆盖"}"></td>`
+              : "";
+            return `<tr>${pick}${section.columns.map(([key]) => {
               const value = values[key] || (key === "ledger" ? "" : "—");
               const diff = (key === "ledger" && values.__ledger_missing)
                 || (key === "size" && values.__size_diff);
@@ -853,10 +863,58 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           const missing = (block.rows || []).length - registered;
           const meta = `来源 ${block.source || "—"} · 已登记 ${registered} / 未登记 ${missing} · ${block.rows?.length || 0}/${block.total || 0} 行${block.truncated ? "（已截断）" : ""}`;
           html += rows.length
-            ? `<div class="scroll"><table class="editor-table"><thead><tr>${section.columns.map(([, label]) => `<th>${esc(label)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div><p class="muted">${esc(meta)}</p>`
+            ? `<div class="scroll"><table class="editor-table"><thead><tr>${canWrite ? "<th>补录</th>" : ""}${section.columns.map(([, label]) => `<th>${esc(label)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div><p class="muted">${esc(meta)}</p>`
             : `<p class="muted">查询已执行，未检出可展示的${esc(section.label)}记录。${esc(meta)}</p>`;
+          if (canWrite && rows.length) {
+            html += `<div class="actions" style="margin-top:8px"><button type="button" data-apply-special="${esc(section.key)}" data-record-id="${esc(record.id)}" ${actionableCount ? "" : "disabled"}>补录选中${esc(section.label)}（${actionableCount}）</button><span class="muted">只补未登记对象或空大小，已有手工值不覆盖</span></div>`;
+          }
         }
         return html;
+      }
+      async function applySpecialized(sectionKey, iid) {
+        const selector = `input[data-special-pick="${sectionKey}"]:checked`;
+        const names = [...document.querySelectorAll(selector)]
+          .map((input) => input.dataset.specialName)
+          .filter(Boolean);
+        if (!names.length) {
+          message("请先勾选要补录的" + (sectionKey === "tablespaces" ? "表空间" : "账号"));
+          return;
+        }
+        const record = state.records.find((item) => item.id === iid);
+        const obs = record?.observation;
+        if (!record || !obs?.task_id) {
+          message("巡检实测记录已失效，请刷新后重试");
+          return;
+        }
+        const label = sectionKey === "tablespaces" ? "表空间" : "账号";
+        if (!window.confirm(
+          `将把选中的 ${names.length} 个${label}补录到台账。\n` +
+          "只新增未登记对象或补填空大小，已有手工值不覆盖；\n" +
+          "补录后台账页面会刷新，未保存的编辑会丢失。继续？",
+        )) return;
+        try {
+          const data = await api(
+            "/api/operations/inventory/" + encodeURIComponent(iid) + "/apply-observation",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                task_id: obs.task_id,
+                revision: record.revision,
+                sections: { [sectionKey]: names },
+              }),
+            },
+          );
+          const stats = data.sections?.[sectionKey] || {};
+          message(
+            `专项补录完成：新增 ${stats.added || 0}，补空 ${stats.filled || 0}，保护已有值 ${stats.protected || 0}`,
+            true,
+          );
+          await loadRecords();
+          const updated = state.records.find((item) => item.id === iid);
+          if (updated) edit(updated);
+        } catch (error) {
+          message(error.message);
+        }
       }
       function renderObservation(record) {
         const box = $("observation-content");
@@ -893,6 +951,11 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           (!rows && !specialized
             ? '<span class="muted">本次巡检没有采到可展示的台账字段。</span>'
             : "");
+        box.querySelectorAll("[data-apply-special]").forEach((button) => {
+          button.addEventListener("click", () =>
+            applySpecialized(button.dataset.applySpecial, button.dataset.recordId),
+          );
+        });
       }
       function edit(record) {
         state.editing = record || null;
@@ -1070,11 +1133,15 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             ? "/api/operations/inventory/" + record.id + "/history"
             : "/api/operations/inventory-history",
         );
+        const actionLabels = {
+          inspection_auto_update: "巡检自动同步",
+          inspection_observation_apply: "专项实测补录",
+        };
         $("history-content").textContent =
           data.records
             .map(
               (h) =>
-                `${h.created} · 操作人 ${h.actor} · ${h.action}\n${JSON.stringify(h.details, null, 2)}`,
+                `${h.created} · 操作人 ${h.actor} · ${actionLabels[h.action] || h.action}\n${JSON.stringify(h.details, null, 2)}`,
             )
             .join("\n\n") || "暂无变更记录";
         $("history-dialog").showModal();
