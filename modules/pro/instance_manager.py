@@ -1173,14 +1173,22 @@ class InstanceManager:
                 return {'ok':True,'message':'SQL Server连接成功'}
 
             elif db_type == 'dm':
+                # Web 端必须把 JVM 放到未被 gevent monkey-patch 的隔离子进程，
+                # 与巡检引擎共用 jdbc_test_cli；此前直接 import dmPython，
+                # 未安装达梦客户端时数据源“测试连接”永远失败，而巡检本身可用。
                 try:
-                    import dmPython
-                    dsn = '%s:%d' % (inst.host, inst.port)
-                    conn = dmPython.connect(user=inst.user, password=password, server=dsn)
-                    conn.close()
-                    return {'ok': True, 'message': '连接成功 (DM %s:%d)' % (_orig_host, _orig_port)}
-                except ImportError:
-                    return {'ok': False, 'message': 'dmPython 驱动未安装'}
+                    from modules.web.app import run_jdbc_test_subprocess
+                    ok, msg = run_jdbc_test_subprocess(
+                        'dm',
+                        {'host': inst.host, 'port': inst.port,
+                         'user': inst.user, 'password': password},
+                        {'driver_version': getattr(inst, 'driver_version', '') or ''},
+                    )
+                    if ok:
+                        return {'ok': True, 'message': '连接成功 (DM %s:%d)' % (_orig_host, _orig_port)}
+                    return {'ok': False, 'message': msg}
+                except Exception as e:  # noqa: BLE001
+                    return {'ok': False, 'message': 'DM JDBC 连接测试失败: %s' % e}
 
             elif db_type == 'tidb':
                 import pymysql
