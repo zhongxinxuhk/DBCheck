@@ -53,12 +53,19 @@ class CompatibilityTests(unittest.TestCase):
         try:
             row=conn.execute('SELECT id FROM inspection_baseline WHERE db_type=? LIMIT 1',('gbase8a',)).fetchone()
             conn.execute("UPDATE inspection_baseline SET enabled=0,expected_value='custom' WHERE id=?",(row['id'],))
+            self.assertEqual(conn.execute(
+                "SELECT value FROM server_thresholds WHERE key='db_oracle_buf_cache_warn_min_pct'"
+            ).fetchone()[0], 95.0)
+            conn.execute("UPDATE server_thresholds SET value=90 WHERE key='db_oracle_buf_cache_warn_min_pct'")
             conn.commit()
             n=conn.execute('SELECT COUNT(*) FROM inspection_template').fetchone()[0]
             ensure_business_defaults(self.db)
             self.assertEqual(n,conn.execute('SELECT COUNT(*) FROM inspection_template').fetchone()[0])
             saved=conn.execute('SELECT enabled,expected_value FROM inspection_baseline WHERE id=?',(row['id'],)).fetchone()
             self.assertEqual(tuple(saved),(0,'custom'))
+            self.assertEqual(conn.execute(
+                "SELECT value FROM server_thresholds WHERE key='db_oracle_buf_cache_warn_min_pct'"
+            ).fetchone()[0], 90.0)
         finally:
             conn.close()
 

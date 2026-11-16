@@ -175,18 +175,20 @@ class OracleTemplateSqlTest(unittest.TestCase):
         if not _DB_PATH.exists():
             raise unittest.SkipTest('inspection.db not found')
 
-    def _queries(self, template_id):
+    def _queries(self, version):
         conn = sqlite3.connect(str(_DB_PATH))
         try:
             return [row[0] for row in conn.execute(
                 'SELECT q.query_sql FROM inspection_query q '
                 'JOIN inspection_chapter c ON q.chapter_id=c.id '
-                'WHERE c.template_id=? AND q.enabled=1', (template_id,))]
+                'JOIN inspection_template t ON c.template_id=t.id '
+                "WHERE t.db_type='oracle' AND t.version=? "
+                "AND t.template_name_zh NOT LIKE '%业务专项巡检%' AND q.enabled=1", (version,))]
         finally:
             conn.close()
 
     def test_default_template_is_legacy_safe_after_adaptation(self):
-        queries = self._queries(5)  # Oracle 默认模板（12c+ 基线）
+        queries = self._queries('v1')  # Oracle 默认模板（12c+ 基线）
         self.assertGreaterEqual(len(queries), 50)
         for version in ('10.2.0.5.0', '11.2.0.4.0'):
             for sql in queries:
@@ -200,7 +202,7 @@ class OracleTemplateSqlTest(unittest.TestCase):
                                          'AS AUTHENTICATION_TYPE', ''))
 
     def test_default_template_keeps_12c_features(self):
-        queries = self._queries(5)
+        queries = self._queries('v1')
         fetch_queries = [sql for sql in queries
                          if 'FETCH FIRST' in sql.upper()]
         self.assertTrue(fetch_queries)
@@ -211,7 +213,7 @@ class OracleTemplateSqlTest(unittest.TestCase):
                               ora.adapt_oracle_sql(sql, version).upper())
 
     def test_11g_template_is_10g_safe(self):
-        queries = self._queries(6)  # Oracle 11g 模板
+        queries = self._queries('11g')  # Oracle 11g 模板
         self.assertGreaterEqual(len(queries), 50)
         for sql in queries:
             adapted = ora.adapt_oracle_sql(sql, '10.2.0.5.0')
