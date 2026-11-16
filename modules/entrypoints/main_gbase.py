@@ -21,6 +21,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 
 from modules.inspection.engine import BaseInspectionEngine
+from modules.inspection import gbase_compat
 from modules.core import entry
 
 # ── JDBC 驱动路径 ────────────────────────────────────────────────────────
@@ -104,6 +105,25 @@ class GBaseInspector(BaseInspectionEngine):
         self.db_type = 'gbase'
         self.gbase_server_name = gbase_server_name or 'gbase01'
         self.driver_version = driver_version   # 来自数据源/手动表单；空串=用激活驱动
+        self._server_version = ''
+
+    def _detect_version(self):
+        """读取并缓存 GBase 8s 版本，供 SQL 适配与报告使用。"""
+        try:
+            version, parsed = gbase_compat.fetch_gbase8s_version(self.cursor)
+        except Exception:
+            version, parsed = '', gbase_compat.parse_gbase8s_version('')
+        if not version:
+            version = 'Unknown'
+        self._server_version = version
+        self._db_version_major = parsed.major or None
+        self.context['version'] = [{'VERSION': version}]
+        self.context['gbase_version_detail'] = [{
+            'VERSION': version,
+            'FAMILY': parsed.family,
+            'BUILD': parsed.build,
+        }]
+        return version
 
     def connect(self):
         """
@@ -161,11 +181,8 @@ class GBaseInspector(BaseInspectionEngine):
             self.conn = conn
             self.cursor = self.conn.cursor()
 
-            # GBase 8s 基于 Informix，用 DBINFO 获取版本（参数用双引号）
-            self.cursor.execute('SELECT DBINFO("version", "full") FROM systables WHERE tabid = 1')
-            row = self.cursor.fetchone()
-            ver = row[0] if row else 'unknown'
-            return True, ver
+            # GBase 8s 基于 Informix：优先 DBINFO，回退 version/server。
+            return True, self._detect_version()
 
         except Exception as e:
             import traceback
@@ -214,11 +231,11 @@ def test_gbase_jdbc_connection(host, port, user, password, database='gbase01', g
         return False, _err_open
     try:
         cur = conn.cursor()
-        cur.execute('SELECT DBINFO("version", "full") FROM systables WHERE tabid = 1')
-        ver = cur.fetchone()[0]
+        ver, _parsed = gbase_compat.fetch_gbase8s_version(cur)
         cur.close()
         conn.close()
-        return True, f"GBase 8s {ver}（驱动：{os.path.basename(_jar)}）"
+        label = ver if str(ver).lower().startswith('gbase') else f"GBase 8s {ver}"
+        return True, f"{label}（驱动：{os.path.basename(_jar)}）"
     except Exception as e:
         try:
             conn.close()

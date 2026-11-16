@@ -5,6 +5,7 @@
 
 
 from modules.inspection.engine import BaseInspectionEngine
+from modules.inspection import gbase_compat
 from modules.db_types.compatibility import connect_gbase8a
 from modules.core.data_security import redact
 
@@ -43,11 +44,17 @@ class GBase8aInspector(BaseInspectionEngine):
             self.conn=connect_gbase8a({**self.ssh_info,'host':self.host,'port':self.port,
                                       'user':self.user,'password':self.password,'database':self.database})
             self.cursor=self.conn.cursor()
-            self.cursor.execute('SELECT VERSION(), @@VERSION_COMMENT')
-            row=self.cursor.fetchone()
-            self._server_version=' '.join(str(value) for value in row or ())
-            if 'gbase' not in self._server_version.lower():
+            # 版本探测按候选链执行：不同 8a 版本对 VERSION_COMMENT 的支持不一致，
+            # 组合查询一旦含不支持的系统变量会连带丢掉 VERSION()。
+            self._server_version, parsed = gbase_compat.fetch_gbase8a_version(self.cursor)
+            if not self._server_version or 'gbase' not in self._server_version.lower():
                 raise ValueError('服务端未返回GBase 8a版本标识，请核对类型和端口')
+            self._db_version_major = parsed.major or None
+            self.context['gbase8a_version_detail'] = [{
+                'VERSION': self._server_version,
+                'FAMILY': parsed.family,
+                'BUILD': parsed.build,
+            }]
             return True,self._server_version
         except Exception as error:
             if self.conn:
