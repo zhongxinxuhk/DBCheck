@@ -553,7 +553,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         <div class="section" id="observation-section">
           <h3>最近巡检实测</h3>
           <p class="muted">
-            自动同步仅覆盖版本、补丁、实例名、字符集、库大小、归档、存储模式及目标主机信息；其余实测值仅作差异对照，不覆盖人工台账。
+            自动同步仅覆盖版本、补丁、实例名、字符集、库大小、归档、存储模式及目标主机信息；表空间、账号、备份策略、容灾和集群属性仅作差异对照，不覆盖人工台账。
           </p>
           <div id="observation-content"></div>
         </div>
@@ -777,6 +777,70 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         }
         return `<label class="field" for="${id}">${esc(label)}${input}</label>`;
       }
+      function renderSpecialized(obs, record) {
+        const specialized = obs.specialized || {};
+        const tables = record?.metadata?.tables || {};
+        const ledgerNames = (key, field) =>
+          new Set(
+            (Array.isArray(tables[key]) ? tables[key] : [])
+              .map((row) => String(row?.[field] ?? "").trim().toLowerCase())
+              .filter(Boolean),
+          );
+        const sections = [
+          {
+            key: "tablespaces",
+            title: "表空间实测",
+            label: "表空间",
+            nameField: "name",
+            columns: [
+              ["name", "名称"], ["ledger", "台账"], ["size", "总大小"],
+              ["free", "空闲"], ["used_pct", "使用率"], ["status", "状态"],
+            ],
+          },
+          {
+            key: "accounts",
+            title: "账号实测",
+            label: "账号",
+            nameField: "username",
+            columns: [
+              ["username", "账号"], ["ledger", "台账"], ["status", "状态"],
+              ["expiry_date", "到期时间"], ["created_date", "创建时间"],
+              ["default_tablespace", "默认表空间"], ["account_type", "类型"],
+            ],
+          },
+        ];
+        let html = "";
+        for (const section of sections) {
+          const block = specialized[section.key];
+          if (!block) continue;
+          html += `<h4>${esc(section.title)}</h4>`;
+          if (block.status === "not_collected") {
+            html += `<p class="muted">本次巡检未采集${esc(section.label)}结果（未执行对应章节）。</p>`;
+            continue;
+          }
+          if (block.status === "not_detected") {
+            html += `<p class="muted">查询已执行，未检出${esc(section.label)}记录。</p>`;
+            continue;
+          }
+          if (block.status === "unrecognized") {
+            html += `<p class="muted">查询已返回结果，但列名无法识别，未生成${esc(section.label)}快照。</p>`;
+            continue;
+          }
+          const names = ledgerNames(section.key, section.nameField);
+          const rows = (block.rows || []).map((row) => {
+            const values = Object.fromEntries(section.columns.map(([key]) => [key, row[key] ?? ""]));
+            values.ledger = names.has(String(row[section.nameField] ?? "").trim().toLowerCase())
+              ? "已登记"
+              : "未登记";
+            return `<tr>${section.columns.map(([key]) => `<td>${esc(values[key] || (key === "ledger" ? "" : "—"))}</td>`).join("")}</tr>`;
+          });
+          const meta = `来源 ${block.source || "—"} · ${block.rows?.length || 0}/${block.total || 0} 行${block.truncated ? "（已截断）" : ""}`;
+          html += rows.length
+            ? `<div class="scroll"><table class="editor-table"><thead><tr>${section.columns.map(([, label]) => `<th>${esc(label)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div><p class="muted">${esc(meta)}</p>`
+            : `<p class="muted">查询已执行，未检出可展示的${esc(section.label)}记录。${esc(meta)}</p>`;
+        }
+        return html;
+      }
       function renderObservation(record) {
         const box = $("observation-content");
         const obs = record?.observation;
@@ -802,11 +866,16 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           .join("");
         const when = String(obs.observed_at || "").replace("T", " ").slice(0, 19);
         const report = String(obs.report_path || "").split(/[\\/]/).pop();
+        const specialized = renderSpecialized(obs, record);
         box.innerHTML =
           `<p class="muted">来源：巡检任务 ${esc(obs.task_id || "")} · ${esc(when)}${report ? " · " + esc(report) : ""}</p>` +
           (rows
             ? `<div class="scroll"><table class="editor-table"><thead><tr><th>字段</th><th>台账当前值</th><th>巡检实测值</th></tr></thead><tbody>${rows}</tbody></table></div>`
-            : '<span class="muted">本次巡检没有采到可展示的台账字段。</span>');
+            : "") +
+          specialized +
+          (!rows && !specialized
+            ? '<span class="muted">本次巡检没有采到可展示的台账字段。</span>'
+            : "");
       }
       function edit(record) {
         state.editing = record || null;

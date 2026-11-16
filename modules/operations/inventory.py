@@ -306,7 +306,8 @@ class Inventory:
         return record
 
     def record_inspection(self, actor, iid, task_id, report_path, auto_fields,
-                          observed_fields, basic_info=None, observed_at=None):
+                          observed_fields, basic_info=None, observed_at=None,
+                          observed_tables=None):
         """保存巡检实测快照，并仅自动应用服务端白名单字段。
 
         该方法供巡检完成钩子调用，不经过 Web 路由；仍按台账租户和
@@ -319,6 +320,25 @@ class Inventory:
             raise ValueError("巡检台账字段无效: " + ",".join(sorted(invalid)))
         if not task_id:
             raise ValueError("巡检任务编号不能为空")
+        observed_tables = dict(observed_tables or {})
+        if set(observed_tables) - {"tablespaces", "accounts"}:
+            raise ValueError("专项实测快照字段无效")
+        for section in observed_tables.values():
+            if not isinstance(section, dict):
+                raise ValueError("专项实测快照格式无效")
+            rows = section.get("rows", [])
+            if not isinstance(rows, list) or len(rows) > 500:
+                raise ValueError("专项实测快照最多500行")
+            if any(not isinstance(row, dict) or any(
+                    isinstance(value, (dict, list)) or len(str(value)) > 512
+                    for value in row.values()) for row in rows):
+                raise ValueError("专项实测快照单元格格式无效")
+        try:
+            encoded_snapshot = json.dumps(observed_tables, ensure_ascii=False).encode()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("专项实测快照格式无效") from exc
+        if len(encoded_snapshot) > 262144:
+            raise ValueError("专项实测快照过大")
         observed_at = observed_at or now()
         with self.connection(write=True) as db:
             owner = db.execute(
@@ -380,6 +400,7 @@ class Inventory:
                 "auto_fields": auto_fields,
                 "observed_fields": observed_fields,
                 "basic_info": basic_info or {},
+                "specialized": observed_tables,
                 "applied": sorted(changes),
                 "unchanged": sorted(set(auto_fields) - set(changes)),
             }
