@@ -244,6 +244,14 @@ def inventory_record(iid):
     return jsonify(ok=True, record=inventory.save(principal, data, iid))
 
 
+@bp.route("/api/operations/inventory/<iid>/apply-observation", methods=["POST"])
+def inventory_apply_observation(iid):
+    principal = actor(write=True)
+    visible_id(principal, iid)
+    inventory, _, _ = resources()
+    return jsonify(ok=True, **inventory.apply_observation(principal, iid, body()))
+
+
 @bp.route("/api/operations/inventory/<iid>/history")
 def inventory_history(iid):
     principal = actor()

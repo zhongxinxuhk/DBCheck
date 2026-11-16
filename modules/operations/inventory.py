@@ -121,6 +121,12 @@ TABLES = {
         },
     ),
 }
+# 人工确认补录时允许映射的台账字段。只做“补缺”，不负责覆盖。
+SPECIAL_APPLY_FIELDS = {
+    "tablespaces": "name",
+    "accounts": "username",
+}
+
 SOURCE_FIELDS = {
     "name": "资产/数据源名称",
     "db_type": "数据库类型",
@@ -418,6 +424,156 @@ class Inventory:
             "task_id": task_id,
             "changed": sorted(changes),
             "observed_at": observed_at,
+        }
+
+    def apply_observation(self, actor, iid, data):
+        """用户确认后把专项实测补录到台账，绝不覆盖已有手工值。
+
+        补录规则：
+        - 未登记的表空间/账号：新增行，只写名称和可安全映射的字段；
+        - 已登记表空间且 size 为空：仅补全 size；
+        - 已有手工值、账号已有行：一律不覆盖；
+        - task_id 必须是当前最新实测，revision 必须匹配，防止过期页面回填。
+        """
+        if not (actor.is_admin or "operator" in (actor.roles or [])):
+            raise PermissionError("维护台账需要管理员或运维角色")
+        data = data or {}
+        task_id = str(data.get("task_id") or "").strip()
+        revision = data.get("revision")
+        sections = data.get("sections")
+        if not task_id:
+            raise ValueError("缺少巡检任务编号")
+        if not revision:
+            raise ValueError("缺少台账版本，请刷新后重试")
+        if not isinstance(sections, dict) or not sections:
+            raise ValueError("请选择要补录的专项台账")
+        if set(sections) - set(SPECIAL_APPLY_FIELDS):
+            raise ValueError("专项台账类型无效")
+        selected = {}
+        for key, names in sections.items():
+            if isinstance(names, str):
+                names = [names]
+            if not isinstance(names, list) or not names or len(names) > 500:
+                raise ValueError("请选择要补录的台账行")
+            clean = []
+            for name in names:
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError("台账行名称无效")
+                clean.append(name.strip())
+            selected[key] = list(dict.fromkeys(clean))
+
+        changed = False
+        counts = {}
+        with self.connection(write=True) as db:
+            owner = db.execute(
+                "SELECT tenant FROM operations_inventory WHERE instance_id=?", (iid,)
+            ).fetchone()
+            if owner is None:
+                raise LookupError("台账不存在")
+            if owner["tenant"] != actor.tenant_id:
+                raise PermissionError("无权更新该台账")
+            observation = db.execute(
+                "SELECT * FROM operations_inventory_observed "
+                "WHERE instance_id=? ORDER BY observed_at DESC, id DESC LIMIT 1",
+                (iid,),
+            ).fetchone()
+            if observation is None:
+                raise LookupError("该数据源还没有巡检实测快照")
+            if observation["task_id"] != task_id:
+                raise Conflict("巡检实测快照已更新，请刷新后重试")
+            payload = self.open(observation["payload"])
+            available = payload.get("specialized") or {}
+            current = self._record(db, iid)
+            if revision != current["revision"]:
+                raise Conflict("台账已被修改，请刷新后重试")
+            tables = copy.deepcopy(current["metadata"].get("tables") or {})
+            if not isinstance(tables, dict):
+                raise ValueError("专项台账格式无效")
+
+            for key, names in selected.items():
+                name_field = SPECIAL_APPLY_FIELDS[key]
+                section = available.get(key) or {}
+                if not isinstance(section, dict) or section.get("status") != "collected":
+                    raise ValueError("该专项没有可补录的实测结果")
+                observed_rows = {}
+                for row in section.get("rows") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    name = str(row.get(name_field) or "").strip()
+                    if name:
+                        observed_rows.setdefault(name.casefold(), (name, row))
+                rows = tables.get(key)
+                if rows is None:
+                    rows = []
+                    tables[key] = rows
+                if not isinstance(rows, list) or len(rows) > 10000:
+                    raise ValueError("专项台账行数超出限制")
+                existing = {}
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    name = str(row.get(name_field) or "").strip()
+                    if name:
+                        existing.setdefault(name.casefold(), row)
+                stats = {
+                    "selected": len(names), "added": 0, "filled": 0,
+                    "unchanged": 0, "protected": 0, "missing": 0,
+                }
+                for requested in names:
+                    matched = observed_rows.get(requested.casefold())
+                    if not matched:
+                        stats["missing"] += 1
+                        continue
+                    name, observed = matched
+                    row = existing.get(requested.casefold())
+                    if row is not None:
+                        if key == "tablespaces":
+                            observed_size = str(observed.get("size") or "").strip()
+                            current_size = str(row.get("size") or "").strip()
+                            if observed_size and not current_size:
+                                row["size"] = observed_size
+                                stats["filled"] += 1
+                                changed = True
+                            elif observed_size and current_size != observed_size:
+                                stats["protected"] += 1
+                            else:
+                                stats["unchanged"] += 1
+                        else:
+                            stats["unchanged"] += 1
+                        continue
+                    new_row = {name_field: name}
+                    if key == "tablespaces":
+                        observed_size = str(observed.get("size") or "").strip()
+                        if observed_size:
+                            new_row["size"] = observed_size
+                    rows.append(new_row)
+                    existing[requested.casefold()] = new_row
+                    stats["added"] += 1
+                    changed = True
+                counts[key] = stats
+
+            if changed:
+                self._save(
+                    actor,
+                    {"revision": revision, "metadata": {"tables": tables}},
+                    iid=iid,
+                    db=db,
+                    action="inspection_observation_apply",
+                    audit_extra={
+                        "source": "inspection_observation",
+                        "task_id": task_id,
+                        "report_path": payload.get("report_path") or observation["report_path"] or "",
+                        "sections": counts,
+                    },
+                )
+            record = self._record(db, iid)
+        if changed:
+            self._refresh()
+        return {
+            "status": "applied" if changed else "unchanged",
+            "task_id": task_id,
+            "sections": counts,
+            "record": record,
         }
 
     def _save(self, actor, data, iid=None, new_id=None, db=None, action=None,
