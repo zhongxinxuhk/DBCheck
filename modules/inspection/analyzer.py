@@ -23,6 +23,7 @@ DBCheck 增强智能分析模块
 
 
 from modules.core.paths import PROJECT_ROOT, DBC_CONFIG_PATH
+from modules.core import local_secrets
 import os
 import json
 import time
@@ -1483,9 +1484,7 @@ class AIAdvisor:
             import os as _os
             _cfg_path = DBC_CONFIG_PATH
             if _os.path.exists(_cfg_path):
-                import json as _json
-                with open(_cfg_path, 'r', encoding='utf-8') as _f:
-                    _full_cfg = _json.load(_f)
+                _full_cfg = local_secrets.load_config(_cfg_path)
                 _cfg = _full_cfg.get('ai', {})
                 _online_enabled = _cfg.get('online_enabled', False)
                 _online_backend = _cfg.get('online_backend', 'openai')
@@ -3137,10 +3136,8 @@ def run_full_analysis(db_type: str, host: str, port, label: str,
 def load_ai_config() -> dict:
     """读取 dbc_config.json 的 ai 配置段（缺失 / 解析失败一律返回空 dict，不抛错）。"""
     try:
-        import json as _json
         if os.path.exists(DBC_CONFIG_PATH):
-            with open(DBC_CONFIG_PATH, 'r', encoding='utf-8') as _f:
-                _ai = _json.load(_f).get('ai', {})
+            _ai = local_secrets.load_config(DBC_CONFIG_PATH).get('ai', {})
             return _ai if isinstance(_ai, dict) else {}
     except Exception:
         pass

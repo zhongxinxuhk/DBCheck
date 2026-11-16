@@ -15,6 +15,8 @@ from modules.pro.instance_manager import (
     DatabaseInstance,
     _encrypt_pwd,
     _decrypt_pwd,
+    _encrypt_jdbc_url,
+    _decrypt_jdbc_url,
     _get_fernet,
 )
 
@@ -160,6 +162,8 @@ SOURCE_FIELDS = {
     "tags": "标签",
 }
 SECRETS = {"password", "ssh_password", "ssh_key_password"}
+# jdbc_url 可能内嵌账号口令，落盘加密；但它不是密码字段，解密函数不同。
+ENCRYPTED_FIELDS = SECRETS | {"jdbc_url"}
 BOOLEAN_FIELDS = {
     "sysdba",
     "use_sid",
@@ -244,8 +248,9 @@ class Inventory:
         if decrypt:
             for key in SECRETS:
                 source[key] = _decrypt_pwd(source[key]) if source.get(key) else ""
+            source["jdbc_url"] = _decrypt_jdbc_url(source.get("jdbc_url") or "")
         else:
-            for key in SECRETS:
+            for key in ENCRYPTED_FIELDS:
                 source.pop(key, None)
         return {
             "id": iid,
@@ -344,7 +349,9 @@ class Inventory:
                 raise ValueError("连接文本字段格式无效")
             if len(str(value)) > 32767:
                 raise ValueError("连接字段最多32767字符")
-            if key in SECRETS:
+            if key == "jdbc_url":
+                stored[key] = _encrypt_jdbc_url(str(value))
+            elif key in SECRETS:
                 if value:
                     stored[key] = _encrypt_pwd(str(value))
             else:
@@ -431,12 +438,12 @@ class Inventory:
             )
         except sqlite3.IntegrityError as error:
             raise Conflict("配置项编号已存在") from error
-        audit_source = {k: v for k, v in stored.items() if k not in SECRETS}
+        audit_source = {k: v for k, v in stored.items() if k not in ENCRYPTED_FIELDS}
         audit = {
             "before": old,
             "after": {"source": audit_source, "metadata": metadata},
             "credential_fields_updated": sorted(
-                SECRETS & {k for k, v in source_updates.items() if v}
+                ENCRYPTED_FIELDS & {k for k, v in source_updates.items() if v}
             ),
         }
         db.execute(

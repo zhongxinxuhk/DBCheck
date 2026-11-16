@@ -27,6 +27,7 @@ from modules.core.paths import (
     MCP_SERVER_CONFIG_PATH,
     MCP_SERVER_CONFIG_PATH_LEGACY,
 )
+from modules.core import local_secrets
 
 # modules/mcp_server/config.py → 往上三级即仓库根（config.py → mcp_server → modules → 根）
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,7 +62,7 @@ def load_mcp_config():
     cfg = dict(_DEFAULTS)
 
     # 3) dbc_config.json 的 mcp_server 节点（兜底）
-    dc = _read_json(DBCONFIG_PATH).get("mcp_server") or {}
+    dc = local_secrets.load_config(DBCONFIG_PATH).get("mcp_server") or {}
     if isinstance(dc, dict):
         for k in _DEFAULTS:
             if k in dc and dc[k] is not None:

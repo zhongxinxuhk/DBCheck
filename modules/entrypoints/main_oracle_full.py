@@ -19,6 +19,7 @@ from modules.core.paths import PROJECT_ROOT
 import sys
 import os
 from modules.core import paths
+from modules.core import local_secrets
 from modules.core import entry
 
 entry.ensure_bootstrapped('oracle')
@@ -3361,8 +3362,7 @@ def single_inspection(args):
         cfg_path = paths.DBC_CONFIG_PATH
         ai_cfg = {}
         if os.path.exists(cfg_path):
-            with open(cfg_path, 'r', encoding='utf-8') as f:
-                ai_cfg = json.load(f).get('ai', {})
+            ai_cfg = local_secrets.load_config(cfg_path).get('ai', {})
         advisor = AIAdvisor(
             backend=ai_cfg.get('backend'),
             api_key=ai_cfg.get('api_key'),

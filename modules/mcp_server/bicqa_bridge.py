@@ -50,6 +50,7 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core import local_secrets
 
 
 DEFAULT_API_BASE = "https://api.bic-qa.com"
@@ -85,8 +86,7 @@ def _load_config() -> Dict[str, str]:
             # bicqa_bridge.py -> modules/mcp_server -> modules -> DBCheck
             cfg_path = DBC_CONFIG_PATH
             if os.path.exists(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    cfg = json.load(f).get("bicqa", {}) or {}
+                cfg = local_secrets.load_config(cfg_path).get("bicqa", {}) or {}
                 api_base = cfg.get("api_base") or api_base
                 api_key = cfg.get("api_key") or ""
         except Exception:

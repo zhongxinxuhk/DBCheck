@@ -22,6 +22,7 @@ from typing import List, Dict, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 from modules.core import paths
+from modules.core import local_secrets
 
 logger = logging.getLogger('plugin_market')
 
@@ -72,8 +73,7 @@ class PluginMarket:
         try:
             cfg_path = paths.DBC_CONFIG_PATH
             if os.path.exists(cfg_path):
-                with open(cfg_path, 'r', encoding='utf-8') as f:
-                    cfg = json.load(f)
+                cfg = local_secrets.load_config(cfg_path)
                 urls = cfg.get('plugin_market', {}).get('registry_urls')
                 if urls and isinstance(urls, list):
                     return urls
@@ -85,16 +85,11 @@ class PluginMarket:
         """保存用户自定义的 registry URLs 到 dbc_config.json"""
         try:
             cfg_path = paths.DBC_CONFIG_PATH
-            if os.path.exists(cfg_path):
-                with open(cfg_path, 'r', encoding='utf-8') as f:
-                    cfg = json.load(f)
-            else:
-                cfg = {}
+            cfg = local_secrets.load_config(cfg_path, strict=True) if os.path.exists(cfg_path) else {}
             if 'plugin_market' not in cfg:
                 cfg['plugin_market'] = {}
             cfg['plugin_market']['registry_urls'] = urls
-            with open(cfg_path, 'w', encoding='utf-8') as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            local_secrets.save_config(cfg_path, cfg)
             return True
         except Exception as e:
             logger.warning(f"保存自定义 registry URLs 失败: {e}")

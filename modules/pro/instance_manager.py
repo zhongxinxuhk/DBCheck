@@ -40,7 +40,12 @@ except ImportError:
     _FERNET_AVAILABLE = False
     Fernet = None
 
-def _get_fernet():
+def _get_fernet(create: bool = True):
+    """返回凭据 Fernet。
+
+    ``create=False`` 用于只读解密路径：密钥缺失时返回 ``None``，
+    绝不自动生成新密钥（否则会把“密钥丢失”伪装成“解密失败”）。
+    """
     if not _FERNET_AVAILABLE:
         raise RuntimeError('凭据加密组件不可用，已拒绝明文降级')
     import sys
@@ -74,6 +79,8 @@ def _get_fernet():
             )
 
     if not os.path.exists(key_file):
+        if not create:
+            return None
         credential_store = paths.PRO_DATA_DIR / 'instances.db'
         if credential_store.exists():
             with sqlite3.connect(str(credential_store)) as existing:
@@ -186,7 +193,7 @@ def _looks_like_encrypted_pwd(value: str) -> bool:
     return _is_fernet_token(value)
 
 
-def _decrypt_pwd(encrypted: str) -> str:
+def _decrypt_pwd(encrypted: str, *, create_key: bool = True) -> str:
     """解密数据源密码。
 
     语义约定（重要）：
@@ -208,9 +215,9 @@ def _decrypt_pwd(encrypted: str) -> str:
     """
     if not encrypted:
         return encrypted
-    f = _get_fernet()
+    f = _get_fernet(create=create_key)
     if f is None:
-        raise RuntimeError('凭据解密不可用')
+        return ''
     if not _looks_like_encrypted_pwd(encrypted):
         raise ValueError('检测到历史明文凭据，请通过受控迁移重新加密录入')
     try:
@@ -222,6 +229,44 @@ def _decrypt_pwd(encrypted: str) -> str:
     except Exception:
         # 密钥不匹配 / 密文损坏：明确返回空串，绝不回吐密文
         return ''
+
+
+# ── JDBC URL 落盘加密 ─────────────────────────────────────────────
+# jdbc_url 可能携带 user/password、access token 或带签名的查询参数，但此前
+# 与普通连接参数一样明文落在 instances.db / 台账里。这里采用独立的显式前缀，
+# 只影响落盘，不改变内存中的接口：_load_data 读出即解密，_save_data 写入前
+# 加密，因此监控、巡检、插件等既有消费方仍然拿到明文 URL。
+_JDBC_ENC_PREFIX = 'jdbc:enc:v1:'
+
+
+def _encrypt_jdbc_url(value: str) -> str:
+    if not value:
+        return value
+    if value.startswith(_JDBC_ENC_PREFIX):
+        return value
+    return _JDBC_ENC_PREFIX + _encrypt_pwd(value)
+
+
+def _decrypt_jdbc_url(value: str) -> str:
+    """解密落盘 JDBC URL；历史明文原样返回。
+
+    密钥缺失或密文损坏时**保留原密文**，避免下一次保存把连接串覆盖为空；
+    此时消费方连接会失败并提示重新录入，而不是静默丢数据。
+    """
+    if not value:
+        return value
+    if not value.startswith(_JDBC_ENC_PREFIX):
+        return value
+    try:
+        plain = _decrypt_pwd(value[len(_JDBC_ENC_PREFIX):], create_key=False)
+    except Exception:
+        plain = ''
+    if not plain:
+        import sys
+        print('[InstanceManager][WARN] jdbc_url 解密失败，保留密文；请恢复密钥或重新录入连接串',
+              file=sys.stderr)
+        return value
+    return plain
 
 
 @dataclass
@@ -342,6 +387,86 @@ class InstanceManager:
 
         # 初始化数据库
         self._init_database()
+        # 存量 jdbc_url 可能还是明文：启动时一次性加密，避免“升级后旧行仍可直接读”。
+        self._encrypt_legacy_jdbc_urls()
+        self._encrypt_legacy_json_jdbc_urls()
+
+    def _encrypt_legacy_jdbc_urls(self) -> int:
+        """把 instances.db 中历史明文 jdbc_url 原地加密。
+
+        只在启动时执行；失败仅告警，不阻断启动。返回迁移行数。
+        """
+        if not os.path.exists(self.instances_db):
+            return 0
+        changed = 0
+        try:
+            with sqlite3.connect(self.instances_db) as conn:
+                columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(instances)")
+                }
+                if "jdbc_url" not in columns:
+                    return 0
+                rows = conn.execute(
+                    "SELECT id, jdbc_url FROM instances WHERE COALESCE(jdbc_url, '') <> ''"
+                ).fetchall()
+                for instance_id, value in rows:
+                    if str(value).startswith(_JDBC_ENC_PREFIX):
+                        continue
+                    conn.execute(
+                        "UPDATE instances SET jdbc_url=? WHERE id=?",
+                        (_encrypt_jdbc_url(str(value)), instance_id),
+                    )
+                    changed += 1
+                conn.commit()
+        except Exception as exc:
+            print(f"[InstanceManager][WARN] jdbc_url 存量加密迁移失败（不阻断启动）: {exc}")
+            return 0
+        if changed:
+            self._bump_rev(self.instances_db)
+            self._instances_rev = self._read_rev(self.instances_db)
+            print(f"[InstanceManager] 已将 {changed} 条历史 jdbc_url 迁移为加密存储")
+        return changed
+
+    def _encrypt_legacy_json_jdbc_urls(self) -> int:
+        """加密旧版 instances.json / .bak 中的 jdbc_url。
+
+        SQLite 迁移完成后，旧 JSON 通常会被改名为 .bak；它仍可能被直接打开，
+        因此这里一并处理。失败只告警，不影响主流程。
+        """
+        changed = 0
+        for path in (self.instances_file, self.instances_file + ".bak"):
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+                rows = data.get("instances") if isinstance(data, dict) else None
+                if not isinstance(rows, list):
+                    continue
+                dirty = False
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    value = row.get("jdbc_url")
+                    if isinstance(value, str) and value and not value.startswith(
+                        (_JDBC_ENC_PREFIX, "enc:v1:")
+                    ):
+                        row["jdbc_url"] = _encrypt_jdbc_url(value)
+                        dirty = True
+                if not dirty:
+                    continue
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    json.dump(data, handle, ensure_ascii=False, indent=2)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                if os.name != "nt":
+                    os.chmod(tmp, 0o600)
+                os.replace(tmp, path)
+                changed += 1
+            except Exception as exc:
+                print(f"[InstanceManager][WARN] 旧 JSON jdbc_url 加密迁移失败（不阻断启动）: {exc}")
+        return changed
 
     def _load_data(self):
         """加载数据（优先从 SQLite，回退到 JSON 兼容旧数据）"""
@@ -375,6 +500,8 @@ class InstanceManager:
                     # 其余类型保持 'odbc'（向后兼容）。须与保存路径(下方 save)一致。
                     if not d.get('connection_mode'):
                         d['connection_mode'] = 'jdbc' if d.get('db_type') == 'sqlserver_jdbc' else 'odbc'
+                    # jdbc_url 可能含账号口令：落盘密文，读入内存时透明解密。
+                    d['jdbc_url'] = _decrypt_jdbc_url(d.get('jdbc_url') or '')
                     inst = DatabaseInstance.from_dict(d)
                     loaded[inst.id] = inst
                 conn.close()
@@ -394,6 +521,9 @@ class InstanceManager:
                     for inst_data in data.get("instances", []):
                         if inst_data.get('db_type') == 'oracle_full':
                             inst_data['db_type'] = 'oracle'
+                        inst_data['jdbc_url'] = _decrypt_jdbc_url(
+                            inst_data.get('jdbc_url') or ''
+                        )
                         inst = DatabaseInstance.from_dict(inst_data)
                         self._instances[inst.id] = inst
             except Exception:
@@ -638,7 +768,7 @@ class InstanceManager:
                     1 if d.get("trust_server_certificate") else 0,
                     1 if d.get("use_sid") else 0,
                     d.get("driver_version", ""),
-                    d.get("jdbc_url", "")
+                    _encrypt_jdbc_url(d.get("jdbc_url", "") or "")
                 ))
             conn.commit()
         except Exception as e:
@@ -780,6 +910,8 @@ class InstanceManager:
         Args:
             include_password: True 时导出**明文密码**（调用方必须警示用户妥善
                 保管文件）；False 时彻底剥离密码字段，导入后需重新录入。
+                该策略同样适用于可能内嵌账号口令的 ``jdbc_url``，避免导出文件
+                成为旁路明文凭据。
             ids: 只导出这些实例 id（None=全部）。路由层用它传"当前身份可见集合"，
                 避免越权带走他人数据源。
 
@@ -804,6 +936,7 @@ class InstanceManager:
             else:
                 for k in self._SECRET_FIELDS:
                     d.pop(k, None)
+                d.pop('jdbc_url', None)
             out.append(d)
         return {
             'schema': self.EXPORT_SCHEMA,
