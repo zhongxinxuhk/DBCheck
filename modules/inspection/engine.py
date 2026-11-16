@@ -3299,6 +3299,16 @@ class BaseInspectionEngine:
                                 display_headers = report_field_labels(
                                     self.db_type, q.get('query_sql', ''), headers
                                 ) if is_zh else headers
+                                # 告警/错误日志有记录时，先把“检出问题”说清楚，
+                                # 避免读者把表格当成普通信息列表。
+                                if q_key in {'W04_outstanding_alerts', 'W04_errorlog_recent'}:
+                                    _p = doc.add_paragraph(
+                                        f'检出 {len(q_data)} 条告警/错误记录' if is_zh
+                                        else f'{len(q_data)} alert/error records detected')
+                                    for _r in _p.runs:
+                                        _r.font.size = Pt(10); _r.font.name = '微软雅黑'
+                                        _r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
+                                        _r.font.color.rgb = RGBColor(192, 0, 0)
                                 # 宽表（>8列）默认采用卡片式垂直布局；指定章节强制横向表格
                                 if len(headers) > 12 and q_key not in force_horizontal_table_keys:
                                     def _card_styler(i, j, val):
@@ -3323,33 +3333,75 @@ class BaseInspectionEngine:
                                 else:
                                     is_wide = len(headers) > 6
                                     font_size = 8 if is_wide else 9
-                                    q_rows = [[self._clean_xml_str(row_data.get(h, ''), max_len=500)
+                                    # W15 的 SQL_TEXT 是典型的长文本列：如果和其它 8 列
+                                    # 均分 16cm，每行会被 SQL 文本撑成十几行。这里给
+                                    # SQL_TEXT 固定更宽的列，并对展示文本做有提示的截断。
+                                    is_w15 = q_key.startswith('W15_')
+                                    _sql_text_headers = {'sql_text', 'query_text', 'top_sql_text', 'sql文本'}
+
+                                    def _report_cell(header, value):
+                                        _limit = 100 if is_w15 and str(header).lower() in _sql_text_headers else 500
+                                        _raw = '' if value is None else str(value)
+                                        _clean = self._clean_xml_str(value, max_len=_limit)
+                                        if len(_raw) > _limit:
+                                            _clean = _clean.rstrip() + '…'
+                                        return _clean
+
+                                    q_rows = [[_report_cell(h, row_data.get(h, ''))
                                                for h in headers] for row_data in q_data]
-                                    # 统一使用自动调整宽度，不再计算固定列宽，确保表格根据窗口自动调整
                                     col_widths = None
-                                    # if any(str(h).lower() == 'setting' for h in headers):
-                                    #     col_widths = _calc_pg_settings_widths(headers)  # 禁用固定列宽，使用自动调整
-                                    # elif is_wide:
-                                    #     col_widths = _calc_compact_widths(headers, q_data[:5])  # 禁用固定列宽，使用自动调整
+                                    _sql_truncated = False
+                                    if is_w15:
+                                        _text_index = next(
+                                            (i for i, h in enumerate(headers)
+                                             if str(h).lower() in _sql_text_headers), None)
+                                        if _text_index is not None:
+                                            _other_width = 10.6 / max(1, len(headers) - 1)
+                                            col_widths = [_other_width] * len(headers)
+                                            col_widths[_text_index] = 5.4
+                                            _sql_truncated = any(
+                                                len(str(row_data.get(headers[_text_index], '') or '')) > 100
+                                                for row_data in q_data)
                                     _docx_build_grid_table(doc, display_headers, q_rows,
                                                            header_bg='336699', header_white=True,
                                                            font_size_pt=font_size, col_widths=col_widths)
+                                    if _sql_truncated:
+                                        _note = doc.add_paragraph(
+                                            'SQL 文本仅展示前 100 字符，完整语句请按 SQL_ID 查询。'
+                                            if is_zh else
+                                            'SQL text is truncated to the first 100 characters; query by SQL_ID for the full statement.')
+                                        for _r in _note.runs:
+                                            _r.font.size = Pt(9); _r.font.name = '微软雅黑'
+                                            _r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
+                                            _r.font.color.rgb = RGBColor(150, 150, 150)
                                     doc.add_paragraph()
                         else:
-                            # 数据为空：区分"查询失败"和"当前无记录"
+                            # 数据为空：区分“查询失败”和“当前确实没有记录”。
+                            # 前者是采集问题，后者是正常结论，不能都写成“数据缺失”。
                             _err = self._query_errors.get(q_key, '')
                             if _err:
-                                # 查询失败：显示友好原因
                                 _msg = _err.replace('⚠️ 章节「', '').replace('」：', '：')
-                                _p = doc.add_paragraph(_msg)
+                                _p = doc.add_paragraph(('采集失败：' + _msg) if is_zh else ('Collection failed: ' + _msg))
+                                _color = RGBColor(192, 0, 0)
                             else:
-                                # 真正无数据
-                                _no_data = '（当前无记录）' if is_zh else '(No data at this time)'
-                                _p = doc.add_paragraph(self._t('report.data_missing') + _no_data if is_zh else 'No data ' + _no_data)
+                                # 备份作业/备份集查询为空不代表“未检出风险”，
+                                # 而是“没有备份记录”，必须按问题呈现。
+                                _backup_empty_keys = {
+                                    'W05_backup_job_7d', 'W05_backup_history_7d',
+                                    'W05_backupset',
+                                }
+                                if q_key in _backup_empty_keys:
+                                    _p = doc.add_paragraph(
+                                        '检出问题：未发现备份记录' if is_zh
+                                        else 'Problem detected: no backup records found')
+                                    _color = RGBColor(192, 0, 0)
+                                else:
+                                    _p = doc.add_paragraph('未检出' if is_zh else 'Not detected')
+                                    _color = RGBColor(0, 128, 0)
                             for _r in _p.runs:
                                 _r.font.size = Pt(10); _r.font.name = '微软雅黑'
                                 _r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
-                                _r.font.color.rgb = RGBColor(150, 150, 150)
+                                _r.font.color.rgb = _color
                             doc.add_paragraph()
                         if _q_trunc:
                             _note = doc.add_paragraph(
