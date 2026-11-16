@@ -4,7 +4,7 @@
 # Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
-"""DM8 inspection entry point and driver compatibility helpers."""
+"""DM7/DM8 inspection entry point and driver compatibility helpers."""
 
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
@@ -16,12 +16,13 @@ from modules.inspection.engine import BaseInspectionEngine
 from modules.core import entry
 from modules.core.paths import PROJECT_ROOT
 from modules.driver_registry import resolve_jdbc_driver_jars
+from modules.inspection import dm_compat
 import os
 import glob as _glob
 
 """
-达梦 DM8 数据库自动化健康巡检工具 {VER}
-支持 DM8 及以上版本
+达梦 DM7/DM8 数据库自动化健康巡检工具 {VER}
+支持 DM7/DM8（含 DM8.1.0/8.1.1/8.1.2/8.1.3+）；DM6 仅识别版本
 依赖: dmpython (pip install dmpython), python-docx, docxtpl, openpyxl, psutil, paramiko>=2.8,<2.10
 注意: dmpython 需要达梦数据库自带的 dpi 动态库支持
 """
@@ -64,7 +65,7 @@ def getData(ip, port, user, password, ssh_info=None, db_name=None, template_id=N
 
 
 def create_word_template(inspector_name):
-    """原有 API - 创建 Word 模板（DM8 由 saveDoc 内部通过 inspector.generate_report 生成）"""
+    """原有 API - 创建 Word 模板（达梦报告由 saveDoc 内部通过 inspector.generate_report 生成）"""
     return '_dm_inspector_generated_'
 
 
@@ -89,7 +90,7 @@ def saveDoc(context, ofile, ifile, inspector_name, **kwargs):
     return CompatWrapper(context, ofile, inspector, inspector_name)
 
 
-# 达梦 DM8 驱动
+# 达梦驱动
 try:
     import dmPython as dm_driver
     DM_DRIVER = 'dmPython'
@@ -168,20 +169,39 @@ def _find_dm_jdbc_jar():
 
 class DmInspector(BaseInspectionEngine):
     """
-    达梦 DM8 巡检引擎
+    达梦巡检引擎
     继承 BaseInspectionEngine，只需实现 connect() 和 get_template_id()
     """
     
     def __init__(self, host, port, user, password, database=None, ssh_info=None, template_id=None,
                  driver_version=''):
         super().__init__(host, port, user, password, database, ssh_info, template_id)
-        self.db_type = 'dm8'  # 设置数据库类型
+        self.db_type = 'dm8'  # 模板族仍用 dm8；运行时按服务端版本适配
         self.driver_version = driver_version   # 来自数据源/手动表单；空串=用激活驱动
         self._lang = get_lang()
+        self._dm_version = ''
         
+    def _detect_version(self):
+        """读取并缓存最详细的达梦版本，供 SQL 适配与报告使用。"""
+        try:
+            version, parsed = dm_compat.fetch_server_version(self.cursor)
+        except Exception:
+            version, parsed = '', dm_compat.parse_dm_version('')
+        if not version:
+            version = 'Unknown'
+        self._dm_version = version
+        self._db_version_major = parsed.major or None
+        self.context['version'] = [{'VERSION': version}]
+        self.context['dm_version_detail'] = [{
+            'VERSION': version,
+            'FAMILY': parsed.family,
+            'BUILD': parsed.build,
+        }]
+        return version
+
     def connect(self):
         """
-        连接达梦 DM8 数据库。
+        连接达梦 DM7/DM8 数据库。
 
         优先使用 JDBC 驱动（纯 Java，无需达梦原生客户端 libdmcrypt.so），
         驱动 jar 置于 <项目根>/drivers/dm8/DmJdbcDriver*.jar；JDBC 不可用时
@@ -203,25 +223,16 @@ class DmInspector(BaseInspectionEngine):
                 recursive=True,
             )
         except Exception as e:  # noqa: BLE001
-            print("DM8 统一连接层调用失败，回退 dmPython:", e)
+            print("达梦统一连接层调用失败，回退 dmPython:", e)
 
         if _conn is not None:
             self.conn = _conn
             self.cursor = self.conn.cursor()
-            try:
-                self.cursor.execute("SELECT VERSION$ FROM V$VERSION")
-                version = self.cursor.fetchone()[0]
-            except Exception:
-                try:
-                    self.cursor.execute("SELECT BANNER FROM V$VERSION WHERE ROWNUM=1")
-                    version = self.cursor.fetchone()[0]
-                except Exception:
-                    version = 'Unknown'
-            self.context['version'] = [{'VERSION': version}]
+            version = self._detect_version()
             print(_t("dm8_connect_success").format(host=self.host, port=self.port))
             return True, version
         else:
-            print("DM8 JDBC 连接失败，回退 dmPython:", (_meta or {}).get('error', ''))
+            print("达梦 JDBC 连接失败，回退 dmPython:", (_meta or {}).get('error', ''))
 
         # ── 回退 dmPython ──────────────────────────────────────────
         try:
@@ -237,17 +248,8 @@ class DmInspector(BaseInspectionEngine):
             )
             self.cursor = self.conn.cursor()
 
-            # 获取达梦版本号
-            try:
-                self.cursor.execute("SELECT VERSION$ FROM V$VERSION")
-                version = self.cursor.fetchone()[0]
-            except Exception:
-                try:
-                    self.cursor.execute("SELECT BANNER FROM V$VERSION WHERE ROWNUM=1")
-                    version = self.cursor.fetchone()[0]
-                except Exception:
-                    version = 'Unknown'
-            self.context['version'] = [{'VERSION': version}]
+            # 获取达梦版本号：DM7 读 BANNER，DM8 读 ID_CODE/BUILD_VERSION
+            version = self._detect_version()
 
             print(_t("dm8_connect_success").format(host=self.host, port=self.port))
             return True, version
@@ -308,17 +310,17 @@ def main_cli():
         sys.exit(1)
 
     inspector.collect_data()
-    output_file = args.output or "DM8_Inspection_Report_{}.docx".format(datetime.now().strftime('%Y%m%d_%H%M%S'))
+    output_file = args.output or "DM_Inspection_Report_{}.docx".format(datetime.now().strftime('%Y%m%d_%H%M%S'))
     inspector.generate_report(output_file)
     print(_t("dm8_report_generated").format(file=output_file))
 
 
 def main(host=None, port=None, user=None, password=None, database=None, output=None, ssh_info=None):
-    """DM8 巡检 CLI 入口 - 支持交互模式和参数模式"""
+    """达梦巡检 CLI 入口 - 支持交互模式和参数模式"""
     entry.ensure_bootstrapped('dm8')
     if host is None:
         # 交互模式（从 main.py 调用时）
-        print(u"DM8 达梦数据库巡检")
+        print(u"达梦数据库巡检（DM7/DM8）")
         print(u"=" * 50)
         host = input(u"主机地址 [localhost]: ") or "localhost"
         port = int(input(u"端口 [5236]: ") or 5236)
@@ -329,7 +331,7 @@ def main(host=None, port=None, user=None, password=None, database=None, output=N
         if password is None:
             password = getpass.getpass(u"密码: ")
         database = input(u"数据库名: ") or ""
-        output = input(u"输出文件 [DM8_Inspection_Report.docx]: ") or "DM8_Inspection_Report.docx"
+        output = input(u"输出文件 [DM_Inspection_Report.docx]: ") or "DM_Inspection_Report.docx"
 
     inspector = DmInspector(
         host=host,
@@ -346,7 +348,7 @@ def main(host=None, port=None, user=None, password=None, database=None, output=N
         return
 
     inspector.collect_data()
-    output_file = output or "DM8_Inspection_Report_{}.docx".format(datetime.now().strftime('%Y%m%d_%H%M%S'))
+    output_file = output or "DM_Inspection_Report_{}.docx".format(datetime.now().strftime('%Y%m%d_%H%M%S'))
     inspector.generate_report(output_file)
     print(u"报告已生成: {}".format(output_file))
 

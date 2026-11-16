@@ -259,11 +259,19 @@ def _oracle(cursor):
 
 def _dm(cursor):
     out = {}
-    vrows = _try(cursor, 'SELECT * FROM V$VERSION') or []
-    if vrows:
-        out['version_patch'] = _join(
-            [str(x) for r in vrows for x in r.values() if x not in (None, '')],
-            ' | ', limit=3)
+    try:
+        from modules.inspection import dm_compat
+        version, _parsed = dm_compat.fetch_server_version(cursor)
+        if version:
+            out['version_patch'] = version
+    except Exception:
+        version = ''
+    if not out.get('version_patch'):
+        vrows = _try(cursor, 'SELECT * FROM V$VERSION') or []
+        if vrows:
+            out['version_patch'] = _join(
+                [str(x) for r in vrows for x in r.values() if x not in (None, '')],
+                ' | ', limit=3)
     out['db_name'] = _first(_try(cursor, 'SELECT NAME AS v FROM V$DATABASE'), 'v')
     out['instance_name'] = _first(_try(cursor, 'SELECT INSTANCE_NAME AS v FROM V$INSTANCE'), 'v')
     cs = _try(cursor, "SELECT PARA_VALUE AS v FROM V$DM_INI "

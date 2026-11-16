@@ -5,11 +5,12 @@
 # Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
 
 from modules.config.version import __version__ as VER
+from modules.inspection import dm_compat
 from i18n import get_lang, t as _t
 
 """
-达梦 DM8 数据库自动化健康巡检工具 {VER}
-支持 DM8 及以上版本
+达梦 DM7/DM8 数据库自动化健康巡检工具 {VER}
+支持 DM7/DM8（含 DM8.1.0/8.1.1/8.1.2/8.1.3+）；DM6 仅识别版本
 依赖: dmpython (pip install dmpython), python-docx, docxtpl, openpyxl, psutil, paramiko>=2.8,<2.10
 注意: dmpython 需要达梦数据库自带的 dpi 动态库支持
 """
@@ -83,7 +84,7 @@ dm_database      = SELECT NAME, CREATE_TIME, ARCH_MODE, STATUS$, ROLE$, MAX_SIZE
 
 # ── 2. 会话与连接 ──────────────────────────────
 dm_sessions       = SELECT TOP 50 SESS_ID, SESS_SEQ, USER_NAME, STATE, TRX_ID, CREATE_TIME, CLNT_IP FROM V$SESSIONS WHERE NVL(USER_NAME,'_DUMMY_') NOT IN ('SYSDBA','SYS') ORDER BY STATE, SESS_SEQ DESC;
-dm_session_count  = SELECT COUNT(*) AS TOTAL_ACTIVE FROM V$SESSIONS WHERE STATE='ACTIVE';
+dm_session_count  = SELECT COUNT(*) AS TOTAL_ACTIVE FROM V$SESSIONS WHERE UPPER(STATE) NOT IN ('IDLE','I','INACTIVE');
 dm_session_detail  = SELECT USER_NAME, STATE, COUNT(*) AS CNT FROM V$SESSIONS GROUP BY USER_NAME, STATE ORDER BY CNT DESC;
 
 # ── 3. 表空间使用情况 ─────────────────────────────
@@ -379,31 +380,51 @@ _DM_ERROR_HINTS = {
 }
 
 
-def execute_query_safe(cursor, sql, item_name=""):
+def execute_query_safe(cursor, sql, item_name="", version_text=""):
     """
-    安全执行 SQL，统一捕获所有 DM8 错误并返回空结果（不中断流程）。
+    安全执行 SQL，统一捕获达梦错误并返回空结果（不中断流程）。
+
+    传入 ``version_text`` 时，遇到无效列/表/语法错误会按
+    ``dm_compat.dm_query_candidates()`` 回退；权限/连接错误不回退。
     """
-    try:
-        cursor.execute(sql)
-        columns = [col[0] for col in cursor.description]
-        data = []
-        for row in cursor.fetchall():
-            data.append(dict(zip(columns, row)))
-        return {"columns": columns, "data": data}
-
-    except dm_driver.Error as e:
-        err_code = str(e.args[0]) if e.args else "0"
-        hint = _DM_ERROR_HINTS.get(err_code)
-        if hint:
-            print(_t("dm8_warn_hint").format(item=item_name, hint0=hint[0], hint1=hint[1]))
-        else:
-            print(_t("dm8_warn_db_err").format(item=item_name, code=err_code, e=str(e)[:120]))
-        return {"columns": [], "data": []}
-
-    except Exception as e:
-        err_type = type(e).__name__
-        print(_t("dm8_warn_exc").format(item=item_name, type=err_type, e=str(e)[:100]))
-        return {"columns": [], "data": []}
+    candidates = [sql]
+    if version_text:
+        try:
+            candidates = dm_compat.dm_query_candidates(
+                sql, version_text, item_name, failed_sql=sql)
+        except Exception:
+            candidates = [sql]
+    last_error = None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            cursor.execute(candidate)
+            columns = [col[0] for col in cursor.description]
+            data = []
+            for row in cursor.fetchall():
+                data.append(dict(zip(columns, row)))
+            return {"columns": columns, "data": data}
+        except dm_driver.Error as e:
+            last_error = e
+            err_code = str(e.args[0]) if e.args else "0"
+            hint = _DM_ERROR_HINTS.get(err_code)
+            if hint:
+                print(_t("dm8_warn_hint").format(
+                    item=item_name, hint0=hint[0], hint1=hint[1]))
+            else:
+                print(_t("dm8_warn_db_err").format(
+                    item=item_name, code=err_code, e=str(e)[:120]))
+            if not version_text or not dm_compat.is_compatibility_error(e):
+                break
+        except Exception as e:
+            last_error = e
+            err_type = type(e).__name__
+            print(_t("dm8_warn_exc").format(
+                item=item_name, type=err_type, e=str(e)[:100]))
+            if not version_text or not dm_compat.is_compatibility_error(e):
+                break
+    return {"columns": [], "data": []}
 
 
 # ============================================================
@@ -925,18 +946,20 @@ class getData(object):
         for key in init_keys:
             self.context.update({key: []})
 
-        # ── 步骤1: 获取版本 ──────────────────────────
+        # ── 步骤1: 获取版本（DM7 读 BANNER，DM8 读 ID_CODE/BUILD_VERSION） ──
         try:
             cursor_ver = self.conn_db.cursor()
-            cursor_ver.execute("SELECT BANNER FROM V$VERSION WHERE ROWNUM=1")
-            ver_row = cursor_ver.fetchone()
-            dm_version = ver_row[0] if ver_row else "Unknown"
+            dm_version, parsed = dm_compat.fetch_server_version(cursor_ver)
             cursor_ver.close()
+            if not dm_version:
+                dm_version = "Unknown"
+            self._dm_version = dm_version
             self.context.update({"dm_version": [{'BANNER': dm_version}]})
             self.context.update({"health_summary": [{'health_summary': '运行良好'}]})
             self.context.update({"co_name": [{'DB_NAME': self.db_name}]})
         except Exception as e:
             print(_t("dm8_version_fail").format(e=e))
+            self._dm_version = ''
             self.context.update({"dm_version": [{'BANNER': 'Unknown'}]})
 
         # ── 步骤2-21: 执行所有 SQL（容错执行器，单个失败不中断） ─
@@ -947,7 +970,11 @@ class getData(object):
                 current_step = int((i + 1) / len(variables_items) * (total_steps - 6)) + 1
                 self.print_progress_bar(current_step, total_steps, prefix=_t('dm8_progress_prefix'), suffix=f'{name} ({i+1}/{len(variables_items)})')
                 clean_sql = stmt.replace('\n', ' ').replace('\r', ' ').rstrip().rstrip(';').strip()
-                result = execute_query_safe(cursor, clean_sql, item_name=name)
+                clean_sql = dm_compat.adapt_dm_sql(
+                    clean_sql, getattr(self, '_dm_version', ''), name)
+                result = execute_query_safe(
+                    cursor, clean_sql, item_name=name,
+                    version_text=getattr(self, '_dm_version', ''))
                 self.context[name] = result.get('data', [])
                 time.sleep(0.03)
             cursor.close()

@@ -423,7 +423,7 @@ def run_oracle_full(db_info, inspector_name, ssh_info=None):
 
 
 def run_dm(db_info, inspector_name, ssh_info=None):
-    """执行 DM8 达梦巡检"""
+    """执行达梦巡检（DM7/DM8）"""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("main_dm", os.path.join(ENTRYPOINT_DIR, "main_dm.py"))
@@ -433,7 +433,7 @@ def run_dm(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"DM8巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = f"达梦巡检报告_{db_info['label']}_{timestamp}.docx"
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(

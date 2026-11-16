@@ -769,15 +769,50 @@ class BaseInspectionEngine:
         """子类 SQL 定制钩子 - 加载模板后可覆盖特定查询"""
         pass
 
+    def _adapt_dm_queries(self, sql_dict):
+        """按达梦版本改写模板 SQL。
+
+        达梦模板以 DM8 为基线；DM7/早期 DM8 的差异通过 ``dm_compat``
+        做轻量改写，执行阶段再由结构类错误候选链兜底。
+        """
+        from modules.driver_registry import db_family
+        if db_family(self.db_type) != 'dm':
+            return
+        from modules.inspection import dm_compat
+
+        version_text = self._server_version_text()
+        for key, sql in list(sql_dict.items()):
+            adapted = dm_compat.adapt_dm_sql(sql, version_text, key)
+            if adapted != sql:
+                sql_dict[key] = adapted
+                print(f"[INFO] {key}: 已按达梦版本改写 SQL")
+
     def _server_version_text(self, cursor=None):
         """返回服务端版本字符串，供复制语法等版本分支使用。"""
         cached = getattr(self, '_server_version_cache', None)
-        if cached:
-            return cached
-        text = ''
+        text = cached or ''
         version_rows = self.context.get('version') or []
-        if version_rows and isinstance(version_rows[0], dict):
+        if not text and version_rows and isinstance(version_rows[0], dict):
             text = str(version_rows[0].get('VERSION') or version_rows[0].get('version') or '')
+        from modules.driver_registry import db_family
+        if db_family(self.db_type) == 'dm':
+            from modules.inspection import dm_compat
+
+            # DM8 的 V$VERSION 常常只返回 V8，必须用 ID_CODE/BUILD_VERSION
+            # 补出 8.1.x；DM7 则由 BANNER 直接给出 7.6.x。
+            # 只探测一次，避免 V$VERSION 永远只有 V8 时每条 SQL 都重复探测。
+            parsed = dm_compat.parse_dm_version(text)
+            need_probe = (cursor is not None and
+                          (not text or (parsed.major == 8 and not parsed.patch)) and
+                          not getattr(self, '_dm_version_probed', False))
+            if need_probe:
+                self._dm_version_probed = True
+                try:
+                    detailed, parsed = dm_compat.fetch_server_version(cursor)
+                    if detailed:
+                        text = detailed
+                except Exception:
+                    pass
         if not text and cursor is not None:
             try:
                 cursor.execute('SELECT VERSION()')
@@ -944,6 +979,7 @@ class BaseInspectionEngine:
         # 2.6 MySQL 系复制语法按服务端版本自适应：
         #     MySQL 8.4 已移除 SHOW MASTER/SLAVE STATUS，旧模板直接执行会报 1064。
         self._adapt_replication_queries(sql_dict)
+        self._adapt_dm_queries(sql_dict)
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -1430,11 +1466,20 @@ class BaseInspectionEngine:
             except Exception as exec_error:
                 used_sql = self._retry_replication_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
+                    used_sql = self._retry_dm_sql(cursor, sql, item_name, exec_error)
+                if not used_sql:
+                    reason = self._dm_optional_unavailable(sql, item_name, exec_error)
+                    if reason:
+                        self._query_errors[item_name] = reason
+                        self._safe_errors.append(reason)
+                        self.context.setdefault('_query_status', {})[item_name] = {
+                            'status': 'not_applicable', 'reason': reason}
+                        return {'columns': [], 'data': [], '_unavailable': reason}
                     raise
             if used_sql != sql:
                 self.context.setdefault('_query_sql_used', {})[item_name] = used_sql
                 self.context.setdefault('_replication_syntax', {})[item_name] = used_sql
-                print(f"[INFO] {item_name}: 复制语法已按版本回退为 {used_sql}")
+                print(f"[INFO] {item_name}: SQL 已按版本回退为 {used_sql}")
             columns = [str(col[0]) for col in cursor.description]
             data = []
             # 取数走兼容层：JDBC 包装游标（JdbcCursorWrapper）历史上缺
@@ -1465,6 +1510,45 @@ class BaseInspectionEngine:
                 except Exception:
                     pass
             return {"columns": [], "data": [], "_error": friendly}
+
+    def _retry_dm_sql(self, cursor, sql, item_name, first_error):
+        """达梦结构类错误时按候选链回退；权限/连接错误不回退。"""
+        from modules.driver_registry import db_family
+        if db_family(self.db_type) != 'dm':
+            return ''
+        from modules.inspection import dm_compat
+        if not dm_compat.is_compatibility_error(first_error):
+            return ''
+
+        version = self._server_version_text(cursor)
+        for candidate in dm_compat.dm_query_candidates(
+                sql, version, item_name, failed_sql=sql):
+            if not candidate or candidate == sql:
+                continue
+            try:
+                from modules.core.data_security import assert_readonly_sql
+                assert_readonly_sql(candidate)
+                if self.conn:
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                cursor.execute(candidate)
+                self.context.setdefault('_dm_compat_sql', {})[item_name] = candidate
+                return candidate
+            except Exception as retry_error:
+                print(f"[WARN] {item_name}: 达梦候选语句失败（{candidate}）: {retry_error}")
+        return ''
+
+    def _dm_optional_unavailable(self, sql, item_name, error):
+        """可选 DM 视图缺失时转为“不适用”，避免污染巡检失败率。"""
+        from modules.driver_registry import db_family
+        if db_family(self.db_type) != 'dm':
+            return None
+        from modules.inspection import dm_compat
+        if not dm_compat.is_compatibility_error(error):
+            return None
+        return dm_compat.optional_view_reason(sql, item_name)
 
     def _retry_replication_sql(self, cursor, sql, item_name, first_error):
         """复制状态语句报语法错时按候选链重试。

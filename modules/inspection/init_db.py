@@ -2684,7 +2684,7 @@ DM8_DEFAULT_CHAPTERS = [
         'description': '数据库整体健康状态概览',
         'queries': [
             {'key': 'dm_version', 'sql': "SELECT * FROM V$VERSION;",
-             'desc_zh': '获取 DM8 版本', 'desc_en': 'Get DM8 version'},
+             'desc_zh': '获取达梦版本', 'desc_en': 'Get Dameng version'},
             {'key': 'dm_status', 'sql': "SELECT * FROM V$INSTANCE;",
              'desc_zh': '实例状态', 'desc_en': 'Instance status'},
         ]
@@ -2727,7 +2727,7 @@ DM8_DEFAULT_CHAPTERS = [
             {'key': 'dm_params', 'sql': """
                 SELECT NAME, TYPE, VALUE, SYS_VALUE
                 FROM V$PARAMETER
-                WHERE TYPE != 'R'
+                WHERE TYPE <> 'READ ONLY'
                 ORDER BY NAME;
             """,
              'desc_zh': '非只读参数一览', 'desc_en': 'Non-readonly parameters'},
@@ -2871,8 +2871,8 @@ DM8_DEFAULT_CHAPTERS = [
         'chapter_title_en': 'Job Status',
         'description': '数据库作业状态',
         'queries': [
-            {'key': 'dm_jobs', 'sql': "SELECT 'DM8 不支持 DBA_JOBS/DBA_SCHEDULER_JOBS 视图，请通过 DM 管理工具查看作业' AS message;",
-             'desc_zh': '数据库作业状态列表', 'desc_en': 'Database job status list (not supported in DM8)'},
+            {'key': 'dm_jobs', 'sql': "SELECT '达梦不提供 DBA_JOBS/DBA_SCHEDULER_JOBS 视图，请通过 DM 管理工具或 SYSJOB.SYSJOBS 查看作业' AS message;",
+             'desc_zh': '数据库作业状态列表', 'desc_en': 'Database job status list (DM does not expose DBA_JOBS)'},
         ]
     },
     {
