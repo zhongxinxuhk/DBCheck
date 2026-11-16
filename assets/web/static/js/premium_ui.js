@@ -204,7 +204,7 @@
   }
 
   function getTheme() {
-    return doc.documentElement.getAttribute("data-theme") || "dark";
+    return doc.documentElement.getAttribute("data-theme") || "light";
   }
 
   function fuzzyScore(text, query) {
