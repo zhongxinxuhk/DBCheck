@@ -7,12 +7,14 @@
 from modules.config.version import __version__ as VER
 from i18n import get_lang, t as _t
 from modules.inspection.engine import BaseInspectionEngine
+from modules.inspection import kingbase_compat
 
 """
 KingbaseES 数据库自动化健康巡检工具 {VER}
-支持 KingbaseES V009 及以上版本 (基于 PostgreSQL 兼容)
+支持 KingbaseES V8/V9 的 PostgreSQL 兼容内核（V8R2–V9R4）
 依赖: psycopg2-binary, python-docx, docxtpl, openpyxl, psutil, paramiko>=2.8,<2.10
-注意: KingbaseES 是 PostgreSQL 兼容的国产数据库，使用 psycopg2 驱动
+注意: KingbaseES 是 PostgreSQL 兼容的国产数据库，使用 psycopg2 驱动；
+V7 及更早版本采用非 PostgreSQL 兼容内核，不在本入口的模板范围内。
 """
 
 
@@ -91,12 +93,11 @@ class KingbaseESInspector(BaseInspectionEngine):
                 connect_timeout=10
             )
             self.cursor = self.conn.cursor()
-            
-            # 获取版本信息
-            self.cursor.execute("SELECT version()")
-            version = self.cursor.fetchone()[0]
+
+            # 获取 KingbaseES 版本与 PostgreSQL 兼容内核版本
+            version = self._read_version()
             self.context['version'] = [{'version': version}]
-            
+
             print("KingbaseES 连接成功: {}:{}".format(self.host, self.port))
             return True, version
             
@@ -104,6 +105,19 @@ class KingbaseESInspector(BaseInspectionEngine):
             err_msg = str(e)
             print("KingbaseES 连接失败: {}".format(err_msg))
             return False, err_msg
+
+    def _read_version(self):
+        """读取 banner 和 PG 兼容内核；探测失败时仍保留原始 version()。"""
+        try:
+            version, _parsed = kingbase_compat.fetch_kingbase_version(
+                self.cursor)
+            if version:
+                return version
+        except Exception:
+            pass
+        self.cursor.execute("SELECT version()")
+        row = self.cursor.fetchone()
+        return row[0] if row else ''
 
 # ── 保留原有 API 兼容性（供 web_ui.py 旧代码调用）────────────────────
 def getData(ip, port, user, password, database='kingbase', ssh_info=None, label=None, template_id=None):
