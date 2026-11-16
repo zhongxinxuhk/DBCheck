@@ -236,3 +236,51 @@ including modified upstream files, stay under the **Apache License 2.0** — thi
 mandated by Apache 2.0 section 4 and by sections 1–8 above. Relicensing the
 self-developed files does not alter, weaken or remove the upstream copyright,
 headers, branding or NOTICE text.
+
+---
+
+## 10. 分支收尾与合并纪律 / Branch Completion and Merge Discipline
+
+### 10.1 中文
+
+- 每次开始一项代码或文档修改前，先从最新的本地 `main` 创建独立分支，禁止直接
+  在 `main` 上开发。
+- 任务完成（功能已实现、相关测试/门禁已通过）后，必须立即在本地以
+  `git merge --no-ff <branch>` 合并回 `main`；默认不执行 `git push`，除非用户
+  明确要求推送。
+- 合并后立即删除已合并的本地分支（`git branch -d <branch>`），不得长期挂着
+  “已完成但未合并”或“已合并未删除”的本地分支。日常本地分支应只保留 `main`。
+- 合并前至少执行：
+  ```bash
+  python -m pytest modules -q
+  python scripts/check_license_headers.py
+  git diff --check
+  ```
+  若任务只改文档，可只执行后两项；任何一项失败都不得合并。
+- 任务被真实阻塞（缺少实库、依赖未就绪等）时，可以保留当前分支继续处理，但必须
+  在任务说明中写明阻塞原因和下一步；阻塞解除并完成后仍按上述规则合并、删除。
+- 禁止为了“保留现场”而长期保留已合并分支，也禁止把多个不相关任务堆在同一分支。
+
+### 10.2 English
+
+- Before any code or documentation change, create a dedicated branch from the
+  latest local `main`; never develop directly on `main`.
+- Once the task is complete (implementation done and relevant tests/gates pass),
+  merge it back to `main` locally with `git merge --no-ff <branch>` immediately.
+  Do not `git push` unless the user explicitly asks.
+- Delete the merged local branch immediately after merging
+  (`git branch -d <branch>`). Do not keep completed-but-unmerged or
+  merged-but-undeleted branches around; normally only `main` should remain.
+- Before merging, run at least:
+  ```bash
+  python -m pytest modules -q
+  python scripts/check_license_headers.py
+  git diff --check
+  ```
+  For documentation-only changes the last two gates are sufficient. Do not merge
+  if any gate fails.
+- A genuinely blocked task (no live database, dependency not ready, etc.) may keep
+  its branch, but the blocker and next step must be documented. Once unblocked and
+  completed, merge and delete it under the same rules.
+- Never keep merged branches “for reference”, and never pile unrelated tasks onto
+  one branch.
