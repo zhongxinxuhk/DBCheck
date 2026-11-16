@@ -17,6 +17,38 @@ from modules.pro.rule_engine import RuleEngine
 
 
 class DetectionRegressionTests(unittest.TestCase):
+    def test_mysql_slow_query_normalizes_jdbc_values(self):
+        from modules.inspection.slow_query import MySQLSlowQueryAnalyzer
+
+        class JdbcString:
+            def __str__(self):
+                return 'SELECT  1'
+
+        class JdbcInteger:
+            def __str__(self):
+                return '18446744073709551615'
+
+        result = MySQLSlowQueryAnalyzer().normalize({'top_by_latency': [{
+            'query_sample_text': JdbcString(), 'tmp_disk_tables': JdbcInteger(),
+        }]})
+        self.assertEqual(result.top_sql_by_latency[0]['query_text'], 'SELECT 1')
+        self.assertTrue(result.summary['has_tmp_disk_spill'])
+        self.assertEqual(result.top_sql_by_latency[0]['tmp_disk_tables'], 18446744073709551615)
+
+    def test_gbase_scalar_query_does_not_use_derived_table(self):
+        from unittest.mock import Mock
+        from modules.inspection.sql_safety import InspectionConnection
+        raw = Mock()
+        cursor = raw.cursor.return_value
+        cursor.stmt = None
+        connection = InspectionConnection(raw, 'gbase8a')
+        connection.configured = True
+        connection.cursor().execute('SELECT VERSION() AS version')
+        sql = cursor.execute.call_args.args[0]
+        self.assertNotIn('DBPULSE_BOUNDED', sql)
+        connection.cursor().execute('SELECT * FROM information_schema.TABLES')
+        self.assertIn('DBPULSE_BOUNDED', cursor.execute.call_args.args[0])
+
     def test_baseline_issues_are_kept_when_auto_analyze_exists(self):
         context = {
             'auto_analyze': [{'col1': '插件问题', 'col2': '中风险'}],

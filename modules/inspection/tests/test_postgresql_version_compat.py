@@ -168,6 +168,12 @@ class PostgreSqlSqlAdaptationTest(unittest.TestCase):
         self.assertIn('checkpoints_timed', adapted)
         self.assertIn('checkpoints_requested', adapted)
         assert_readonly_sql(adapted)
+        from modules.inspection.sql_safety import assert_inspection_sql
+        assert_inspection_sql(adapted)
+        metric = pg.adapt_postgresql_sql(
+            'SELECT checkpoints_req::text AS "Value" FROM pg_stat_bgwriter', '17.2')
+        self.assertIn('pg_stat_checkpointer', metric)
+        assert_inspection_sql(metric)
         self.assertEqual(
             pg.adapt_postgresql_sql(
                 'SELECT * FROM pg_stat_bgwriter', '16.3', 'pg_checkpoint'),

@@ -333,9 +333,13 @@ def _mysql(cursor, db_type='mysql'):
     datadir = _first(_try(cursor, "SHOW VARIABLES LIKE 'datadir'") or [], 'Value', 'value')
     out['storage_mode'] = '本地文件系统' + ('（%s）' % datadir if datadir else '')
 
-    slave = _try(cursor, 'SHOW SLAVE STATUS') or []
-    if not slave:
-        slave = _try(cursor, 'SHOW REPLICA STATUS') or []
+    from modules.inspection.replication_sql import replication_query_candidates
+    slave = []
+    for sql in replication_query_candidates(db_type, str(ver or ''), 'slave_status'):
+        rows = _try(cursor, sql)
+        if rows is not None:
+            slave = rows
+            break
     if slave:
         r = slave[0]
         io = _get(r, 'Slave_IO_Running', 'Replica_IO_Running')
@@ -628,7 +632,7 @@ def _ctx_rows(engine, key):
 
 def build(engine, db_part=None):
     """合并数据库探测、宿主机信息与台账覆盖，返回完整 16 字段（全部字符串）。"""
-    ctx = getattr(engine, 'context', {}) or {}
+    ctx = getattr(engine, 'context', {})
     db_part = dict(db_part or ctx.get('basic_info_db') or {})
     over = load_overrides(engine)
     sysinfo = ctx.get('system_info') or {}
@@ -675,6 +679,9 @@ def build(engine, db_part=None):
         info['host_model'] = str(sysinfo.get('host_model') or '')
     if not info.get('os_version'):
         info['os_version'] = '%s %s' % (platform.system(), platform.release())
+
+    # 保存覆盖前的实测属性，供台账同步使用，防止登记值反向污染探测结果。
+    ctx['_basic_info_observed'] = dict(info)
 
     # 台账覆盖优先于自动采集（登记项以台账为准，例如设备位置/存储平台）
     for key in ('configuration_id', 'location', 'storage_platform', 'host_model',

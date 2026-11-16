@@ -1826,7 +1826,9 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
 
         from modules.core.data_security import redact
         # 台账自动同步只使用采集结果，不读取任何凭据；在脱敏前保留基础属性快照。
-        _inventory_basic_info = copy.deepcopy(context.get('basic_info') or {})
+        _inventory_basic_info = copy.deepcopy(
+            context.get('_basic_info_observed',
+                        context.get('basic_info_db', context.get('basic_info') or {})))
         _inventory_system_info = copy.deepcopy(context.get('system_info') or {})
         # 表空间、账号等专项结果只做实测快照，绝不写回 metadata.tables。
         _inventory_specialized = {}

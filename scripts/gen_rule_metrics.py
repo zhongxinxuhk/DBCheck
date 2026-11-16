@@ -249,7 +249,7 @@ _PG_COMMON = {
     'archive_mode': _pg_setting('archive_mode'),
     'autovacuum': _pg_setting('autovacuum'),
     'bloat_ratio': dict(shape='scalar',
-        sql="SELECT COALESCE(ROUND(AVG(dead_tuple_percent), 2), 0) FROM pg_stat_user_tables"),
+        sql="SELECT COALESCE(ROUND(AVG(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0)), 2), 0) FROM pg_stat_user_tables"),
 }
 H['pg'] = dict(_PG_COMMON)
 H['halodb'] = dict(_PG_COMMON)

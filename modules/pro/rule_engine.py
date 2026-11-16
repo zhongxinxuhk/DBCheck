@@ -990,6 +990,15 @@ def fill_missing_metrics(db_type, context, conn):
             sql = (m.get('sql') or '').strip()
             if not sql:
                 continue
+            version_rows = context.get('version') or []
+            version = (str(version_rows[0].get('VERSION') or version_rows[0].get('version') or '')
+                       if version_rows and isinstance(version_rows[0], dict) else '')
+            if canonical in {'mysql', 'mariadb', 'tidb', 'oceanbase'}:
+                from modules.inspection.replication_sql import replication_sql_for
+                sql = replication_sql_for(canonical, version, key) or sql
+            if canonical == 'pg':
+                from modules.inspection.postgresql_compat import adapt_postgresql_sql
+                sql = adapt_postgresql_sql(sql, version, key)
             if assert_readonly_sql is not None:
                 try:
                     assert_readonly_sql(sql)
