@@ -7,7 +7,7 @@
 DBCheck - Oracle 全面巡检工具（增强版）
 =======================================
 基于 OS 层 + 数据库层
-支持: 10g / 11g / 12c / 18c / 19c / 21c / 23c
+支持: 10g / 11g / 12c / 18c / 19c / 21c / 23ai
 作者: Jack Ge
 """
 
@@ -22,6 +22,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message="pkg_resources is deprecated")
 
 from modules.config.version import __version__ as VER
+from modules.inspection.oracle_compat import (
+    is_compatibility_error,
+    oracle_patch_query_candidates,
+)
 import time
 import re
 import json
@@ -492,11 +496,14 @@ def oracle_check_instance(conn):
     cur = conn.cursor()
     try:
         # 实例信息
+        # V$INSTANCE 没有 LOG_MODE/DATABASE_ROLE/OPEN_MODE，需要与
+        # GV$DATABASE 按实例号关联，否则所有版本都会 ORA-00904。
         cur.execute("""
-            SELECT INST_ID, INSTANCE_NAME, HOST_NAME, VERSION,
-                   STARTUP_TIME, STATUS, PARALLEL, LOG_MODE,
-                   DATABASE_ROLE, OPEN_MODE
-            FROM gv$instance
+            SELECT i.INST_ID, i.INSTANCE_NAME, i.HOST_NAME, i.VERSION,
+                   i.STARTUP_TIME, i.STATUS, i.PARALLEL, d.LOG_MODE,
+                   d.DATABASE_ROLE, d.OPEN_MODE
+            FROM gv$instance i
+            LEFT JOIN gv$database d ON d.INST_ID = i.INST_ID
         """)
         results['instance'] = cur.fetchall()
     except Exception as e:
@@ -507,13 +514,15 @@ def oracle_check_instance(conn):
 
 
 def oracle_check_database(conn):
-    """数据库基本信息"""
+    """数据库基本信息（10g/11g 不查询 12c 才有的 CDB 列）"""
     results = {}
     cur = conn.cursor()
     try:
-        cur.execute("""
+        _, _major = get_db_version_and_major(conn)
+        _cdb_col = "CDB" if str(_major).isdigit() and int(_major) >= 12 else "'NO' AS CDB"
+        cur.execute(f"""
             SELECT DBID, NAME, DATABASE_ROLE, CREATED, LOG_MODE, OPEN_MODE,
-                   CDB, PLUGGABLE_NDB
+                   {_cdb_col}
             FROM v$database
         """)
         results['database'] = cur.fetchall()
@@ -592,16 +601,20 @@ def oracle_check_database(conn):
 #            版本专用数据库层巡检（对应 dbcheck10g/11g/12c.sql）
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _base_db_check(conn, cdb_col="", pdb_col=""):
-    """三个版本公用的基础查询部分，避免代码重复"""
+def _base_db_check(conn, cdb_col=""):
+    """三个版本公用的基础查询部分，避免代码重复。
+
+    12c+ 的 V$DATABASE 只有 CDB 列，没有 PLUGGABLE_DB/PLUGGABLE_NDB，
+    因此这里只读取版本实际存在的列。
+    """
     results = {}
     cur = conn.cursor()
     try:
-        if cdb_col and pdb_col:
-            # 12c+：CDB/PDB 架构
+        if cdb_col:
+            # 12c+：CDB 架构标记
             cur.execute(f"""
                 SELECT DBID, NAME, DATABASE_ROLE, CREATED, LOG_MODE, OPEN_MODE,
-                       {cdb_col} CDB, {pdb_col} PLUGGABLE_DB
+                       {cdb_col} CDB
                 FROM v$database
             """)
         else:
@@ -708,32 +721,30 @@ def oracle_check_database_v12plus(conn):
 
     特点：CDB/PDB 架构；listagg；cdb_recyclebin；gv$crs_resource_v2
     """
-    return _base_db_check(conn, cdb_col="CDB", pdb_col="PLUGGABLE_DB")
+    return _base_db_check(conn, cdb_col="CDB")
 
 
 def oracle_check_version_and_patches(conn):
-    """数据库版本和补丁"""
+    """数据库版本和补丁（按 10g/11g/12c+ 选择补丁视图）"""
     results = {}
     cur = conn.cursor()
     try:
         cur.execute("SELECT banner FROM v$version")
         results['version'] = cur.fetchall()
 
-        # OPatch 补丁
-        try:
-            cur.execute("SELECT * FROM v$system_patch WHERE patch_id IS NOT NULL")
-            results['patches'] = cur.fetchall()
-        except Exception:
-            # 12c 及以上用这个
+        # 补丁查询按版本选择：12c+ 用 dba_registry_sqlpatch，
+        # 10g/11g 用 registry$history/dba_registry_history。
+        version_text, _ = get_db_version_and_major(conn)
+        results['patches'] = []
+        for patch_sql in oracle_patch_query_candidates(version_text):
             try:
-                cur.execute("""
-                    SELECT patch_id, patch_type, description, action, action_time
-                    FROM dba_registry_sqlpatch
-                    ORDER BY action_time DESC
-                """)
+                cur.execute(patch_sql)
                 results['patches'] = cur.fetchall()
-            except Exception:
-                results['patches'] = []
+                break
+            except Exception as e:
+                if not is_compatibility_error(e):
+                    break
+                continue
     except Exception as e:
         results['error'] = str(e)
     finally:
@@ -771,28 +782,50 @@ def oracle_check_tablespace(conn):
         """)
         results['data_tablespaces'] = cur.fetchall()
 
-        # 临时表空间：dba_tablespaces LEFT JOIN dba_temp_files LEFT JOIN dba_temp_free_space(FREE_SPACE)
-        cur.execute("""
-            SELECT t.tablespace_name,
-                   t.status,
-                   ROUND(NVL(tf.curr_mb,0), 2) curr_mb,
-                   ROUND(NVL(tf.max_mb,0), 2) max_mb,
-                   '-' used_mb,
-                   ROUND(NVL(tfs.free_mb,0), 2) free_mb,
-                   '-' pct_used
-            FROM dba_tablespaces t
-            LEFT JOIN (SELECT tablespace_name,
-                              SUM(bytes/1024/1024) curr_mb,
-                              SUM(MAXBYTES/1024/1024) max_mb
-                       FROM dba_temp_files GROUP BY tablespace_name) tf
-               ON t.tablespace_name = tf.tablespace_name
-            LEFT JOIN (SELECT tablespace_name,
-                              SUM(free_space/1024/1024) free_mb
-                       FROM dba_temp_free_space GROUP BY tablespace_name) tfs
-               ON t.tablespace_name = tfs.tablespace_name
-            WHERE t.contents = 'TEMPORARY'
-            ORDER BY t.tablespace_name
-        """)
+        # 临时表空间：dba_tablespaces LEFT JOIN dba_temp_files。
+        # DBA_TEMP_FREE_SPACE 是 11g 才有的视图，10g 只能用 dba_temp_files
+        # 统计已分配空间（无法精确得到空闲空间，free_mb 返回 NULL）。
+        _, _major = get_db_version_and_major(conn)
+        if str(_major).isdigit() and int(_major) < 11:
+            cur.execute("""
+                SELECT t.tablespace_name,
+                       t.status,
+                       ROUND(NVL(tf.curr_mb,0), 2) curr_mb,
+                       ROUND(NVL(tf.max_mb,0), 2) max_mb,
+                       '-' used_mb,
+                       NULL free_mb,
+                       '-' pct_used
+                FROM dba_tablespaces t
+                LEFT JOIN (SELECT tablespace_name,
+                                  SUM(bytes/1024/1024) curr_mb,
+                                  SUM(MAXBYTES/1024/1024) max_mb
+                           FROM dba_temp_files GROUP BY tablespace_name) tf
+                   ON t.tablespace_name = tf.tablespace_name
+                WHERE t.contents = 'TEMPORARY'
+                ORDER BY t.tablespace_name
+            """)
+        else:
+            cur.execute("""
+                SELECT t.tablespace_name,
+                       t.status,
+                       ROUND(NVL(tf.curr_mb,0), 2) curr_mb,
+                       ROUND(NVL(tf.max_mb,0), 2) max_mb,
+                       '-' used_mb,
+                       ROUND(NVL(tfs.free_mb,0), 2) free_mb,
+                       '-' pct_used
+                FROM dba_tablespaces t
+                LEFT JOIN (SELECT tablespace_name,
+                                  SUM(bytes/1024/1024) curr_mb,
+                                  SUM(MAXBYTES/1024/1024) max_mb
+                           FROM dba_temp_files GROUP BY tablespace_name) tf
+                   ON t.tablespace_name = tf.tablespace_name
+                LEFT JOIN (SELECT tablespace_name,
+                                  SUM(free_space/1024/1024) free_mb
+                           FROM dba_temp_free_space GROUP BY tablespace_name) tfs
+                   ON t.tablespace_name = tfs.tablespace_name
+                WHERE t.contents = 'TEMPORARY'
+                ORDER BY t.tablespace_name
+            """)
         results['temp_tablespaces'] = cur.fetchall()
 
         # 自动扩展文件
