@@ -180,6 +180,11 @@ def _oracle(cursor):
         'SELECT * FROM (SELECT action_time, action, namespace, version, id, comments '
         'FROM dba_registry_history ORDER BY action_time DESC) WHERE ROWNUM <= 5')) or []
     if not patch_rows:
+        # 10g/11g 可能只暴露基表 registry$history；再退到 12c+ 的 SQLPATCH。
+        patch_rows = _try(cursor, (
+            'SELECT * FROM (SELECT action_time, action, namespace, version, id, comments '
+            'FROM registry$history ORDER BY action_time DESC) WHERE ROWNUM <= 5')) or []
+    if not patch_rows:
         # 12c+ 的 RU/PSU 记录在 dba_registry_sqlpatch（部分 11g 无此视图，失败即跳过）
         patch_rows = _try(cursor, (
             'SELECT * FROM (SELECT action_time, action, description AS comments, '

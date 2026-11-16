@@ -336,6 +336,20 @@ class BaseInspectionEngine:
         """连接数据库 - 子类必须实现！"""
         raise NotImplementedError("子类必须实现 connect() 方法")
     
+    def _db_version_text(self):
+        """返回连接阶段采集到的数据库版本文本。"""
+        rows = self.context.get('version') or []
+        if rows and isinstance(rows[0], dict):
+            return str(rows[0].get('VERSION') or '')
+        return ''
+
+    def _db_version_major(self):
+        """返回主版本号（Oracle 用于选择 11g/12c+ 模板）。"""
+        match = re.search(
+            r'(?i)(?<!\d)(\d{1,2})(?:\.\d|\s*(?:c|g|ai)\b)',
+            self._db_version_text())
+        return int(match.group(1)) if match else None
+
     def get_template_id(self):
         """获取模板 ID - 优先使用用户显式指定的 _template_id，否则根据 db_type 自动查询"""
         # 1. 优先返回用户显式指定的 template_id
@@ -348,9 +362,18 @@ class BaseInspectionEngine:
                 return None
             _conn = sqlite3.connect(_db_path)
             _cur = _conn.cursor()
-            _cur.execute(
-                "SELECT id FROM inspection_template WHERE db_type=? ORDER BY is_default DESC, id LIMIT 1",
-                (self.db_type,))
+            _sql = "SELECT id FROM inspection_template WHERE db_type=?"
+            _params = [self.db_type]
+            # Oracle 10g/11g 与 12c+ 使用不同模板；否则 11g 会拿到 12c 的
+            # FETCH FIRST / DBA_REGISTRY_SQLPATCH 语句。
+            _major = self._db_version_major() if self.db_type == 'oracle' else None
+            if _major is not None:
+                if _major <= 11:
+                    _sql += " AND version = '11g'"
+                else:
+                    _sql += " AND (version IS NULL OR version != '11g')"
+            _sql += " ORDER BY is_default DESC, id LIMIT 1"
+            _cur.execute(_sql, tuple(_params))
             row = _cur.fetchone()
             _conn.close()
             return row[0] if row else None
@@ -392,14 +415,18 @@ class BaseInspectionEngine:
                 import sqlite3
                 conn_db = sqlite3.connect(_db_path)
                 c = conn_db.cursor()
-                if self._template_id is not None:
+                # Oracle：按实际版本选择模板，避免 11g 执行 12c 默认模板。
+                _effective_template_id = self._template_id
+                if _effective_template_id is None and self.db_type == 'oracle':
+                    _effective_template_id = self.get_template_id()
+                if _effective_template_id is not None:
                     c.execute('''
                         SELECT q.query_key, q.query_sql
                         FROM inspection_query q
                         JOIN inspection_chapter ch ON q.chapter_id = ch.id
                         WHERE ch.template_id = ? AND q.enabled = 1
                         ORDER BY ch.sort_order, q.sort_order
-                    ''', (self._template_id,))
+                    ''', (_effective_template_id,))
                 else:
                     c.execute('''
                         SELECT q.query_key, q.query_sql
@@ -451,6 +478,14 @@ class BaseInspectionEngine:
 
         # 2.5 子类 SQL 定制钩子（如 TiDB 覆盖 MySQL 不兼容的查询）
         self._customize_queries(sql_dict)
+
+        # Oracle：按实际版本改写模板 SQL（10g/11g 的 FETCH FIRST/补丁视图等）
+        if self.db_type == 'oracle':
+            try:
+                from modules.inspection.oracle_compat import adapt_oracle_queries
+                sql_dict = adapt_oracle_queries(sql_dict, self._db_version_text())
+            except Exception as e:
+                print(f"[WARN] Oracle SQL 版本适配失败，使用原 SQL: {e}")
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -844,6 +879,31 @@ class BaseInspectionEngine:
                 data.append(dict(zip(columns, row)))
             return {"columns": columns, "data": data}
         except Exception as e:
+            # Oracle：ORA-00904/00942/00933 等结构类错误时尝试版本兼容候选。
+            if self.db_type == 'oracle':
+                try:
+                    from modules.inspection.oracle_compat import (
+                        is_compatibility_error, oracle_query_candidates)
+                    if is_compatibility_error(e):
+                        if self.conn:
+                            try:
+                                self.conn.rollback()
+                            except Exception:
+                                pass
+                        for alt_sql in oracle_query_candidates(
+                                sql, self._db_version_text(), item_name, sql):
+                            try:
+                                cursor.execute(alt_sql)
+                                columns = [col[0] for col in cursor.description]
+                                rows = [dict(zip(columns, row))
+                                        for row in cursor.fetchall()]
+                                return {"columns": columns, "data": rows}
+                            except Exception as alt_error:
+                                e = alt_error
+                                if not is_compatibility_error(alt_error):
+                                    break
+                except Exception:
+                    pass
             # 分类错误，生成友好描述
             err_str = str(e)
             friendly = self._classify_sql_error(item_name, err_str)
@@ -1205,8 +1265,9 @@ class BaseInspectionEngine:
                 get_queries_by_chapter,
             )
 
-            # 1. 获取当前 db_type 的默认模板
-            template = get_default_template(self.db_type)
+            # 1. 获取当前 db_type 的默认模板（Oracle 按版本选择）
+            _major = self._db_version_major() if self.db_type == 'oracle' else None
+            template = get_default_template(self.db_type, db_version_major=_major)
             if not template:
                 print(f"[WARN] 未找到 {self.db_type} 的模板配置，跳过章节渲染")
                 self.context['_chapters'] = []

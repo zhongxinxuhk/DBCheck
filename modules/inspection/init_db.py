@@ -1711,6 +1711,7 @@ ORACLE_DEFAULT_CHAPTERS = [
 #   - 所有章节 FETCH FIRST N ROWS ONLY → WHERE ROWNUM <= N
 #   - 章节3 session_wait 改用 v$session_event（11g 无 wait_class 列）
 #   - 章节20 registry_sqlpatch 改用 registry$history
+#   - 章节19 的 authentication_type 改用 external_name 推导（11g 无该列）
 ORACLE_11G_CHAPTERS = [
     {
         'chapter_number': 1,
@@ -2176,7 +2177,9 @@ ORACLE_11G_CHAPTERS = [
         'queries': [
             {'key': 'dba_users', 'sql': """
                 SELECT username, account_status, lock_date, expiry_date,
-                       created, profile, authentication_type
+                       created, profile,
+                       CASE WHEN external_name IS NULL THEN 'PASSWORD'
+                            ELSE 'EXTERNAL' END AS authentication_type
                 FROM dba_users
                 WHERE username NOT IN ('SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','GSMADMIN_INTERNAL')
                 ORDER BY username;
