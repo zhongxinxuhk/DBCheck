@@ -13,12 +13,16 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck -->
 |---|---|---|---|
 | GBase 8a MPP Cluster | 数据库类型、数据源管理、数据库巡检、数据库驱动管理 | PyMySQL 协议；默认端口 5258；服务端身份核对；验证证书的 TLS 或明确配置的 SSH 隧道 | 8a 专用模板 14 项，包括集群空间、节点任务、连接、参数、对象、索引、统计信息 |
 | DM8 | 原有 DM8 类型与 JDBC/dmPython 入口 | 保留原有连接策略；受控证据采集补充独立进程 JDBC 与 SSH 隧道 | 继续使用 DM8 预置指标；元数据证据与报告覆盖共用指标目录 |
-| Oracle 11g | 原有 Oracle / Oracle JDBC 类型 | 原生 11g 需要兼容的 Thick 客户端；11.1 与 11.2 分开验证；不把 23c 客户端默认当作 11g 兼容客户端 | 沿用 Oracle 11g 专用模板 |
+| Oracle 10g–23ai | 原有 Oracle / Oracle JDBC 类型 | 原生 11g 需要兼容的 Thick 客户端；11.1 与 11.2 分开验证；不把 23c 客户端默认当作 11g 兼容客户端；JDBC 入口同样读取 `v$instance` 后按版本改写 SQL | 沿用 Oracle 11g 专用模板；10g/11g 自动回退旧视图和旧列，12c+ 保留新语法 |
 | SQL Server 2005–2025 | 原有 SQL Server 类型 | 验证证书的 ODBC 18 或显式 SSH 隧道；认证后读取 `SERVERPROPERTY('ProductVersion')`，按 2005/2008/2014/默认模板自动选择 | 2005/2008/2014 专用模板各 18 项；2012、2016–2025 使用默认模板 21 章 34 查询；2005 按 DMV 兼容层回退 |
 | PostgreSQL 9.6–18 | 原有 PostgreSQL 类型与原生入口 | JDBC 优先、psycopg2 回退；认证后读取 `server_version_num` / `server_version` / `version()`，先探测版本再改写 SQL | 默认模板 21 章 49 查询；9.x 的 xlog/WAL、复制列名、归档目录，13 前的 `pg_stat_statements` 统计列，17 起的检查点视图自动适配 |
 | KingbaseES V8R2–V9R4 | 原有 KingbaseES 类型与原生入口 | JDBC 优先、psycopg2 回退；一条 SQL 同时读取 `version()` 与 `server_version_num`，失败时回滚后逐级回退 `SHOW` / `server_version` | 默认 19 章模板；按 PostgreSQL 兼容内核改写 WAL/xlog、复制列名、`FILTER`、`usebypassrls`；`pg_*` 不可见时回退 `sys_*` 同义对象 |
 
 SQL Server 版本矩阵覆盖 2005–2025。服务端版本自动选择模板，用户显式选择的模板仍然优先；2008 R2 归入 2008 模板，2012 与 2016–2025 使用默认模板。模板初始化采用增量添加；重复执行不会替换已有查询和用户阈值。采集失败或权限不足必须保留实际状态，不能以 0 或正常替代。
+
+SQL Server JDBC 插件的声明范围仍是 2017/2019/2022/2025：它读取 `SERVERPROPERTY`/`@@VERSION` 后按版本适配模板查询，但自定义采集 SQL 未宣称覆盖 2005–2014；这些旧版本由原生 SQL Server 入口和 2005/2008/2014 专用模板覆盖。
+
+Oracle JDBC 插件（`oracle_jdbc`）与原生 Oracle 入口共用 `modules.inspection.oracle_compat`：运行时读取实际版本后改写 `AUTHENTICATION_TYPE`、`FETCH FIRST`、`DBA_REGISTRY_SQLPATCH` 等差异，并在结构类错误时尝试版本候选。Oracle JDBC 模板只有一套 `oracle_jdbc v1`，由适配层兼容 10g–23ai，不另建重复模板。
 
 ### SQL Server 版本矩阵
 

@@ -3,11 +3,18 @@
 
 """SQL Server 2005–2025 巡检 SQL 版本适配回归。"""
 
+import json
 import unittest
+from pathlib import Path
 
 from modules.core.data_security import assert_readonly_sql
 from modules.inspection import sqlserver_compat as ss
 from modules.inspection.engine import BaseInspectionEngine
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_JDBC_TEMPLATE = (_REPO_ROOT / 'plugins' / 'available' / 'sqlserver_jdbc'
+                  / 'template_data.json')
 
 
 class _FakeCursor:
@@ -277,6 +284,31 @@ class SqlServerEngineIntegrationTest(unittest.TestCase):
             Exception("Invalid column name 'PAGES_KB'."))
         self.assertIn('SINGLE_PAGES_KB', used)
         self.assertEqual(len(cursor.executed), 1)
+
+
+class SqlServerJdbcTemplateTest(unittest.TestCase):
+    def test_jdbc_template_adapts_2005_memory_query(self):
+        template = json.loads(_JDBC_TEMPLATE.read_text(encoding='utf-8'))
+        queries = {q['query_key']: q['query_sql']
+                   for c in template['chapters'] for q in c['queries']}
+        sql = queries['mssql_dbmemory']
+        old = ss.adapt_sqlserver_sql(sql, '9.00.5000.00', 'mssql_dbmemory')
+        self.assertIn('SINGLE_PAGES_KB', old.upper())
+        self.assertIn('MULTI_PAGES_KB', old.upper())
+        new = ss.adapt_sqlserver_sql(
+            sql, 'Microsoft SQL Server 2019 (15.0.4322.2)', 'mssql_dbmemory')
+        self.assertIn('PAGES_KB', new.upper())
+        self.assertNotIn('SINGLE_PAGES_KB', new.upper())
+
+    def test_jdbc_template_marks_alwayson_not_applicable(self):
+        template = json.loads(_JDBC_TEMPLATE.read_text(encoding='utf-8'))
+        queries = {q['query_key']: q['query_sql']
+                   for c in template['chapters'] for q in c['queries']}
+        reason = ss.optional_feature_reason(
+            queries['mssql_always_on'], '10.0.6000.29')
+        self.assertIsNotNone(reason)
+        self.assertIsNone(ss.optional_feature_reason(
+            queries['mssql_always_on'], '15.0.4322.2'))
 
 
 if __name__ == '__main__':

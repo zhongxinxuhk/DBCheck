@@ -426,7 +426,7 @@ class BaseInspectionEngine:
                 c = conn_db.cursor()
                 # Oracle：按实际版本选择模板，避免 11g 执行 12c 默认模板。
                 _effective_template_id = self._template_id
-                if _effective_template_id is None and self.db_type == 'oracle':
+                if _effective_template_id is None and self.db_type in ('oracle', 'oracle_jdbc'):
                     _effective_template_id = self.get_template_id()
                 if _effective_template_id is not None:
                     _chap_frag, _chap_params = build_chapter_filter_sql(self.chapter_ids, alias='ch')
@@ -491,7 +491,7 @@ class BaseInspectionEngine:
         self._customize_queries(sql_dict)
 
         # Oracle：按实际版本改写模板 SQL（10g/11g 的 FETCH FIRST/补丁视图等）
-        if self.db_type == 'oracle':
+        if self.db_type in ('oracle', 'oracle_jdbc'):
             try:
                 from modules.inspection.oracle_compat import adapt_oracle_queries
                 sql_dict = adapt_oracle_queries(sql_dict, self._db_version_text())
@@ -892,7 +892,7 @@ class BaseInspectionEngine:
             return {"columns": columns, "data": data}
         except Exception as e:
             # Oracle：ORA-00904/00942/00933 等结构类错误时尝试版本兼容候选。
-            if self.db_type == 'oracle':
+            if self.db_type in ('oracle', 'oracle_jdbc'):
                 try:
                     from modules.inspection.oracle_compat import (
                         is_compatibility_error, oracle_query_candidates)

@@ -328,6 +328,7 @@ class MssqlJdbcInspector(BaseInspectionEngine):
         self.raw_jdbc_conn = None
         self.conn_cfg = None
         self._mssql_version_str = 'unknown'
+        self._version_raw = ''
         self._used_encrypt_fallback = False
         self.driver_version = driver_version or ''
         self.jdbc_driver_path = None
@@ -409,12 +410,25 @@ class MssqlJdbcInspector(BaseInspectionEngine):
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本
-            self.cursor.execute("SELECT @@VERSION")
-            row = self.cursor.fetchone()
-            version_raw = str(row[0]) if row else 'unknown'
+            from modules.inspection import sqlserver_compat
+            version_raw, parsed = sqlserver_compat.fetch_sqlserver_version(self.cursor)
+            version_raw = version_raw or 'unknown'
+            self._version_raw = version_raw
             self._mssql_version_str = _parse_mssql_version(version_raw)
+            self._db_version_major = parsed.major or None
             self.context['mssql_version'] = [{'VERSION': version_raw, 'VERSION_STR': self._mssql_version_str}]
-            self.context['version'] = [{'VERSION': version_raw, 'VERSION_STR': self._mssql_version_str}]
+            self.context['version'] = [{
+                'VERSION': version_raw,
+                'VERSION_STR': self._mssql_version_str,
+                'MAJOR': parsed.major,
+            }]
+            self.context['sqlserver_version_detail'] = [{
+                'VERSION': version_raw,
+                'DISPLAY': parsed.display,
+                'FAMILY': parsed.family,
+                'BUILD': parsed.build,
+                'EDITION': parsed.edition,
+            }]
 
             if self._used_encrypt_fallback:
                 print(f"[MSSQL-JDBC] 连接成功（已自动启用 TLS 加密回退），版本: {self._mssql_version_str}")
@@ -463,6 +477,7 @@ class MssqlJdbcInspector(BaseInspectionEngine):
             self.cursor.execute("SELECT @@VERSION")
             row = self.cursor.fetchone()
             v = str(row[0]) if row else 'unknown'
+            self._version_raw = v
             self.context['mssql_version'] = [{'VERSION': v, 'VERSION_STR': _parse_mssql_version(v)}]
             self.context['version'] = [{'VERSION': v, 'VERSION_STR': _parse_mssql_version(v)}]
         except Exception as e:
@@ -849,9 +864,13 @@ class MssqlJdbcInspector(BaseInspectionEngine):
     # ════════════════════════════════════════════════
     # 报告章节（从 inspection.db 加载并执行模板 query）
     # ════════════════════════════════════════════════
+    def _version_text(self):
+        return self._version_raw or self._mssql_version_str or ''
+
     def _load_chapters_from_db(self):
         """Collect enabled queries from the selected template and chapter scope."""
         from modules.inspection.dal import get_chapters_by_template, get_queries_by_chapter
+        from modules.inspection import sqlserver_compat
         template_id = self.get_template_id()
         chapters = get_chapters_by_template(template_id, chapter_ids=self.chapter_ids) if template_id else []
         for chapter in chapters:
@@ -859,7 +878,16 @@ class MssqlJdbcInspector(BaseInspectionEngine):
             for query in chapter['queries']:
                 if query.get('enabled'):
                     key = query['query_key']
-                    result = self._execute_query_safe(self.cursor, query['query_sql'], key)
+                    sql = sqlserver_compat.adapt_sqlserver_sql(
+                        query['query_sql'], self._version_text(), key)
+                    reason = sqlserver_compat.optional_feature_reason(
+                        sql, self._version_text(), self.cursor)
+                    if reason:
+                        self.context[key] = []
+                        self.context.setdefault('_query_status', {})[key] = {
+                            'status': 'not_applicable', 'reason': reason}
+                        continue
+                    result = self._execute_query_safe(self.cursor, sql, key)
                     self.context[key] = result if '_error' in result or '_unavailable' in result else result['data']
         self.context['_chapters'] = chapters
         return chapters
