@@ -3335,22 +3335,19 @@ class BaseInspectionEngine:
                                     font_size = 8 if is_wide else 9
                                     # W15 的 SQL_TEXT 是典型的长文本列：如果和其它 8 列
                                     # 均分 16cm，每行会被 SQL 文本撑成十几行。这里给
-                                    # SQL_TEXT 固定更宽的列，并对展示文本做有提示的截断。
+                                    # SQL_TEXT 固定更宽的列，完整文本靠单元格自动换行展示。
                                     is_w15 = q_key.startswith('W15_')
                                     _sql_text_headers = {'sql_text', 'query_text', 'top_sql_text', 'sql文本'}
 
                                     def _report_cell(header, value):
-                                        _limit = 100 if is_w15 and str(header).lower() in _sql_text_headers else 500
                                         _raw = '' if value is None else str(value)
-                                        _clean = self._clean_xml_str(value, max_len=_limit)
-                                        if len(_raw) > _limit:
-                                            _clean = _clean.rstrip() + '…'
-                                        return _clean
+                                        _is_sql_text = is_w15 and str(header).lower() in _sql_text_headers
+                                        _limit = max(1, len(_raw)) if _is_sql_text else 500
+                                        return self._clean_xml_str(value, max_len=_limit)
 
                                     q_rows = [[_report_cell(h, row_data.get(h, ''))
                                                for h in headers] for row_data in q_data]
                                     col_widths = None
-                                    _sql_truncated = False
                                     if is_w15:
                                         _text_index = next(
                                             (i for i, h in enumerate(headers)
@@ -3359,21 +3356,10 @@ class BaseInspectionEngine:
                                             _other_width = 10.6 / max(1, len(headers) - 1)
                                             col_widths = [_other_width] * len(headers)
                                             col_widths[_text_index] = 5.4
-                                            _sql_truncated = any(
-                                                len(str(row_data.get(headers[_text_index], '') or '')) > 100
-                                                for row_data in q_data)
                                     _docx_build_grid_table(doc, display_headers, q_rows,
                                                            header_bg='336699', header_white=True,
-                                                           font_size_pt=font_size, col_widths=col_widths)
-                                    if _sql_truncated:
-                                        _note = doc.add_paragraph(
-                                            'SQL 文本仅展示前 100 字符，完整语句请按 SQL_ID 查询。'
-                                            if is_zh else
-                                            'SQL text is truncated to the first 100 characters; query by SQL_ID for the full statement.')
-                                        for _r in _note.runs:
-                                            _r.font.size = Pt(9); _r.font.name = '微软雅黑'
-                                            _r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
-                                            _r.font.color.rgb = RGBColor(150, 150, 150)
+                                                           font_size_pt=font_size, col_widths=col_widths,
+                                                           cell_max_len=None if is_w15 else 200)
                                     doc.add_paragraph()
                         else:
                             # 数据为空：区分“查询失败”和“当前确实没有记录”。
@@ -3451,7 +3437,7 @@ def _docx_clean(v, max_len=200):
     """清理 XML 不兼容控制字符（与 BaseInspectionEngine._clean_xml_str 保持一致）。"""
     if v is None:
         return ''
-    s = str(v)[:max_len]
+    s = str(v) if max_len is None else str(v)[:max_len]
     allowed = {'\t', '\n', '\r'}
     return ''.join(c for c in s if ord(c) >= 32 or c in allowed)
 
@@ -3459,10 +3445,10 @@ def _docx_escape(s):
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 def _docx_tc_xml(text, *, bg=None, bold=False, color=None, size_pt=9,
-                 align=None, east_asia=_EA_FONT):
+                 align=None, east_asia=_EA_FONT, max_len=200):
     """生成单个 <w:tc> 单元格 XML 字符串。"""
     from docx.oxml.ns import nsdecls
-    safe = _docx_escape(_docx_clean(text))
+    safe = _docx_escape(_docx_clean(text, max_len=max_len))
     tcpr = ''
     if bg:
         tcpr += f'<w:shd {nsdecls("w")} w:val="clear" w:color="auto" w:fill="{bg}"/>'
@@ -3503,7 +3489,8 @@ def _docx_build_grid_table(doc, headers, rows, *, header=True,
                            header_bold=True, header_align=None,
                            font_size_pt=9, body_align=None,
                            cell_styler=None, col_widths=None,
-                           east_asia=_EA_FONT, style='Table Grid'):
+                           east_asia=_EA_FONT, style='Table Grid',
+                           cell_max_len=200):
     """用整行 XML 一次性构造 Word 表格（替代逐单元格 cell.text= 写入，约 30x 提速）。
 
     headers: list[str]；rows: list[list]（与 headers 列数对齐）。
@@ -3551,7 +3538,8 @@ def _docx_build_grid_table(doc, headers, rows, *, header=True,
             tcs.append(_docx_tc_xml(
                 h, bg=header_bg, bold=header_bold,
                 color='FFFFFF' if header_white else None,
-                size_pt=font_size_pt, align=header_align, east_asia=east_asia))
+                size_pt=font_size_pt, align=header_align, east_asia=east_asia,
+                max_len=cell_max_len))
         tbl._tbl.append(parse_xml(f'<w:tr {nsdecls("w")}>{"".join(tcs)}</w:tr>'))
 
     for i, row in enumerate(rows):
@@ -3563,7 +3551,7 @@ def _docx_build_grid_table(doc, headers, rows, *, header=True,
                 ov = cell_styler(i, j, val)
                 if ov:
                     sty.update(ov)
-            tcs.append(_docx_tc_xml(val, east_asia=east_asia, **sty))
+            tcs.append(_docx_tc_xml(val, east_asia=east_asia, max_len=cell_max_len, **sty))
         tbl._tbl.append(parse_xml(f'<w:tr {nsdecls("w")}>{"".join(tcs)}</w:tr>'))
 
     if col_widths:

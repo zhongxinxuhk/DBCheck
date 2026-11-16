@@ -149,7 +149,7 @@ SELECT * FROM (
          ROUND(buffer_gets/NULLIF(executions,0), 0) AS avg_lio,
          ROUND(cpu_time/1000000, 2) AS cpu_s,
          disk_reads, parsing_schema_name,
-         SUBSTR(sql_text, 1, 200) AS sql_text
+         sql_text
   FROM v$sql
   WHERE executions > 0
     AND parsing_schema_name NOT IN ('SYS','SYSTEM')
@@ -508,7 +508,7 @@ SELECT TOP 20 qs.execution_count,
        CAST(qs.total_elapsed_time/NULLIF(qs.execution_count,0)/1000.0 AS DECIMAL(18,2)) AS avg_ms,
        qs.total_logical_reads,
        qs.total_physical_reads,
-       SUBSTRING(st.text, 1, 200) AS sql_text
+       st.text AS sql_text
 FROM sys.dm_exec_query_stats qs
 CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
 ORDER BY qs.total_elapsed_time DESC"""),
@@ -1008,7 +1008,7 @@ WHERE COMMAND <> 'Sleep'
   AND (STATE LIKE '%lock%' OR STATE LIKE '%wait%' OR STATE LIKE '%metadata%')
 ORDER BY TIME DESC"""),
     'W15': ('W15_long_sql', '长时间执行 SQL（超过 60 秒）', """
-SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 300) AS SQL_TEXT
+SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO AS SQL_TEXT
 FROM information_schema.PROCESSLIST
 WHERE COMMAND <> 'Sleep' AND TIME > 60
 ORDER BY TIME DESC"""),
@@ -1778,6 +1778,20 @@ def ensure_business_defaults(db_path=None):
                         conn.execute('UPDATE inspection_chapter SET description=? WHERE id=?',
                                      (fixed, cid))
             conn.execute('INSERT INTO inspection_builtin_migration VALUES (?)', (coverage_revision,))
+        full_sql_revision = 'w15-full-sql-text-20261117-v1'
+        if not conn.execute('SELECT 1 FROM inspection_builtin_migration WHERE revision=?', (full_sql_revision,)).fetchone():
+            # W15 的 SQL 文本改为完整展示；只替换内置查询中精确的长度截断片段，
+            # 其他自定义 SQL 保持不变。
+            for old_fragment, new_fragment in (
+                ('SUBSTR(sql_text, 1, 200) AS sql_text', 'sql_text'),
+                ('SUBSTRING(st.text, 1, 200) AS sql_text', 'st.text AS sql_text'),
+                ('LEFT(INFO, 300) AS SQL_TEXT', 'INFO AS SQL_TEXT'),
+            ):
+                conn.execute(
+                    "UPDATE inspection_query SET query_sql=REPLACE(query_sql, ?, ?) "
+                    "WHERE query_key LIKE 'W15%' AND INSTR(query_sql, ?) > 0",
+                    (old_fragment, new_fragment, old_fragment))
+            conn.execute('INSERT INTO inspection_builtin_migration VALUES (?)', (full_sql_revision,))
         for product, items in PARAM_BASELINES.items():
             for param, sql, op, expected, risk, zh, en in items:
                 conn.execute('INSERT INTO inspection_baseline '
