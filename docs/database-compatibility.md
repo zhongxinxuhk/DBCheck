@@ -15,6 +15,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck -->
 | DM8 | 原有 DM8 类型与 JDBC/dmPython 入口 | 保留原有连接策略；受控证据采集补充独立进程 JDBC 与 SSH 隧道 | 继续使用 DM8 预置指标；元数据证据与报告覆盖共用指标目录 |
 | Oracle 11g | 原有 Oracle / Oracle JDBC 类型 | 原生 11g 需要兼容的 Thick 客户端；11.1 与 11.2 分开验证；不把 23c 客户端默认当作 11g 兼容客户端 | 沿用 Oracle 11g 专用模板 |
 | SQL Server 2005–2025 | 原有 SQL Server 类型 | 验证证书的 ODBC 18 或显式 SSH 隧道；认证后读取 `SERVERPROPERTY('ProductVersion')`，按 2005/2008/2014/默认模板自动选择 | 2005/2008/2014 专用模板各 18 项；2012、2016–2025 使用默认模板 21 章 34 查询；2005 按 DMV 兼容层回退 |
+| PostgreSQL 9.6–18 | 原有 PostgreSQL 类型与原生入口 | JDBC 优先、psycopg2 回退；认证后读取 `server_version_num` / `server_version` / `version()`，先探测版本再改写 SQL | 默认模板 21 章 49 查询；9.x 的 xlog/WAL、复制列名、归档目录，13 前的 `pg_stat_statements` 统计列，17 起的检查点视图自动适配 |
 
 SQL Server 版本矩阵覆盖 2005–2025。服务端版本自动选择模板，用户显式选择的模板仍然优先；2008 R2 归入 2008 模板，2012 与 2016–2025 使用默认模板。模板初始化采用增量添加；重复执行不会替换已有查询和用户阈值。采集失败或权限不足必须保留实际状态，不能以 0 或正常替代。
 
@@ -52,6 +53,17 @@ SQL Server 2005 缺少部分后续版本的 DMV 或列。运行时适配层在�
 | 复制分发库 `distribution.dbo.MSpublications` | 已配置复制分发 | 实例无 `distribution` 库时标记“不适用” |
 
 候选 SQL 回退只处理无效列、无效对象、语法等结构类错误；权限、登录、连接和超时错误直接保留原始失败原因，不进入候选链。
+
+### PostgreSQL 版本矩阵
+
+| 服务端版本 | 关键兼容处理 | 版本探测/报告 |
+|---|---|---|
+| PostgreSQL 9.6 | `pg_current_wal_lsn` / `pg_walfile_name` / `pg_wal_lsn_diff` / `pg_last_wal_receive_lsn` 改写为 `*_xlog_*`；`pg_stat_replication` 的 `sent_lsn` 等改写为 `*_location`；`pg_wal/archive_status` 改写为 `pg_xlog/archive_status`；`pg_stat_statements` 使用 `*_time` | `pg_stat_activity.wait_event` 从 9.6 起可用 |
+| PostgreSQL 10–12 | WAL 函数、复制列名和归档目录使用新名称；慢查询统计仍使用 `total_time` / `mean_time` / `max_time` | 读取 `server_version_num` 优先，缺少权限时回退 `SHOW` / `version()` |
+| PostgreSQL 13–16 | `pg_stat_statements` 使用 `total_exec_time` / `mean_exec_time` / `max_exec_time`；其余模板保持现代名称 | 版本号写入核心属性，报告显示主/次/补丁版本 |
+| PostgreSQL 17–18 | 检查点统计从 `pg_stat_bgwriter` 拆分到 `pg_stat_checkpointer`；`SELECT * FROM pg_stat_bgwriter` 自动合并 `num_timed`、`num_requested`、`write_time`、`sync_time` 等检查点字段 | `pg_stat_checkpointer` 不可见或旧版模板执行结构类错误时回退原始 `pg_stat_bgwriter` |
+
+PostgreSQL 适配层只改写仓库内已有的巡检、慢查询和监控入口，不新增数据库类型或页面。`pg_stat_statements` 未安装时慢查询仍按既有逻辑标记未启用，不把扩展缺失误报为版本兼容失败。旧于 9.6 的实例不属于当前 PostgreSQL 模板支持范围；如版本探测到 9.0–9.5，`wait_event` 查询会标记“不适用”，其余 WAL/xlog 改写仍按 9.x 处理。
 
 GBase 8a 原生连接不依赖 JDBC JAR。JAR 就绪检查核对实际驱动类；目录名或登记名不能证明驱动适配。8s 的 `com.gbasedbt.jdbc.Driver` 不可代替 8a 的 `com.gbase.jdbc.Driver`。
 

@@ -10,7 +10,7 @@ DBCheck 慢查询深度分析模块
 
 支持数据库：
   - MySQL 5.7+   （performance_schema + sys 视图）
-  - PostgreSQL 10+（pg_stat_statements）
+  - PostgreSQL 9.6–18（pg_stat_statements；13 前后统计列自动适配）
   - Oracle 11g+   （AWR / v$sql / DBA_HIST_SQLTEXT）
   - SQL Server 2012+（sys.dm_exec_query_stats）
   - DM8           （v$sql / v$sql_plan）
@@ -870,6 +870,38 @@ class MySQLSlowQueryAnalyzer(BaseSlowQueryAnalyzer):
 class PGSlowQueryAnalyzer(BaseSlowQueryAnalyzer):
     DB_TYPE = 'pg'
 
+    @staticmethod
+    def _pg_version_num(conn) -> int:
+        """读取 server_version_num；独立 skill 环境不依赖主程序模块。"""
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('SHOW server_version_num')
+                row = cursor.fetchone()
+                return int(str(row[0])) if row else 0
+            finally:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+        except Exception:
+            return 0
+
+    @classmethod
+    def _pg_sql(cls, conn, key: str) -> str:
+        sql = PG_SLOW_QUERIES[key]
+        version_num = cls._pg_version_num(conn)
+        if version_num and version_num < 130000:
+            # PostgreSQL 13 之前 pg_stat_statements 的时间列没有 _exec 后缀。
+            for modern, old in (
+                    ('total_exec_time', 'total_time'),
+                    ('mean_exec_time', 'mean_time'),
+                    ('max_exec_time', 'max_time'),
+                    ('min_exec_time', 'min_time'),
+                    ('stddev_exec_time', 'stddev_time')):
+                sql = re.sub(r'(?i)\b%s\b' % modern, old, sql)
+        return sql
+
     def collect(self, conn) -> dict:
         result = {}
 
@@ -879,20 +911,20 @@ class PGSlowQueryAnalyzer(BaseSlowQueryAnalyzer):
 
         if pg_ss_enabled:
             # 1. Top SQL by total time（需要 pg_stat_statements）
-            result['top_by_total_time'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_total_time'])
+            result['top_by_total_time'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_total_time'))
 
             # 2. Top SQL by avg time
-            result['top_by_avg_time'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_avg_time'])
+            result['top_by_avg_time'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_avg_time'))
 
             # 3. Top SQL by IO
-            result['top_by_io'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_io'])
+            result['top_by_io'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_io'))
 
             # 4. Top SQL by temp blocks
-            result['top_by_temp'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_temp'])
+            result['top_by_temp'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_temp'))
         else:
             result['top_by_total_time'] = []
             result['top_by_avg_time'] = []
@@ -900,8 +932,8 @@ class PGSlowQueryAnalyzer(BaseSlowQueryAnalyzer):
             result['top_by_temp'] = []
 
         # 5. 当前长查询快照（不依赖 pg_stat_statements）
-        result['long_running'] = self._exec_sql(conn,
-            PG_SLOW_QUERIES['pg_long_running'])
+        result['long_running'] = self._exec_sql(
+            conn, self._pg_sql(conn, 'pg_long_running'))
 
         return result
 
@@ -1267,14 +1299,14 @@ class UxdbSlowQueryAnalyzer(PGSlowQueryAnalyzer):
         result['pg_statements_enabled'] = pg_ss_enabled
 
         if pg_ss_enabled:
-            result['top_by_total_time'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_total_time'])
-            result['top_by_avg_time'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_avg_time'])
-            result['top_by_io'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_io'])
-            result['top_by_temp'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_top_by_temp'])
+            result['top_by_total_time'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_total_time'))
+            result['top_by_avg_time'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_avg_time'))
+            result['top_by_io'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_io'))
+            result['top_by_temp'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_top_by_temp'))
         else:
             result['top_by_total_time'] = []
             result['top_by_avg_time'] = []
@@ -1284,8 +1316,8 @@ class UxdbSlowQueryAnalyzer(PGSlowQueryAnalyzer):
         # 长查询快照：ux_catalog 主路 → 标准 pg_stat_activity 兜底
         result['long_running'] = self._exec_sql(conn, self.UXDB_LONG_RUNNING)
         if not result['long_running']:
-            result['long_running'] = self._exec_sql(conn,
-                PG_SLOW_QUERIES['pg_long_running'])
+            result['long_running'] = self._exec_sql(
+                conn, self._pg_sql(conn, 'pg_long_running'))
 
         return result
 
