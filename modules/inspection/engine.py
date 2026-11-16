@@ -803,6 +803,20 @@ class BaseInspectionEngine:
                 sql_dict[key] = adapted
                 print(f"[INFO] {key}: 已按 GBase 版本/方言改写 SQL")
 
+    def _adapt_sqlserver_queries(self, sql_dict):
+        """按 SQL Server 版本改写旧版列名/缺失 DMV 的模板 SQL。"""
+        from modules.driver_registry import db_family
+        if db_family(self.db_type) != 'sqlserver':
+            return
+        from modules.inspection import sqlserver_compat
+        version_text = self._server_version_text()
+        for key, sql in list(sql_dict.items()):
+            adapted = sqlserver_compat.adapt_sqlserver_sql(
+                sql, version_text, key)
+            if adapted != sql:
+                sql_dict[key] = adapted
+                print(f"[INFO] {key}: 已按 SQL Server 版本改写 SQL")
+
     def _server_version_text(self, cursor=None):
         """返回服务端版本字符串，供复制语法等版本分支使用。"""
         cached = getattr(self, '_server_version_cache', None)
@@ -811,7 +825,8 @@ class BaseInspectionEngine:
         if not text and version_rows and isinstance(version_rows[0], dict):
             text = str(version_rows[0].get('VERSION') or version_rows[0].get('version') or '')
         from modules.driver_registry import db_family
-        if db_family(self.db_type) == 'dm':
+        family = db_family(self.db_type)
+        if family == 'dm':
             from modules.inspection import dm_compat
 
             # DM8 的 V$VERSION 常常只返回 V8，必须用 ID_CODE/BUILD_VERSION
@@ -838,7 +853,15 @@ class BaseInspectionEngine:
                     text = detailed
             except Exception:
                 pass
-        if not text and cursor is not None:
+        if (not text and cursor is not None and family == 'sqlserver'):
+            from modules.inspection import sqlserver_compat
+            try:
+                detailed, _parsed = sqlserver_compat.fetch_sqlserver_version(cursor)
+                if detailed:
+                    text = detailed
+            except Exception:
+                pass
+        if not text and cursor is not None and family != 'sqlserver':
             try:
                 cursor.execute('SELECT VERSION()')
                 row = cursor.fetchone()
@@ -1006,6 +1029,7 @@ class BaseInspectionEngine:
         self._adapt_replication_queries(sql_dict)
         self._adapt_dm_queries(sql_dict)
         self._adapt_gbase_queries(sql_dict)
+        self._adapt_sqlserver_queries(sql_dict)
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -1456,14 +1480,12 @@ class BaseInspectionEngine:
         """Probe optional metadata; an absent/hidden feature stays an evidence gap."""
         from modules.driver_registry import db_family
         family = db_family(self.db_type)
-        if family == 'sqlserver' and any(x in sql.lower() for x in ('dm_hadr_', 'sys.availability_')):
-            major = getattr(self, '_db_version_major', None)
-            if major is None:
-                cursor.execute("SELECT SERVERPROPERTY('ProductVersion')")
-                major = int(str(cursor.fetchone()[0]).split('.')[0])
-                self._db_version_major = major
-            if major < 11:
-                return '不适用：SQL Server 2005/2008 不提供 AlwaysOn 可用性组（需要 2012+）'
+        if family == 'sqlserver':
+            from modules.inspection import sqlserver_compat
+            reason = sqlserver_compat.optional_feature_reason(
+                sql, self._server_version_text(cursor), cursor)
+            if reason:
+                return reason
         if family == 'dm' and 'SYSJOB.SYSJOBS' in sql.upper():
             cursor.execute("SELECT COUNT(*) FROM DBA_OBJECTS WHERE OWNER='SYSJOB' AND OBJECT_NAME='SYSJOBS'")
             if int(cursor.fetchone()[0]) == 0:
@@ -1495,6 +1517,8 @@ class BaseInspectionEngine:
                     used_sql = self._retry_dm_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
                     used_sql = self._retry_gbase_sql(cursor, sql, item_name, exec_error)
+                if not used_sql:
+                    used_sql = self._retry_sqlserver_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
                     reason = self._dm_optional_unavailable(sql, item_name, exec_error)
                 if not used_sql and not reason:
@@ -1614,6 +1638,35 @@ class BaseInspectionEngine:
                 return candidate
             except Exception as retry_error:
                 print(f"[WARN] {item_name}: GBase 候选语句失败（{candidate}）: {retry_error}")
+        return ''
+
+    def _retry_sqlserver_sql(self, cursor, sql, item_name, first_error):
+        """SQL Server 结构类错误时按版本候选链回退。"""
+        from modules.driver_registry import db_family
+        if db_family(self.db_type) != 'sqlserver':
+            return ''
+        from modules.inspection import sqlserver_compat
+        if not sqlserver_compat.is_sqlserver_compatibility_error(first_error):
+            return ''
+        version = self._server_version_text(cursor)
+        candidates = sqlserver_compat.sqlserver_query_candidates(
+            sql, version, item_name, failed_sql=sql)
+        for candidate in candidates:
+            if not candidate or candidate == sql:
+                continue
+            try:
+                from modules.core.data_security import assert_readonly_sql
+                assert_readonly_sql(candidate)
+                if self.conn:
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                cursor.execute(candidate)
+                self.context.setdefault('_sqlserver_compat_sql', {})[item_name] = candidate
+                return candidate
+            except Exception as retry_error:
+                print(f"[WARN] {item_name}: SQL Server 候选语句失败（{candidate}）: {retry_error}")
         return ''
 
     def _gbase_optional_unavailable(self, sql, item_name, error):
