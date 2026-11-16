@@ -3,6 +3,7 @@
 
 """Oracle 10g-23ai 巡检 SQL 版本适配回归。"""
 
+import json
 import sqlite3
 import unittest
 from pathlib import Path
@@ -12,6 +13,8 @@ from modules.inspection import oracle_compat as ora
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DB_PATH = _REPO_ROOT / 'data' / 'inspection.db'
+_JDBC_TEMPLATE = (_REPO_ROOT / 'plugins' / 'available' / 'oracle_jdbc'
+                  / 'template_data.json')
 
 
 class OracleVersionParseTest(unittest.TestCase):
@@ -218,6 +221,25 @@ class OracleTemplateSqlTest(unittest.TestCase):
                 self.assertNotIn('AUTHENTICATION_TYPE',
                                  adapted.upper().replace(
                                      'AS AUTHENTICATION_TYPE', ''))
+
+    def test_jdbc_plugin_template_adapts_10g_and_keeps_23ai(self):
+        template = json.loads(_JDBC_TEMPLATE.read_text(encoding='utf-8'))
+        queries = [q for c in template['chapters']
+                   for q in c['queries']]
+        self.assertGreaterEqual(len(queries), 50)
+        for query in queries:
+            sql = query['query_sql']
+            for version in ('10.2.0.5.0', '11.2.0.4.0'):
+                adapted = ora.adapt_oracle_sql(sql, version, query['query_key'])
+                with self.subTest(version=version, key=query['query_key']):
+                    self.assertNotIn('DBA_REGISTRY_SQLPATCH', adapted.upper())
+                    self.assertNotIn('AUTHENTICATION_TYPE',
+                                     adapted.upper().replace(
+                                         'AS AUTHENTICATION_TYPE', ''))
+            modern = ora.adapt_oracle_sql(sql, '23.0.0.0.0',
+                                          query['query_key'])
+            if query['query_key'] == 'dba_users':
+                self.assertIn('AUTHENTICATION_TYPE', modern.upper())
 
 
 if __name__ == '__main__':
