@@ -14,11 +14,44 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck -->
 | GBase 8a MPP Cluster | 数据库类型、数据源管理、数据库巡检、数据库驱动管理 | PyMySQL 协议；默认端口 5258；服务端身份核对；验证证书的 TLS 或明确配置的 SSH 隧道 | 8a 专用模板 14 项，包括集群空间、节点任务、连接、参数、对象、索引、统计信息 |
 | DM8 | 原有 DM8 类型与 JDBC/dmPython 入口 | 保留原有连接策略；受控证据采集补充独立进程 JDBC 与 SSH 隧道 | 继续使用 DM8 预置指标；元数据证据与报告覆盖共用指标目录 |
 | Oracle 11g | 原有 Oracle / Oracle JDBC 类型 | 原生 11g 需要兼容的 Thick 客户端；11.1 与 11.2 分开验证；不把 23c 客户端默认当作 11g 兼容客户端 | 沿用 Oracle 11g 专用模板 |
-| SQL Server 2005 | 原有 SQL Server 类型 | 显式 SSH 隧道内使用 TDS；认证后读取产品版本 | 2005 专用模板 17 项 |
-| SQL Server 2008 | 原有 SQL Server 类型 | 验证证书的 ODBC 18 或显式 SSH 隧道；认证后读取产品版本 | 2008 专用模板 17 项 |
-| SQL Server 2014 | 原有 SQL Server 类型 | 验证证书的 ODBC 18 或显式 SSH 隧道；认证后读取产品版本 | 2014 专用模板 17 项；内存指标使用 `PAGES_KB` |
+| SQL Server 2005–2025 | 原有 SQL Server 类型 | 验证证书的 ODBC 18 或显式 SSH 隧道；认证后读取 `SERVERPROPERTY('ProductVersion')`，按 2005/2008/2014/默认模板自动选择 | 2005/2008/2014 专用模板各 18 项；2012、2016–2025 使用默认模板 21 章 34 查询；2005 按 DMV 兼容层回退 |
 
-SQL Server 通过服务端版本自动选择专用模板。用户显式选择的模板仍然优先。模板初始化采用增量添加；重复执行不会替换已有查询和用户阈值。采集失败或权限不足必须保留实际状态，不能以 0 或正常替代。
+SQL Server 版本矩阵覆盖 2005–2025。服务端版本自动选择模板，用户显式选择的模板仍然优先；2008 R2 归入 2008 模板，2012 与 2016–2025 使用默认模板。模板初始化采用增量添加；重复执行不会替换已有查询和用户阈值。采集失败或权限不足必须保留实际状态，不能以 0 或正常替代。
+
+### SQL Server 版本矩阵
+
+| 服务端版本 | 版本标识 | 模板选择 | 关键兼容处理 |
+|---|---|---|---|
+| SQL Server 2005 | 9.x | 2005 专用模板（18 项） | 启动时间、文件 I/O、内存 clerk 使用 2005 回退；旧版不具备的功能标记“不适用” |
+| SQL Server 2008 / 2008 R2 | 10.0 / 10.50 | 2008 专用模板（18 项） | 2008 R2 与 2008 共用；扩展事件、资源调控器可用，AlwaysOn 标记“不适用” |
+| SQL Server 2012 | 11.x | 默认模板（21 章 34 查询） | AlwaysOn 可用；Query Store 标记“不适用” |
+| SQL Server 2014 | 12.x | 2014 专用模板（18 项） | 内存指标使用 `PAGES_KB`；AlwaysOn 可用，Query Store 标记“不适用” |
+| SQL Server 2016 | 13.x | 默认模板（21 章 34 查询） | Query Store 可用 |
+| SQL Server 2017 | 14.x | 默认模板（21 章 34 查询） | 按 2016+ 功能集采集 |
+| SQL Server 2019 | 15.x | 默认模板（21 章 34 查询） | 按 2016+ 功能集采集 |
+| SQL Server 2022 | 16.x | 默认模板（21 章 34 查询） | 按 2016+ 功能集采集 |
+| SQL Server 2025 | 17.x | 默认模板（21 章 34 查询） | 按 2016+ 功能集采集 |
+
+### SQL Server 2005 的 DMV 回退与“不适用”
+
+SQL Server 2005 缺少部分后续版本的 DMV 或列。运行时适配层在读取版本后按版本或结构类错误回退，不把兼容差异误报为采集失败：
+
+- **启动时间**：`sys.dm_os_sys_info.sqlserver_start_time` 不可用，改用 `master..sysdatabases` 中 `tempdb` 的 `crdate` 计算运行时长。
+- **文件 I/O**：`sys.dm_io_virtual_file_stats` 不可用，改用 `::fn_virtualfilestats(NULL, NULL)` 获取读写次数和 I/O 延迟。
+- **内存 clerk**：`sys.dm_os_memory_clerks.pages_kb` 不可用，改用 `single_pages_kb + multi_pages_kb`；2012+ 反向归一为 `pages_kb`。
+
+以下功能/查询在低版本明确标记为“不适用”，报告保留该状态，不输出为 0，也不记为查询失败：
+
+| 功能或查询 | 最低版本 | 低版本处理 |
+|---|---|---|
+| 扩展事件 `sys.dm_xe_sessions` | SQL Server 2008 | 2005 标记“不适用” |
+| 资源调控器 `sys.resource_governor_*` | SQL Server 2008 | 2005 标记“不适用” |
+| `sys.dm_server_services` | SQL Server 2008 R2 | 2005、2008 标记“不适用” |
+| AlwaysOn `sys.availability_*` / `sys.dm_hadr_*` | SQL Server 2012 | 2005/2008 标记“不适用” |
+| Query Store | SQL Server 2016 | 2005–2014 标记“不适用” |
+| 复制分发库 `distribution.dbo.MSpublications` | 已配置复制分发 | 实例无 `distribution` 库时标记“不适用” |
+
+候选 SQL 回退只处理无效列、无效对象、语法等结构类错误；权限、登录、连接和超时错误直接保留原始失败原因，不进入候选链。
 
 GBase 8a 原生连接不依赖 JDBC JAR。JAR 就绪检查核对实际驱动类；目录名或登记名不能证明驱动适配。8s 的 `com.gbasedbt.jdbc.Driver` 不可代替 8a 的 `com.gbase.jdbc.Driver`。
 
