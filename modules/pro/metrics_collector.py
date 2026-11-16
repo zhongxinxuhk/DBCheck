@@ -806,14 +806,31 @@ class MetricsCollector:
                   'threads_created'):
             if k in status:
                 m[k] = status[k]
-        # 主从延迟
+        # 主从延迟：MySQL 8.4 移除了 SHOW SLAVE STATUS，按版本选择并按候选链回退
         try:
-            cur.execute("SHOW SLAVE STATUS")
-            rows = cur.fetchall()
+            from modules.inspection import replication_sql as repl
+            try:
+                cur.execute("SELECT VERSION()")
+                _ver = str((cur.fetchone() or [''])[0] or '')
+            except Exception:
+                _ver = ''
+            _candidates = repl.replication_query_candidates(
+                'mysql', _ver, 'replica_status')
+            rows = []
+            for _sql in _candidates:
+                try:
+                    cur.execute(_sql)
+                    rows = cur.fetchall()
+                    break
+                except Exception:
+                    rows = []
+                    continue
             if rows and cur.description:
                 cols = [str(c[0]).lower() for c in cur.description]
                 sd = dict(zip(cols, rows[0]))
-                sbm = sd.get('seconds_behind_master')
+                sbm = (sd.get('seconds_behind_source')
+                       if sd.get('seconds_behind_source') is not None
+                       else sd.get('seconds_behind_master'))
                 if sbm is not None and str(sbm).upper() != 'NONE':
                     m['seconds_behind_master'] = _to_num(sbm)
         except Exception:

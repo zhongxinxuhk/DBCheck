@@ -304,13 +304,46 @@ def get_view_info(db_type: str, view_name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _compose_field_description(field: str, tokens: Dict[str, str]) -> str:
+    """按词元表组合未登记字段的中文说明。
+
+    例：``MONGODB_SERVER_STATUS`` -> ``MongoDB服务器状态``。只有全部词元都能
+    译出时才返回组合结果，避免生成半中半英的噪音。
+    """
+    cleaned = re.sub(r'[^A-Za-z0-9]+', '_', str(field or '')).strip('_').upper()
+    if not cleaned or not tokens:
+        return ''
+    parts = [part for part in cleaned.split('_') if part]
+    if not parts:
+        return ''
+    translated: List[str] = []
+    index = 0
+    while index < len(parts):
+        matched = None
+        # 优先匹配多词词元（如 SECONDS_BEHIND_MASTER / BUFFER_POOL_SIZE）
+        for width in range(min(4, len(parts) - index), 0, -1):
+            candidate = '_'.join(parts[index:index + width])
+            if candidate in tokens:
+                matched = (candidate, width)
+                break
+        if not matched:
+            return ''
+        key, width = matched
+        translated.append(str(tokens[key]))
+        index += width
+    return ''.join(translated)
+
+
 def report_field_labels(db_type: str, sql: str, columns: List[str]) -> List[str]:
     """读取视图说明与跨库报告字典，为原始字段名追加中文说明。
 
-    支持连接查询、别名及原生采集。未登记的新字段显式标记待维护。
+    支持连接查询、别名及原生采集。未登记字段先按词元表组合中文说明；
+    确实无法翻译时只显示原字段名，不再输出待维护占位文案。
     """
     kb = get_knowledge()
-    common = kb.get('report_fields', {}).get('fields', {})
+    report_fields = kb.get('report_fields', {})
+    common = report_fields.get('fields', {})
+    tokens = report_fields.get('tokens', {})
     db_key = _normalize_db_type(db_type)
     databases = kb.get('databases', {})
     views = dict(databases.get(db_key, {}).get('views', {}))
@@ -341,8 +374,10 @@ def report_field_labels(db_type: str, sql: str, columns: List[str]) -> List[str]
                         for fields in scoped_fields if field in fields}
         descriptions = {d for d in descriptions if re.search(r'[\u4e00-\u9fff]', d)}
         description = next(iter(descriptions)) if len(descriptions) == 1 else common.get(field, '')
+        canonical = re.sub(r'\s+', '_', text.strip('`"[]').lstrip('@')).upper()
         if not description:
-            canonical = re.sub(r'\s+', '_', text.strip('`"[]').lstrip('@')).upper()
-            description = common.get(canonical, '待维护中文说明')
-        labels.append(f'{text}（{description}）')
+            description = common.get(canonical, '')
+        if not description:
+            description = _compose_field_description(canonical, tokens)
+        labels.append(f'{text}（{description}）' if description else text)
     return labels

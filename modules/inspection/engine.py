@@ -769,6 +769,52 @@ class BaseInspectionEngine:
         """子类 SQL 定制钩子 - 加载模板后可覆盖特定查询"""
         pass
 
+    def _server_version_text(self, cursor=None):
+        """返回服务端版本字符串，供复制语法等版本分支使用。"""
+        cached = getattr(self, '_server_version_cache', None)
+        if cached:
+            return cached
+        text = ''
+        version_rows = self.context.get('version') or []
+        if version_rows and isinstance(version_rows[0], dict):
+            text = str(version_rows[0].get('VERSION') or version_rows[0].get('version') or '')
+        if not text and cursor is not None:
+            try:
+                cursor.execute('SELECT VERSION()')
+                row = cursor.fetchone()
+                if row:
+                    text = str(row[0])
+            except Exception:
+                text = ''
+        if text:
+            self._server_version_cache = text
+        return text
+
+    def _adapt_replication_queries(self, sql_dict):
+        """按 MySQL 系服务端版本改写复制状态 SQL。
+
+        仅改写当前模板中确实是 ``SHOW MASTER/SLAVE/REPLICA/BINARY LOG STATUS``
+        的语句；TiDB 等用 SELECT 占位说明的模板保持原样。
+        """
+        from modules.inspection import replication_sql as repl
+
+        version_text = self._server_version_text()
+        if not version_text:
+            return
+        for key, sql in list(sql_dict.items()):
+            if not repl.is_replication_key(key):
+                continue
+            normalized = str(sql or '').strip().rstrip(';').strip().upper()
+            if not normalized.startswith('SHOW '):
+                continue
+            if not any(token in normalized for token in (
+                    'MASTER STATUS', 'SLAVE STATUS', 'REPLICA STATUS',
+                    'BINARY LOG STATUS')):
+                continue
+            adapted = repl.replication_sql_for(self.db_type, version_text, key)
+            if adapted:
+                sql_dict[key] = adapted
+
     def collect_data(self, sql_templates=''):
         """采集数据 - 通用逻辑！"""
         print("\n" + self._t(f'{self.db_type}_start_ing', default='dm8_start_ing'))
@@ -894,6 +940,10 @@ class BaseInspectionEngine:
 
         # 2.5 子类 SQL 定制钩子（如 TiDB 覆盖 MySQL 不兼容的查询）
         self._customize_queries(sql_dict)
+
+        # 2.6 MySQL 系复制语法按服务端版本自适应：
+        #     MySQL 8.4 已移除 SHOW MASTER/SLAVE STATUS，旧模板直接执行会报 1064。
+        self._adapt_replication_queries(sql_dict)
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -1374,7 +1424,17 @@ class BaseInspectionEngine:
                 self.context.setdefault('_query_status', {})[item_name] = {'status': 'not_applicable', 'reason': reason}
                 return {'columns': [], 'data': [], '_unavailable': reason}
             assert_readonly_sql(sql)
-            cursor.execute(sql)
+            used_sql = sql
+            try:
+                cursor.execute(sql)
+            except Exception as exec_error:
+                used_sql = self._retry_replication_sql(cursor, sql, item_name, exec_error)
+                if not used_sql:
+                    raise
+            if used_sql != sql:
+                self.context.setdefault('_query_sql_used', {})[item_name] = used_sql
+                self.context.setdefault('_replication_syntax', {})[item_name] = used_sql
+                print(f"[INFO] {item_name}: 复制语法已按版本回退为 {used_sql}")
             columns = [str(col[0]) for col in cursor.description]
             data = []
             # 取数走兼容层：JDBC 包装游标（JdbcCursorWrapper）历史上缺
@@ -1405,6 +1465,36 @@ class BaseInspectionEngine:
                 except Exception:
                     pass
             return {"columns": [], "data": [], "_error": friendly}
+
+    def _retry_replication_sql(self, cursor, sql, item_name, first_error):
+        """复制状态语句报语法错时按候选链重试。
+
+        MySQL 8.4 删除了 SHOW MASTER/SLAVE STATUS；模板与历史库里仍是旧语句。
+        这里只在错误属于语法/未知命令且查询键属于复制状态时回退，其它错误
+        保持原有分类逻辑，避免掩盖权限或连接问题。
+
+        Returns:
+            成功时返回实际执行的 SQL；无可用候选时返回空字符串。
+        """
+        from modules.inspection import replication_sql as repl
+        if not repl.is_replication_key(item_name) or not repl.is_syntax_error(first_error):
+            return ''
+        candidates = repl.replication_query_candidates(
+            self.db_type, self._server_version_text(cursor), item_name, sql)
+        for candidate in candidates:
+            try:
+                from modules.core.data_security import assert_readonly_sql
+                assert_readonly_sql(candidate)
+                if self.conn:
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                cursor.execute(candidate)
+                return candidate
+            except Exception as retry_error:
+                print(f"[WARN] {item_name}: 候选语句失败（{candidate}）: {retry_error}")
+        return ''
     
     def _analyze_health_status(self):
         """健康评分"""

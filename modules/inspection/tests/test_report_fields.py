@@ -44,6 +44,124 @@ class ReportFieldsTest(unittest.TestCase):
         sanitize_document(doc)
         self.assertIn('[IP]:55432', doc.paragraphs[0].text)
 
+
+    def test_unknown_field_never_uses_placeholder(self):
+        for field in ('FUTURE_FIELD_WITHOUT_TRANSLATION', 'XYZ_ABC'):
+            label = report_field_labels('mysql', '', [field])[0]
+            self.assertNotIn('待维护', label)
+            self.assertEqual(label, field)
+        self.assertEqual(report_field_labels('mysql', '', ['MONGODB_SERVER_STATUS'])[0],
+                         'MONGODB_SERVER_STATUS（MongoDB服务器状态）')
+
+
+    def test_every_template_projection_has_chinese_label(self):
+        """所有库种的模板显式列都必须有中文说明，防止新增模板重新引入占位。"""
+        import sqlite3
+        from modules.core.paths import PROJECT_ROOT
+        db_path = Path(str(PROJECT_ROOT)) / 'data' / 'inspection.db'
+        if not db_path.exists():
+            self.skipTest('inspection.db 不存在')
+        rows = sqlite3.connect(str(db_path)).execute(
+            "SELECT t.db_type, q.query_key, q.query_sql FROM inspection_template t "
+            "JOIN inspection_chapter c ON c.template_id=t.id "
+            "JOIN inspection_query q ON q.chapter_id=c.id WHERE q.enabled=1").fetchall()
+
+        def split_top_level(text):
+            parts, buf, depth, quote = [], [], 0, None
+            index = 0
+            while index < len(text):
+                char = text[index]
+                if quote:
+                    buf.append(char)
+                    if char == quote:
+                        if index + 1 < len(text) and text[index + 1] == quote:
+                            buf.append(text[index + 1])
+                            index += 1
+                        else:
+                            quote = None
+                elif char in "'\"`":
+                    quote = char
+                    buf.append(char)
+                elif char == '(':
+                    depth += 1
+                    buf.append(char)
+                elif char == ')':
+                    depth -= 1
+                    buf.append(char)
+                elif char == ',' and depth == 0:
+                    parts.append(''.join(buf))
+                    buf = []
+                else:
+                    buf.append(char)
+                index += 1
+            if buf:
+                parts.append(''.join(buf))
+            return parts
+
+        def projection(sql):
+            text = re.sub(r'/\*.*?\*/|--[^\n]*', ' ', sql or '', flags=re.S)
+            text = text.strip().rstrip(';').strip()
+            if re.match(r'(?is)^show\s+(global\s+|session\s+)?(variables|status)\b', text):
+                return ['Variable_name', 'Value']
+            if not re.match(r'(?is)^(select|with)\b', text):
+                return []
+            start = 0
+            if text.lower().startswith('with'):
+                start = text.lower().rfind('select')
+            match = re.match(r'(?is)^\s*select\s+', text[start:])
+            if not match:
+                return []
+            body_start = start + match.end()
+            depth, quote, from_at = 0, None, None
+            index = body_start
+            while index < len(text):
+                char = text[index]
+                if quote:
+                    if char == quote:
+                        if index + 1 < len(text) and text[index + 1] == quote:
+                            index += 1
+                        else:
+                            quote = None
+                elif char in "'\"`":
+                    quote = char
+                elif char == '(':
+                    depth += 1
+                elif char == ')':
+                    depth -= 1
+                elif depth == 0 and re.match(r'(?i)from\b', text[index:]):
+                    from_at = index
+                    break
+                index += 1
+            body = text[body_start:from_at if from_at is not None else len(text)]
+            body = re.sub(r'(?is)^\s*distinct\s+', '', body)
+            columns = []
+            for expr in split_top_level(body):
+                expr = expr.strip()
+                if not expr or expr == '*' or expr.endswith('.*'):
+                    continue
+                alias = re.search(r'(?is)\s+as\s+[`"\[]?([\w$#]+)[`"\]]?\s*$', expr)
+                if alias:
+                    columns.append(alias.group(1))
+                    continue
+                plain = re.fullmatch(r'[\w$#.`"\[\]]+', expr)
+                if plain:
+                    columns.append(expr.split('.')[-1].strip('`"[]'))
+                    continue
+                trailing = re.search(r'(?is)^.*\S\s+([`"\[]?[A-Za-z_][\w$#]*[`"\]]?)$', expr)
+                if trailing and not re.search(r'[+\-*/<>=]\s*$', expr):
+                    columns.append(trailing.group(1).strip('`"[]'))
+            return columns
+
+        checked = 0
+        for db_type, query_key, sql in rows:
+            for column in projection(sql):
+                with self.subTest(db_type=db_type, query_key=query_key, column=column):
+                    label = report_field_labels(db_type, sql, [column])[0]
+                    self.assertNotIn('待维护', label)
+                    self.assertRegex(label, r'[\u4e00-\u9fff]', f'{db_type}/{query_key}/{column}')
+                    checked += 1
+        self.assertGreater(checked, 900)
+
     def test_dictionary_updates_feed_report_labels(self):
         knowledge = copy.deepcopy(get_knowledge())
         knowledge['databases']['dm']['views']['V$DATABASE']['fields']['NAME']['desc'] = '自定义库名说明'
@@ -51,7 +169,7 @@ class ReportFieldsTest(unittest.TestCase):
             labels = report_field_labels('dm_jdbc', 'select NAME, STATUS$ from v$database;', ['NAME', 'STATUS$', 'UNKNOWN'])
         self.assertEqual(labels[0], 'NAME（自定义库名说明）')
         self.assertIn('数据库状态', labels[1])
-        self.assertEqual(labels[2], 'UNKNOWN（待维护中文说明）')
+        self.assertEqual(labels[2], 'UNKNOWN（未知）')
 
     def test_aliases_joins_and_missing_views_use_chinese_labels(self):
         labels = report_field_labels('dm8', 'SELECT NAME AS CUSTOM_DB FROM V$DATABASE', ['CUSTOM_DB'])
