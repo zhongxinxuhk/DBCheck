@@ -787,6 +787,22 @@ class BaseInspectionEngine:
                 sql_dict[key] = adapted
                 print(f"[INFO] {key}: 已按达梦版本改写 SQL")
 
+    def _adapt_gbase_queries(self, sql_dict):
+        """按 GBase 8a / 8s 方言和版本改写模板 SQL。"""
+        db_type = str(self.db_type or '').lower()
+        if db_type not in ('gbase', 'gbase8s', 'gbase8a'):
+            return
+        from modules.inspection import gbase_compat
+        version_text = self._server_version_text()
+        for key, sql in list(sql_dict.items()):
+            if db_type == 'gbase8a':
+                adapted = gbase_compat.adapt_gbase8a_sql(sql, version_text, key)
+            else:
+                adapted = gbase_compat.adapt_gbase8s_sql(sql, version_text, key)
+            if adapted != sql:
+                sql_dict[key] = adapted
+                print(f"[INFO] {key}: 已按 GBase 版本/方言改写 SQL")
+
     def _server_version_text(self, cursor=None):
         """返回服务端版本字符串，供复制语法等版本分支使用。"""
         cached = getattr(self, '_server_version_cache', None)
@@ -813,6 +829,15 @@ class BaseInspectionEngine:
                         text = detailed
                 except Exception:
                     pass
+        if (not text and cursor is not None and
+                str(self.db_type or '').lower() in ('gbase', 'gbase8s')):
+            from modules.inspection import gbase_compat
+            try:
+                detailed, _parsed = gbase_compat.fetch_gbase8s_version(cursor)
+                if detailed:
+                    text = detailed
+            except Exception:
+                pass
         if not text and cursor is not None:
             try:
                 cursor.execute('SELECT VERSION()')
@@ -980,6 +1005,7 @@ class BaseInspectionEngine:
         #     MySQL 8.4 已移除 SHOW MASTER/SLAVE STATUS，旧模板直接执行会报 1064。
         self._adapt_replication_queries(sql_dict)
         self._adapt_dm_queries(sql_dict)
+        self._adapt_gbase_queries(sql_dict)
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -1468,7 +1494,12 @@ class BaseInspectionEngine:
                 if not used_sql:
                     used_sql = self._retry_dm_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
+                    used_sql = self._retry_gbase_sql(cursor, sql, item_name, exec_error)
+                if not used_sql:
                     reason = self._dm_optional_unavailable(sql, item_name, exec_error)
+                if not used_sql and not reason:
+                    reason = self._gbase_optional_unavailable(sql, item_name, exec_error)
+                if not used_sql:
                     if reason:
                         self._query_errors[item_name] = reason
                         self._safe_errors.append(reason)
@@ -1549,6 +1580,50 @@ class BaseInspectionEngine:
         if not dm_compat.is_compatibility_error(error):
             return None
         return dm_compat.optional_view_reason(sql, item_name)
+
+    def _retry_gbase_sql(self, cursor, sql, item_name, first_error):
+        """GBase 8a/8s 结构类错误时按候选链回退。"""
+        db_type = str(self.db_type or '').lower()
+        if db_type not in ('gbase', 'gbase8s', 'gbase8a'):
+            return ''
+        from modules.inspection import gbase_compat
+        if not gbase_compat.is_gbase_compatibility_error(first_error):
+            return ''
+        version = self._server_version_text(cursor)
+        if db_type == 'gbase8a':
+            candidates = gbase_compat.gbase8a_query_candidates(
+                sql, version, item_name, failed_sql=sql)
+        else:
+            candidates = gbase_compat.gbase8s_query_candidates(
+                sql, version, item_name, failed_sql=sql)
+        for candidate in candidates:
+            if not candidate or candidate == sql:
+                continue
+            try:
+                from modules.core.data_security import assert_readonly_sql
+                assert_readonly_sql(candidate)
+                if self.conn:
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                # 不擅自执行 USE VC：self.database 是业务库名，不是虚拟集群名。
+                # 当前会话已在目标 VC 内，节点元数据直接按当前 VC 查询。
+                cursor.execute(candidate)
+                self.context.setdefault('_gbase_compat_sql', {})[item_name] = candidate
+                return candidate
+            except Exception as retry_error:
+                print(f"[WARN] {item_name}: GBase 候选语句失败（{candidate}）: {retry_error}")
+        return ''
+
+    def _gbase_optional_unavailable(self, sql, item_name, error):
+        """GBase 8a 可选监控视图缺失时转为“不适用”。"""
+        if str(self.db_type or '').lower() != 'gbase8a':
+            return None
+        from modules.inspection import gbase_compat
+        if not gbase_compat.is_gbase_compatibility_error(error):
+            return None
+        return gbase_compat.optional_view_reason(sql, item_name)
 
     def _retry_replication_sql(self, cursor, sql, item_name, first_error):
         """复制状态语句报语法错时按候选链重试。

@@ -4753,11 +4753,11 @@ GBASE_DEFAULT_CHAPTERS = [
         'queries': [
             # GBase 8s 版本查询：DBINFO('version', 'full') 返回完整版本字符串
             {'key': 'gbase_version',
-             'sql': 'SELECT DBINFO("version", "full") AS version FROM systables WHERE tabid = 1;',
+             "sql": "SELECT DBINFO('version', 'full') AS version FROM systables WHERE tabid = 1;",
              'desc_zh': 'GBase 8s 版本信息',      'desc_en': 'GBase 8s version'},
             # 实例状态：检查数据库是否可正常查询
             {'key': 'gbase_instance_status',
-             'sql': 'SELECT COUNT(*) AS table_count FROM systables WHERE tabtype = "T";',
+             "sql": "SELECT COUNT(*) AS table_count FROM systables WHERE tabtype = 'T';",
              'desc_zh': '用户表数量（实例正常可访问时为正整数）', 'desc_en': 'User table count'},
             # 数据库列表：sysdatabases 系统表
             {'key': 'gbase_databases',
@@ -4922,6 +4922,18 @@ GBASE_DEFAULT_CHAPTERS = [
         ]
     },
 ]
+
+
+# GBase 8s 模板统一按 Informix 方言归一：sysmaster 跨库前缀 + FIRST 限制行数。
+# 这样新建库直接得到可执行 SQL；老库由 dal.ensure_gbase8s_sql_compat() 迁移。
+try:
+    from modules.inspection import gbase_compat as _gbase_compat
+    for _chapter in GBASE_DEFAULT_CHAPTERS:
+        for _query in _chapter.get('queries', []):
+            _query['sql'] = _gbase_compat.adapt_gbase8s_sql(
+                _query.get('sql', ''), '', _query.get('key', ''))
+except Exception:
+    pass
 
 
 def main():

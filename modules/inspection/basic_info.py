@@ -435,6 +435,64 @@ def _sqlserver(cursor):
     return out
 
 
+def _gbase8s(cursor):
+    """GBase 8s（Informix 血统）核心属性；sysmaster 视图必须跨库前缀。"""
+    out = {}
+    try:
+        from modules.inspection import gbase_compat
+        version, _parsed = gbase_compat.fetch_gbase8s_version(cursor)
+        if version:
+            out['version_patch'] = version
+    except Exception:
+        pass
+    out['db_name'] = _first(
+        _try(cursor, "SELECT DBINFO('dbname') AS v FROM systables WHERE tabid = 1"),
+        'v')
+    out['instance_name'] = _first(
+        _try(cursor, "SELECT DBINFO('getenv', 'INFORMIXSERVER') AS v "
+                     "FROM systables WHERE tabid = 1"), 'v')
+    locale = _first(
+        _try(cursor, "SELECT DBINFO('getenv', 'DB_LOCALE') AS v "
+                     "FROM systables WHERE tabid = 1"), 'v')
+    if not locale:
+        locale = _first(
+            _try(cursor, "SELECT dbs_collate AS v FROM sysmaster:sysdatabases "
+                         "WHERE name = DBINFO('dbname')"), 'v')
+    if locale:
+        out['charset'] = locale
+    size = _first(_try(cursor, (
+        'SELECT SUM(c.chksize * d.pagesize) AS b '
+        'FROM sysmaster:syschunks c '
+        'JOIN sysmaster:sysdbspaces d ON c.dbsnum = d.dbsnum')), 'b')
+    total = _num(size)
+    if total:
+        out['db_size'] = _gb(total / 1024.0 ** 3)
+    log_mode = _try(cursor, (
+        "SELECT is_logging AS logging, is_buff_log AS buffered "
+        "FROM sysmaster:sysdatabases WHERE name = DBINFO('dbname')"))
+    if log_mode:
+        row = log_mode[0]
+        logging = str(_get(row, 'logging') or '').strip().lower()
+        buffered = str(_get(row, 'buffered') or '').strip().lower()
+        if logging in ('1', 'y', 'yes', 'true'):
+            out['archive_mode'] = '缓冲日志' if buffered in (
+                '1', 'y', 'yes', 'true') else '逻辑日志'
+        else:
+            out['archive_mode'] = '无日志（非事务日志模式）'
+    backup = _try(cursor, (
+        "SELECT cf_name AS n, cf_effective AS v FROM sysmaster:sysconfig "
+        "WHERE cf_name IN ('LTAPEDEV', 'TAPEDEV', 'BACKUP') "
+        "OR cf_name LIKE '%BACKUP%' ORDER BY cf_name"))
+    if backup:
+        out['archive_path'] = _join(
+            [_get(r, 'v') for r in backup if _get(r, 'v') not in (None, '')],
+            limit=3)
+        out['backup_policy'] = _join(
+            ['%s=%s' % (_get(r, 'n'), _get(r, 'v')) for r in backup],
+            limit=5)
+    return out
+
+
 def _db2(cursor):
     out = {}
     lvl = _first(_try(cursor, (
@@ -457,7 +515,7 @@ _FAMILIES = {
     'oracle': _oracle, 'oracle_jdbc': _oracle,
     'dm': _dm, 'dm8': _dm,
     'mysql': _mysql, 'mariadb': _mysql, 'tidb': _mysql, 'oceanbase': _mysql,
-    'gbase8a': _mysql, 'gbase': _mysql,
+    'gbase8a': _mysql, 'gbase': _gbase8s, 'gbase8s': _gbase8s,
     'postgresql': _pg, 'pg': _pg, 'ivorysql': _pg, 'halodb': _pg,
     'vastbase': _pg, 'uxdb': _pg, 'kingbase': _pg,
     'sqlserver': _sqlserver, 'sqlserver_jdbc': _sqlserver,

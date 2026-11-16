@@ -291,6 +291,11 @@ def init_database(db_path: str = None):
     except Exception as e:  # 降级：补齐失败不影响数据库初始化结果
         print(f"[巡检] GBase 8a 锁/高可用章节补齐失败（已忽略）: {e}")
 
+    try:
+        ensure_gbase8s_sql_compat(db_path=db_path)
+    except Exception as e:  # 降级：迁移失败不影响数据库初始化结果
+        print(f"[巡检] GBase 8s SQL 兼容迁移失败（已忽略）: {e}")
+
 
     from modules.inspection.business_templates import ensure_business_defaults
     ensure_business_defaults(db_path=db_path)
@@ -3002,6 +3007,44 @@ def ensure_gbase8a_lock_ha_chapters(db_path: str = None) -> int:
     except Exception as e:
         print(f"[巡检] GBase 8a 锁/高可用章节补齐跳过: {e}")
         return 0
+
+
+def ensure_gbase8s_sql_compat(db_path: str = None) -> int:
+    """把已播种的 GBase 8s 预置模板迁移到 Informix 方言。
+
+    旧模板使用未加 ``sysmaster:`` 的跨库视图和 ``LIMIT``，在业务库连接下会
+    直接报“表不存在/语法错误”。只归一预置模板中的 GBase 8s 查询，不改用户
+    自建模板；预置 SQL 即使被局部修改，也按 query_key 统一迁移到可执行方言。
+    """
+    from modules.inspection import gbase_compat
+    conn = get_db_connection(db_path)
+    changed = 0
+    try:
+        rows = conn.execute(
+            "SELECT q.id, q.query_key, q.query_sql FROM inspection_query q "
+            "JOIN inspection_chapter c ON c.id=q.chapter_id "
+            "JOIN inspection_template t ON t.id=c.template_id "
+            "WHERE t.db_type='gbase' AND t.is_preset=1"
+        ).fetchall()
+        for row in rows:
+            key = row['query_key'] if isinstance(row, sqlite3.Row) else row[1]
+            sql = row['query_sql'] if isinstance(row, sqlite3.Row) else row[2]
+            new_sql = gbase_compat.adapt_gbase8s_sql(sql, '', key)
+            if new_sql and new_sql != sql:
+                conn.execute(
+                    "UPDATE inspection_query SET query_sql=? WHERE id=?",
+                    (new_sql, row['id'] if isinstance(row, sqlite3.Row) else row[0]),
+                )
+                changed += 1
+        conn.commit()
+        if changed:
+            print(f"[巡检] 已迁移 {changed} 条 GBase 8s 查询到 Informix 方言")
+        return changed
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def force_reset_baselines(db_type: str = None, db_path: str = None):
