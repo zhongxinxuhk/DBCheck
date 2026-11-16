@@ -382,3 +382,28 @@ def activate_license(code: str, actor: str = "") -> dict:
     info = get_license_info()
     info["license_id"] = record["license_id"]
     return info
+
+
+def deactivate_license(actor: str = "") -> dict:
+    """Remove the current local authorization and return the unactivated state.
+
+    Removal is intentionally local and idempotent: the activation record is the
+    only source of truth, so deleting it immediately restores the unactivated
+    status for both the web page and the Windows status window.
+    """
+    removed = False
+    try:
+        candidates = (
+            _LICENSE_PATH,
+            _LICENSE_PATH.with_name(_LICENSE_PATH.name + ".tmp"),
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                candidate.unlink()
+                removed = True
+    except OSError as exc:
+        return {"ok": False, "error": f"移除授权失败：{exc}"}
+
+    info = get_license_info()
+    info["removed"] = removed
+    return info

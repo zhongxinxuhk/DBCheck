@@ -445,6 +445,34 @@ class TrayIcon:
         self.thread.join(timeout=3)
 
 
+def local_license_file(directory):
+    """Return the offline authorization record used by the local runtime."""
+    base = portable_home(Path(directory)) or Path(directory)
+    return base / "data" / "system_license.json"
+
+
+def read_local_license(directory):
+    """Read the local authorization record without coupling to Flask."""
+    try:
+        data = json.loads(local_license_file(directory).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def remove_local_license(directory):
+    """Delete the local authorization record and its atomic-write temp file."""
+    path = local_license_file(directory)
+    removed = False
+    for candidate in (path, path.with_name(path.name + ".tmp")):
+        try:
+            candidate.unlink()
+            removed = True
+        except FileNotFoundError:
+            continue
+    return removed
+
+
 def device_serial_number():
     """Encode stable machine information for display by the desktop launcher."""
     machine_id = ""
@@ -605,11 +633,23 @@ def build_styles(root):
         bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE,
         focuscolor=SURFACE,
     )
+    style.configure(
+        "Danger.TButton", font=(UI_FONT, 9), padding=(8, 5), relief="flat",
+        borderwidth=0, width=0, background=SURFACE, foreground=DANGER_COLOR,
+        bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE,
+        focuscolor=SURFACE,
+    )
     style.map(
         "Link.TButton",
         background=[("active", SURFACE), ("pressed", SURFACE),
                     ("disabled", SURFACE)],
         foreground=[("active", "#154c8c"), ("disabled", FAINT)],
+    )
+    style.map(
+        "Danger.TButton",
+        background=[("active", "#fbecec"), ("pressed", "#fbecec"),
+                    ("disabled", SURFACE)],
+        foreground=[("active", DANGER_COLOR), ("disabled", FAINT)],
     )
     style.configure(
         "Serial.TButton", font=(MONO_FONT, 9), padding=(0, 2), relief="flat",
@@ -691,7 +731,8 @@ def desktop_layout(root, directory, status, detail):
     """
     import tkinter as tk
     import webbrowser
-    from tkinter import ttk
+    from datetime import date
+    from tkinter import messagebox, ttk
 
     build_styles(root)
     px = ui_px(root)
@@ -820,36 +861,131 @@ def desktop_layout(root, directory, status, detail):
     buttons = tk.Frame(service, bg=SURFACE)
     buttons.pack(fill="x")
 
-    # Licence card: compact key/value rows instead of a badge-heavy placeholder.
+    # Licence card: local record, refresh and one-click deactivation.
     licence_outer, licence = card(body)
     licence_outer.pack(fill="x", pady=(px(14), px(0)))
+    licence_status = tk.StringVar(master=root, value="未激活")
+    licence_customer = tk.StringVar(master=root, value="待授权")
+    licence_edition = tk.StringVar(master=root, value="—")
+    licence_number = tk.StringVar(master=root, value="—")
+    licence_expiry = tk.StringVar(master=root, value="到期时间  未设置")
+
     licence_head = tk.Frame(licence, bg=SURFACE)
     licence_head.pack(fill="x")
     tk.Label(licence_head, text="软件授权", bg=SURFACE, fg=INK_SOFT,
              font=(UI_FONT, 10, "bold")).pack(side="left")
-    tk.Label(licence_head, text="未激活", bg="#f1f3f6", fg=MUTED,
-             font=(UI_FONT, 9), padx=px(8), pady=2).pack(side="left", padx=(px(10), px(0)))
-    tk.Label(licence_head, text="到期时间  未设置", bg=SURFACE, fg=FAINT,
-             font=(UI_FONT, 9)).pack(side="right")
+    licence_badge = tk.Label(
+        licence_head, textvariable=licence_status, bg="#f1f3f6", fg=MUTED,
+        font=(UI_FONT, 9), padx=px(8), pady=2,
+    )
+    licence_badge.pack(side="left", padx=(px(10), px(0)))
+    tk.Label(
+        licence_head, textvariable=licence_expiry, bg=SURFACE, fg=FAINT,
+        font=(UI_FONT, 9),
+    ).pack(side="right")
 
     customer_row = tk.Frame(licence, bg=SURFACE)
-    customer_row.pack(fill="x", pady=(px(12), px(10)))
+    customer_row.pack(fill="x", pady=(px(12), px(4)))
     tk.Label(customer_row, text="授权客户 / 单位", bg=SURFACE, fg=MUTED,
              font=(UI_FONT, 9)).pack(side="left")
-    tk.Label(customer_row, text="待授权", bg=SURFACE, fg=INK,
+    tk.Label(customer_row, textvariable=licence_customer, bg=SURFACE, fg=INK,
              font=(UI_FONT, 10, "bold")).pack(side="left", padx=(px(16), px(0)))
 
-    entry_row = tk.Frame(licence, bg=SURFACE)
-    entry_row.pack(fill="x")
-    tk.Label(entry_row, text="激活码", bg=SURFACE, fg=MUTED,
+    details_row = tk.Frame(licence, bg=SURFACE)
+    details_row.pack(fill="x", pady=(px(4), px(8)))
+    tk.Label(details_row, text="授权版本", bg=SURFACE, fg=MUTED,
              font=(UI_FONT, 9)).pack(side="left")
-    activation_code = tk.StringVar(master=root)
-    ttk.Entry(entry_row, textvariable=activation_code, width=30).pack(
-        side="left", padx=(px(16), px(10))
+    tk.Label(details_row, textvariable=licence_edition, bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 9)).pack(side="left", padx=(px(10), px(20)))
+    tk.Label(details_row, text="授权编号", bg=SURFACE, fg=MUTED,
+             font=(UI_FONT, 9)).pack(side="left")
+    tk.Label(details_row, textvariable=licence_number, bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 9)).pack(side="left", padx=(px(10), px(0)))
+
+    licence_actions = tk.Frame(licence, bg=SURFACE)
+    licence_actions.pack(fill="x")
+    remove_licence = ttk.Button(
+        licence_actions, text="移除授权", style="Danger.TButton",
+        state="disabled", command=lambda: remove_local_authorization(),
+        cursor="hand2",
     )
-    ttk.Button(entry_row, text="激活", state="disabled", width=6).pack(side="left")
-    tk.Label(licence, text="激活功能尚未开放，输入区域已预留。", bg=SURFACE,
-             fg=FAINT, font=(UI_FONT, 9)).pack(anchor="w", pady=(px(9), px(0)))
+    remove_licence.pack(side="left")
+    ttk.Button(
+        licence_actions, text="刷新授权状态", style="Link.TButton",
+        command=lambda: refresh_local_authorization(), cursor="hand2",
+    ).pack(side="left", padx=(px(8), px(0)))
+    tk.Label(
+        licence_actions,
+        text="激活请在 Web 系统信息页完成；此处可刷新或移除本机授权。",
+        bg=SURFACE, fg=FAINT, font=(UI_FONT, 9),
+    ).pack(side="left", padx=(px(14), px(0)))
+
+    def refresh_local_authorization():
+        record = read_local_license(directory)
+        if not record:
+            licence_status.set("未激活")
+            licence_customer.set("待授权")
+            licence_edition.set("—")
+            licence_number.set("—")
+            licence_expiry.set("到期时间  未设置")
+            licence_badge.configure(bg="#f1f3f6", fg=MUTED)
+            remove_licence.state(["disabled"])
+            return
+
+        expires_at = str(record.get("expires_at") or "").strip()
+        expired = False
+        if expires_at:
+            try:
+                expired = date.fromisoformat(expires_at[:10]) < date.today()
+            except ValueError:
+                expired = True
+        mismatch = (
+            str(record.get("device_serial") or "").strip().upper()
+            != device_serial_number()
+        )
+        if mismatch:
+            licence_status.set("设备不匹配")
+            licence_badge.configure(bg="#fbecec", fg=DANGER_COLOR)
+        elif expired:
+            licence_status.set("已过期")
+            licence_badge.configure(bg="#fbf2dd", fg=WARN_COLOR)
+        else:
+            licence_status.set("已激活")
+            licence_badge.configure(bg="#e9f4ee", fg=OK_COLOR)
+
+        customer = str(record.get("licensed_to") or "—").strip()
+        organization = str(record.get("deployment_org") or "").strip()
+        if organization:
+            customer += " / " + organization
+        licence_customer.set(customer or "—")
+        licence_edition.set(str(record.get("edition") or "—").strip() or "—")
+        licence_number.set(str(record.get("license_id") or "—").strip() or "—")
+        licence_expiry.set("到期时间  " + (expires_at or "长期有效"))
+        remove_licence.state(["!disabled"])
+
+    def remove_local_authorization():
+        if not messagebox.askyesno(
+            "移除授权",
+            "确定移除当前授权吗？\n移除后系统将恢复未授权状态，需要重新激活。",
+            parent=root,
+        ):
+            return
+        try:
+            removed = remove_local_license(directory)
+        except OSError as exc:
+            messagebox.showerror("移除授权失败", str(exc), parent=root)
+            return
+        refresh_local_authorization()
+        if removed:
+            messagebox.showinfo(
+                "移除授权", "授权已移除，系统已恢复未授权状态。", parent=root
+            )
+        else:
+            messagebox.showinfo(
+                "移除授权", "当前没有授权记录，系统已是未授权状态。", parent=root
+            )
+
+    refresh_local_authorization()
 
     # Backup card: one dense row of destructive/support actions.
     backup_outer, backup = card(body)

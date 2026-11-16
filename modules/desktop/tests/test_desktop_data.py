@@ -15,7 +15,11 @@ import pytest
 
 from modules.desktop.local_backup import LocalBackup, RecoveryRequired
 from modules.desktop.log_output import LogOutput
-from modules.desktop.windows_launcher import BackendProcess
+from modules.desktop.windows_launcher import (
+    BackendProcess,
+    read_local_license,
+    remove_local_license,
+)
 
 
 @pytest.fixture
@@ -43,6 +47,26 @@ def rewrite_archive(path, change):
     with zipfile.ZipFile(path, "w") as destination:
         for name, value in content.items():
             destination.writestr(name, value)
+
+
+def test_local_license_can_be_read_and_removed(installation):
+    record = {
+        "license_id": "LIC-20261116-ABCDEF12",
+        "licensed_to": "示例单位",
+        "deployment_org": "信息中心",
+        "edition": "企业版",
+        "expires_at": "2027-12-31",
+    }
+    path = installation / "data/system_license.json"
+    path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    (installation / "data/system_license.json.tmp").write_text("{}", encoding="utf-8")
+
+    assert read_local_license(installation)["license_id"] == "LIC-20261116-ABCDEF12"
+    assert remove_local_license(installation) is True
+    assert not path.exists()
+    assert not (installation / "data/system_license.json.tmp").exists()
+    assert read_local_license(installation) == {}
+    assert remove_local_license(installation) is False
 
 
 def test_backup_round_trip_and_previous_data(installation, tmp_path):
