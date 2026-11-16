@@ -206,6 +206,15 @@ class Inventory:
                     tenant INTEGER NOT NULL, actor INTEGER NOT NULL, action TEXT NOT NULL,
                     created TEXT NOT NULL, payload BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS operations_inventory_observed (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT NOT NULL,
+                    tenant INTEGER NOT NULL, task_id TEXT NOT NULL,
+                    observed_at TEXT NOT NULL, report_path TEXT NOT NULL DEFAULT '',
+                    payload BLOB NOT NULL,
+                    UNIQUE(tenant, instance_id, task_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_inventory_observed_latest
+                    ON operations_inventory_observed(instance_id, observed_at DESC, id DESC);
             """)
 
     @contextmanager
@@ -252,6 +261,22 @@ class Inventory:
         else:
             for key in ENCRYPTED_FIELDS:
                 source.pop(key, None)
+        observation = None
+        try:
+            obs = db.execute(
+                "SELECT * FROM operations_inventory_observed "
+                "WHERE instance_id=? ORDER BY observed_at DESC, id DESC LIMIT 1",
+                (iid,),
+            ).fetchone()
+            if obs:
+                observation = {
+                    **self.open(obs["payload"]),
+                    "task_id": obs["task_id"],
+                    "observed_at": obs["observed_at"],
+                    "report_path": obs["report_path"] or "",
+                }
+        except sqlite3.Error:
+            observation = None
         return {
             "id": iid,
             "revision": source["updated_at"] + "/" + str(version),
@@ -259,6 +284,7 @@ class Inventory:
             "metadata": metadata,
             "configuration_id": metadata.get("configuration_id") or "CI-" + iid,
             "version": version,
+            "observation": observation,
         }
 
     def get(self, iid, decrypt=False):
@@ -279,7 +305,102 @@ class Inventory:
         self._refresh()
         return record
 
-    def _save(self, actor, data, iid=None, new_id=None, db=None):
+    def record_inspection(self, actor, iid, task_id, report_path, auto_fields,
+                          observed_fields, basic_info=None, observed_at=None):
+        """保存巡检实测快照，并仅自动应用服务端白名单字段。
+
+        该方法供巡检完成钩子调用，不经过 Web 路由；仍按台账租户和
+        revision 做隔离/并发校验。task_id 唯一，重复回调不会重复改台账。
+        """
+        auto_fields = dict(auto_fields or {})
+        observed_fields = dict(observed_fields or {})
+        invalid = (set(auto_fields) | set(observed_fields)) - ASSET_FIELDS.keys()
+        if invalid:
+            raise ValueError("巡检台账字段无效: " + ",".join(sorted(invalid)))
+        if not task_id:
+            raise ValueError("巡检任务编号不能为空")
+        observed_at = observed_at or now()
+        with self.connection(write=True) as db:
+            owner = db.execute(
+                "SELECT tenant FROM operations_inventory WHERE instance_id=?",
+                (iid,),
+            ).fetchone()
+            if owner is None:
+                # 数据源可能早于台账模块存在；首次巡检时补建空台账，
+                # 后续自动同步即可正常留痕。若实例本身不存在则 _record 抛错。
+                current = self._record(db, iid)
+                self._save(
+                    actor,
+                    {"revision": current["revision"], "metadata": {}},
+                    iid=iid,
+                    db=db,
+                )
+                owner = db.execute(
+                    "SELECT tenant FROM operations_inventory WHERE instance_id=?",
+                    (iid,),
+                ).fetchone()
+            if owner["tenant"] != actor.tenant_id:
+                raise PermissionError("无权更新该台账")
+            existing = db.execute(
+                "SELECT payload FROM operations_inventory_observed "
+                "WHERE tenant=? AND instance_id=? AND task_id=?",
+                (actor.tenant_id, iid, task_id),
+            ).fetchone()
+            if existing:
+                payload = self.open(existing["payload"])
+                return {
+                    "status": "already_applied",
+                    "task_id": task_id,
+                    "changed": payload.get("applied", []),
+                    "observed_at": payload.get("observed_at", observed_at),
+                }
+            current = self._record(db, iid)
+            changes = {}
+            for key, value in auto_fields.items():
+                if str(current["metadata"].get(key, "") or "") != str(value or ""):
+                    changes[key] = value
+            audit_extra = {
+                "source": "inspection",
+                "task_id": task_id,
+                "report_path": report_path or "",
+                "observed_at": observed_at,
+                "auto_fields": sorted(changes),
+            }
+            if changes:
+                self._save(
+                    actor,
+                    {"revision": current["revision"], "metadata": changes},
+                    iid=iid,
+                    db=db,
+                    action="inspection_auto_update",
+                    audit_extra=audit_extra,
+                )
+            payload = {
+                "observed_at": observed_at,
+                "auto_fields": auto_fields,
+                "observed_fields": observed_fields,
+                "basic_info": basic_info or {},
+                "applied": sorted(changes),
+                "unchanged": sorted(set(auto_fields) - set(changes)),
+            }
+            db.execute(
+                "INSERT INTO operations_inventory_observed "
+                "(instance_id,tenant,task_id,observed_at,report_path,payload) "
+                "VALUES(?,?,?,?,?,?)",
+                (iid, actor.tenant_id, task_id, observed_at, report_path or "",
+                 self.seal(payload)),
+            )
+            self._record(db, iid)
+        self._refresh()
+        return {
+            "status": "applied" if changes else "unchanged",
+            "task_id": task_id,
+            "changed": sorted(changes),
+            "observed_at": observed_at,
+        }
+
+    def _save(self, actor, data, iid=None, new_id=None, db=None, action=None,
+              audit_extra=None):
         source_updates = data.get("source", {})
         metadata_updates = data.get("metadata", {})
         if not isinstance(source_updates, dict) or not isinstance(
@@ -446,13 +567,15 @@ class Inventory:
                 ENCRYPTED_FIELDS & {k for k, v in source_updates.items() if v}
             ),
         }
+        if audit_extra:
+            audit.update(audit_extra)
         db.execute(
             "INSERT INTO operations_inventory_history(instance_id,tenant,actor,action,created,payload) VALUES(?,?,?,?,?,?)",
             (
                 iid,
                 actor.tenant_id,
                 actor.id,
-                "update" if old else "create",
+                action or ("update" if old else "create"),
                 now(),
                 self.seal(audit),
             ),

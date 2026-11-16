@@ -231,6 +231,10 @@ build/core-missing.txt
 !modules/inspection/tests/
 !modules/inspection/tests/*.py
 
+# 台账巡检自动同步自测
+!modules/operations/tests/
+!modules/operations/tests/*.py
+
 # Generic business inspection compatibility documentation
 !/docs/business-inspection-compatibility.md
 
