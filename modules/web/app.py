@@ -1828,6 +1828,13 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
         # 台账自动同步只使用采集结果，不读取任何凭据；在脱敏前保留基础属性快照。
         _inventory_basic_info = copy.deepcopy(context.get('basic_info') or {})
         _inventory_system_info = copy.deepcopy(context.get('system_info') or {})
+        # 表空间、账号等专项结果只做实测快照，绝不写回 metadata.tables。
+        _inventory_specialized = {}
+        try:
+            from modules.operations.inventory_sync import build_specialized_observation
+            _inventory_specialized = build_specialized_observation(context)
+        except Exception as _special_err:
+            print('[WARN] 专项台账实测快照提取失败: %s' % _special_err)
         context = redact(context, mask_identity=True, preserve_network=True)
         if hasattr(data, 'context'):
             data.context = context
@@ -1899,6 +1906,7 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
                     basic_info=_inventory_basic_info,
                     system_info=_inventory_system_info,
                     report_path=ofile,
+                    observed_tables=_inventory_specialized,
                 )
                 _sync_status = _inventory_sync_result.get('status')
                 if _sync_status == 'applied':
