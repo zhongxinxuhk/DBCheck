@@ -201,3 +201,28 @@ def test_standalone_console_has_no_application_imports():
     assert "import modules" not in source
     assert "import flask" not in source
     assert "from flask" not in source
+
+
+def test_standalone_console_web_fallback_uses_same_interpreter():
+    console = load_standalone_console()
+    source = (ROOT / "license-console" / "license_console.py").read_text(
+        encoding="utf-8"
+    )
+    assert "_run_web_console" in source
+    assert "ThreadingHTTPServer" in source
+    assert "subprocess" not in source
+    assert "os.exec" not in source
+    assert "sys.executable" not in source
+
+    for required in (
+        'id="serial"',
+        'id="type"',
+        'id="target"',
+        'id="org"',
+        'id="edition"',
+        'id="activated"',
+        'id="days"',
+        'id="license_id"',
+        'id="code"',
+    ):
+        assert required in console._WEB_PAGE
