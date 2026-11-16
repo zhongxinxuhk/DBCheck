@@ -1868,9 +1868,6 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
             _emit('log', {'msg': f"[插件] 执行跳过: {e}"})
 
         ofile_result = data.generate_report(ofile, inspector_nm)
-        if ofile_result:
-            from modules.service_management.report import append_to_existing
-            append_to_existing(ofile_result,tenant_id=(task or {}).get('owner_tenant_id'),user_id=(task or {}).get('owner_user_id'))
         print(f"[DEBUG] generate_report 返回: {ofile_result}")
         print(f"[DEBUG] ofile 路径: {ofile}")
         if ofile_result and os.path.exists(ofile_result):
