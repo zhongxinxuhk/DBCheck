@@ -1929,7 +1929,12 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
             risk_count = len(issues) if isinstance(issues, list) else 0
 
         health_status = context.get('health_status', '')
-        if '优秀' in health_status or 'Excellent' in health_status:
+        if risk_count:
+            # 有问题项时不能沿用早期“优秀”状态，否则会把真实风险显示成 100 分。
+            health_score = max(0, 100 - min(risk_count * 5, 50))
+            health_status = ('良好' if health_score >= 80 else
+                             '一般' if health_score >= 60 else '需关注')
+        elif '优秀' in health_status or 'Excellent' in health_status:
             health_score = 100
         elif '良好' in health_status or 'Good' in health_status:
             health_score = 80

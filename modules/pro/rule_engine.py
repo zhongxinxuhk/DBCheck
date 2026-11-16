@@ -142,6 +142,47 @@ def _safe_eval(expr: str, context: Dict, params: Dict) -> Tuple[bool, str]:
         return False, str(e)
 
 
+def _safe_eval_value(expr: str, variables: Dict) -> Any:
+    """在规则引擎白名单沙箱中求值一个展示表达式，返回原生值。
+
+    与 ``_safe_eval`` 的区别：后者把结果强制转 bool，只适合 condition；
+    ``fix_params`` 需要的是 ``len(long_queries)``、``(a / b * 100)`` 这类
+    数值/字符串结果，因此单独保留求值结果。
+    """
+    safe_builtins = {
+        'min': min, 'max': max, 'len': len,
+        'int': int, 'float': float, 'str': str,
+        'abs': abs, 'round': round,
+        'any': any, 'all': all, 'sum': sum,
+        'bool': bool, '_int': _int,
+    }
+    try:
+        tree = ast.parse(expr, mode='eval')
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                return None
+            if isinstance(node, ast.Attribute):
+                if node.attr.startswith('__') and node.attr.endswith('__'):
+                    return None
+                if node.attr not in _SAFE_METHODS:
+                    return None
+                continue
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name):
+                    if func.id not in safe_builtins:
+                        return None
+                elif isinstance(func, ast.Attribute):
+                    if func.attr not in _SAFE_METHODS:
+                        return None
+                else:
+                    return None
+        code = compile(tree, '<rule_fix_param>', 'eval')
+        return _unwrap(eval(code, {'__builtins__': safe_builtins}, variables))
+    except Exception:
+        return None
+
+
 class _SafeContext:
     """递归安全包装：同时支持属性与下标访问，dict/list 自动递归包装。
 
@@ -496,6 +537,20 @@ class RuleEngine:
 
         if not ok:
             return None
+
+        # 解析 fix_params：规则消息里的展示别名/派生值（如 pct、count、hit）。
+        # 历史实现只把 params 放进 fmt_vars，导致消息残留 {count}/{pct} 占位符。
+        _fix_params = rule.get('fix_params') or {}
+        if isinstance(_fix_params, dict):
+            _fix_ctx = {**context, **resolved_params, **extra}
+            for _fk, _fexpr in _fix_params.items():
+                try:
+                    _fv = (_safe_eval_value(str(_fexpr), _fix_ctx)
+                           if isinstance(_fexpr, str) else _fexpr)
+                except Exception:
+                    _fv = None
+                if _fv is not None:
+                    extra[_fk] = _fv
 
         # 条件触发，生成 issue
         severity = rule.get('severity', 'medium')

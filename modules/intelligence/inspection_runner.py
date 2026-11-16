@@ -69,7 +69,11 @@ def _score(context: Dict[str, Any]):
         issues = context.get("issues", [])
         risk_count = len(issues) if isinstance(issues, list) else 0
     health_status = context.get("health_status", "")
-    if "优秀" in health_status or "Excellent" in health_status:
+    if risk_count:
+        health_score = 100 - min(risk_count * 5, 50)
+        health_status = ("良好" if health_score >= 80 else
+                         "一般" if health_score >= 60 else "需关注")
+    elif "优秀" in health_status or "Excellent" in health_status:
         health_score = 100
     elif "良好" in health_status or "Good" in health_status:
         health_score = 80
