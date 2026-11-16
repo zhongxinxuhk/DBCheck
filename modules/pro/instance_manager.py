@@ -1266,19 +1266,27 @@ class InstanceManager:
                         engine_class = None
                         for attr_name in dir(module):
                             attr = getattr(module, attr_name)
-                            if isinstance(attr, type) and 'Engine' in attr_name:
+                            if (isinstance(attr, type)
+                                    and getattr(attr, '__module__', '') == getattr(module, '__name__', '')
+                                    and ('Inspector' in attr_name or 'Engine' in attr_name)):
                                 engine_class = attr
                                 break
                         
                         if engine_class:
-                            engine = engine_class()
+                            try:
+                                engine = engine_class(
+                                    inst.host, inst.port, inst.user, password,
+                                    database=inst.database or '')
+                            except TypeError:
+                                engine = engine_class(
+                                    inst.host, inst.port, inst.user, password)
                             # 尝试调用连接测试方法
                             if hasattr(engine, 'test_connection'):
                                 return engine.test_connection(inst)
                             elif hasattr(engine, 'connect'):
                                 # 尝试连接，成功则关闭并返回成功
                                 try:
-                                    conn = engine.connect(inst)
+                                    conn = engine.connect()
                                     if conn:
                                         if hasattr(conn, 'close'):
                                             conn.close()
