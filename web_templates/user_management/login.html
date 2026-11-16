@@ -17,9 +17,9 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <script>
-        /* 主题需在首屏前确定，避免深/浅色闪跳 */
+        /* 主题需在首屏前确定，避免深/浅色闪跳；默认浅色，显式保存 dark 才用深色 */
         try {
-            if (localStorage.getItem('dbcheck-theme') === 'light') {
+            if (localStorage.getItem('dbcheck-theme') !== 'dark') {
                 document.documentElement.dataset.theme = 'light';
             }
         } catch (error) {}
