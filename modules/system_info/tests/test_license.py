@@ -102,6 +102,31 @@ def test_activate_license_persists_generated_license_id(isolated_license):
     assert record["licensed_days"] == 10
 
 
+def test_deactivate_license_removes_record_and_restores_unactivated(isolated_license):
+    serial, license_path = isolated_license
+    code = license_service.issue_activation_code(
+        licensed_to_type="organization",
+        licensed_to="待移除授权单位",
+        device_serial=serial,
+        license_id="LIC-20261116-87654321",
+        valid_days=30,
+    )
+    assert license_service.activate_license(code)["ok"]
+    assert license_path.is_file()
+
+    info = license_service.deactivate_license(actor="tester")
+    assert info["ok"]
+    assert info["removed"] is True
+    assert info["status"] == "unactivated"
+    assert info["license"]["license_id"] == "—"
+    assert not license_path.exists()
+
+    again = license_service.deactivate_license()
+    assert again["ok"]
+    assert again["removed"] is False
+    assert again["status"] == "unactivated"
+
+
 def test_legacy_db1_code_is_still_accepted(isolated_license):
     serial, _ = isolated_license
     code = license_service.issue_activation_code(

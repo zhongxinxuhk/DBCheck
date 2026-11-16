@@ -27,3 +27,16 @@ def activate():
     if not result.get("ok"):
         return jsonify(result), 400
     return jsonify(result)
+
+
+@bp.route("/deactivate", methods=["POST"])
+def deactivate():
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "请先登录后再移除授权"}), 401
+
+    result = license_service.deactivate_license(
+        actor=session.get("username") or "",
+    )
+    if not result.get("ok"):
+        return jsonify(result), 400
+    return jsonify(result)
