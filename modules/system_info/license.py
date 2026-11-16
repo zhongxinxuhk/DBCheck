@@ -3,12 +3,18 @@
 
 """Device identity and offline authorization records for the system page.
 
-The activation code format is ``DBP1.<payload>.<signature>``. ``payload`` is a
-URL-safe base64 JSON document; ``signature`` is an HMAC-SHA256 digest truncated
-to 20 uppercase hex characters. The payload includes the device serial so a
-code cannot be silently moved to another machine.
+The current activation code format is ``DBP2.<payload>.<signature>``. ``payload``
+is a URL-safe base64 JSON document; ``signature`` is a full HMAC-SHA256 digest
+(uppercase hex). The payload includes an auto-generated license id, the device
+serial, the licensed object, deployment organization, edition, issue time and
+expiry date. Legacy ``DBP1`` codes (20-character truncated signature) remain
+accepted so existing installations keep working.
 
 This is an offline integrity check, not a replacement for a commercial contract.
+
+授权码由独立工具 ``license-console/license_console.py`` 生成；该工具不导入
+本模块或 Flask，也不会进入应用发布包。两边使用同一套协议常量和环境变量
+``DBPULSE_ACTIVATION_SECRET``。
 """
 from __future__ import annotations
 
@@ -18,9 +24,10 @@ import hmac
 import json
 import os
 import platform
+import secrets
 import socket
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from modules.core import paths
@@ -31,8 +38,14 @@ _SECRET = os.environ.get(
     "DBPULSE_ACTIVATION_SECRET",
     "DBPulse-Offline-Activation-2026",
 ).encode("utf-8")
-_CODE_PREFIX = "DBP1"
-_SIGNATURE_LENGTH = 20
+_LEGACY_CODE_PREFIX = "DBP1"
+_CODE_PREFIX = "DBP2"
+_LEGACY_SIGNATURE_LENGTH = 20
+_SIGNATURE_LENGTH = 64
+
+# 授权控制台下拉选项；仍然允许自定义版本名。
+EDITION_OPTIONS = ("业务专用版", "商业专用版", "专业版", "企业版", "社区版")
+DEFAULT_EDITION = "业务专用版"
 
 
 def _read_text(path: str) -> str:
@@ -114,24 +127,47 @@ def _b64decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + padding)
 
 
-def _signature(payload_b64: str) -> str:
-    message = f"{_CODE_PREFIX}.{payload_b64}".encode("ascii")
-    return hmac.new(_SECRET, message, hashlib.sha256).hexdigest().upper()[:_SIGNATURE_LENGTH]
+def _signature(
+    payload_b64: str,
+    prefix: str = _CODE_PREFIX,
+    length: int = _SIGNATURE_LENGTH,
+) -> str:
+    message = f"{prefix}.{payload_b64}".encode("ascii")
+    return hmac.new(_SECRET, message, hashlib.sha256).hexdigest().upper()[:length]
+
+
+def new_license_id() -> str:
+    """生成可读的授权编号，写入授权码并由激活页展示。"""
+    return "LIC-" + datetime.now().strftime("%Y%m%d") + "-" + secrets.token_hex(4).upper()
+
+
+def _parse_date(value: str):
+    """兼容日期和日期时间字符串，返回 date；空值返回 None。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return date.fromisoformat(text[:10])
 
 
 def issue_activation_code(
     licensed_to_type: str,
     licensed_to: str,
     deployment_org: str = "",
-    edition: str = "Business Special Edition",
+    edition: str = DEFAULT_EDITION,
     expires_at: str = "",
     device_serial: str = None,
     issued_at: str = None,
+    license_id: str = "",
+    valid_days: int = 0,
+    code_version: int = 2,
 ) -> str:
     """Create an offline activation code for a device.
 
-    ``licensed_to_type`` is ``personal`` or ``organization``. ``expires_at`` is
-    an optional ``YYYY-MM-DD`` date; an empty value means perpetual.
+    ``code_version=2`` emits the current ``DBP2`` format with an auto-generated
+    license id; ``code_version=1`` remains available for compatibility tests.
+    ``expires_at`` is a ``YYYY-MM-DD`` date (a datetime prefix is accepted);
+    when ``valid_days`` is supplied and ``expires_at`` is empty, the expiry is
+    calculated from today. An empty expiry means perpetual.
     """
     serial = (device_serial or get_device_serial()).strip().upper()
     if not serial:
@@ -141,39 +177,60 @@ def issue_activation_code(
         raise ValueError("licensed_to is required")
     if licensed_to_type not in {"personal", "organization"}:
         raise ValueError("licensed_to_type must be personal or organization")
-    if expires_at:
-        date.fromisoformat(expires_at)
+    if code_version not in {1, 2}:
+        raise ValueError("code_version must be 1 or 2")
+
+    days = int(valid_days or 0)
+    if days < 0:
+        raise ValueError("valid_days must not be negative")
+    expiry = _parse_date(expires_at)
+    if days and expiry is None:
+        expiry = date.today() + timedelta(days=days)
+    expires_value = expiry.isoformat() if expiry else ""
+
+    issued_value = str(issued_at or datetime.now().isoformat(timespec="seconds")).strip()
+    lid = str(license_id or "").strip()
+    if code_version == 2 and not lid:
+        lid = new_license_id()
 
     payload = {
-        "v": 1,
+        "v": code_version,
         "typ": licensed_to_type,
         "to": to,
         "dep": (deployment_org or "").strip(),
-        "ed": (edition or "").strip(),
-        "iat": issued_at or date.today().isoformat(),
-        "exp": expires_at or "",
+        "ed": (edition or DEFAULT_EDITION).strip(),
+        "iat": issued_value,
+        "exp": expires_value,
         "dev": serial,
     }
+    if code_version == 2:
+        payload.update({"lid": lid, "days": days})
+
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     payload_b64 = _b64encode(raw)
-    return f"{_CODE_PREFIX}.{payload_b64}.{_signature(payload_b64)}"
+    prefix = _CODE_PREFIX if code_version == 2 else _LEGACY_CODE_PREFIX
+    length = _SIGNATURE_LENGTH if code_version == 2 else _LEGACY_SIGNATURE_LENGTH
+    return f"{prefix}.{payload_b64}.{_signature(payload_b64, prefix, length)}"
 
 
 def verify_activation_code(code: str):
     """Validate a code and return ``(ok, error, payload)``.
 
     The payload is returned only after the signature, device binding and expiry
-    checks pass.
+    checks pass. Both legacy ``DBP1`` and current ``DBP2`` codes are accepted.
     """
     normalized = "".join((code or "").split())
     if not normalized:
         return False, "请输入激活码", None
     parts = normalized.split(".")
-    if len(parts) != 3 or parts[0] != _CODE_PREFIX:
+    if len(parts) != 3 or parts[0] not in {_LEGACY_CODE_PREFIX, _CODE_PREFIX}:
         return False, "激活码格式不正确", None
 
-    payload_b64, supplied_sig = parts[1], parts[2].upper()
-    expected_sig = _signature(payload_b64)
+    prefix, payload_b64, supplied_sig = parts[0], parts[1], parts[2].upper()
+    expected_length = (
+        _SIGNATURE_LENGTH if prefix == _CODE_PREFIX else _LEGACY_SIGNATURE_LENGTH
+    )
+    expected_sig = _signature(payload_b64, prefix, expected_length)
     if not hmac.compare_digest(supplied_sig, expected_sig):
         return False, "激活码校验失败，请确认是否完整复制", None
 
@@ -181,12 +238,15 @@ def verify_activation_code(code: str):
         payload = json.loads(_b64decode(payload_b64).decode("utf-8"))
     except Exception:
         return False, "激活码内容无法解析", None
-    if not isinstance(payload, dict) or payload.get("v") != 1:
+    expected_version = 2 if prefix == _CODE_PREFIX else 1
+    if not isinstance(payload, dict) or payload.get("v") != expected_version:
         return False, "激活码版本不受支持", None
     if payload.get("typ") not in {"personal", "organization"}:
         return False, "授权类型不正确", None
     if not str(payload.get("to") or "").strip():
         return False, "激活码缺少授权对象", None
+    if expected_version == 2 and not str(payload.get("lid") or "").strip():
+        return False, "激活码缺少授权编号", None
 
     serial = get_device_serial()
     if str(payload.get("dev") or "").strip().upper() != serial:
@@ -195,7 +255,8 @@ def verify_activation_code(code: str):
     expires_at = str(payload.get("exp") or "").strip()
     if expires_at:
         try:
-            if date.fromisoformat(expires_at) < date.today():
+            expiry = _parse_date(expires_at)
+            if expiry and expiry < date.today():
                 return False, "激活码已过期", None
         except ValueError:
             return False, "激活码有效期格式不正确", None
@@ -293,9 +354,10 @@ def activate_license(code: str, actor: str = "") -> dict:
 
     normalized = "".join((code or "").split())
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest().upper()
+    license_id = str(payload.get("lid") or "").strip() or ("LIC-" + digest[:12])
     record = {
-        "schema": 1,
-        "license_id": "LIC-" + digest[:12],
+        "schema": 2 if payload.get("v") == 2 else 1,
+        "license_id": license_id,
         "code_sha256": digest,
         "code_tail": normalized[-8:],
         "licensed_to_type": payload["typ"],
@@ -304,6 +366,7 @@ def activate_license(code: str, actor: str = "") -> dict:
         "edition": str(payload.get("ed") or "").strip(),
         "issued_at": str(payload.get("iat") or "").strip(),
         "expires_at": str(payload.get("exp") or "").strip(),
+        "licensed_days": int(payload.get("days") or 0),
         "device_serial": get_device_serial(),
         "activated_at": datetime.now().isoformat(timespec="seconds"),
         "activated_by": actor or "",

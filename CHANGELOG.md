@@ -2,6 +2,7 @@
 
 ## 未发布（2026-11-11）
 
+- 新增独立离线授权控制台 `license-console/license_console.py`：只依赖 Python 标准库与 tkinter，不导入 Flask/主程序模块，也不会被 PyInstaller 发布包收集；支持设备序列号、授权类型/对象、部署单位、授权版本、激活时间和到期天数，生成带自动授权编号的 `DBP2` 激活码。系统信息页激活框支持粘贴完整授权码并展示授权信息。
 - 本地存储加密加固：`jdbc_url` 落盘改为 `jdbc:enc:v1:` 密文，AI/BIC-QA/MCP/Webhook 敏感配置改为 `enc:v1:` 密文；内存中仍为明文，巡检/监控/通知读取路径透明解密。启动时迁移历史明文并收紧 `data/` 0700、密钥/数据库/配置 0600 权限；详见 `docs/local-storage-encryption.md`。
 
 - 新增数据库运维台账，支持增删改查、明文维护连接信息及 Excel 导出，保存时同步数据源。

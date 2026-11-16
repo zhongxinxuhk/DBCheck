@@ -10,7 +10,15 @@ from pathlib import Path
 from ci_prepare import DEFAULT_CONFIG
 from modules.config.version import __version__
 
-SKIP_DIRECTORIES = {"__pycache__", ".git", ".pytest_cache", "node_modules", "tests"}
+SKIP_DIRECTORIES = {
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    "node_modules",
+    "tests",
+    "license-console",  # 独立授权控制台，绝不随产品包分发
+}
+
 SKIP_FILES = {".DS_Store", ".db_key", ".rbac_seeded", "bootstrap_admin_password"}
 RUNTIME_SUFFIXES = (
     ".db",
