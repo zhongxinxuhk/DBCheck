@@ -61,7 +61,8 @@ def snapshot_source(container):
             def include(info):
                 parts = Path(info.name).parts
                 if any(
-                    part in {"__pycache__", ".git", "tests", ".DS_Store"}
+                    part
+                    in {"__pycache__", ".git", "tests", ".DS_Store", "license-console"}
                     for part in parts
                 ):
                     return None

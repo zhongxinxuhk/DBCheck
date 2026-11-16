@@ -78,7 +78,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 .sysinfo-hint a { color: var(--accent); text-decoration: none; }
 .sysinfo-hint a:hover { text-decoration: underline; }
 .sysinfo-label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
-.sysinfo-code-input { width: 100%; min-height: 68px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; resize: vertical; outline: none; transition: border-color var(--trans), box-shadow var(--trans); }
+.sysinfo-code-input { width: 100%; min-height: 260px; height: 34vh; max-height: 420px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; resize: vertical; outline: none; transition: border-color var(--trans), box-shadow var(--trans); word-break: break-all; }
 .sysinfo-code-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,200,160,.12); }
 .sysinfo-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 10px; }
 .sysinfo-msg { min-height: 18px; margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
@@ -10200,7 +10200,7 @@ function wfCloseRunDrawer() {
               </div>
               <div data-page-node-id="sysInfoActivateFormX1">
                 <label class="sysinfo-label" for="sysinfo-activation-code">激活码 / Activation Code</label>
-                <textarea id="sysinfo-activation-code" class="sysinfo-code-input" spellcheck="false" placeholder="粘贴授权方提供的激活码，例如 DBP1.xxxxx.xxxxxxxx" data-page-node-id="sysInfoCodeInputX1"></textarea>
+                <textarea id="sysinfo-activation-code" class="sysinfo-code-input" spellcheck="false" rows="14" placeholder="粘贴授权方提供的完整激活码（DBP2.xxxxx.xxxxxxxx），可多行粘贴" data-page-node-id="sysInfoCodeInputX1"></textarea>
                 <div class="sysinfo-actions">
                   <button class="btn btn-primary" type="button" id="sysinfo-activate-btn" onclick="activateSystemLicense()" data-page-node-id="sysInfoActivateBtnX1">立即激活</button>
                   <button class="btn btn-ghost" type="button" onclick="loadSystemInfo()" data-page-node-id="sysInfoRefreshBtnX1">刷新状态</button>
