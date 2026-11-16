@@ -21,6 +21,7 @@ import json
 import re
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core import local_secrets
 from modules.core.brand import PRODUCT_NAME_EN
 
 from .zh import ZI
@@ -82,19 +83,12 @@ _override_lang = None
 
 # ── 语言配置读写 ────────────────────────────────────────────────────────────
 
-def _load_config():
-    if os.path.exists(_CONFIG_FILE):
-        try:
-            with open(_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+def _load_config(strict=False):
+    return local_secrets.load_config(_CONFIG_FILE, strict=strict)
 
 
 def _save_config(cfg):
-    with open(_CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=4)
+    local_secrets.save_config(_CONFIG_FILE, cfg)
 
 
 
@@ -126,7 +120,7 @@ def set_lang(lang, persist=True):
     """
     lang = _normalize_lang(lang) or 'zh'
     if persist:
-        cfg = _load_config()
+        cfg = _load_config(strict=True)
         cfg['language'] = lang
         _save_config(cfg)
     else:

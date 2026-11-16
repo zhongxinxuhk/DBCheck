@@ -16,6 +16,7 @@ import re
 from typing import Any, Optional
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core import local_secrets
 
 from .context import SharedContext, Finding
 
@@ -36,8 +37,7 @@ def build_advisor():
         model = os.environ.get("DBCHECK_AI_MODEL", "")
         if os.path.exists(cfg_path):
             try:
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    cfg = _json.load(f).get("ai", {})
+                cfg = local_secrets.load_config(cfg_path).get("ai", {})
                 online_on = bool(cfg.get("online_enabled", False))
                 backend = backend or (
                     (cfg.get("online_backend", "openai") or "openai")

@@ -40,6 +40,7 @@ Webhook 代理与 SSL 配置说明：
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 from modules.core.paths import PROJECT_ROOT, DBC_CONFIG_PATH
+from modules.core import local_secrets
 import os, ssl, smtplib, json, datetime, mimetypes, time, threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -65,8 +66,8 @@ ENCRYPTION_KEY_NAME = 'notification_encryption_key'
 _SMTP_SEND_LOCK = threading.Lock()
 
 
-def _read_config_file():
-    """读取 dbc_config.json；瞬时损坏（并发写半截）重试一次，持续损坏返回 None。
+def _read_config_raw():
+    """读取 dbc_config.json 原始内容（保留 enc:v1: 密文）。
 
     返回 None 表示「不要写」——否则会以 {} 为基底整体覆盖，清空其他配置节点。
     """
@@ -82,11 +83,21 @@ def _read_config_file():
     return None
 
 
+def _read_config_file():
+    """读取配置并透明解密敏感字段；供业务读取使用。"""
+    raw = _read_config_raw()
+    return None if raw is None else local_secrets.decrypt_config(raw)
+
+
 def _atomic_write_json(path, data):
     """原子写 JSON：先写临时文件再 os.replace，避免并发读到半截文件。"""
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    if os.name != 'nt':
+        os.chmod(tmp, 0o600)
     os.replace(tmp, path)
 
 
@@ -98,7 +109,7 @@ def _get_fernet(create=True):
     """
     if not HAS_CRYPTOGRAPHY:
         return None
-    config = _read_config_file()
+    config = _read_config_raw()
     if config is None:
         # 配置文件持续不可读：中止，绝不整体覆盖（会把其他配置节点全部清空）
         print('dbc_config.json 读取失败，已跳过加密密钥操作以避免破坏配置')
@@ -303,6 +314,28 @@ def _load_config():
     return cfg
 
 
+def migrate_plaintext_credentials():
+    """把历史明文 / Base64 邮件口令迁移为 ``_enc_`` 密文。
+
+    老版本的 ``notifier_config.json`` 或早期 dbc_config.json 可能留下明文
+    口令；本函数只在启动时调用，迁移后落盘不再出现可直接读取的口令。
+    返回是否发生写入。
+    """
+    raw = _read_config_raw()
+    if not raw:
+        return False
+    node = (raw.get('notification') or {})
+    email = (node.get('email') or {})
+    stored = str(email.get('password') or '')
+    if not stored or stored.startswith('_enc_'):
+        return False
+    cfg = (local_secrets.decrypt_config(raw).get('notification') or {})
+    safe_email = dict(cfg.get('email') or {})
+    safe_email['password'] = _decrypt_password(stored)
+    cfg['email'] = safe_email
+    return bool(_save_config(cfg))
+
+
 def _save_config(cfg):
     """保存通知配置到 dbc_config.json（只更新 notification 节点，保留其他配置）"""
     try:
@@ -329,7 +362,7 @@ def _save_config(cfg):
 
         config['notification'] = save_cfg
 
-        _atomic_write_json(CONFIG_FILE, config)
+        local_secrets.save_config(CONFIG_FILE, config)
         return True
     except Exception as e:
         print('保存通知配置失败: %s' % e)

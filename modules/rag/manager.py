@@ -19,6 +19,7 @@ import threading
 import uuid
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core import local_secrets
 
 from .vector_store import VectorStore
 from .document_processor import DocumentProcessor
@@ -62,8 +63,7 @@ class RAGManager:
         每次需要 embedding 前调用，自动跟随 AI 配置切换
         """
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
+            cfg = local_secrets.load_config(self.config_path)
             ai_cfg = cfg.get('ai', {})
         except Exception:
             ai_cfg = {}

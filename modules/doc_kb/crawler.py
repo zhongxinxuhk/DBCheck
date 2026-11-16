@@ -19,6 +19,7 @@ import re
 import os
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core import local_secrets
 
 try:
     from modules.inspection.analyzer import PROJECT_ROOT
@@ -62,8 +63,7 @@ def _resolve_ai_backend(backend: str = None) -> str:
         import json as _json
         _cfg_path = DBC_CONFIG_PATH
         if os.path.exists(_cfg_path):
-            with open(_cfg_path, "r", encoding="utf-8") as _f:
-                _cfg = _json.load(_f)
+            _cfg = local_secrets.load_config(_cfg_path)
             _ai = _cfg.get("ai", {}) or {}
             _b = _ai.get("backend")
             if _b and str(_b).strip().lower() in ("ollama", "openai"):

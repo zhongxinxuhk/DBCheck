@@ -225,11 +225,59 @@ def _migrate_dbc_config():
         return False
 
 
+def harden_runtime_permissions(root: Path | None = None) -> int:
+    """收紧运行时数据目录与敏感文件权限（POSIX；Windows 跳过）。
+
+    本地加密的密钥、SQLite 数据库与 JSON 配置最终仍依赖文件系统访问控制。
+    这里把数据目录设为 0700，并把密钥/数据库/配置/日志设为 0600，避免同机
+    其它用户直接读取。函数幂等，失败只告警不阻断启动。
+
+    Args:
+        root: 可选的测试根目录；缺省为 ``DATA_DIR``。
+
+    Returns:
+        int: 成功调整权限的路径数。
+    """
+    if os.name == "nt":
+        return 0
+    base = Path(root) if root is not None else DATA_DIR
+    if not base.exists() or not base.is_dir():
+        return 0
+    suffixes = (
+        ".db", ".db-wal", ".db-shm", ".json", ".yaml", ".yml",
+        ".key", ".log", ".lock",
+    )
+    changed = 0
+    failures = 0
+    for current, dirnames, filenames in os.walk(str(base), followlinks=False):
+        try:
+            os.chmod(current, 0o700)
+            changed += 1
+        except OSError:
+            failures += 1
+        for name in filenames:
+            if name != ".db_key" and not name.endswith(suffixes):
+                continue
+            target = os.path.join(current, name)
+            try:
+                os.chmod(target, 0o600)
+                changed += 1
+            except OSError:
+                failures += 1
+    if failures:
+        print(f"[paths][WARN] 有 {failures} 个数据文件权限收紧失败（不阻断启动）")
+    return changed
+
+
+_PERMISSIONS_HARDENED = False
+
+
 def ensure_migrated():
     """幂等地执行一次旧路径迁移（若检测到遗留旧路径）。
 
     降级策略：迁移过程出现异常时仅打印告警并继续执行，不阻断应用启动。
     """
+    global _PERMISSIONS_HARDENED
     # 打包版：先把运行时数据从分发包内部挪到 exe 同级（#66），再走旧路径迁移
     ensure_data_dir_migrated()
     # dbc_config.json：从程序根迁移到持久化数据目录（#67）
@@ -253,6 +301,13 @@ def ensure_migrated():
             run()
     except Exception as e:  # 降级：迁移失败不阻断启动
         print(f"[migration] 自动迁移跳过（降级旧路径）: {e}")
+    try:
+        if not _PERMISSIONS_HARDENED and DATA_DIR.exists():
+            harden_runtime_permissions()
+            _PERMISSIONS_HARDENED = True
+    except Exception as e:  # 权限收紧失败不阻断启动，但保留告警
+        print(f"[migration] 运行时数据权限收紧跳过: {e}")
+
 
 
 def resolve_portable_file(value):

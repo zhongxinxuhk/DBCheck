@@ -48,6 +48,7 @@ if _script_dir not in sys.path:
 
 # 旧路径一次性迁移（幂等；仅当检测到遗留旧路径时触发，异常降级不阻断启动）
 from modules.core import paths
+from modules.core import local_secrets
 # 巡检配置库统一走中央路径（paths 为纯路径模块，无循环导入风险）。
 # 切勿用 BASE_DIR 拼 data/inspection.db：frozen 下 BASE_DIR=<exe>，
 # 而真实运行时数据目录是 <exe>/_internal/data。
@@ -4153,8 +4154,7 @@ def api_trend():
 def api_ai_config():
     cfg_path = paths.DBC_CONFIG_PATH
     if os.path.exists(cfg_path):
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
+        cfg = local_secrets.load_config(cfg_path)
         ai_cfg = cfg.get('ai', {})
         # 确保返回的配置包含 online_enabled 字段
         ai_cfg.setdefault('online_enabled', False)
@@ -4181,8 +4181,7 @@ def api_save_ai_config():
     # 加载现有配置作为基础
     existing = {}
     if os.path.exists(cfg_path):
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            existing = json.load(f)
+        existing = local_secrets.load_config(cfg_path, strict=True)
 
     # 获取现有 ai 配置
     ai_existing = existing.get('ai', {})
@@ -4222,8 +4221,7 @@ def api_save_ai_config():
 
     # 写回 dbc_config.json 的 ai 字段
     existing['ai'] = data
-    with open(cfg_path, 'w', encoding='utf-8') as f:
-        json.dump(existing, f, ensure_ascii=False, indent=4)
+    local_secrets.save_config(cfg_path, existing)
     return jsonify({'ok': True, 'msg': _t('webui.ai_config_saved')})
 
 # ─── 顶部公告条：内容源在官网，后台定时拉取缓存；断网/无缓存则隐藏 ───
@@ -4452,8 +4450,7 @@ def api_get_config():
     cfg_path = paths.DBC_CONFIG_PATH
     if not os.path.exists(cfg_path):
         return jsonify({})
-    with open(cfg_path, 'r', encoding='utf-8') as f:
-        cfg = json.load(f)
+    cfg = local_secrets.load_config(cfg_path)
     return jsonify({
         'oracle_client_lib_dir': cfg.get('oracle_client_lib_dir', ''),
         'yashandb_driver_lib_dir': cfg.get('yashandb_driver_lib_dir', ''),
@@ -4468,8 +4465,7 @@ def api_save_config():
     cfg_path = paths.DBC_CONFIG_PATH
     existing = {}
     if os.path.exists(cfg_path):
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            existing = json.load(f)
+        existing = local_secrets.load_config(cfg_path, strict=True)
     if 'oracle_client_lib_dir' in data:
         existing['oracle_client_lib_dir'] = data['oracle_client_lib_dir']
     if 'yashandb_driver_lib_dir' in data:
@@ -4478,8 +4474,7 @@ def api_save_config():
         existing['notification'] = data['notification']
     if 'show_ai_assistant' in data:
         existing['show_ai_assistant'] = bool(data['show_ai_assistant'])
-    with open(cfg_path, 'w', encoding='utf-8') as f:
-        json.dump(existing, f, ensure_ascii=False, indent=4)
+    local_secrets.save_config(cfg_path, existing)
     return jsonify({'ok': True})
 
 # ─── 插件市场镜像配置 API ─────────────────────────────
@@ -7379,8 +7374,7 @@ def api_rag_ollama_status():
         cfg_path = paths.DBC_CONFIG_PATH
         backend = 'ollama'
         try:
-            with open(cfg_path, 'r', encoding='utf-8') as f:
-                cfg = json.load(f).get('ai', {})
+            cfg = local_secrets.load_config(cfg_path).get('ai', {})
             backend = cfg.get('backend', 'ollama')
         except Exception:
             pass
@@ -8346,8 +8340,7 @@ def _connect_oracle_thick_fallback(user, password, dsn, sysdba=False):
         if not _thick_ok:
             try:
                 import json
-                with open(paths.DBC_CONFIG_PATH) as f:
-                    _cfg = json.load(f)
+                _cfg = local_secrets.load_config(paths.DBC_CONFIG_PATH)
                 _lib_dir = _cfg.get('oracle_client_lib_dir', '')
                 if _lib_dir and os.path.isdir(_lib_dir):
                     oracledb.init_oracle_client(lib_dir=_lib_dir)
@@ -10197,8 +10190,7 @@ def _load_ai_config():
     """加载 AI 配置"""
     cfg_path = paths.DBC_CONFIG_PATH
     if os.path.exists(cfg_path):
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            return json.load(f).get('ai', {})
+        return local_secrets.load_config(cfg_path).get('ai', {})
     return {
         'backend': 'ollama',
         'online_enabled': False,
@@ -13875,6 +13867,24 @@ def api_system_shutdown():
 
 
 def main():
+    # 启动前把 dbc_config.json 的存量明文敏感字段迁移为密文（幂等），
+    # 并确保 data 目录/密钥/数据库权限已收紧。失败只告警，不阻断启动。
+    try:
+        from modules.notify import migrate_plaintext_credentials
+        if migrate_plaintext_credentials():
+            print('[startup] 通知邮件口令已迁移为本地加密存储')
+    except Exception as _e:
+        print(f'[startup][WARN] 通知口令迁移失败（保持原状）: {_e}')
+    try:
+        if local_secrets.migrate_config(paths.DBC_CONFIG_PATH):
+            print('[startup] dbc_config.json 敏感字段已迁移为本地加密存储')
+    except Exception as _e:
+        print(f'[startup][WARN] 敏感配置迁移失败（保持原状）: {_e}')
+    try:
+        paths.harden_runtime_permissions()
+    except Exception as _e:
+        print(f'[startup][WARN] 数据目录权限收紧失败（不阻断启动）: {_e}')
+
     # ── 信号处理：确保 Ctrl+C / 关闭窗口 / SIGTERM 都能立即退出 ──
     # 设计要点（修复 gevent 模式 Ctrl+C 失效）：
     #   - gevent 的信号 watcher 必须挂在「运行 hub 的线程（主线程）」。把 server 放到

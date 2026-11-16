@@ -24,6 +24,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 
 SCRIPT_DIR = str(PROJECT_ROOT)
 from modules.core import paths
+from modules.core import local_secrets
 from pathlib import Path
 paths.ensure_migrated()
 
@@ -193,23 +194,56 @@ def running_snapshot():
 
 
 def _load_jobs():
-    """从 JSON 文件加载任务配置"""
+    """从 JSON 文件加载任务配置（透明解密敏感字段）。"""
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                raw = json.load(f)
+            return local_secrets.decrypt_config(raw)
         except Exception as e:
             logger.warning('加载任务配置失败: %s', e)
     return []
 
 
 def _save_jobs(jobs):
-    """保存任务配置到 JSON 文件"""
+    """保存任务配置到 JSON 文件（敏感字段落盘加密、原子替换）。"""
     try:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(jobs, f, ensure_ascii=False, indent=2)
+        payload = local_secrets.encrypt_sensitive_tree(jobs)
+        tmp = CONFIG_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        if os.name != 'nt':
+            os.chmod(tmp, 0o600)
+        os.replace(tmp, CONFIG_FILE)
     except Exception as e:
         logger.error('保存任务配置失败: %s', e)
+
+
+def migrate_job_secrets():
+    """启动时把历史 scheduler_jobs.json 中的明文凭据迁移为密文。"""
+    if not os.path.exists(CONFIG_FILE):
+        return False
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+        encrypted = local_secrets.encrypt_sensitive_tree(raw)
+        if encrypted == raw:
+            return False
+        tmp = CONFIG_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(encrypted, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        if os.name != 'nt':
+            os.chmod(tmp, 0o600)
+        os.replace(tmp, CONFIG_FILE)
+        logger.info('scheduler_jobs.json 敏感字段已迁移为本地加密存储')
+        return True
+    except Exception as e:
+        logger.warning('scheduler_jobs.json 敏感字段迁移失败（保持原状）: %s', e)
+        return False
 
 
 def _run_plugin_inspection(db_info, inspector_name, ssh_info):
@@ -924,6 +958,9 @@ class SchedulerManager:
         )
         self.scheduler.start()
         logger.info('调度器启动成功')
+
+        # 把历史明文凭据迁移为密文，再恢复任务
+        migrate_job_secrets()
 
         # 恢复持久化的任务
         self._restore_jobs()

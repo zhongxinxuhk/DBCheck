@@ -22,6 +22,7 @@ import os
 from typing import List
 
 from modules.core.paths import DBC_CONFIG_PATH
+from modules.core import local_secrets
 
 from ..context import SharedContext, Finding
 from ..specialist import Specialist
@@ -48,8 +49,7 @@ def _user_config() -> dict:
     try:
         cfg_path = DBC_CONFIG_PATH
         if os.path.exists(cfg_path):
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("bicqa", {}) or {}
+            return local_secrets.load_config(cfg_path).get("bicqa", {}) or {}
     except Exception:
         pass
     return {}

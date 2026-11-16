@@ -20,6 +20,7 @@ from typing import Any, Dict, List
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 
 from modules.config.version import EDITION
+from modules.core import local_secrets
 from .hub import get_hub
 
 intelligence_bp = Blueprint("intelligence", __name__)
@@ -1092,26 +1093,13 @@ _API_KEY_SENTINEL = "***SET***"
 
 
 def _bicqa_load_cfg() -> dict:
-    if not _os.path.exists(_DBCONFIG_PATH):
-        return {}
-    try:
-        with open(_DBCONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f).get("bicqa", {}) or {}
-    except Exception:
-        return {}
+    return (local_secrets.load_config(_DBCONFIG_PATH).get("bicqa", {}) or {})
 
 
 def _bicqa_save_cfg(bicqa: dict) -> None:
-    cfg = {}
-    if _os.path.exists(_DBCONFIG_PATH):
-        try:
-            with open(_DBCONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-        except Exception:
-            cfg = {}
+    cfg = local_secrets.load_config(_DBCONFIG_PATH, strict=True)
     cfg["bicqa"] = bicqa
-    with open(_DBCONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=4)
+    local_secrets.save_config(_DBCONFIG_PATH, cfg)
 
 
 @intelligence_bp.route("/api/bicqa/config", methods=["GET"])

@@ -32,6 +32,7 @@ import time
 import re
 from datetime import datetime
 from modules.core import paths
+from modules.core import local_secrets
 # docx 相关导入改为延迟导入（在 generate_report 相关方法中导入）
 # from docx import Document
 # from docx.shared import Pt, RGBColor, Inches, Cm
@@ -1328,8 +1329,7 @@ class BaseInspectionEngine:
                     cfg_path = paths.DBC_CONFIG_PATH
                     ai_cfg = {}
                     if os.path.exists(cfg_path):
-                        with open(cfg_path, 'r', encoding='utf-8') as f:
-                            ai_cfg = _json.load(f).get('ai', {})
+                        ai_cfg = local_secrets.load_config(cfg_path).get('ai', {})
                     _online_enabled = ai_cfg.get('online_enabled', False)
                     if _online_enabled:
                         _adv_backend = ai_cfg.get('online_backend', 'openai')
