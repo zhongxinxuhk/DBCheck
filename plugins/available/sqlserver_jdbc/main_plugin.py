@@ -408,12 +408,24 @@ class MssqlJdbcInspector(BaseInspectionEngine):
             self.cursor = self.conn.cursor()
 
             # 3. 读取版本
-            self.cursor.execute("SELECT @@VERSION")
-            row = self.cursor.fetchone()
-            version_raw = str(row[0]) if row else 'unknown'
+            from modules.inspection import sqlserver_compat
+            version_raw, parsed = sqlserver_compat.fetch_sqlserver_version(self.cursor)
+            version_raw = version_raw or 'unknown'
             self._mssql_version_str = _parse_mssql_version(version_raw)
+            self._db_version_major = parsed.major or None
             self.context['mssql_version'] = [{'VERSION': version_raw, 'VERSION_STR': self._mssql_version_str}]
-            self.context['version'] = [{'VERSION': version_raw, 'VERSION_STR': self._mssql_version_str}]
+            self.context['version'] = [{
+                'VERSION': version_raw,
+                'VERSION_STR': self._mssql_version_str,
+                'MAJOR': parsed.major,
+            }]
+            self.context['sqlserver_version_detail'] = [{
+                'VERSION': version_raw,
+                'DISPLAY': parsed.display,
+                'FAMILY': parsed.family,
+                'BUILD': parsed.build,
+                'EDITION': parsed.edition,
+            }]
 
             if self._used_encrypt_fallback:
                 print(f"[MSSQL-JDBC] 连接成功（已自动启用 TLS 加密回退），版本: {self._mssql_version_str}")

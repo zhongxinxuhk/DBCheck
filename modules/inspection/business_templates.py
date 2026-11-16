@@ -23,13 +23,13 @@ SUFFIX = '业务专项巡检'
 
 PRODUCT_LABEL = {
     'oracle': 'Oracle 11g',
-    'sqlserver': 'SQL Server 2005/2008/2014',
+    'sqlserver': 'SQL Server 2005-2025',
     'dm8': 'DM8 达梦',
     'gbase8a': 'GBase 8a MPP集群',
 }
 PRODUCT_VERSION = {
     'oracle': '11g',
-    'sqlserver': '2005-2014',
+    'sqlserver': '2005-2025',
     'dm8': '8',
     'gbase8a': '8a',
 }
@@ -605,7 +605,7 @@ ORDER BY name"""),
 SELECT name, value, value_in_use, is_dynamic, is_advanced
 FROM sys.configurations
 ORDER BY name"""),
-    'H02': ('H02_service_state', 'SQL Server 相关服务运行状态（sys.dm_server_services 需 2008R2+，更低版本请禁用）', """
+    'H02': ('H02_service_state', 'SQL Server 相关服务运行状态（sys.dm_server_services 需 2008R2+；更低版本自动标记不适用）', """
 SELECT servicename, status_desc, startup_type_desc, process_id
 FROM sys.dm_server_services"""),
     'H03': ('H03_os_threads', '线程/调度器状态（排查线程僵死与调度器阻塞）', """
@@ -620,7 +620,7 @@ SELECT DB_NAME(mf.database_id) AS db_name, mf.file_id, mf.name AS logical_name,
 FROM sys.master_files mf
 WHERE mf.state_desc <> 'ONLINE'
 ORDER BY db_name, mf.file_id"""),
-    'H12': ('H12_io_stats', '数据库文件 I/O 延迟统计（sys.dm_io_virtual_file_stats 需 2008+，2005 改用 fn_virtualfilestats）', """
+    'H12': ('H12_io_stats', '数据库文件 I/O 延迟统计（sys.dm_io_virtual_file_stats 需 2008+；2005 自动回退 fn_virtualfilestats）', """
 SELECT DB_NAME(vfs.database_id) AS db_name,
        mf.physical_name,
        vfs.num_of_reads, vfs.num_of_writes,
@@ -661,7 +661,7 @@ WHERE i.is_primary_key = 0 AND i.is_unique_constraint = 0
   AND i.type > 1
   AND ISNULL(s.user_seeks,0) + ISNULL(s.user_scans,0) + ISNULL(s.user_lookups,0) = 0
 ORDER BY ISNULL(s.user_updates,0) DESC"""),
-    'H20': ('H20_file_latency', '文件级 I/O 延迟（> 20ms 需关注；2005 改用 fn_virtualfilestats）', """
+    'H20': ('H20_file_latency', '文件级 I/O 延迟（> 20ms 需关注；2005 自动回退 fn_virtualfilestats）', """
 SELECT DB_NAME(database_id) AS db_name, file_id,
        CAST(io_stall_read_ms/NULLIF(num_of_reads,0) AS DECIMAL(18,2)) AS read_latency_ms,
        CAST(io_stall_write_ms/NULLIF(num_of_writes,0) AS DECIMAL(18,2)) AS write_latency_ms,
@@ -760,7 +760,7 @@ SELECT DB_NAME(database_id) AS db_name,
        mirroring_partner_instance
 FROM sys.database_mirroring
 WHERE mirroring_guid IS NOT NULL"""),
-    'C_AG': ('C02_ag_replica', 'AlwaysOn 副本状态（仅 SQL Server 2012+，2005/2008 请禁用本项）', """
+    'C_AG': ('C02_ag_replica', 'AlwaysOn 副本状态（仅 SQL Server 2012+；2005/2008 自动标记不适用）', """
 SELECT ag.name AS ag_name,
        ar.replica_server_name, ar.availability_mode_desc,
        ars.role_desc, ars.operational_state_desc,
@@ -1588,7 +1588,7 @@ def build_template_specs(cd_per_product=False):
 
     period_targets = [
         ('季度运行分析', build_quarterly, 'gbase8a', 'GBase 8a MPP集群'),
-        ('年度台账核对', build_yearly, 'sqlserver', 'SQL Server 2005/2008/2014'),
+        ('年度台账核对', build_yearly, 'sqlserver', 'SQL Server 2005-2025'),
     ]
     for name, builder, default_product, _label in period_targets:
         owners = ['oracle', 'sqlserver', 'dm8', 'gbase8a'] if cd_per_product else [default_product]

@@ -23,6 +23,7 @@ SQL Server 数据库巡检模块 - 基于 BaseInspectionEngine 重构版本
 
 import os
 from modules.inspection.engine import BaseInspectionEngine
+from modules.inspection import sqlserver_compat
 from modules.core import entry
 
 
@@ -47,6 +48,7 @@ class SQLServerInspector(BaseInspectionEngine):
         """
         super().__init__(host, port, user, password, database, ssh_info, template_id)
         self.db_type = 'sqlserver'
+        self._server_version = ''
     
     def collect_data(self,sql_templates=''):
         if self._template_id is None:
@@ -65,11 +67,25 @@ class SQLServerInspector(BaseInspectionEngine):
             self.conn=connect_sqlserver({**self.ssh_info,'host':self.host,'port':self.port,
                                         'user':self.user,'password':self.password,'database':self.database})
             self.cursor=self.conn.cursor()
-            self.cursor.execute("SELECT SERVERPROPERTY('ProductVersion'), @@VERSION")
-            row=self.cursor.fetchone()
-            self._db_version_major=int(str(row[0]).split('.')[0])
-            self._server_version=str(row[1])
-            return True,self._server_version
+            # SERVERPROPERTY + @@VERSION 同时读取；任一失败时按候选链回退。
+            version, parsed = sqlserver_compat.fetch_sqlserver_version(self.cursor)
+            if not version:
+                raise ValueError('未能读取 SQL Server 版本信息')
+            self._server_version = version
+            self._db_version_major = parsed.major or None
+            self.context['version'] = [{
+                'VERSION': version,
+                'VERSION_STR': parsed.display,
+                'MAJOR': parsed.major,
+            }]
+            self.context['sqlserver_version_detail'] = [{
+                'VERSION': version,
+                'DISPLAY': parsed.display,
+                'FAMILY': parsed.family,
+                'BUILD': parsed.build,
+                'EDITION': parsed.edition,
+            }]
+            return True, self._server_version
         except Exception as error:
             if self.conn:
                 self.conn.close();self.conn=None
@@ -79,7 +95,8 @@ class SQLServerInspector(BaseInspectionEngine):
     def get_template_id(self):
         if self._template_id is not None:
             return self._template_id
-        version={9:'2005',10:'2008',12:'2014'}.get(getattr(self,'_db_version_major',None))
+        version = sqlserver_compat.template_version_for_major(
+            getattr(self, '_db_version_major', None))
         if version:
             import sqlite3
             from modules.core.paths import INSPECTION_DB

@@ -117,7 +117,7 @@
       "default_database": "master",
       "icon": "/sqlserver.png",
       "emoji": "🟠",
-      "description": "适用于 SQL Server 2005/2008/2014及后续版本；验证证书的ODBC或已验证SSH隧道TDS采集",
+      "description": "适用于 SQL Server 2005–2025；验证证书的ODBC或已验证SSH隧道TDS采集",
       "compat_tag": "",
       "protocol": "sqlserver",
       "sql_editor": false,

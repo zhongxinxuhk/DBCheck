@@ -393,6 +393,12 @@ def _sqlserver(cursor):
         "SERVERPROPERTY('ProductLevel') AS lvl, "
         "SERVERPROPERTY('Edition') AS ed, "
         "SERVERPROPERTY('ProductUpdateLevel') AS upd"))
+    if not ver:
+        # 极老版本/受限实例可能没有 ProductUpdateLevel，退回基础属性。
+        ver = _try(cursor, (
+            "SELECT SERVERPROPERTY('ProductVersion') AS v, "
+            "SERVERPROPERTY('ProductLevel') AS lvl, "
+            "SERVERPROPERTY('Edition') AS ed"))
     if ver:
         r = ver[0]
         v = _get(r, 'v')
