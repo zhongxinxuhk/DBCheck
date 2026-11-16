@@ -18,6 +18,7 @@ PostgreSQL 数据库巡检模块 - 基于 BaseInspectionEngine 重构版本
 
 import os
 from modules.inspection.engine import BaseInspectionEngine
+from modules.inspection import postgresql_compat
 from modules.core import entry
 
 
@@ -45,6 +46,24 @@ class PostgreSQLInspector(BaseInspectionEngine):
         self.db_type = 'postgresql'
         self.driver_version = driver_version or ''
 
+    def _remember_version(self, version, parsed):
+        """保存版本号，供模板选择、SQL 改写和报告版本字段复用。"""
+        version = version or 'unknown'
+        parsed = parsed or postgresql_compat.parse_postgresql_version('')
+        self._db_version_major = parsed.major or None
+        self._server_version_cache = version
+        detail = {
+            'VERSION': version,
+            'VERSION_STR': parsed.display,
+            'MAJOR': parsed.major,
+            'MINOR': parsed.minor,
+            'PATCH': parsed.patch,
+            'FAMILY': parsed.family,
+        }
+        self.context['version'] = [detail]
+        self.context['postgresql_version_detail'] = [detail]
+        return version
+
     def connect(self):
         """
         连接 PostgreSQL 数据库（统一 JDBC 优先，回退 psycopg2）。
@@ -67,9 +86,8 @@ class PostgreSQLInspector(BaseInspectionEngine):
                 return self._connect_native((_meta or {}).get('error') or 'JDBC 连接失败')
             self.conn = _conn
             self.cursor = self.conn.cursor()
-            self.cursor.execute("SELECT version()")
-            ver = self.cursor.fetchone()[0]
-            return True, ver
+            ver, parsed = postgresql_compat.fetch_postgresql_version(self.cursor)
+            return True, self._remember_version(ver, parsed)
         except Exception as e:
             return self._connect_native(str(e))
 
@@ -90,10 +108,9 @@ class PostgreSQLInspector(BaseInspectionEngine):
                 connect_timeout=10
             )
             self.cursor = self.conn.cursor()
-            self.cursor.execute("SELECT version()")
-            ver = self.cursor.fetchone()[0]
+            ver, parsed = postgresql_compat.fetch_postgresql_version(self.cursor)
             print(f"[PostgreSQL] psycopg2 回退连接成功（JDBC: {reason[:80]}...）" if reason else "[PostgreSQL] psycopg2 连接成功")
-            return True, ver
+            return True, self._remember_version(ver, parsed)
         except Exception as e2:
             return False, (f'{reason}；psycopg2 回退也失败: {e2}' if reason else str(e2))
 

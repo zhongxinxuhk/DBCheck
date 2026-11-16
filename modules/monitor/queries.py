@@ -90,6 +90,24 @@ ORDER BY q.mean_exec_time DESC
 LIMIT 30
 """
 
+# PostgreSQL 13 之前 pg_stat_statements 的时间列没有 _exec 后缀。
+# 监控端不能预知实例版本，主 SQL 报列不存在时先尝试此兼容 SQL，再降级到
+# pg_stat_activity；这样 PG 9.6–12 仍能拿到扩展的累计/平均耗时。
+PG_SLOW_QUERY_LEGACY_SQL = """
+SELECT
+    SUBSTRING(q.query, 1, 200) AS sql_text,
+    ROUND(q.mean_time / 1000, 3) AS avg_time_s,
+    ROUND(q.max_time / 1000, 3) AS max_time_s,
+    q.calls AS exec_count,
+    ROUND(q.total_time / 1000, 3) AS total_time_s,
+    q.dbid,
+    q.queryid::text AS digest
+FROM pg_stat_statements q
+WHERE q.dbid != 0
+ORDER BY q.mean_time DESC
+LIMIT 30
+"""
+
 # 如果 pg_stat_statements 未安装，使用 pg_stat_activity 作为 fallback
 PG_SLOW_QUERY_FALLBACK_SQL = """
 SELECT

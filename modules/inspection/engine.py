@@ -817,6 +817,19 @@ class BaseInspectionEngine:
                 sql_dict[key] = adapted
                 print(f"[INFO] {key}: 已按 SQL Server 版本改写 SQL")
 
+    def _adapt_postgresql_queries(self, sql_dict):
+        """按 PostgreSQL 版本改写 xlog/WAL、复制列和统计列 SQL。"""
+        if str(self.db_type or '').lower() not in ('postgresql', 'pg', 'postgres'):
+            return
+        from modules.inspection import postgresql_compat
+        version_text = self._server_version_text()
+        for key, sql in list(sql_dict.items()):
+            adapted = postgresql_compat.adapt_postgresql_sql(
+                sql, version_text, key)
+            if adapted != sql:
+                sql_dict[key] = adapted
+                print(f"[INFO] {key}: 已按 PostgreSQL 版本改写 SQL")
+
     def _server_version_text(self, cursor=None):
         """返回服务端版本字符串，供复制语法等版本分支使用。"""
         cached = getattr(self, '_server_version_cache', None)
@@ -857,6 +870,15 @@ class BaseInspectionEngine:
             from modules.inspection import sqlserver_compat
             try:
                 detailed, _parsed = sqlserver_compat.fetch_sqlserver_version(cursor)
+                if detailed:
+                    text = detailed
+            except Exception:
+                pass
+        if (not text and cursor is not None and
+                str(self.db_type or '').lower() in ('postgresql', 'pg', 'postgres')):
+            from modules.inspection import postgresql_compat
+            try:
+                detailed, _parsed = postgresql_compat.fetch_postgresql_version(cursor)
                 if detailed:
                     text = detailed
             except Exception:
@@ -1030,6 +1052,7 @@ class BaseInspectionEngine:
         self._adapt_dm_queries(sql_dict)
         self._adapt_gbase_queries(sql_dict)
         self._adapt_sqlserver_queries(sql_dict)
+        self._adapt_postgresql_queries(sql_dict)
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -1486,6 +1509,12 @@ class BaseInspectionEngine:
                 sql, self._server_version_text(cursor), cursor)
             if reason:
                 return reason
+        if (str(self.db_type or '').lower() in ('postgresql', 'pg', 'postgres')):
+            from modules.inspection import postgresql_compat
+            reason = postgresql_compat.optional_feature_reason(
+                sql, self._server_version_text(cursor), cursor)
+            if reason:
+                return reason
         if family == 'dm' and 'SYSJOB.SYSJOBS' in sql.upper():
             cursor.execute("SELECT COUNT(*) FROM DBA_OBJECTS WHERE OWNER='SYSJOB' AND OBJECT_NAME='SYSJOBS'")
             if int(cursor.fetchone()[0]) == 0:
@@ -1519,6 +1548,8 @@ class BaseInspectionEngine:
                     used_sql = self._retry_gbase_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
                     used_sql = self._retry_sqlserver_sql(cursor, sql, item_name, exec_error)
+                if not used_sql:
+                    used_sql = self._retry_postgresql_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
                     reason = self._dm_optional_unavailable(sql, item_name, exec_error)
                 if not used_sql and not reason:
@@ -1667,6 +1698,33 @@ class BaseInspectionEngine:
                 return candidate
             except Exception as retry_error:
                 print(f"[WARN] {item_name}: SQL Server 候选语句失败（{candidate}）: {retry_error}")
+        return ''
+
+    def _retry_postgresql_sql(self, cursor, sql, item_name, first_error):
+        """PostgreSQL 结构类错误时按版本候选链回退。"""
+        if str(self.db_type or '').lower() not in ('postgresql', 'pg', 'postgres'):
+            return ''
+        from modules.inspection import postgresql_compat
+        if not postgresql_compat.is_postgresql_compatibility_error(first_error):
+            return ''
+        version = self._server_version_text(cursor)
+        for candidate in postgresql_compat.postgresql_query_candidates(
+                sql, version, item_name, failed_sql=sql):
+            if not candidate or candidate == sql:
+                continue
+            try:
+                from modules.core.data_security import assert_readonly_sql
+                assert_readonly_sql(candidate)
+                if self.conn:
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                cursor.execute(candidate)
+                self.context.setdefault('_postgresql_compat_sql', {})[item_name] = candidate
+                return candidate
+            except Exception as retry_error:
+                print(f"[WARN] {item_name}: PostgreSQL 候选语句失败（{candidate}）: {retry_error}")
         return ''
 
     def _gbase_optional_unavailable(self, sql, item_name, error):

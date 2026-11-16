@@ -343,25 +343,37 @@ class MonitorEngine:
                     'ts': time.time(), 'db_type': db_type, 'label': label}
 
         fallback_sql = mq.SLOW_QUERY_FALLBACK_TEMPLATES.get(db_type)
+        # PostgreSQL 13 前后 pg_stat_statements 的统计列名不同；主 SQL 失败时
+        # 先按旧列名重试，避免不必要地降级到 pg_stat_activity 而丢掉累计统计。
+        legacy_sql = (mq.PG_SLOW_QUERY_LEGACY_SQL
+                      if db_type in ('postgresql', 'pg', 'ivorysql', 'hgdb')
+                      else None)
         rows = None
         if instance_id not in self._slow_prim_skip:
             try:
                 rows = self._connect_and_query(instance_id, sql)
             except Exception as e:
                 low = str(e).lower()
+                if legacy_sql and any(marker in low for marker in (
+                        'mean_exec_time', 'max_exec_time', 'total_exec_time')):
+                    try:
+                        rows = self._connect_and_query(instance_id, legacy_sql)
+                        _log.info("%s 使用 PostgreSQL 13 以下慢查询 SQL", label)
+                    except Exception as legacy_error:
+                        _log.warning("慢查询兼容 SQL 失败 %s: %s", label, legacy_error)
                 # 依赖对象缺失（pg_stat_statements / performance_schema 未安装）
                 # 或列不存在（Oracle 11gR1 无 max_elapsed_time → ORA-00904
                 # invalid identifier，#63）→ 记忆化：首行错误摘要打印一次，
                 # 后续轮直接 fallback，不再重复刷日志
                 dep_missing = ('does not exist' in low or "doesn't exist" in low
                                or 'ora-00904' in low or 'invalid identifier' in low)
-                if fallback_sql and dep_missing:
+                if rows is None and fallback_sql and dep_missing:
                     self._slow_prim_skip.add(instance_id)
                     _log.info("%s 慢查询主 SQL 依赖缺失（%s），后续轮次直接使用 fallback",
                               label, str(e).splitlines()[0][:100])
-                else:
+                elif rows is None:
                     _log.warning("慢查询 SQL 失败 %s: %s", label, e)
-                if not fallback_sql:
+                if rows is None and not fallback_sql:
                     return {'data': [], 'error': _friendly_db_error(e),
                             'ts': time.time(), 'db_type': db_type, 'label': label}
         if rows is None:
