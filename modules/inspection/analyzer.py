@@ -272,22 +272,26 @@ def smart_analyze_mysql(context: dict) -> list:
     # ── 11. 复制延迟 ─────────────────────────────────────
     slave_status = context.get('slave_status', [])
     if slave_status and slave_status[0]:
-        lag = _int(slave_status[0].get('Seconds_Behind_Master', 0))
-        sql_running = str(slave_status[0].get('Slave_SQL_Running', ''))
-        io_running = str(slave_status[0].get('Slave_IO_Running', ''))
+        from modules.inspection.replication_sql import (
+            replication_lag_seconds, replication_threads,
+        )
+        _row = slave_status[0]
+        _lag = replication_lag_seconds(_row)
+        lag = _int(_lag if _lag is not None else 0)
+        io_running, sql_running = replication_threads(_row)
         if sql_running.upper() != 'YES' or io_running.upper() != 'YES':
             issues.append({
                 'col1': '复制线程异常', 'col2': '高风险',
                 'col3': f'复制状态异常：IO线程={io_running}，SQL线程={sql_running}',
                 'col4': '高', 'col5': 'DBA',
-                'fix_sql': 'SHOW SLAVE STATUS\\G\n-- 如需重启复制：\nSTOP SLAVE; START SLAVE;'
+                'fix_sql': 'SHOW REPLICA STATUS\\G\n-- MySQL 8.0.22+ 用 START REPLICA；旧版本用 SHOW SLAVE STATUS / START SLAVE'
             })
         elif lag > 60:
             issues.append({
                 'col1': '主从复制延迟过高', 'col2': '中风险',
                 'col3': f'从库延迟 {lag} 秒，数据同步滞后，读操作可能读到旧数据',
                 'col4': '中', 'col5': 'DBA',
-                'fix_sql': 'SHOW SLAVE STATUS\\G\nSHOW PROCESSLIST;'
+                'fix_sql': 'SHOW REPLICA STATUS\\G\nSHOW PROCESSLIST;  -- 旧版本改用 SHOW SLAVE STATUS'
             })
 
     # ── 12. table_open_cache 命中率 ── [已移至 config_baseline，由基线检查统一管理]

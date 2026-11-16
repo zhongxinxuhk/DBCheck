@@ -198,7 +198,7 @@ MYSQL_DEFAULT_CHAPTERS = [
             {'key': 'slave_io_running', 'sql': "SHOW SLAVE STATUS",
              'desc_zh': '复制 IO 线程状态',       'desc_en': 'Replication IO thread status'},
             {'key': 'replication_lag',  'sql': "SHOW SLAVE STATUS",
-             'desc_zh': '复制延迟（Seconds_Behind_Master）', 'desc_en': 'Replication lag'},
+             'desc_zh': '复制延迟（Seconds_Behind_Source / Seconds_Behind_Master）', 'desc_en': 'Replication lag'},
         ]
     },
     {
