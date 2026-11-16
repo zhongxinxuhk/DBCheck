@@ -780,12 +780,14 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       function renderSpecialized(obs, record) {
         const specialized = obs.specialized || {};
         const tables = record?.metadata?.tables || {};
-        const ledgerNames = (key, field) =>
-          new Set(
-            (Array.isArray(tables[key]) ? tables[key] : [])
-              .map((row) => String(row?.[field] ?? "").trim().toLowerCase())
-              .filter(Boolean),
-          );
+        const ledgerRows = (key, field) => {
+          const rows = new Map();
+          for (const row of Array.isArray(tables[key]) ? tables[key] : []) {
+            const name = String(row?.[field] ?? "").trim().toLowerCase();
+            if (name) rows.set(name, row);
+          }
+          return rows;
+        };
         const sections = [
           {
             key: "tablespaces",
@@ -793,8 +795,9 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             label: "表空间",
             nameField: "name",
             columns: [
-              ["name", "名称"], ["ledger", "台账"], ["size", "总大小"],
-              ["free", "空闲"], ["used_pct", "使用率"], ["status", "状态"],
+              ["name", "名称"], ["ledger", "台账"], ["ledger_size", "台账大小"],
+              ["size", "实测大小"], ["free", "空闲"], ["used_pct", "使用率"],
+              ["status", "状态"],
             ],
           },
           {
@@ -803,8 +806,8 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             label: "账号",
             nameField: "username",
             columns: [
-              ["username", "账号"], ["ledger", "台账"], ["status", "状态"],
-              ["expiry_date", "到期时间"], ["created_date", "创建时间"],
+              ["username", "账号"], ["ledger", "台账"], ["ledger_purpose", "台账用途/权限"],
+              ["status", "状态"], ["expiry_date", "到期时间"],
               ["default_tablespace", "默认表空间"], ["account_type", "类型"],
             ],
           },
@@ -826,15 +829,29 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             html += `<p class="muted">查询已返回结果，但列名无法识别，未生成${esc(section.label)}快照。</p>`;
             continue;
           }
-          const names = ledgerNames(section.key, section.nameField);
+          const ledgerMap = ledgerRows(section.key, section.nameField);
+          let registered = 0;
           const rows = (block.rows || []).map((row) => {
             const values = Object.fromEntries(section.columns.map(([key]) => [key, row[key] ?? ""]));
-            values.ledger = names.has(String(row[section.nameField] ?? "").trim().toLowerCase())
-              ? "已登记"
-              : "未登记";
-            return `<tr>${section.columns.map(([key]) => `<td>${esc(values[key] || (key === "ledger" ? "" : "—"))}</td>`).join("")}</tr>`;
+            const ledgerRow = ledgerMap.get(String(row[section.nameField] ?? "").trim().toLowerCase());
+            values.ledger = ledgerRow ? "已登记" : "未登记";
+            values.ledger_size = ledgerRow?.size ?? "";
+            values.ledger_purpose = ledgerRow?.purpose || ledgerRow?.privileges || "";
+            values.__ledger_missing = !ledgerRow;
+            values.__size_diff = Boolean(
+              ledgerRow && row.size && ledgerRow.size
+                && String(row.size) !== String(ledgerRow.size),
+            );
+            if (ledgerRow) registered += 1;
+            return `<tr>${section.columns.map(([key]) => {
+              const value = values[key] || (key === "ledger" ? "" : "—");
+              const diff = (key === "ledger" && values.__ledger_missing)
+                || (key === "size" && values.__size_diff);
+              return `<td class="${diff ? "diff" : ""}">${esc(value)}${key === "size" && values.__size_diff ? "（差异）" : ""}</td>`;
+            }).join("")}</tr>`;
           });
-          const meta = `来源 ${block.source || "—"} · ${block.rows?.length || 0}/${block.total || 0} 行${block.truncated ? "（已截断）" : ""}`;
+          const missing = (block.rows || []).length - registered;
+          const meta = `来源 ${block.source || "—"} · 已登记 ${registered} / 未登记 ${missing} · ${block.rows?.length || 0}/${block.total || 0} 行${block.truncated ? "（已截断）" : ""}`;
           html += rows.length
             ? `<div class="scroll"><table class="editor-table"><thead><tr>${section.columns.map(([, label]) => `<th>${esc(label)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div><p class="muted">${esc(meta)}</p>`
             : `<p class="muted">查询已执行，未检出可展示的${esc(section.label)}记录。${esc(meta)}</p>`;
