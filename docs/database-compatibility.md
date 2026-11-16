@@ -16,6 +16,7 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck -->
 | Oracle 11g | 原有 Oracle / Oracle JDBC 类型 | 原生 11g 需要兼容的 Thick 客户端；11.1 与 11.2 分开验证；不把 23c 客户端默认当作 11g 兼容客户端 | 沿用 Oracle 11g 专用模板 |
 | SQL Server 2005–2025 | 原有 SQL Server 类型 | 验证证书的 ODBC 18 或显式 SSH 隧道；认证后读取 `SERVERPROPERTY('ProductVersion')`，按 2005/2008/2014/默认模板自动选择 | 2005/2008/2014 专用模板各 18 项；2012、2016–2025 使用默认模板 21 章 34 查询；2005 按 DMV 兼容层回退 |
 | PostgreSQL 9.6–18 | 原有 PostgreSQL 类型与原生入口 | JDBC 优先、psycopg2 回退；认证后读取 `server_version_num` / `server_version` / `version()`，先探测版本再改写 SQL | 默认模板 21 章 49 查询；9.x 的 xlog/WAL、复制列名、归档目录，13 前的 `pg_stat_statements` 统计列，17 起的检查点视图自动适配 |
+| KingbaseES V8R2–V9R4 | 原有 KingbaseES 类型与原生入口 | JDBC 优先、psycopg2 回退；一条 SQL 同时读取 `version()` 与 `server_version_num`，失败时回滚后逐级回退 `SHOW` / `server_version` | 默认 19 章模板；按 PostgreSQL 兼容内核改写 WAL/xlog、复制列名、`FILTER`、`usebypassrls`；`pg_*` 不可见时回退 `sys_*` 同义对象 |
 
 SQL Server 版本矩阵覆盖 2005–2025。服务端版本自动选择模板，用户显式选择的模板仍然优先；2008 R2 归入 2008 模板，2012 与 2016–2025 使用默认模板。模板初始化采用增量添加；重复执行不会替换已有查询和用户阈值。采集失败或权限不足必须保留实际状态，不能以 0 或正常替代。
 
@@ -65,6 +66,23 @@ SQL Server 2005 缺少部分后续版本的 DMV 或列。运行时适配层在�
 
 PostgreSQL 适配层只改写仓库内已有的巡检、慢查询和监控入口，不新增数据库类型或页面。`pg_stat_statements` 未安装时慢查询仍按既有逻辑标记未启用，不把扩展缺失误报为版本兼容失败。旧于 9.6 的实例不属于当前 PostgreSQL 模板支持范围；如版本探测到 9.0–9.5，`wait_event` 查询会标记“不适用”，其余 WAL/xlog 改写仍按 9.x 处理。
 
+### KingbaseES 版本矩阵
+
+KingbaseES 的版本号形如 `V008R006C007B0012`，同时暴露 PostgreSQL 兼容内核版本（例如 V8R6 的 `sys_ctl -V` 为 `(Kingbase) 12.1`）。巡检入口先读取 `version()` 与 `server_version_num`，以实际内核版本覆盖静态映射；无法读取时才按版本线推断，并由执行期的结构类错误候选链兜底。
+
+| KingbaseES 版本 | 兼容内核 | 关键兼容处理 | 版本探测/报告 |
+|---|---|---|---|
+| V8R2 | PostgreSQL 9.6 | `pg_current_wal_lsn` / `pg_walfile_name` / `pg_wal_lsn_diff` 改写为 `*_xlog_*`；`pg_stat_replication` 的 `*_lsn` 改写为 `*_location`；`pg_wal/archive_status` 改写为 `pg_xlog/archive_status` | `wait_event` 从 9.6 起可用 |
+| V8R3 | PostgreSQL 9.6 或 10 | 默认按 9.6 旧名称改写；实际内核为 10 时由 `server_version_num` 覆盖，结构类错误再尝试新名称 | 报告保留 `V8R3` 与实测内核版本 |
+| V8R6 | PostgreSQL 12 | WAL 函数、复制列名和归档目录使用现代名称；保留 `pg_stat_bgwriter` 检查点列 | 优先 `server_version_num`，缺失时回退 `SHOW` / `version()` |
+| V9R1–V9R4 | PostgreSQL 12 | 与 V8R6 使用同一现代 WAL/复制命名；**不套用** PostgreSQL 17 的 `pg_stat_checkpointer` 拆分，V9 仍保留旧列；V9R2C16 起事务 ID 扩展到 64 位，回卷风险分母同步改写 | 读取 `version()` banner 与 `server_version_num` |
+| V7 及更早 | 非 PostgreSQL 兼容内核 | 不属于本入口的模板支持范围；仅保留版本号识别，用于给出明确诊断 | 不承诺 V8/V9 模板可用 |
+
+KingbaseES 兼容模式或裁剪安装可能只暴露 `sys_*` 系统对象。候选链会把已知 `pg_*` 视图/函数改写为 `sys_*`，并把 `pg_catalog` 同步改为 `sys_catalog`；只在无效列、无效对象、函数不存在、语法错误等结构类错误时尝试，权限、认证、连接和超时错误不回退。低于 9.6 的内核把 `wait_event` 标记“不适用”，低于 9.5 的内核移除 `pg_user.usebypassrls`，不以 0 或 `false` 伪造采集结果。
+
+适配范围是仓库已有的 KingbaseES 入口和默认巡检模板，不新增数据库类型、页面或独立查询入口。当前没有 KingbaseES 实库，版本矩阵、SQL 改写和模拟游标回归属于静态与合成验证；补丁号、兼容模式、授权视图和实际返回字段仍需在实库逐项验收。
+
+
 GBase 8a 原生连接不依赖 JDBC JAR。JAR 就绪检查核对实际驱动类；目录名或登记名不能证明驱动适配。8s 的 `com.gbasedbt.jdbc.Driver` 不可代替 8a 的 `com.gbase.jdbc.Driver`。
 
 SSH 隧道使用系统 `known_hosts` 验证数据库主机；远端数据库连接限定为该主机的回环地址。不能以跳板机到数据库的未加密网络连接代替上述边界。未配置可信主机密钥、CA 或兼容客户端时给出阻断原因，不自动关闭证书校验。
@@ -83,6 +101,6 @@ SSH 隧道使用系统 `known_hosts` 验证数据库主机；远端数据库连�
 
 待实库提供后逐一核对补丁号、证书、授权视图、节点角色、查询返回字段、集群范围及报告证据。极端损坏恢复能力需要实际工具、合法授权和隔离恢复验证；登记工具名称或哈希不代表已具备恢复能力。
 
-官方参考：[Oracle 驱动兼容说明](https://oracle.github.io/python-oracledb/index.html)、[DM Python 接口参数](https://eco.dameng.com/document/dm/zh-cn/pm/dmpython-interface.html)、[GBase 8a 应用接入说明](https://www.gbase.cn/community/post/9704)、[Microsoft ODBC 兼容说明](https://learn.microsoft.com/en-us/sql/connect/odbc/windows/system-requirements-installation-and-driver-files)。
+官方参考：[Oracle 驱动兼容说明](https://oracle.github.io/python-oracledb/index.html)、[DM Python 接口参数](https://eco.dameng.com/document/dm/zh-cn/pm/dmpython-interface.html)、[GBase 8a 应用接入说明](https://www.gbase.cn/community/post/9704)、[Microsoft ODBC 兼容说明](https://learn.microsoft.com/en-us/sql/connect/odbc/windows/system-requirements-installation-and-driver-files)、[KingbaseES V9 文档](https://help.kingbase.com.cn/v9/)。
 
 回归测试默认读取 `scripts/fixtures/service_catalog.json` 的合成数据，不读取客户目录。客户合同回归需在本地显式设置 `DBPULSE_TEST_CATALOG` 指向私有目录。CI 使用 Python 3.12 和 `scripts/requirements-validation.txt` 固定验证依赖；正常推送与自动上游同步均执行服务及数据安全回归。

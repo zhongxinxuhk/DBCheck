@@ -2211,6 +2211,7 @@
       "SHARED_BLKS_HIT": "共享块命中",
       "SHARED_BLKS_READ": "共享块读",
       "SHARED_BLKS_WRITTEN": "共享块写入",
+      "SHARED_BUFFERS": "共享缓冲区",
       "SHORT_DESC": "简短说明",
       "SID": "会话标识",
       "SIZE": "大小",

@@ -830,6 +830,19 @@ class BaseInspectionEngine:
                 sql_dict[key] = adapted
                 print(f"[INFO] {key}: 已按 PostgreSQL 版本改写 SQL")
 
+    def _adapt_kingbase_queries(self, sql_dict):
+        """按 KingbaseES 的 PostgreSQL 兼容内核改写模板 SQL。"""
+        if str(self.db_type or '').lower() != 'kingbase':
+            return
+        from modules.inspection import kingbase_compat
+        version_text = self._server_version_text()
+        for key, sql in list(sql_dict.items()):
+            adapted = kingbase_compat.adapt_kingbase_sql(
+                sql, version_text, key)
+            if adapted != sql:
+                sql_dict[key] = adapted
+                print(f"[INFO] {key}: 已按 KingbaseES 版本改写 SQL")
+
     def _server_version_text(self, cursor=None):
         """返回服务端版本字符串，供复制语法等版本分支使用。"""
         cached = getattr(self, '_server_version_cache', None)
@@ -870,6 +883,17 @@ class BaseInspectionEngine:
             from modules.inspection import sqlserver_compat
             try:
                 detailed, _parsed = sqlserver_compat.fetch_sqlserver_version(cursor)
+                if detailed:
+                    text = detailed
+            except Exception:
+                pass
+        if (str(self.db_type or '').lower() == 'kingbase' and
+                cursor is not None and
+                not getattr(self, '_kingbase_version_probed', False)):
+            from modules.inspection import kingbase_compat
+            self._kingbase_version_probed = True
+            try:
+                detailed, _parsed = kingbase_compat.fetch_kingbase_version(cursor)
                 if detailed:
                     text = detailed
             except Exception:
@@ -1053,6 +1077,7 @@ class BaseInspectionEngine:
         self._adapt_gbase_queries(sql_dict)
         self._adapt_sqlserver_queries(sql_dict)
         self._adapt_postgresql_queries(sql_dict)
+        self._adapt_kingbase_queries(sql_dict)
 
         # 3. 初始化 context keys
         # 注意：version 不在列表中，因为已在上面第379行设置
@@ -1509,6 +1534,12 @@ class BaseInspectionEngine:
                 sql, self._server_version_text(cursor), cursor)
             if reason:
                 return reason
+        if str(self.db_type or '').lower() == 'kingbase':
+            from modules.inspection import kingbase_compat
+            reason = kingbase_compat.optional_feature_reason(
+                sql, self._server_version_text(cursor), cursor)
+            if reason:
+                return reason
         if (str(self.db_type or '').lower() in ('postgresql', 'pg', 'postgres')):
             from modules.inspection import postgresql_compat
             reason = postgresql_compat.optional_feature_reason(
@@ -1548,6 +1579,8 @@ class BaseInspectionEngine:
                     used_sql = self._retry_gbase_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
                     used_sql = self._retry_sqlserver_sql(cursor, sql, item_name, exec_error)
+                if not used_sql:
+                    used_sql = self._retry_kingbase_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
                     used_sql = self._retry_postgresql_sql(cursor, sql, item_name, exec_error)
                 if not used_sql:
@@ -1698,6 +1731,33 @@ class BaseInspectionEngine:
                 return candidate
             except Exception as retry_error:
                 print(f"[WARN] {item_name}: SQL Server 候选语句失败（{candidate}）: {retry_error}")
+        return ''
+
+    def _retry_kingbase_sql(self, cursor, sql, item_name, first_error):
+        """KingbaseES 结构类错误时按版本/对象前缀候选链回退。"""
+        if str(self.db_type or '').lower() != 'kingbase':
+            return ''
+        from modules.inspection import kingbase_compat
+        if not kingbase_compat.is_kingbase_compatibility_error(first_error):
+            return ''
+        version = self._server_version_text(cursor)
+        for candidate in kingbase_compat.kingbase_query_candidates(
+                sql, version, item_name, failed_sql=sql):
+            if not candidate or candidate == sql:
+                continue
+            try:
+                from modules.core.data_security import assert_readonly_sql
+                assert_readonly_sql(candidate)
+                if self.conn:
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                cursor.execute(candidate)
+                self.context.setdefault('_kingbase_compat_sql', {})[item_name] = candidate
+                return candidate
+            except Exception as retry_error:
+                print(f"[WARN] {item_name}: KingbaseES 候选语句失败（{candidate}）: {retry_error}")
         return ''
 
     def _retry_postgresql_sql(self, cursor, sql, item_name, first_error):

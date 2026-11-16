@@ -189,7 +189,7 @@
       "default_database": "postgres",
       "icon": "/kingbase.png",
       "emoji": "🔵",
-      "description": "适用于 KingbaseES V8+ 实例，通过 ksycopg2 连接",
+      "description": "适用于 KingbaseES V8R2–V9R4 的 PostgreSQL 兼容内核；JDBC 优先，psycopg2 回退",
       "compat_tag": "",
       "protocol": "pg",
       "sql_editor": true,
