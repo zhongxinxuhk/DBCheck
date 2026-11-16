@@ -1651,7 +1651,7 @@ def ensure_business_defaults(db_path=None):
     selected default is preserved. Deleted individual SQL rows are not recreated.
     """
     from modules.inspection import dal
-    from modules.inspection.business_baseline_seed import PARAM_BASELINES
+    from modules.inspection.business_baseline_seed import PARAM_BASELINES, METRIC_THRESHOLDS
     created = 0
     for product, name, desc, builder in build_template_specs(cd_per_product=True):
         cfg = make_template_config(product, name, desc, builder)
@@ -1713,6 +1713,12 @@ def ensure_business_defaults(db_path=None):
                 dal.update_template(tid, is_default=1, db_path=db_path)
     conn = dal.get_db_connection(db_path)
     try:
+        conn.executemany(
+            'INSERT OR IGNORE INTO server_thresholds '
+            '(key,value,value_str,description_zh,description_en) VALUES (?,?,?,?,?)',
+            [(key, value, section, f'[§4.6 {section}] {zh}', f'[§4.6 {section}] {en}')
+             for key, value, zh, en, section in METRIC_THRESHOLDS],
+        )
         conn.execute('CREATE TABLE IF NOT EXISTS inspection_builtin_migration (revision TEXT PRIMARY KEY)')
         revision = 'business-compatibility-20261110-v2'
         if not conn.execute('SELECT 1 FROM inspection_builtin_migration WHERE revision=?', (revision,)).fetchone():

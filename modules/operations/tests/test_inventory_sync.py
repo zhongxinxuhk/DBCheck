@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
 import unittest
+from datetime import date
 from types import SimpleNamespace
 
 from modules.operations.inventory_sync import build_candidates
@@ -30,7 +31,7 @@ class InventorySyncCandidateTests(unittest.TestCase):
         self.assertEqual(auto["file_size"], "1.03 GB")
         self.assertEqual(auto["version"], "11.2.0.2.0")
         self.assertEqual(auto["patch_level"], "20240101")
-        self.assertEqual(auto["inventory_date"], "2026-11-17")
+        self.assertEqual(auto["inventory_date"], date.today().isoformat())
         self.assertNotIn("location", auto)
         self.assertEqual(
             build_candidates(
@@ -66,7 +67,7 @@ class InventorySyncCandidateTests(unittest.TestCase):
         self.assertNotIn("instance_name", candidates["auto_fields"])
         self.assertNotIn("file_size", candidates["auto_fields"])
         self.assertNotIn("version", candidates["auto_fields"])
-        self.assertEqual(candidates["auto_fields"]["inventory_date"], "2026-11-17")
+        self.assertEqual(candidates["auto_fields"]["inventory_date"], date.today().isoformat())
 
 
 class InventorySyncApplyTests(unittest.TestCase):
