@@ -3,9 +3,13 @@
 
 """DBCheck 独立离线授权控制台。
 
-这是一个**独立工具**：只依赖 Python 标准库（图形界面使用 tkinter），不导入
-DBCheck 的 Flask 应用、模块或运行时配置，也不会被 DBCheck 的 PyInstaller
-构建和发布包收集。可单独复制本文件到授权签发机运行：
+这是一个**独立工具**：只依赖 Python 标准库，不导入 DBCheck 的 Flask 应用、
+模块或运行时配置，也不会被 DBCheck 的 PyInstaller 构建和发布包收集。
+优先使用 tkinter 原生窗体；当前解释器未包含 tkinter（或 Tk 窗体无法启动）时，
+自动改用**同一个解释器**运行本地网页控制台，不切换 Python 解释器、不安装额外
+依赖，也不需要 Flask。
+
+可单独复制本文件到授权签发机运行：
 
     python license_console.py
 
@@ -154,6 +158,352 @@ def _copy_code(root, code_text) -> None:
 
 def _clear_code(code_text) -> None:
     code_text.delete("1.0", "end")
+
+
+_WEB_PAGE = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DBCheck 授权控制台</title>
+<style>
+:root { color-scheme: light; --bg:#f1f5f9; --card:#fff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --accent:#0f766e; --accent2:#115e59; --danger:#b91c1c; --ok:#047857; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+.wrap { max-width:1080px; margin:0 auto; padding:28px 20px 42px; }
+header { margin-bottom:16px; }
+h1 { margin:0; font-size:24px; letter-spacing:-.02em; }
+.sub { margin:7px 0 0; color:var(--muted); font-size:13px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 12px 32px rgba(15,23,42,.06); }
+.notice { margin:0 0 18px; padding:11px 13px; border-radius:10px; border:1px solid #ccfbf1; background:#f0fdfa; color:#115e59; font-size:12px; }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 18px; }
+.field { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.field.full { grid-column:1/-1; }
+label { color:#475569; font-size:12px; font-weight:700; }
+input,select,textarea { width:100%; border:1px solid #cbd5e1; border-radius:9px; background:#fff; color:var(--text); padding:9px 11px; font:inherit; outline:none; }
+input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(15,118,110,.12); }
+input[readonly] { background:#f8fafc; color:#475569; }
+.hint { color:var(--muted); font-size:12px; }
+.inline { display:flex; gap:8px; }
+.inline input { flex:1; }
+button { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:9px; padding:9px 14px; font:inherit; font-weight:650; cursor:pointer; white-space:nowrap; }
+button:hover { background:#f8fafc; }
+button.primary { border-color:var(--accent); background:var(--accent); color:#fff; }
+button.primary:hover { background:var(--accent2); }
+button:disabled { opacity:.55; cursor:wait; }
+.actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:16px; }
+#code { min-height:260px; height:34vh; max-height:420px; resize:vertical; padding:10px 12px; background:#0f172a; color:#d1fae5; border-color:#1e293b; font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; word-break:break-all; }
+#status { min-height:20px; margin-top:10px; color:var(--muted); font-size:12px; }
+#status.ok { color:var(--ok); }
+#status.error { color:var(--danger); }
+footer { margin-top:14px; color:var(--muted); font-size:11px; }
+@media (max-width:760px) { .wrap { padding:18px 12px 30px; } .card { padding:15px; } .grid { grid-template-columns:1fr; } .field.full { grid-column:auto; } #code { height:280px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DBCheck 授权控制台</h1>
+    <p class="sub">独立离线签发工具 · 不连接服务器 · 不依赖主程序 · 授权码与设备序列号绑定</p>
+  </header>
+  <main class="card">
+    <div class="notice">当前环境未启用 tkinter（或 Tk 窗体无法启动），已使用同一解释器的本地网页控制台；没有切换解释器，也没有引入 Flask。服务只监听 127.0.0.1。</div>
+    <div class="grid">
+      <div class="field"><label for="serial">设备序列号 *</label><input id="serial" autofocus autocomplete="off" placeholder="例如 DBP-AAAA-BBBB-CCCC-DDDD"></div>
+      <div class="field"><label for="type">授权类型 *</label><select id="type"><option>单位</option><option>个人</option></select></div>
+      <div class="field"><label for="target">授权对象 *</label><input id="target" autocomplete="off" placeholder="单位名称或个人姓名"></div>
+      <div class="field"><label for="org">部署单位</label><input id="org" autocomplete="off" placeholder="软件部署单位"></div>
+      <div class="field"><label for="edition">授权版本 *</label><input id="edition" list="edition-list" value="业务专用版"><datalist id="edition-list">__EDITIONS__</datalist></div>
+      <div class="field"><label for="activated">激活时间</label><input id="activated" readonly value="__ACTIVATED_AT__"></div>
+      <div class="field"><label for="days">到期天数 *</label><input id="days" type="number" min="1" max="36500" value="365"><div id="expiry" class="hint">预计到期：计算中...</div></div>
+      <div class="field"><label for="license_id">授权编号</label><div class="inline"><input id="license_id" readonly value="__LICENSE_ID__"><button type="button" id="new-id">重新生成</button></div></div>
+      <div class="field full"><label for="code">授权码（完整复制）</label><textarea id="code" readonly spellcheck="false" placeholder="生成后在此显示完整 DBP2 授权码"></textarea></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="primary" id="generate">生成授权码</button>
+      <button type="button" id="copy">复制授权码</button>
+      <button type="button" id="clear">清空授权码</button>
+    </div>
+    <div id="status">填写信息后点击“生成授权码”。</div>
+    <footer>关闭浏览器标签不会停止本地服务；请在终端按 Ctrl+C 退出。授权码可多行粘贴到 DBCheck 激活框。</footer>
+  </main>
+</div>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+
+function setStatus(message, kind) {
+  const el = $("status");
+  el.textContent = message;
+  el.className = kind || "";
+}
+
+function formatDay(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+function updateExpiry() {
+  const days = Number($("days").value);
+  const el = $("expiry");
+  if (!Number.isInteger(days) || days < 1 || days > 36500) {
+    el.textContent = "预计到期：请输入 1–36500 天";
+    return;
+  }
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  el.textContent = "预计到期：" + formatDay(d);
+}
+
+async function request(path, payload) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Console-Token": TOKEN },
+    body: JSON.stringify(payload || {})
+  });
+  let data;
+  try { data = await response.json(); } catch (e) { throw new Error("本地服务返回格式错误"); }
+  if (!response.ok || !data.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+
+async function generate() {
+  const button = $("generate");
+  const days = Number($("days").value);
+  if (!Number.isInteger(days) || days < 1 || days > 36500) {
+    setStatus("到期天数须在 1 到 36500 之间", "error");
+    return;
+  }
+  button.disabled = true;
+  setStatus("正在生成...", "");
+  try {
+    const data = await request("/api/generate", {
+      serial: $("serial").value,
+      type: $("type").value,
+      target: $("target").value,
+      org: $("org").value,
+      edition: $("edition").value,
+      days: days,
+      license_id: $("license_id").value
+    });
+    $("code").value = data.code;
+    $("license_id").value = data.license_id;
+    $("activated").value = data.activated_at;
+    $("expiry").textContent = "预计到期：" + data.expires_at;
+    setStatus("已生成：" + data.license_id + "，有效期至 " + data.expires_at, "ok");
+  } catch (e) {
+    setStatus("生成失败：" + e.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function regenerateId() {
+  try {
+    const data = await request("/api/license-id", {});
+    $("license_id").value = data.license_id;
+    setStatus("已重新生成授权编号：" + data.license_id, "ok");
+  } catch (e) {
+    setStatus("重新生成失败：" + e.message, "error");
+  }
+}
+
+async function copyCode() {
+  const code = $("code");
+  if (!code.value) {
+    setStatus("当前没有可复制的授权码", "error");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(code.value);
+    setStatus("授权码已复制到剪贴板", "ok");
+  } catch (e) {
+    code.focus();
+    code.select();
+    try {
+      document.execCommand("copy");
+      setStatus("授权码已复制到剪贴板", "ok");
+    } catch (fallbackError) {
+      setStatus("复制失败，请手动全选复制", "error");
+    }
+  }
+}
+
+function clearCode() {
+  $("code").value = "";
+  setStatus("已清空授权码", "");
+}
+
+$("days").addEventListener("input", updateExpiry);
+$("generate").addEventListener("click", generate);
+$("new-id").addEventListener("click", regenerateId);
+$("copy").addEventListener("click", copyCode);
+$("clear").addEventListener("click", clearCode);
+updateExpiry();
+</script>
+</body>
+</html>
+"""
+
+
+def _run_web_console() -> int:
+    """Run the fallback console in the current interpreter using only stdlib."""
+    import html as html_module
+    import webbrowser
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    token = secrets.token_urlsafe(24)
+    initial_license_id = new_license_id()
+    activated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    editions = "".join(
+        '<option value="' + html_module.escape(name, quote=True) + '"></option>'
+        for name in EDITION_OPTIONS
+    )
+    page = (
+        _WEB_PAGE.replace("__TOKEN__", token)
+        .replace("__EDITIONS__", editions)
+        .replace("__ACTIVATED_AT__", activated_at)
+        .replace("__LICENSE_ID__", initial_license_id)
+    ).encode("utf-8")
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "DBPulseLicenseConsole/1.1"
+
+        def log_message(self, *_args):
+            return
+
+        def _local_request(self) -> bool:
+            host = (self.headers.get("Host") or "").split(":", 1)[0].lower()
+            return host in {"", "127.0.0.1", "localhost"}
+
+        def _send(self, status, content_type, body):
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _json(self, data, status=200):
+            body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+            self._send(status, "application/json; charset=utf-8", body)
+
+        def _body(self):
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise ValueError("请求长度不正确")
+            if length <= 0 or length > 65536:
+                raise ValueError("请求内容为空或过大")
+            try:
+                data = json.loads(self.rfile.read(length).decode("utf-8"))
+            except Exception:
+                raise ValueError("请求内容不是有效 JSON")
+            if not isinstance(data, dict):
+                raise ValueError("请求内容格式不正确")
+            return data
+
+        def _authorized(self) -> bool:
+            supplied = self.headers.get("X-Console-Token") or ""
+            return hmac.compare_digest(supplied, token)
+
+        def do_GET(self):
+            if not self._local_request():
+                self._json({"ok": False, "error": "只允许本机访问"}, 403)
+                return
+            path = self.path.split("?", 1)[0]
+            if path in {"/", "/index.html"}:
+                self._send(200, "text/html; charset=utf-8", page)
+            elif path == "/favicon.ico":
+                self._send(204, "image/x-icon", b"")
+            else:
+                self._json({"ok": False, "error": "未找到"}, 404)
+
+        def do_POST(self):
+            if not self._local_request():
+                self._json({"ok": False, "error": "只允许本机访问"}, 403)
+                return
+            if not self._authorized():
+                self._json({"ok": False, "error": "控制台会话校验失败，请刷新页面"}, 403)
+                return
+            path = self.path.split("?", 1)[0]
+            try:
+                if path == "/api/license-id":
+                    self._json({"ok": True, "license_id": new_license_id()})
+                    return
+                if path != "/api/generate":
+                    self._json({"ok": False, "error": "未找到"}, 404)
+                    return
+
+                data = self._body()
+                serial = str(data.get("serial") or "").strip().upper()
+                target = str(data.get("target") or "").strip()
+                edition = str(data.get("edition") or "").strip()
+                raw_type = str(data.get("type") or "单位").strip()
+                days = int(data.get("days") or 0)
+                if not serial:
+                    raise ValueError("请输入设备序列号")
+                if not target:
+                    raise ValueError("请输入授权对象")
+                if not edition:
+                    raise ValueError("请选择或输入授权版本")
+                if not 1 <= days <= 36500:
+                    raise ValueError("到期天数须在 1 到 36500 之间")
+                if raw_type in {"个人", "personal"}:
+                    licensed_to_type = "personal"
+                elif raw_type in {"单位", "organization"}:
+                    licensed_to_type = "organization"
+                else:
+                    raise ValueError("授权类型不正确")
+
+                license_id = str(data.get("license_id") or "").strip() or new_license_id()
+                now = datetime.now()
+                expiry = date.today() + timedelta(days=days)
+                code = issue_activation_code(
+                    licensed_to_type=licensed_to_type,
+                    licensed_to=target,
+                    deployment_org=str(data.get("org") or "").strip(),
+                    edition=edition,
+                    expires_at=expiry.isoformat(),
+                    device_serial=serial,
+                    issued_at=now.isoformat(timespec="seconds"),
+                    license_id=license_id,
+                    valid_days=days,
+                )
+                self._json(
+                    {
+                        "ok": True,
+                        "code": code,
+                        "license_id": license_id,
+                        "activated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+                        "expires_at": expiry.isoformat(),
+                    }
+                )
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 400)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    url = f"http://127.0.0.1:{server.server_port}/"
+    print("DBCheck 授权控制台（网页模式）", flush=True)
+    print("当前环境未启用 tkinter，使用当前解释器的本地网页界面；不切换解释器。", flush=True)
+    print(f"地址：{url}", flush=True)
+    print("如浏览器未自动打开，请手动访问上面的地址；关闭浏览器不会停止服务，按 Ctrl+C 退出。", flush=True)
+    if os.environ.get("DBPULSE_LICENSE_CONSOLE_NO_BROWSER") != "1":
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+    try:
+        server.serve_forever(poll_interval=0.2)
+    except KeyboardInterrupt:
+        print("\n已退出授权控制台。", flush=True)
+    finally:
+        server.server_close()
+    return 0
 
 
 def _build_gui() -> "object":
@@ -323,15 +673,23 @@ def _build_gui() -> "object":
 def main() -> int:
     try:
         import tkinter  # noqa: F401
-    except ImportError:
-        print("未找到 tkinter。请安装带 Tk 支持的 Python（Linux 通常安装 python3-tk）。")
-        return 2
+    except Exception as exc:
+        print(
+            f"当前解释器未包含 tkinter（{exc}），"
+            "改用同一解释器的本地网页控制台（不切换解释器）。",
+            flush=True,
+        )
+        return _run_web_console()
 
     try:
         root = _build_gui()
     except Exception as exc:
-        print(f"授权控制台启动失败：{exc}")
-        return 1
+        print(
+            f"Tk 窗体启动失败：{exc}\n"
+            "改用同一解释器的本地网页控制台（不切换解释器）。",
+            flush=True,
+        )
+        return _run_web_console()
     root.mainloop()
     return 0
 
