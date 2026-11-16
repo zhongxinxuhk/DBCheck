@@ -81,7 +81,7 @@
       "default_database": "postgres",
       "icon": "/pg.png",
       "emoji": "🐘",
-      "description": "适用于 PostgreSQL 10+ 实例，通过 psycopg2 连接",
+      "description": "适用于 PostgreSQL 9.6–18 实例，JDBC 优先、psycopg2 回退；自动适配 xlog/WAL、统计视图与检查点列差异",
       "compat_tag": "",
       "protocol": "pg",
       "sql_editor": true,
