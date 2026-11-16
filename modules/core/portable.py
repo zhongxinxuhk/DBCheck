@@ -29,15 +29,35 @@ def platform_key():
 
 
 def bundled_java_home() -> Path | None:
+    """Return the bundled JRE, including single-platform native packages.
+
+    The shared portable layout is ``runtime/<platform>/jre``. Native
+    single-platform builds historically placed the same JRE at
+    ``runtime/java``; keep accepting that layout so an already-built package
+    does not silently fall back to a system JDK.
+    """
     from modules.core import paths
 
-    if paths.PORTABLE_ROOT is None:
-        return None
-    root = paths.PORTABLE_ROOT / "runtime" / platform_key() / "jre"
+    roots = []
+    if paths.PORTABLE_ROOT is not None:
+        roots.append(paths.PORTABLE_ROOT)
+    if getattr(sys, "frozen", False):
+        roots.append(Path(sys.executable).resolve().parent)
+
     executable = "java.exe" if sys.platform == "win32" else "java"
-    for candidate in (root, root / "Contents/Home"):
-        if (candidate / "bin" / executable).is_file():
-            return candidate
+    seen = set()
+    for root in roots:
+        for relative in (
+            Path("runtime") / platform_key() / "jre",
+            Path("runtime") / "java",
+        ):
+            candidate = root / relative
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            for home in (candidate, candidate / "Contents/Home"):
+                if (home / "bin" / executable).is_file():
+                    return home
     return None
 
 

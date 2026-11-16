@@ -196,9 +196,12 @@ def native(args):
         "DBPulse-"
         + {"windows": "Windows", "macos": "macOS", "linux": "Linux"}[args.platform]
     )
+    from modules.core.portable import platform_key
+
     java_runtime = os.environ.get("DBPULSE_BUILD_JAVA_RUNTIME")
+    java_dir = "runtime/" + platform_key() + "/jre"
     if java_runtime:
-        shutil.copytree(java_runtime, product / "runtime/java", dirs_exist_ok=True)
+        shutil.copytree(java_runtime, product / java_dir, dirs_exist_ok=True)
     binary = product / ("dbcheck.exe" if args.platform == "windows" else "dbcheck")
     check = subprocess.run(
         [str(binary), "--package-self-test"],
@@ -240,9 +243,14 @@ def native(args):
         ):
             raise RuntimeError("Windows status window / tray self-test failed")
         result["desktop"] = json.loads(desktop_result.read_text())
-        (product / "start.bat").write_bytes(
-            b'@echo off\r\ncd /d "%~dp0"\r\nstart "" "%~dp0DBPulse.exe"\r\nexit /b 0\r\n'
+        java_win_dir = "runtime\\" + platform_key() + "\\jre"
+        start_bat = (
+            '@echo off\r\ncd /d "%~dp0"\r\n'
+            f'if exist "%~dp0{java_win_dir}\\bin\\java.exe" '
+            f'set "JAVA_HOME=%~dp0{java_win_dir}"\r\n'
+            'start "" "%~dp0DBPulse.exe"\r\nexit /b 0\r\n'
         )
+        (product / "start.bat").write_text(start_bat, encoding="ascii", newline="")
     else:
         launcher = (
             product / "start.command"

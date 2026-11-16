@@ -153,6 +153,32 @@ class PortableChecks(unittest.TestCase):
         with patch.object(paths,'PORTABLE_ROOT',self.bundle),patch('modules.core.portable.platform_key',return_value='linux-x86_64'):
             self.assertIsNone(portable.bundled_java_home())
 
+    def test_java_home_is_found_next_to_frozen_executable(self):
+        java = self.bundle / 'runtime/windows-x86_64/jre/bin/java.exe'
+        java.parent.mkdir(parents=True)
+        java.write_text('fixture')
+        executable = self.bundle / 'DBPulse.exe'
+        executable.write_bytes(b'MZ')
+        with patch.object(paths, 'PORTABLE_ROOT', None), patch.object(sys, 'frozen', True, create=True), patch.object(sys, 'executable', str(executable)), patch.object(sys, 'platform', 'win32'), patch('modules.core.portable.platform_key', return_value='windows-x86_64'):
+            self.assertEqual(portable.bundled_java_home(), java.parent.parent)
+
+    def test_legacy_native_java_layout_is_still_found(self):
+        java = self.bundle / 'runtime/java/bin/java.exe'
+        java.parent.mkdir(parents=True)
+        java.write_text('fixture')
+        executable = self.bundle / 'DBPulse.exe'
+        executable.write_bytes(b'MZ')
+        with patch.object(paths, 'PORTABLE_ROOT', None), patch.object(sys, 'frozen', True, create=True), patch.object(sys, 'executable', str(executable)), patch.object(sys, 'platform', 'win32'), patch('modules.core.portable.platform_key', return_value='windows-x86_64'):
+            self.assertEqual(portable.bundled_java_home(), java.parent.parent)
+
+    def test_windows_launcher_finds_bundled_java_without_marker(self):
+        from modules.desktop.windows_launcher import find_bundled_java
+        java = self.bundle / 'runtime/windows-x86_64/jre/bin/java.exe'
+        java.parent.mkdir(parents=True)
+        java.write_text('fixture')
+        with patch('modules.core.portable.platform_key', return_value='windows-x86_64'):
+            self.assertEqual(find_bundled_java(self.bundle), java.parent.parent)
+
     def test_saved_datasource_test_reuses_portable_registry_without_reentering_password(self):
         from flask import Flask, jsonify
         from unittest.mock import Mock

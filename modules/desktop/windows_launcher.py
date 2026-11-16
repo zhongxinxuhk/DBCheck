@@ -39,6 +39,28 @@ def portable_home(directory):
     return None
 
 
+def find_bundled_java(directory, shared=None):
+    """Find the JRE shipped with portable and native Windows packages."""
+    from modules.core.portable import platform_key
+
+    directory = Path(directory)
+    roots = []
+    if shared is not None:
+        roots.append(Path(shared))
+    if directory not in roots:
+        roots.append(directory)
+    for root in roots:
+        for relative in (
+            Path("runtime") / platform_key() / "jre",
+            Path("runtime") / "java",
+        ):
+            candidate = root / relative
+            executable = candidate / "bin" / "java.exe"
+            if executable.is_file():
+                return candidate
+    return None
+
+
 class BackendProcess:
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -988,9 +1010,9 @@ def main():
     shared = portable_home(directory)
     if shared is not None:
         os.environ["DBPULSE_PORTABLE_HOME"] = str(shared)
-        java = shared / "runtime/windows-x86_64/jre"
-        if (java / "bin/java.exe").is_file():
-            os.environ["JAVA_HOME"] = str(java)
+    java = find_bundled_java(directory, shared)
+    if java is not None:
+        os.environ["JAVA_HOME"] = str(java)
     identity = hashlib.sha256(str(directory).lower().encode()).hexdigest()[:24]
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateMutexW.argtypes = [w.LPVOID, w.BOOL, w.LPCWSTR]
