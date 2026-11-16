@@ -19,7 +19,7 @@ RaccoonX Web UI - Flask 应用
 # gevent.monkey.patch_all()
 
 from modules.core.paths import PROJECT_ROOT
-import os, sys, platform, threading, datetime, json, uuid, time, re, random, sqlite3, secrets
+import os, sys, platform, threading, datetime, json, uuid, time, re, random, sqlite3, secrets, copy
 import signal
 import traceback
 import logging
@@ -1825,6 +1825,9 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
         ofile = os.path.join(reports_dir, file_name)
 
         from modules.core.data_security import redact
+        # 台账自动同步只使用采集结果，不读取任何凭据；在脱敏前保留基础属性快照。
+        _inventory_basic_info = copy.deepcopy(context.get('basic_info') or {})
+        _inventory_system_info = copy.deepcopy(context.get('system_info') or {})
         context = redact(context, mask_identity=True, preserve_network=True)
         if hasattr(data, 'context'):
             data.context = context
@@ -1882,6 +1885,39 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
         _emit('log', {'msg': _t('webui.log_report_ok').format(fname=file_name)})
         print(f"[REPORT] 报告已生成: {ofile_result}")
         print(f"[REPORT] 文件是否存在: {os.path.exists(ofile_result)}")
+
+        # 台账自动同步：只处理有数据源归属的成功巡检；失败仅记录，不影响巡检结果。
+        _inventory_sync_result = {}
+        if task and task.get('datasource_id'):
+            try:
+                from modules.operations.inventory_sync import apply_inspection_observation
+                _inventory_sync_result = apply_inspection_observation(
+                    instance_id=task.get('datasource_id'),
+                    task_id=task_id,
+                    tenant_id=task.get('owner_tenant_id'),
+                    user_id=task.get('owner_user_id'),
+                    basic_info=_inventory_basic_info,
+                    system_info=_inventory_system_info,
+                    report_path=ofile,
+                )
+                _sync_status = _inventory_sync_result.get('status')
+                if _sync_status == 'applied':
+                    _emit('log', {
+                        'msg': '[台账] 已自动更新 %d 个字段：%s' % (
+                            len(_inventory_sync_result.get('changed') or []),
+                            '、'.join(_inventory_sync_result.get('changed') or []),
+                        )
+                    })
+                elif _sync_status == 'failed':
+                    _emit('log', {
+                        'msg': '[台账] 自动同步失败：%s' % _inventory_sync_result.get('reason', '未知错误')
+                    })
+            except Exception as _sync_error:
+                _inventory_sync_result = {
+                    'status': 'failed',
+                    'reason': str(_sync_error)[:300],
+                }
+                _emit('log', {'msg': '[台账] 自动同步异常：%s' % str(_sync_error)[:300]})
 
         # 智能分析：统一问题汇总口径
         # 与 docx 报告（_append_chapters 内部同样调用 collect_issues）、定时巡检通知
@@ -1980,6 +2016,8 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
                 'report_file': ofile,
                 'report_name': file_name,
                 'ai_advice': context.get('ai_advice', ''),
+                'basic_info': _inventory_basic_info,
+                'inventory_sync': _inventory_sync_result,
             }
             # status 必须在 result 之后设置，避免前端轮询到 done 但 result 还是空的
             task['status'] = 'done'
