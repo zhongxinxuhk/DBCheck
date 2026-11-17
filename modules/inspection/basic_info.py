@@ -170,9 +170,11 @@ def _join(values, sep=' / ', limit=6):
 
 def _oracle(cursor):
     out = {}
-    ver = _first(_try(cursor, 'SELECT version_full AS v FROM v$instance'), 'v')
-    if not ver:
-        ver = _first(_try(cursor, 'SELECT version AS v FROM v$instance'), 'v')
+    ver = _first(_try(cursor, 'SELECT version AS v FROM v$instance'), 'v')
+    import re
+    major = re.match(r'^(\d+)\.', str(ver or ''))
+    if major is None or int(major[1]) >= 18:
+        ver = _first(_try(cursor, 'SELECT version_full AS v FROM v$instance'), 'v') or ver
     if not ver:
         banner = _try(cursor, 'SELECT banner AS b FROM v$version') or []
         ver = _join([_get(r, 'b') for r in banner], limit=1)
@@ -183,8 +185,8 @@ def _oracle(cursor):
         # 10g/11g 可能只暴露基表 registry$history；再退到 12c+ 的 SQLPATCH。
         patch_rows = _try(cursor, (
             'SELECT * FROM (SELECT action_time, action, namespace, version, id, comments '
-            'FROM registry$history ORDER BY action_time DESC) WHERE ROWNUM <= 5')) or []
-    if not patch_rows:
+            'FROM sys.registry$history ORDER BY action_time DESC) WHERE ROWNUM <= 5')) or []
+    if not patch_rows and (major is None or int(major[1]) >= 12):
         # 12c+ 的 RU/PSU 记录在 dba_registry_sqlpatch（部分 11g 无此视图，失败即跳过）
         patch_rows = _try(cursor, (
             'SELECT * FROM (SELECT action_time, action, description AS comments, '
@@ -239,8 +241,6 @@ def _oracle(cursor):
     if rman:
         out['backup_policy'] = _join(
             ['%s=%s' % (_get(r, 'n'), _get(r, 'v')) for r in rman], '; ', limit=4)
-    elif _try(cursor, 'SELECT 1 FROM v$backup_job WHERE ROWNUM = 1') is not None:
-        out['backup_policy'] = '未配置 RMAN 持久参数（按作业执行，需在备份平台核对）'
 
     role = _first(_try(cursor, 'SELECT database_role AS v FROM v$database'), 'v')
     dg = _try(cursor, "SELECT name AS n, value AS v FROM v$dataguard_stats") or []
@@ -253,7 +253,11 @@ def _oracle(cursor):
     if len(insts) > 1:
         out['cluster_attrs'] = 'RAC（%d 节点）：%s' % (len(insts), _join(names))
     elif insts:
-        out['cluster_attrs'] = '单实例（%s）' % (_join(names) or '-')
+        enabled = _first(_try(cursor, "SELECT value AS v FROM v$parameter WHERE name='cluster_database'"), 'v')
+        if str(enabled).upper() in {'FALSE', 'OFF', '0'}:
+            out['cluster_attrs'] = '单实例（%s）' % (_join(names) or '-')
+        else:
+            out['cluster_attrs'] = '本次可见 1 节点（%s）；集群完整性待核对' % (_join(names) or '-')
     return out
 
 
@@ -296,11 +300,11 @@ def _dm(cursor):
                        "WHERE PARA_NAME LIKE '%BACKUP%' OR PARA_NAME LIKE '%BAK%'") or []
     if bak:
         out['backup_policy'] = _join([_get(r, 'v') for r in bak], limit=3)
-    ep = _try(cursor, 'SELECT * FROM V$DSC_EP_INFO') or []
+    ep = _try(cursor, 'SELECT * FROM V$DSC_EP_INFO')
     if ep:
         out['cluster_attrs'] = 'DMDSC（%d 节点）' % len(ep)
-    else:
-        out['cluster_attrs'] = '单实例'
+    elif ep == []:
+        out['cluster_attrs'] = '本次未发现 DSC 节点；集群属性待核对'
     return out
 
 
@@ -325,6 +329,11 @@ def _mysql(cursor, db_type='mysql'):
         'SELECT ROUND(SUM(COALESCE(data_length,0)+COALESCE(index_length,0))'
         '/1024/1024/1024, 2) AS g FROM information_schema.tables'))
     out['db_size'] = _gb(_first(size, 'g'))
+    if db_type == 'gbase8a':
+        nodes = _try(cursor, 'SHOW GCLUSTER NODES')
+        if nodes:
+            out['cluster_attrs'] = 'GBase 8a（本次可见 %d 节点）' % len(nodes)
+        return out
     binlog = _try(cursor, "SHOW VARIABLES LIKE 'log_bin'") or []
     base = _try(cursor, "SHOW VARIABLES LIKE 'log_bin_basename'") or []
     log_bin = str(_first(binlog, 'Value', 'value') or '').upper()

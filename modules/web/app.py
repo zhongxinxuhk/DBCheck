@@ -1264,6 +1264,19 @@ def _append_task_log(task_id, msg):
 
 
 def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None, chapter_ids=None):
+    from modules.inspection.sql_safety import inspection_lease
+    kind = db_info.get('_db_type') or db_info.get('db_type') or 'dm'
+    try:
+        with inspection_lease(db_info, kind):
+            return _run_inspection_task(task_id, db_info, inspector_name, template_id, chapter_ids)
+    except TimeoutError as error:
+        if task_id in tasks:
+            tasks[task_id].update(status='error', error_msg=str(error))
+        socketio.emit('error', {'msg': str(error)}, room=task_id)
+        socketio.emit('done', {'msg': str(error), 'task_id': task_id}, room=task_id)
+
+
+def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None, chapter_ids=None):
     """
     通用数据库巡检任务函数
     支持: MySQL, PostgreSQL, TiDB, SQL Server, IvorySQL, DM8

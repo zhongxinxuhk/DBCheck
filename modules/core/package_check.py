@@ -37,7 +37,7 @@ REQUIRED_MODULES = (
     "tzdata",
     "bs4",
     "reportlab",
-    "PyPDF2",
+    "pypdf",
     "apscheduler",
     "pymysql",
     "psycopg2",

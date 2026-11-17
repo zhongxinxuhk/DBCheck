@@ -113,7 +113,8 @@ def _collect(payload):
 
     if payload.get('inspection_safe'):
         from modules.inspection.sql_safety import guarded_connection
-        conn = guarded_connection(conn, db_type)
+        # Finish the SQL round before the parent process's 35-second deadline.
+        conn = guarded_connection(conn, db_type, total_timeout=25)
     try:
         for i, sql in enumerate(queries):
             warning_count = len(getattr(conn, 'warnings', []))

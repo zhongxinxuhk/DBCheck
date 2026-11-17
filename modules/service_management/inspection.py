@@ -169,6 +169,14 @@ def collect(instance, asset, factory=None, _worker=False):
     if factory is None and not _worker:
         from .driver_worker import isolated_collect
         return isolated_collect(instance,asset)
+    if factory is None:
+        from modules.inspection.sql_safety import inspection_lease
+        with inspection_lease(instance, asset['db_type']):
+            return _collect(instance, asset, factory)
+    return _collect(instance, asset, factory)
+
+
+def _collect(instance, asset, factory):
     family = asset['db_type']
     results = {}
     conn = None
@@ -177,9 +185,9 @@ def collect(instance, asset, factory=None, _worker=False):
     budget = 240 if full_inventory else 90
     try:
         conn = (factory or connect_secure)(instance, asset)
-        if factory is None and not full_inventory:
+        if factory is None:
             from modules.inspection.sql_safety import guarded_connection
-            conn = guarded_connection(conn, family)
+            conn = guarded_connection(conn, family, row_limit=100000 if full_inventory else 1000, total_timeout=budget)
         results['client_connectivity'] = {'status':'collected','provenance':'authenticated_driver_connection','collected_at':datetime.now(timezone.utc).isoformat()}
         if factory is None:
             privileges = conn.cursor()

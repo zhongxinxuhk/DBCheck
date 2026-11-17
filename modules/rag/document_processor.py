@@ -7,10 +7,14 @@
 
 支持格式：
 - .txt, .md  : 直接读取文本
-- .pdf       : PyPDF2 提取文本
+- .pdf       : pypdf 提取文本
 - .html, .htm: BeautifulSoup 去除标签
 - .docx      : python-docx 提取段落
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import os
 import re
@@ -69,15 +73,15 @@ class DocumentProcessor:
     def _load_pdf(self, file_path: str) -> str:
         """加载 PDF 文档，提取所有页面的文本"""
         try:
-            import PyPDF2
+            import pypdf
         except ImportError:
             raise RuntimeError(
-                "处理 PDF 需要 PyPDF2，请运行: pip install PyPDF2"
+                "处理 PDF 需要 pypdf，请运行: pip install pypdf"
             )
 
         try:
             with open(file_path, 'rb') as f:
-                reader = PyPDF2.PdfReader(f)
+                reader = pypdf.PdfReader(f)
                 pages = []
                 for page in reader.pages:
                     text = page.extract_text()

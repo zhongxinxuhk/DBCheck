@@ -62,7 +62,7 @@ reportlab>=4.0.0          # PDF 生成：配置基线/索引健康 报告 + 巡�
 
 # ── Automation & Notifications ────────────────────────────────────────────────
 apscheduler>=3.10.0      # Cron-style job scheduling for scheduled inspections
-PyPDF2>=3.0.1           # PDF manipulation for report generation
+pypdf>=7.1.0           # PDF manipulation for report generation
 
 # ── RBAC User Management ─────────────────────────────────────────────────────
 bcrypt>=4.0.0,<5        # Password hashing for user management（<5 防御：bcrypt 5.0 移除 hashpw/checkpw/gensalt 顶层 API，会导致登录/改密 500；password.py 已做 4/5 兼容）

@@ -54,7 +54,7 @@ def collect_owner_details(cursor, db_type):
             cursor.execute(sql)
             columns=[str(column[0]).lower() for column in cursor.description or []]
             values=cursor.fetchmany(1001)
-            truncated=len(values)>1000 or getattr(cursor,'remaining',None)==0
+            truncated=len(values)>1000 or getattr(cursor,'truncated',False) is True or getattr(cursor,'remaining',None)==0
             rows=[dict(zip(columns,[value if isinstance(value,(int,float,bool,type(None))) else str(value) for value in row]))
                   for row in values[:1000]]
             if family == 'sqlserver' and key in {

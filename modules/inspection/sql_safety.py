@@ -13,14 +13,24 @@ from modules.driver_registry import db_family, normalize_db_type
 
 QUERY_TIMEOUT_SECONDS = 15
 ROW_LIMIT = 1000
+CELL_LIMIT = 16384
 LEASE_WAIT_SECONDS = 30
+COLLECTION_TIMEOUT_SECONDS = 120
+_lease_state = threading.local()
 
 
 class UnsafeInspectionSQL(ValueError):
     pass
 
 
+def strip_sql_comments(sql):
+    """Remove comments without changing quoted values or identifiers."""
+    pattern = r'''(?:'(?:''|\\.|[^'\\])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\[(?:\]\]|[^\]])*\]|/\*.*?\*/|--[^\r\n]*)'''
+    return re.sub(pattern, lambda match: ' ' if match[0].startswith(('/*', '--')) else match[0], sql, flags=re.S)
+
+
 def _plain(sql):
+    sql = strip_sql_comments(sql)
     text = re.sub(r"'(?:''|[^'])*'", "''", sql)
     text = (
         re.sub(r"/\*.*?\*/|--[^\n]*", " ", text, flags=re.S)
@@ -102,6 +112,10 @@ def assert_inspection_sql(sql, *, metadata_only=True):
             raise UnsafeInspectionSQL(
                 "常规巡检不调用业务模式函数 " + schema + "." + function
             )
+    if re.search(r"\b(?:UPDLOCK|HOLDLOCK|XLOCK|TABLOCKX|TABLOCK)\b|\bFOR\s+(?:SHARE|UPDATE)\b", text):
+        raise UnsafeInspectionSQL("巡检不申请业务数据锁或持有表锁")
+    if re.search(r"\bMAXDOP\s+(?!1\b)\d+", text):
+        raise UnsafeInspectionSQL("巡检查询最大并行度限定为1")
     sources, ctes = metadata_sources(sql)
     for name in sources if metadata_only else []:
         allowed = (
@@ -116,6 +130,10 @@ def assert_inspection_sql(sql, *, metadata_only=True):
                 "GLOBAL_NAME",
                 "DUALINSTANCE",
                 "REGISTRY$HISTORY",
+                "SYSTABLES", "SYSCOLUMNS", "SYSINDEXES", "SYSVIEWS", "SYSPROCEDURES",
+                "SYSSESSIONS", "SYSLOCKS", "SYSDBSPACES", "SYSCHUNKS", "SYSPROFILE",
+                "SYSUSERS", "SYSOBJECTS", "SYSDATABASES", "SYSPARTITIONS", "SYSFRAGMENTS",
+                "SYSMASTER", "SYSCONFIG", "SYSINDICES", "SYSJOB.SYSJOBS",
                 "GBASE.USER",
                 "DISTRIBUTION.DBO.MSPUBLICATIONS",
             }
@@ -128,7 +146,12 @@ def assert_inspection_sql(sql, *, metadata_only=True):
                     "USER_",
                     "CDB_",
                     "PG_",
-                    "SYS",
+                    "SYS.",
+                    "SYSIBM.",
+                    "SYSIBMADM.",
+                    "SYSCAT.",
+                    "SYSPROC.",
+                    "SYSMASTER.",
                     "INFORMATION_SCHEMA.",
                     "PERFORMANCE_SCHEMA.",
                     "MYSQL.",
@@ -155,8 +178,9 @@ class InspectionCursor:
     def __init__(self, raw, connection):
         self.raw = raw
         self.connection = connection
-        self.remaining = ROW_LIMIT + 1
-        self.deadline = time.monotonic() + QUERY_TIMEOUT_SECONDS
+        self.remaining = self.connection.row_limit + 1
+        self.truncated = False
+        self.deadline = time.monotonic() + self.connection.query_timeout
 
     def __getattr__(self, name):
         return getattr(self.raw, name)
@@ -194,23 +218,28 @@ class InspectionCursor:
         except ValueError as error:
             self.connection.warn("巡检SQL已跳过：" + str(error))
             raise
-        self.connection.configure(self.raw)
+        self.deadline = min(time.monotonic() + self.connection.query_timeout, self.connection.deadline)
+        self._run_bounded(lambda: self.connection.configure(self.raw))
         statement = getattr(self.raw, "stmt", None)
         if statement is not None:
-            statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS)
-            statement.setMaxRows(ROW_LIMIT + 1)
+            statement.setQueryTimeout(self.connection.query_timeout)
+            statement.setMaxRows(self.connection.row_limit + 1)
+            try:
+                statement.setMaxFieldSize(CELL_LIMIT)
+            except Exception:
+                pass
             try:
                 statement.setFetchSize(100)
             except Exception:
                 pass
-        clean = re.sub(r"/\*.*?\*/|--[^\n]*", " ", sql, flags=re.S).strip().rstrip(";")
+        clean = strip_sql_comments(sql).strip().rstrip(";")
         if re.match(r"^(SELECT|WITH)\b", clean, re.I):
             if self.connection.family in {"oracle", "dm", "yashandb"}:
                 clean = (
                     "SELECT * FROM ("
                     + clean
                     + ") DBPULSE_BOUNDED WHERE ROWNUM <= "
-                    + str(ROW_LIMIT + 1)
+                    + str(self.connection.row_limit + 1)
                 )
             elif self.connection.family in {"mysql", "postgresql", "clickhouse"}:
                 # GBase 8a 不支持把无 FROM 的标量查询嵌入派生表，该类查询仅返回一行。
@@ -221,24 +250,24 @@ class InspectionCursor:
                         "SELECT * FROM ("
                         + clean
                         + ") AS DBPULSE_BOUNDED LIMIT "
-                        + str(ROW_LIMIT + 1)
+                        + str(self.connection.row_limit + 1)
                     )
             elif self.connection.family == "db2":
                 clean = (
                     "SELECT * FROM ("
                     + clean
                     + ") AS DBPULSE_BOUNDED FETCH FIRST "
-                    + str(ROW_LIMIT + 1)
+                    + str(self.connection.row_limit + 1)
                     + " ROWS ONLY"
                 )
         if self.connection.family == "oracle":
             clean = re.sub(
                 r"\bSELECT\b", "SELECT /*+ NO_PARALLEL */", clean, count=1, flags=re.I
             )
-        elif self.connection.family == "mysql" and self.connection.kind != "mariadb":
+        elif self.connection.family == "mysql" and self.connection.kind not in {"mariadb", "gbase8a", "gbase8a_mpp"}:
             clean = re.sub(
                 r"\bSELECT\b",
-                f"SELECT /*+ MAX_EXECUTION_TIME({QUERY_TIMEOUT_SECONDS*1000}) */",
+                f"SELECT /*+ MAX_EXECUTION_TIME({self.connection.query_timeout*1000}) */",
                 clean,
                 count=1,
                 flags=re.I,
@@ -254,19 +283,20 @@ class InspectionCursor:
         ):
             clean = re.sub(
                 r"^SELECT\s+",
-                "SELECT FIRST " + str(ROW_LIMIT + 1) + " ",
+                "SELECT FIRST " + str(self.connection.row_limit + 1) + " ",
                 clean,
                 count=1,
                 flags=re.I,
             )
-        self.remaining = ROW_LIMIT + 1
-        self.deadline = time.monotonic() + QUERY_TIMEOUT_SECONDS
+        self.remaining = self.connection.row_limit + 1
+        self.truncated = False
         try:
             result = self._run_bounded(lambda: self.raw.execute(clean, *args, **kwargs))
             return self if result is self.raw else result
         except Exception:
             try:
-                self.connection.rollback()
+                if not self.connection.aborted:
+                    self.connection.rollback()
             except Exception:
                 pass
             raise
@@ -274,8 +304,9 @@ class InspectionCursor:
     def _run_bounded(self, operation):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
+            self.connection.aborted = True
             self._cancel()
-            raise TimeoutError(f"巡检查询超过{QUERY_TIMEOUT_SECONDS}秒预算，已请求取消")
+            raise TimeoutError(f"巡检查询超过{self.connection.query_timeout}秒预算，已请求取消")
         expired = threading.Event()
 
         def expire():
@@ -289,7 +320,7 @@ class InspectionCursor:
         try:
             result = operation()
             if expired.is_set():
-                raise TimeoutError(f"巡检查询超过{QUERY_TIMEOUT_SECONDS}秒预算，已请求取消")
+                raise TimeoutError(f"巡检查询超过{self.connection.query_timeout}秒预算，已请求取消")
             return result
         except Exception as error:
             self.connection.warn(
@@ -308,15 +339,30 @@ class InspectionCursor:
             rows = self._run_bounded(lambda: fetch_rows(self.raw, size, strict=True))
         except Exception:
             try:
-                self.connection.rollback()
+                if not self.connection.aborted:
+                    self.connection.rollback()
             except Exception:
                 pass
             raise
-        returned_before = ROW_LIMIT + 1 - self.remaining
+        returned_before = self.connection.row_limit + 1 - self.remaining
         self.remaining -= len(rows)
+        bounded = []
+        for row in rows:
+            if not isinstance(row, (dict, tuple, list)):
+                bounded.append(row)
+                continue
+            values = {}
+            for index, value in (row.items() if isinstance(row, dict) else enumerate(row)):
+                if isinstance(value, (str, bytes)) and len(value) > CELL_LIMIT:
+                    value = value[:CELL_LIMIT]
+                    self.truncated = True
+                    self.connection.warn('查询字段已截断：单字段超过16384长度，须缩小范围复核')
+                values[index] = value
+            bounded.append(values if isinstance(row, dict) else tuple(values.values()))
         if self.remaining == 0:
-            self.connection.warn(f"查询结果已截断：超过{ROW_LIMIT}行，须缩小范围复核")
-        return rows[: max(0, ROW_LIMIT - returned_before)]
+            self.truncated = True
+            self.connection.warn(f"查询结果已截断：超过{self.connection.row_limit}行，须缩小范围复核")
+        return bounded[: max(0, self.connection.row_limit - returned_before)]
 
     def fetchall(self):
         return self.fetchmany(self.remaining)
@@ -325,13 +371,49 @@ class InspectionCursor:
         rows = self.fetchmany(1)
         return rows[0] if rows else None
 
+    def select_virtual_cluster(self, name):
+        """Select an explicitly named GBase VC without accepting arbitrary session SQL."""
+        if self.connection.kind not in {'gbase8a', 'gbase8a_mpp'} or not re.fullmatch(r'[A-Za-z0-9_]+', name):
+            raise ValueError('GBase 8a 虚拟集群名格式无效')
+        if self.connection.aborted:
+            raise TimeoutError('巡检连接已超时，停止后续查询')
+        self.deadline = min(time.monotonic() + self.connection.query_timeout, self.connection.deadline)
+        return self._run_bounded(lambda: self.raw.execute('USE VC ' + name))
+
     def close(self):
         return self.raw.close()
 
 
+class _BoundedJDBC:
+    """Apply limits before JayDeBeApi executes a newly prepared statement."""
+    def __init__(self, native, row_limit, query_timeout):
+        self.native = native
+        self.row_limit = row_limit
+        self.query_timeout = query_timeout
+
+    def __getattr__(self, name):
+        return getattr(self.native, name)
+
+    def prepareStatement(self, *args):
+        statement = self.native.prepareStatement(*args)
+        statement.setQueryTimeout(self.query_timeout)
+        statement.setMaxRows(self.row_limit + 1)
+        statement.setFetchSize(100)
+        try:
+            statement.setMaxFieldSize(CELL_LIMIT)
+        except Exception:
+            pass
+        return statement
+
+
 class InspectionConnection:
-    def __init__(self, raw, kind, metadata_only=True):
+    def __init__(self, raw, kind, metadata_only=True, *, row_limit=None, total_timeout=None):
         self.raw = raw
+        self.row_limit = ROW_LIMIT if row_limit is None else int(row_limit)
+        self.query_timeout = QUERY_TIMEOUT_SECONDS
+        self.deadline = time.monotonic() + (COLLECTION_TIMEOUT_SECONDS if total_timeout is None else total_timeout)
+        if type(raw).__module__ == 'jaydebeapi':
+            raw.jconn = _BoundedJDBC(raw.jconn, self.row_limit, self.query_timeout)
         self.metadata_only = metadata_only
         self.kind = normalize_db_type(kind).lower()
         self.family = db_family(kind)
@@ -375,7 +457,7 @@ class InspectionConnection:
                 "SET max_parallel_workers_per_gather = 0",
                 "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
             ]
-        elif self.family == "mysql":
+        elif self.family == "mysql" and self.kind not in {"gbase8a", "gbase8a_mpp"}:
             commands = [
                 (
                     f"SET SESSION max_statement_time={QUERY_TIMEOUT_SECONDS}"
@@ -392,7 +474,7 @@ class InspectionConnection:
             commands = [
                 "SET LOCK_TIMEOUT 1000",
                 "SET DEADLOCK_PRIORITY LOW",
-                "SET ROWCOUNT " + str(ROW_LIMIT + 1),
+                "SET ROWCOUNT " + str(self.row_limit + 1),
             ]
         elif self.family == "clickhouse":
             commands = [f"SET max_execution_time={QUERY_TIMEOUT_SECONDS}", "SET max_threads=1"]
@@ -422,11 +504,11 @@ class InspectionConnection:
         return self.raw.close()
 
 
-def guarded_connection(connection, kind):
+def guarded_connection(connection, kind, **limits):
     return (
         connection
         if isinstance(connection, InspectionConnection)
-        else InspectionConnection(connection, kind)
+        else InspectionConnection(connection, kind, **limits)
     )
 
 
@@ -434,10 +516,13 @@ def inspection_endpoint(info, kind=None):
     import hashlib
     import json
 
+    host = str(info.get("host") or info.get("ip") or "").strip().lower()
+    if host in {'localhost', '::1', '[::1]'}:
+        host = '127.0.0.1'
     value = [
         db_family(kind or info.get("db_type") or info.get("_db_type") or ""),
         str(info.get("ssh_host") or "") if info.get("ssh_tunnel") else "",
-        str(info.get("host") or info.get("ip") or "").strip().lower(),
+        host,
         int(info.get("port") or 0),
     ]
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
@@ -448,6 +533,22 @@ from contextlib import contextmanager
 
 @contextmanager
 def inspection_lease(info, kind):
+    """Share one endpoint lease across nested calls on the same execution thread."""
+    key = inspection_endpoint(info, kind)
+    held = getattr(_lease_state, 'held', set())
+    if key in held:
+        yield
+        return
+    with _acquire_inspection_lease(info, kind):
+        _lease_state.held = held | {key}
+        try:
+            yield
+        finally:
+            _lease_state.held = held
+
+
+@contextmanager
+def _acquire_inspection_lease(info, kind):
     """同一配置端点仅运行一条巡检链，退出进程的租约可回收。"""
     import sqlite3
     import os

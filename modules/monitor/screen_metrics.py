@@ -149,17 +149,15 @@ ORACLE_STAT_SQL = (
 
 ORACLE_TBS_SQL = (
     "SELECT df.tablespace_name AS name, "
-    "ROUND(SUM(df.bytes) / 1048576, 1) AS total_mb, "
-    # 最大可用容量：AUTOEXTEND 数据文件取 MAXBYTES 上限（无上限/未开启取当前 bytes），
-    # 剩余率按「最大可用」口径计算，避免可扩展表空间误告警（#61）
-    "ROUND(SUM(CASE WHEN df.autoextensible = 'YES' "
-    "            THEN GREATEST(df.maxbytes, df.bytes) ELSE df.bytes END) / 1048576, 1) AS max_mb, "
-    "ROUND(NVL(SUM(fr.free_bytes), 0) / 1048576, 1) AS free_mb "
-    "FROM dba_data_files df "
-    "LEFT JOIN (SELECT tablespace_name, SUM(bytes) AS free_bytes "
-    "           FROM dba_free_space GROUP BY tablespace_name) fr "
-    "  ON fr.tablespace_name = df.tablespace_name "
-    "GROUP BY df.tablespace_name ORDER BY free_mb ASC"
+    "ROUND(df.total_bytes / 1048576, 1) AS total_mb, "
+    "ROUND(df.max_bytes / 1048576, 1) AS max_mb, "
+    "ROUND(GREATEST(df.total_bytes - metrics.used_space * ts.block_size, 0) / 1048576, 1) AS free_mb "
+    "FROM (SELECT tablespace_name, SUM(bytes) AS total_bytes, "
+    "SUM(CASE WHEN autoextensible = 'YES' THEN GREATEST(maxbytes, bytes) ELSE bytes END) AS max_bytes "
+    "FROM dba_data_files GROUP BY tablespace_name) df "
+    "JOIN dba_tablespaces ts ON ts.tablespace_name = df.tablespace_name "
+    "JOIN dba_tablespace_usage_metrics metrics ON metrics.tablespace_name = df.tablespace_name "
+    "ORDER BY free_mb ASC"
 )
 
 ORACLE_REPL_SQL = (
@@ -223,7 +221,7 @@ DM_TBS_SQL = (
     # 同 ORACLE_TBS_SQL：按 AUTOEXTEND 上限计算最大可用容量，剩余率防误告警（#61）
     "ROUND(SUM(CASE WHEN df.autoextensible = 'YES' "
     "            THEN GREATEST(df.maxbytes, df.bytes) ELSE df.bytes END) / 1048576, 1) AS max_mb, "
-    "ROUND(NVL(SUM(fr.free_bytes), 0) / 1048576, 1) AS free_mb "
+    "ROUND(NVL(MAX(fr.free_bytes), 0) / 1048576, 1) AS free_mb "
     "FROM dba_data_files df "
     "LEFT JOIN (SELECT tablespace_name, SUM(bytes) AS free_bytes "
     "           FROM dba_free_space GROUP BY tablespace_name) fr "

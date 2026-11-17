@@ -42,7 +42,7 @@ reportlab>=4.0.0
 
 # ── Automation & Notifications ─────────────────────────────────────────────
 apscheduler>=3.10.0
-PyPDF2>=3.0.1
+pypdf>=7.1.0
 requests>=2.25.0          # Webhook notifications (DingTalk/WeCom/Feishu) used by vendored autobackup / DR module
 croniter>=1.0.0           # Cron scheduling for backup plans (modules/disaster_recovery)
 

@@ -1227,8 +1227,8 @@ ORACLE_DEFAULT_CHAPTERS = [
             {'key': 'datafile_status', 'sql': "SELECT file_name, tablespace_name, ROUND(bytes/1024/1024) AS size_mb, autoextensible, maxbytes/1024/1024 AS max_mb, status FROM dba_data_files ORDER BY tablespace_name;",
              'desc_zh': '数据文件状态',      'desc_en': 'Data file status'},
             {'key': 'temp_space',      'sql': """
-                SELECT tablespace_name, SUM(bytes)/1024/1024 AS total_mb, SUM(NVL(blocks,0))*8192/1024/1024 AS used_mb
-                FROM dba_temp_files
+                SELECT tablespace_name, SUM(bytes_used + bytes_free)/1024/1024 AS total_mb, SUM(bytes_used)/1024/1024 AS used_mb
+                FROM v$temp_space_header
                 GROUP BY tablespace_name;
             """,
              'desc_zh': '临时表空间使用',    'desc_en': 'Temp tablespace usage'},
@@ -1753,8 +1753,8 @@ ORACLE_11G_CHAPTERS = [
             {'key': 'ts_datafile_status', 'sql': "SELECT file_name, tablespace_name, ROUND(bytes/1024/1024) AS size_mb, autoextensible, maxbytes/1024/1024 AS max_mb, status FROM dba_data_files ORDER BY tablespace_name;",
              'desc_zh': '数据文件状态',      'desc_en': 'Data file status'},
             {'key': 'temp_space',      'sql': """
-                SELECT tablespace_name, SUM(bytes)/1024/1024 AS total_mb, SUM(NVL(blocks,0))*8192/1024/1024 AS used_mb
-                FROM dba_temp_files
+                SELECT tablespace_name, SUM(bytes_used + bytes_free)/1024/1024 AS total_mb, SUM(bytes_used)/1024/1024 AS used_mb
+                FROM v$temp_space_header
                 GROUP BY tablespace_name;
             """,
              'desc_zh': '临时表空间使用',    'desc_en': 'Temp tablespace usage'},
@@ -2378,7 +2378,7 @@ SQLSERVER_DEFAULT_CHAPTERS = [
                 SELECT OBJECT_NAME(i.object_id) AS table_name, i.name AS index_name,
                        ius.user_seeks, ius.user_scans, ius.user_lookups, ius.user_updates
                 FROM sys.indexes i
-                LEFT JOIN sys.dm_db_index_usage_stats ius ON i.object_id = ius.object_id AND i.index_id = ius.index_id
+                LEFT JOIN sys.dm_db_index_usage_stats ius ON i.object_id = ius.object_id AND i.index_id = ius.index_id AND ius.database_id = DB_ID()
                 WHERE i.type > 0
                   AND ius.user_seeks + ius.user_scans + ius.user_lookups = 0
                 ORDER BY OBJECT_NAME(i.object_id);
