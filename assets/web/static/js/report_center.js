@@ -133,6 +133,7 @@
         (i) => i.value,
       ),
       run_id: $("run").value,
+      workflow_ids: $("event").value ? [$("event").value] : [],
       sheets: checked($("sheets")),
       layout: $("layout").value,
       previous_id: $("previous").value || undefined,
@@ -203,6 +204,7 @@
     $("date").value = job.request.date;
     $("combination").value = "custom";
     $("layout").value = job.request.layout || "separate";
+    $("event").value = job.request.workflow_ids?.[0] || "";
     $("assets")
       .querySelectorAll("input")
       .forEach((i) => (i.checked = job.request.asset_ids.includes(i.value)));
@@ -497,14 +499,20 @@
     ).toISOString();
     $("date").value = local.slice(0, 10);
     $("cutoff").value = local.slice(0, 19);
-    const [catalog, assets, observations] = await Promise.all([
+    const [catalog, assets, observations, workflows] = await Promise.all([
       api("deliverables/catalog"),
       api("assets"),
       api("deliverables/observations"),
+      api("workflows"),
     ]);
     state.catalog = catalog.deliverables;
     state.combinations = catalog.combinations;
     state.assets = assets.assets;
+    workflows.records.forEach((record) => {
+      const option = node("option", record.payload.title + " / " + record.id);
+      option.value = record.id;
+      $("event").append(option);
+    });
     checks(
       $("assets"),
       state.assets.map((a) => ({

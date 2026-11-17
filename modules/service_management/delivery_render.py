@@ -208,8 +208,13 @@ def render_job(job, published=False):
             title, _, names = DELIVERABLES[kind]
         sections = {name: snapshot['sheets'].get(name, []) for name in names
                     if not request['sheets'] or name in request['sheets']}
+        if kind == 'COMBINED':
+            for name, rows in sections.items():
+                owners = {key for key in request['deliverables'] if name in DELIVERABLES[key][2]}
+                if owners == {'D17'}:
+                    sections[name] = [row for row in rows if row.get('重大故障')]
         if kind == 'D17':
-            sections = {name: [r for r in rows if r.get('重大故障') or name in {'故障时间线', '改进闭环'}]
+            sections = {name: [r for r in rows if r.get('重大故障')]
                         for name, rows in sections.items()}
         content_sha256 = digest(canonical(sections).encode())
         description = {'报告编号': job['report_id'], '版本': job['revision'],

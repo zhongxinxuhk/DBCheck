@@ -305,6 +305,33 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in runs], ['history-1'])
         self.assertEqual(note['matched'], 1)
 
+    def test_major_review_and_specific_event_scope(self):
+        items = all_items(self.catalog)
+        incident_item = next(i['id'] for i in items.values() if i['key'] == 'incident_lifecycle')
+        remediation_item = next(i['id'] for i in items.values() if i['key'] == 'remediation')
+        major = self.services.save(OWNER, 'workflow', {'title': 'major fixture',
+            'details': {'major_incident': True, 'incident_reference': 'INC-MAJOR'}},
+            asset_id=self.asset['id'], item_id=incident_item)
+        normal = self.services.save(OWNER, 'workflow', {'title': 'normal fixture',
+            'details': {'incident_reference': 'INC-NORMAL'}}, asset_id=self.asset['id'], item_id=incident_item)
+        for record in (major, normal):
+            self.services.transition(OWNER, record['id'], 'submitted', record['version'], {})
+        self.services.save(OWNER, 'workflow', {'title': 'major remediation', 'details': {'incident_reference': 'INC-MAJOR'}},
+                           asset_id=self.asset['id'], item_id=remediation_item)
+        self.services.save(OWNER, 'workflow', {'title': 'normal remediation', 'details': {'incident_reference': 'INC-NORMAL'}},
+                           asset_id=self.asset['id'], item_id=remediation_item)
+        job = self.job(deliverables=['D17'])
+        _, content = self.archive.artifact(OWNER, job['id'], job['artifacts'][0]['artifact_id'])
+        workbook = load_workbook(io.BytesIO(content))
+        encoded = str([row for sheet in workbook for row in sheet.values])
+        self.assertIn(major['id'], encoded)
+        self.assertNotIn(normal['id'], encoded)
+        self.assertIn('major remediation', encoded)
+        self.assertNotIn('normal remediation', encoded)
+        selected = self.job(deliverables=['D16'], workflow_ids=[normal['id']])
+        rows = selected['snapshot']['sheets']['故障记录']
+        self.assertEqual([r['记录编号'] for r in rows], [normal['id']])
+
 
 if __name__ == '__main__':
     unittest.main()
