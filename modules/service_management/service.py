@@ -253,11 +253,9 @@ def run_inspection(store, actor, asset_id, catalog, instance, factory=None):
                 'source_reference':run_id,'collected_at':utcnow()}
         saved.append(store.save(actor,'inspection',body,asset_id=asset_id,item_id=item['id']))
     problems = [r for r in saved if r['payload']['status'] in {'fail','error','blocked'}]
-    if problems:
-        database_ticket = {'title':'巡检异常待研判','state':'draft','detected_at':utcnow(),
-                           'priority':'NORMAL','run_id':run_id,'details':{'finding_reference':run_id},
-                           'reason':'存在采集失败或安全阻断，需研判影响及故障等级'}
-        store.save(actor,'workflow',database_ticket,asset_id=asset_id,item_id='inspection-alert')
+    remediation = next((item['id'] for item in items_by_id.values() if item['key'] == 'remediation'), 'inspection-alert')
+    for problem in problems:
+        store.record_finding(actor, asset_id, problem['item_id'], run_id, problem['id'], remediation)
     return {'run_id':run_id,'records':len(saved),'results':results,'alerts':len(problems)}
 
 

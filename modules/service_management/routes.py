@@ -258,6 +258,28 @@ def report():
     identity = actor()
     requirements = catalog()
     title = request.args.get('deliverable','数据库运维服务履约报告')
+    from .delivery_catalog import DELIVERABLES
+    delivery_id = next((key for key, value in DELIVERABLES.items() if value[0] == title), None)
+    format_name = request.args.get('format', 'docx')
+    if delivery_id and format_name in {'xlsx', 'docx'}:
+        from .delivery_data import request_options, build_snapshot
+        from .delivery_routes import archive
+        from .delivery_render import render_job
+        database = archive()
+        options = request_options({'deliverables': [delivery_id], 'formats': [format_name],
+                                   'period': request.args.get('period', 'month'), 'date': request.args.get('date'),
+                                   'asset_ids': request.args.getlist('asset_id') or None, 'run_id': request.args.get('run_id')},
+                                  store().list(identity, 'asset'))
+        snapshot = build_snapshot(store(), database, identity, requirements, options)
+        job = database.create(identity, options, snapshot)
+        database.claim(identity, job['id'])
+        job = database.finish(identity, job['id'], render_job(job))
+        info, content = database.artifact(identity, job['id'], job['artifacts'][0]['artifact_id'])
+        response = send_file(io.BytesIO(content), download_name=info['name'], as_attachment=True,
+                             mimetype='application/vnd.openxmlformats-officedocument.' +
+                             ('spreadsheetml.sheet' if format_name == 'xlsx' else 'wordprocessingml.document'))
+        response.headers['X-Content-SHA256'] = info['sha256']
+        return response
     choices = {'数据库运维服务履约报告'} | {name for m in requirements['modules'] for name in m['deliverables']}
     if title not in choices:
         raise ValueError('交付物名称无效')
@@ -270,3 +292,7 @@ def report():
     content = render_docx(requirements,result,title)
     return send_file(io.BytesIO(content),download_name='DBPulse-service-report.docx',as_attachment=True,
                      mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+# Register report center routes on the same authenticated service blueprint.
+from . import delivery_routes  # noqa: E402,F401

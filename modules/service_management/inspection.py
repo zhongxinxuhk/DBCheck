@@ -44,6 +44,35 @@ SOURCES = {
  'operations_analysis': ('instance','sessions','storage','waits','incident_history','maintenance_history'),
 }
 
+INVENTORY_QUERIES = {
+    'oracle': {
+        'accounts': 'SELECT USERNAME,ACCOUNT_STATUS,DEFAULT_TABLESPACE,CREATED FROM DBA_USERS',
+        'role_members': 'SELECT GRANTEE,GRANTED_ROLE,ADMIN_OPTION FROM DBA_ROLE_PRIVS',
+        'permissions': 'SELECT GRANTEE,PRIVILEGE,ADMIN_OPTION FROM DBA_SYS_PRIVS',
+        'object_permissions': 'SELECT GRANTEE,OWNER,TABLE_NAME,PRIVILEGE,GRANTABLE,GRANTOR FROM DBA_TAB_PRIVS',
+    },
+    'dm': {
+        'accounts': 'SELECT USERNAME,ACCOUNT_STATUS,DEFAULT_TABLESPACE,CREATED FROM DBA_USERS',
+        'role_members': 'SELECT GRANTEE,GRANTED_ROLE,ADMIN_OPTION FROM DBA_ROLE_PRIVS',
+        'permissions': 'SELECT GRANTEE,PRIVILEGE,ADMIN_OPTION FROM DBA_SYS_PRIVS',
+        'object_permissions': 'SELECT GRANTEE,OWNER,TABLE_NAME,PRIVILEGE,GRANTABLE,GRANTOR FROM DBA_TAB_PRIVS',
+    },
+    'sqlserver': {
+        'accounts': 'SELECT PRINCIPAL_ID,NAME AS USERNAME,TYPE_DESC,CREATE_DATE FROM SYS.DATABASE_PRINCIPALS',
+        'role_members': 'SELECT ROLE_PRINCIPAL_ID,MEMBER_PRINCIPAL_ID FROM SYS.DATABASE_ROLE_MEMBERS',
+        'permissions': 'SELECT GRANTEE_PRINCIPAL_ID,CLASS_DESC,MAJOR_ID,MINOR_ID,PERMISSION_NAME,STATE_DESC FROM SYS.DATABASE_PERMISSIONS',
+        'server_accounts': 'SELECT PRINCIPAL_ID,NAME AS USERNAME,TYPE_DESC,IS_DISABLED FROM SYS.SERVER_PRINCIPALS',
+        'server_permissions': 'SELECT GRANTEE_PRINCIPAL_ID,CLASS_DESC,MAJOR_ID,PERMISSION_NAME,STATE_DESC FROM SYS.SERVER_PERMISSIONS',
+        'server_role_members': 'SELECT ROLE_PRINCIPAL_ID,MEMBER_PRINCIPAL_ID FROM SYS.SERVER_ROLE_MEMBERS',
+    },
+    'gbase8a': {
+        'accounts': 'SELECT DISTINCT GRANTEE AS USERNAME FROM INFORMATION_SCHEMA.USER_PRIVILEGES',
+        'permissions': 'SELECT GRANTEE,PRIVILEGE_TYPE,IS_GRANTABLE FROM INFORMATION_SCHEMA.USER_PRIVILEGES',
+        'schema_permissions': 'SELECT GRANTEE,TABLE_SCHEMA,PRIVILEGE_TYPE,IS_GRANTABLE FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES',
+        'object_permissions': 'SELECT GRANTEE,TABLE_SCHEMA,TABLE_NAME,PRIVILEGE_TYPE,IS_GRANTABLE FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES',
+    },
+}
+
 
 def connect_secure(instance, asset):
     family = asset['db_type']
@@ -136,9 +165,11 @@ def collect(instance, asset, factory=None, _worker=False):
     results = {}
     conn = None
     started = time.monotonic()
+    full_inventory = bool(asset.get('_delivery_full_inventory'))
+    budget = 240 if full_inventory else 90
     try:
         conn = (factory or connect_secure)(instance, asset)
-        if factory is None:
+        if factory is None and not full_inventory:
             from modules.inspection.sql_safety import guarded_connection
             conn = guarded_connection(conn, family)
         results['client_connectivity'] = {'status':'collected','provenance':'authenticated_driver_connection','collected_at':datetime.now(timezone.utc).isoformat()}
@@ -158,29 +189,50 @@ def collect(instance, asset, factory=None, _worker=False):
             finally:
                 privileges.close()
         queries = dict(QUERIES[family])
+        if full_inventory:
+            queries = {key: value for key, value in queries.items() if key in
+                       {'version', 'instance', 'parameters', 'storage', 'files', 'archive', 'cluster_nodes'}}
+            queries.update(INVENTORY_QUERIES[family])
         if family=='sqlserver' and ('2014' in str(asset.get('version')) or str(asset.get('version','')).startswith('12.')):
             queries['shared_pool'] = 'SELECT TOP 100 TYPE,PAGES_KB FROM SYS.DM_OS_MEMORY_CLERKS'
         for key, sql in queries.items():
             cursor = None
             try:
-                if time.monotonic() - started > 90:
-                    raise ValueError('本次采集已达到90秒预算')
+                if time.monotonic() - started > budget:
+                    raise ValueError('本次采集已达到时间预算')
                 assert_readonly_sql(sql)
                 cursor = conn.cursor()
                 warning_count = len(getattr(conn, 'warnings', []))
                 cursor.execute(sql)
                 columns = [str(c[0]).lower() for c in cursor.description or []]
-                rows = cursor.fetchmany(201)
-                data = [dict(zip(columns,[v if isinstance(v,(int,float,bool,type(None))) else str(v)[:512] for v in row])) for row in rows[:200]]
+                rows = cursor.fetchmany(1000 if full_inventory else 201)
+                if full_inventory:
+                    page_count = 1
+                    size = len(json.dumps(rows, default=str).encode())
+                    while len(rows) <= 100000 and size <= 20_000_000 and time.monotonic() - started < budget:
+                        page = cursor.fetchmany(1000)
+                        page_count += 1
+                        if not page:
+                            break
+                        rows.extend(page)
+                        size += len(json.dumps(page, default=str).encode())
+                    else:
+                        raise ValueError('全量采集超出10万行、20MB或时间预算，请按逻辑库缩小范围')
+                    data = [dict(zip(columns, [v if isinstance(v, (int, float, bool, type(None))) else str(v) for v in row])) for row in rows]
+                else:
+                    page_count = 1
+                    data = [dict(zip(columns,[v if isinstance(v,(int,float,bool,type(None))) else str(v)[:512] for v in row])) for row in rows[:200]]
                 if key == 'version' and family == 'gbase8a' and not any('gbase' in str(value).lower() for row in data for value in row.values()):
                     raise ValueError('当前服务端未返回 GBase 身份证据，禁止按8a版本推断')
                 warnings = getattr(conn, 'warnings', [])[warning_count:]
                 if warnings: raise ValueError('; '.join(warnings))
-                truncated = len(rows)>200
-                while len(json.dumps(data,ensure_ascii=False).encode()) > 30000:
+                truncated = not full_inventory and len(rows)>200
+                while not full_inventory and len(json.dumps(data,ensure_ascii=False).encode()) > 30000:
                     data.pop()
                     truncated = True
                 results[key] = {'status':'collected','rows':redact(data),'truncated':truncated,
+                                'page_count':page_count,'row_count':len(data),
+                                'completeness':'complete_current_connection' if full_inventory else 'bounded_sample',
                                 'query_sha256':hashlib.sha256(sql.encode()).hexdigest(),
                                 'collected_at':datetime.now(timezone.utc).isoformat(),
                                 'scope':'current_connection','provenance':'database_metadata'}
@@ -193,7 +245,23 @@ def collect(instance, asset, factory=None, _worker=False):
             finally:
                 if cursor is not None:
                     cursor.close()
-        if factory is None and time.monotonic()-started<60:
+        if full_inventory and time.monotonic() - started < budget:
+            metadata_cursor = None
+            try:
+                from modules.inspection.basic_info import collect_db
+                metadata = _MetadataConnection(conn, started + budget)
+                metadata_cursor = metadata.cursor()
+                info = collect_db(metadata_cursor, family, instance.get('database'))
+                results['basic_info'] = {'status': 'collected' if info else 'not_collected',
+                                         'rows': [info] if info else [], 'scope': 'current_connection',
+                                         'provenance': 'existing_basic_info_collector',
+                                         'collected_at': datetime.now(timezone.utc).isoformat()}
+            except Exception as error:
+                results['basic_info'] = {'status': 'error', 'reason': _safe_error(error, instance)}
+            finally:
+                if metadata_cursor is not None:
+                    metadata_cursor.close()
+        if factory is None and not full_inventory and time.monotonic()-started<60:
             try:
                 from modules.inspection.index_health import get_index_health
                 guarded = _MetadataConnection(conn,started+90)

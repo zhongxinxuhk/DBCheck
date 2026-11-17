@@ -1,0 +1,310 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+"""Regressions for frozen reports, signed artifacts, period boundaries and ACLs."""
+
+import io
+import json
+import tempfile
+import unittest
+import zipfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+from cryptography.fernet import Fernet
+from flask import Flask, g
+from openpyxl import load_workbook
+
+from modules.access import Principal
+from modules.service_management.catalog import load_catalog, all_items
+from modules.service_management.store import ServiceStore
+from modules.service_management.delivery_store import DeliveryStore, digest
+from modules.service_management.delivery_catalog import DELIVERABLES
+from modules.service_management.delivery_data import request_options, build_snapshot, sources_from_context
+from modules.service_management.delivery_render import render_job, watermark, package, verify_package, content_diff
+from modules.service_management.routes import bp
+
+ROOT = Path(__file__).resolve().parents[3]
+OWNER = {'id': 11, 'tenant_id': 1, 'admin': False, 'approver': True}
+ADMIN = {'id': 12, 'tenant_id': 1, 'admin': True, 'approver': True}
+OTHER = {'id': 21, 'tenant_id': 2, 'admin': True, 'approver': True}
+
+
+class DeliveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.services = ServiceStore(Path(self.temp.name) / 'services.db', Fernet.generate_key())
+        self.archive = DeliveryStore(self.services)
+        self.catalog = load_catalog(ROOT / 'scripts/fixtures/service_catalog.json')
+        self.payload = {'configuration_id': 'CI-TEST', 'asset_name': 'fixture', 'db_type': 'oracle',
+                        'version': '11g', 'owner': 'fixture', 'business': 'fixture', 'system': 'fixture',
+                        'lifecycle': 'active', 'approved_parameters': {'processes': 100},
+                        'backup_frequency': 'daily', 'tables': {'accounts': [{'username': '=1+1', 'owner': 'fixture'}]}}
+        self.asset = self.services.save(OWNER, 'asset', self.payload)
+        self.now = datetime.now(timezone.utc)
+        self.date = self.now.astimezone().date().isoformat()
+        self.observation = self.archive.observe(OWNER, self.asset['id'], {
+            'parameters': {'status': 'collected', 'rows': [{'name': 'processes', 'value': 120}],
+                           'scope': 'instance', 'truncated': False},
+            'storage': {'status': 'error', 'reason': 'fixture permission', 'rows': []},
+            'slow_sql': {'status': 'collected', 'rows': [{'sql_id': 'q1', 'executions': 3}]}})
+
+    def options(self, **extra):
+        return request_options({'deliverables': ['D01', 'D03', 'D06', 'D09'],
+                                'asset_ids': [self.asset['id']], 'date': self.date,
+                                'formats': ['xlsx'], **extra}, self.services.list(OWNER, 'asset'))
+
+    def job(self, **extra):
+        options = self.options(**extra)
+        snapshot = build_snapshot(self.services, self.archive, OWNER, self.catalog, options)
+        job = self.archive.create(OWNER, options, snapshot)
+        self.archive.claim(OWNER, job['id'])
+        self.archive.finish(OWNER, job['id'], render_job(job))
+        return self.archive.get(OWNER, job['id'])
+
+    def test_all_24_deliverables_have_purpose_specific_sections(self):
+        job = self.job(deliverables=list(DELIVERABLES)[:-1], formats=['xlsx', 'docx'])
+        self.assertEqual(len(job['artifacts']), 48)
+        names = set()
+        for artifact in job['artifacts']:
+            info, content = self.archive.artifact(OWNER, job['id'], artifact['artifact_id'])
+            self.assertEqual(watermark(content)['artifact_id'], artifact['artifact_id'])
+            self.assertEqual(digest(content), info['sha256'])
+            if info['format'] == 'xlsx':
+                workbook = load_workbook(io.BytesIO(content))
+                self.assertEqual(workbook.sheetnames, ['报告说明', *DELIVERABLES[info['deliverable']][2]])
+                names.add(tuple(workbook.sheetnames))
+        self.assertGreater(len(names), 20)
+
+    def test_typed_cells_and_formula_injection(self):
+        job = self.job(deliverables=['D03', 'D06'])
+        artifact = next(a for a in job['artifacts'] if a['deliverable'] == 'D06')
+        _, content = self.archive.artifact(OWNER, job['id'], artifact['artifact_id'])
+        workbook = load_workbook(io.BytesIO(content), data_only=False)
+        values = [c for row in workbook['用户账号'] for c in row if c.value == '=1+1']
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].data_type, 's')
+        params = job['snapshot']['sheets']['数据库参数']
+        self.assertTrue(any(r.get('运行值', r.get('配置值')) == 120 for r in params))
+
+    def test_combined_workbook(self):
+        job = self.job(deliverables=['D01', 'D03', 'D06'], layout='combined')
+        self.assertEqual(len(job['artifacts']), 1)
+        artifact = job['artifacts'][0]
+        self.assertEqual(artifact['deliverable'], 'COMBINED')
+        _, content = self.archive.artifact(OWNER, job['id'], artifact['artifact_id'])
+        workbook = load_workbook(io.BytesIO(content))
+        self.assertIn('数据库参数', workbook.sheetnames)
+        self.assertIn('用户账号', workbook.sheetnames)
+
+    def test_signature_package_download_and_mutation(self):
+        job = self.job(deliverables=['D01'])
+        content = package(job, self.archive, OWNER)
+        self.assertEqual(content, package(job, self.archive, OWNER))
+        self.assertTrue(verify_package(content, job['manifest']['key_id'])['files_valid'])
+        with self.assertRaises(ValueError):
+            verify_package(content, '0' * 64)
+        modified = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(content)) as source, zipfile.ZipFile(modified, 'w') as target:
+            for name in source.namelist():
+                value = source.read(name)
+                if name.endswith('.xlsx'):
+                    value += b'changed'
+                target.writestr(name, value)
+        with self.assertRaises(ValueError):
+            verify_package(modified.getvalue(), job['manifest']['key_id'])
+
+    def test_edited_xlsx_diff_and_archive_original(self):
+        job = self.job(deliverables=['D01'])
+        info, content = self.archive.artifact(OWNER, job['id'], job['artifacts'][0]['artifact_id'])
+        self.assertTrue(self.archive.verify(OWNER, job['id'], content)['signature_valid'])
+        workbook = load_workbook(io.BytesIO(content))
+        workbook['资产底账']['A3'] = 'changed'
+        output = io.BytesIO()
+        workbook.save(output)
+        self.assertFalse(self.archive.verify(OWNER, job['id'], output.getvalue())['matches_original'])
+        self.assertGreater(content_diff(content, output.getvalue(), 'xlsx')['total'], 0)
+        self.assertEqual(self.archive.artifact(OWNER, job['id'], info['artifact_id'])[1], content)
+
+    def test_acl_on_list_download_verify_and_revocation(self):
+        job = self.job(deliverables=['D01'])
+        self.assertEqual(self.archive.list(OTHER), [])
+        for action in (lambda: self.archive.get(OTHER, job['id']),
+                       lambda: self.archive.artifact(OTHER, job['id'], job['artifacts'][0]['artifact_id']),
+                       lambda: self.archive.verify(OTHER, job['id'], b'x')):
+            with self.assertRaises(PermissionError):
+                action()
+        with self.services.connection() as db:
+            db.execute('UPDATE service_records SET owner=99 WHERE id=?', (self.asset['id'],))
+        with self.assertRaises((PermissionError, ValueError)):
+            self.archive.get(OWNER, job['id'])
+
+    def test_published_bytes_frozen_and_revision(self):
+        job = self.job(deliverables=['D01'])
+        old_id = job['artifacts'][0]['artifact_id']
+        original = self.archive.artifact(OWNER, job['id'], old_id)[1]
+        published = self.archive.finish(ADMIN, job['id'], render_job(job, True), publish=True,
+                                        expected_version=job['version'])
+        self.assertEqual(published['state'], 'published')
+        self.assertEqual(self.archive.artifact(OWNER, job['id'], old_id)[1], original)
+        self.assertTrue(self.archive.verify(OWNER, job['id'], original)['matches_original'])
+        revision = self.archive.create(OWNER, job['request'], job['snapshot'], previous_id=job['id'], reason='fixture correction')
+        self.assertEqual(revision['revision'], 2)
+        with self.assertRaises(ValueError):
+            self.archive.finish(ADMIN, job['id'], [], publish=True)
+
+    def test_historical_asset_and_workflow_versions(self):
+        cutoff = datetime.now(timezone.utc).isoformat()
+        workflow = self.services.save(OWNER, 'workflow', {'details': {'root_cause': 'original'}}, asset_id=self.asset['id'], item_id='fixture')
+        before_workflow = datetime.now(timezone.utc).isoformat()
+        self.services.save(OWNER, 'workflow', {'details': {'root_cause': 'later'}}, record_id=workflow['id'],
+                           version=workflow['version'], asset_id=self.asset['id'], item_id='fixture')
+        self.services.save(OWNER, 'asset', {**self.payload, 'version': 'new'}, record_id=self.asset['id'], version=1)
+        rows = self.services.reporting_records(OWNER, cutoff)
+        self.assertEqual(next(r for r in rows if r['id'] == self.asset['id'])['payload']['version'], '11g')
+        old = self.services.reporting_records(OWNER, before_workflow)
+        self.assertEqual(next(r for r in old if r['id'] == workflow['id'])['payload']['details']['root_cause'], 'original')
+
+    def test_daily_gaps_and_missing_health_are_explicit(self):
+        job = self.job(deliverables=['D09', 'D10'])
+        self.assertTrue(any(r['状态'] == '未采集' for r in job['snapshot']['sheets']['日运行监控']) or self.now.day == 1)
+        self.assertIsNone(job['snapshot']['sheets']['健康评分'][0]['健康评分'])
+        self.assertEqual(self.services.get(OWNER, self.asset['id'])['version'], 1)
+
+    def test_run_filter_and_context_truncation(self):
+        job = self.job(deliverables=['RUN'], run_id=self.observation['id'])
+        self.assertEqual(job['snapshot']['coverage']['runs'], 1)
+        result = sources_from_context({'unused': [], 'parameters': [{'name': 'a'}],
+                                       '_query_status': {'parameters': {'status': 'collected', 'truncated': True}}})
+        self.assertNotIn('unused', result)
+        self.assertTrue(result['parameters']['truncated'])
+        with self.assertRaises(ValueError):
+            self.job(deliverables=['RUN'], run_id='missing')
+
+    def test_full_collection_paginates_beyond_200(self):
+        from modules.service_management.inspection import collect
+        class Cursor:
+            description = [('NAME',), ('VALUE',)]
+            def execute(self, sql): self.offset = 0
+            def fetchmany(self, limit):
+                size = min(limit, 2300 - self.offset)
+                self.offset += size
+                return [(str(i), i) for i in range(self.offset - size, self.offset)]
+            def close(self): pass
+        class Connection:
+            def cursor(self): return Cursor()
+            def rollback(self): pass
+            def close(self): pass
+        result = collect({}, {**self.payload, '_delivery_full_inventory': True}, factory=lambda *_: Connection())
+        self.assertEqual(len(result['parameters']['rows']), 2300)
+        self.assertFalse(result['parameters']['truncated'])
+
+    def test_http_page_jobs_and_verification(self):
+        app = Flask(__name__, template_folder=str(ROOT / 'web_templates'))
+        principal = Principal(id=11, tenant_id=1, roles=['operator'])
+        app.config.update(SERVICE_STORE=self.services, SERVICE_CATALOG_PATH=ROOT / 'scripts/fixtures/service_catalog.json',
+                          DELIVERY_SYNC=True, DELIVERY_PRINCIPAL_RESOLVER=lambda _: principal)
+        @app.before_request
+        def identity(): g.security_principal = principal
+        app.register_blueprint(bp)
+        client = app.test_client()
+        self.assertEqual(client.get('/reports/center').status_code, 200)
+        response = client.post('/api/services/deliverables/jobs', json={'deliverables': ['D01'], 'date': self.date})
+        self.assertEqual(response.status_code, 202, response.json)
+        job = response.json['job']
+        self.assertEqual(job['state'], 'draft', job.get('error'))
+        artifact = job['artifacts'][0]
+        downloaded = client.get('/api/services/deliverables/' + job['id'] + '/download?artifact_id=' + artifact['artifact_id'])
+        self.assertEqual(downloaded.status_code, 200)
+        self.assertEqual(downloaded.headers['X-Content-SHA256'], digest(downloaded.data))
+        verified = client.post('/api/services/deliverables/verify', data={
+            'job_id': job['id'], 'file': (io.BytesIO(downloaded.data), 'fixture.xlsx')})
+        self.assertEqual(verified.status_code, 200, verified.json)
+        self.assertTrue(verified.json['result']['matches_original'])
+
+    def test_verified_change_updates_asset_and_closes_atomically(self):
+        updates = {'approved_parameters': {'processes': 150}}
+        workflow = self.services.save(OWNER, 'workflow', {
+            'details': {'asset_updates': updates}, 'risk_assessment': 'fixture', 'rollback_plan': 'fixture'},
+            asset_id=self.asset['id'], item_id='fixture-change')
+        for identity, target, evidence in [
+            (OWNER, 'submitted', {}), (ADMIN, 'approved', {}),
+            (OWNER, 'executing', {'execution_reference': 'fixture-exec'}),
+            (OWNER, 'verified', {'verification_reference': 'fixture-verify', 'details_update': {'verified_asset_values': updates}}),
+            (ADMIN, 'closed', {'verification_reference': 'fixture-final'})]:
+            workflow = self.services.transition(identity, workflow['id'], target, workflow['version'], evidence)
+        asset = self.services.get(OWNER, self.asset['id'])
+        self.assertEqual(asset['version'], 2)
+        self.assertEqual(workflow['payload']['state'], 'closed')
+        self.assertEqual(workflow['payload']['asset_version'], 2)
+        self.assertEqual(asset['payload']['approved_parameters'], updates['approved_parameters'])
+
+    def test_finding_deduplication_keeps_workflow_and_evidence(self):
+        item = next(i['id'] for i in all_items(self.catalog).values() if i['key'] == 'remediation')
+        first = self.services.record_finding(OWNER, self.asset['id'], 'capacity', 'run1', 'evidence1', item)
+        second = self.services.record_finding(OWNER, self.asset['id'], 'capacity', 'run2', 'evidence2', item)
+        self.assertEqual(first, second)
+        self.assertEqual(self.services.record_finding(OWNER, self.asset['id'], 'capacity', 'run2', 'evidence2', item), first)
+        self.assertEqual(len(self.services.list(OWNER, 'workflow')), 1)
+
+    def test_key_rotation_preserves_old_signatures(self):
+        job = self.job(deliverables=['D01'])
+        original = package(job, self.archive, OWNER)
+        old_key = job['manifest']['key_id']
+        keys = self.archive.keys(ADMIN, rotate=True)
+        self.assertEqual(len(keys), 2)
+        self.assertNotEqual(next(k['key_id'] for k in keys if k['active']), old_key)
+        self.assertTrue(verify_package(original, old_key)['signature_valid'])
+
+    def test_period_boundary_excludes_later_observations(self):
+        options = self.options(date='2026-01-15')
+        snapshot = build_snapshot(self.services, self.archive, OWNER, self.catalog, options)
+        self.assertEqual(snapshot['coverage']['runs'], 0)
+        self.assertEqual(snapshot['history_notes']['missing_asset_versions'], [self.asset['id']])
+
+    def test_invalid_request_shapes(self):
+        for extra in [{'deliverables': [{}]}, {'deliverables': []}, {'formats': [{}]}, {'formats': []},
+                      {'asset_ids': []}, {'sheets': [{}]}, {'asset_ids': ['foreign']}]:
+            with self.assertRaises((ValueError, PermissionError)):
+                self.options(**extra)
+
+    def test_normal_inspection_capture_and_idempotent_callback(self):
+        from modules.service_management.delivery_capture import capture_inspection
+        principal = Principal(id=11, tenant_id=1, roles=['operator'])
+        app = Flask(__name__)
+        app.config.update(SERVICE_STORE=self.services, SERVICE_CATALOG_PATH=ROOT / 'scripts/fixtures/service_catalog.json')
+        class Inventory:
+            def get(self, identity):
+                return {'source': {'name': 'native', 'db_type': 'oracle'}, 'metadata': {'system': 'fixture'},
+                        'configuration_id': 'CI-NATIVE', 'revision': 'fixture'}
+        task = {'datasource_id': 'native', 'owner_user_id': 11, 'owner_tenant_id': 1, 'id': 'native-run'}
+        context = {'parameters': [{'name': 'processes', 'value': 120}], 'auto_analyze': [{'col1': 'fixture issue'}]}
+        with app.app_context(), patch('modules.access.get_principal', return_value=principal), \
+                patch('modules.access.get_owner', return_value={}), patch('modules.access.visible_to', return_value=True), \
+                patch('modules.operations.routes.resources', return_value=(Inventory(), None, None)):
+            first = capture_inspection(task, context)
+            second = capture_inspection(task, context)
+        self.assertEqual(first, second)
+        self.assertEqual(first['id'], 'native-run')
+
+    def test_legacy_mapping_uses_instance_id_and_preserves_unknown_scope(self):
+        import sqlite3
+        from modules.service_management.delivery_data import legacy_observations, TZ
+        database = Path(self.temp.name) / 'history.db'
+        stamp = datetime.now(TZ).strftime('%Y-%m-%d %H:%M:%S')
+        with sqlite3.connect(database) as db:
+            db.execute('CREATE TABLE snapshots(id INTEGER,ts TEXT,context_json TEXT)')
+            for row_id, instance in [(1, 'known'), (2, 'other')]:
+                db.execute('INSERT INTO snapshots VALUES(?,?,?)', (row_id, stamp, json.dumps({
+                    '_instance_id': instance, 'parameters': [{'name': 'processes', 'value': 100}]})))
+        asset = {**self.asset, 'payload': {**self.payload, 'instance_id': 'known'}}
+        runs, note = legacy_observations({asset['id']: asset}, datetime.now(timezone.utc)-timedelta(days=1),
+                                         datetime.now(timezone.utc), database)
+        self.assertEqual([r['id'] for r in runs], ['history-1'])
+        self.assertEqual(note['matched'], 1)
+
+
+if __name__ == '__main__':
+    unittest.main()

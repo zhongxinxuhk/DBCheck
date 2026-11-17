@@ -4553,7 +4553,7 @@ COMPATIBILITY_QUERIES = {'oracle': {'version': "SELECT BANNER FROM V$VERSION WHE
                'slow_sql': 'SELECT TOP 30 '
                            'PLAN_HANDLE,EXECUTION_COUNT,TOTAL_ELAPSED_TIME,TOTAL_LOGICAL_READS,TOTAL_WORKER_TIME '
                            'FROM SYS.DM_EXEC_QUERY_STATS ORDER BY TOTAL_ELAPSED_TIME DESC',
-               'cluster_nodes': 'SELECT NODE_NAME FROM SYS.DM_OS_CLUSTER_NODES',
+               'cluster_nodes': 'SELECT NODENAME AS NODE_NAME FROM SYS.DM_OS_CLUSTER_NODES',
                'shared_pool': 'SELECT TOP 100 TYPE,SINGLE_PAGES_KB,MULTI_PAGES_KB FROM '
                               'SYS.DM_OS_MEMORY_CLERKS',
                'privileges': "SELECT IS_SRVROLEMEMBER('sysadmin') AS IS_SYSADMIN, "

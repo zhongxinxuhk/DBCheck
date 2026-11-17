@@ -33,6 +33,7 @@ menus_data = [
     ('batch-inspection', 'menu.batch-inspection',0, 12),
     ('clusters',         'menu.clusters',        0, 13),
     ('services',         'menu.services',        0, 14),
+    ('report-center',    'menu.report-center',   0, 15),
     ('system-info',      'menu.system-info',     0, 68),
     ('wizard',           'menu.wizard',          0, 21),
     ('server-inspect',   'menu.server-inspect',  0, 22),
@@ -160,7 +161,7 @@ def init_seed_data():
     # 6. 给 operator 角色分配运维菜单
     operator_role = db.query_one("SELECT id FROM um_role WHERE role_code='operator'")
     if operator_role and access_perm:
-        operator_menus = ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services']
+        operator_menus = ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services', 'report-center']
         cnt = 0
         for menu in menus:
             if menu['menu_code'] in operator_menus:
@@ -244,7 +245,7 @@ def sync_menus():
 
         role_menu_map = {
             'admin': 'ALL',
-            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services'],
+            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services', 'report-center'],
             'viewer': ['home', 'reports', 'monitor-slow', 'ai'],
         }
         access_perm = db.query_one("SELECT id FROM um_permission WHERE perm_level=1")

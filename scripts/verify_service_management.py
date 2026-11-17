@@ -303,7 +303,7 @@ class Services(unittest.TestCase):
         from modules.service_management.scheduler import plan_periodic_services
         asset=self.store.save(OWNER,'asset',{**self.payload,'service_schedule_enabled':True,'service_start_date':'2026-11-01'},record_id=self.asset['id'],version=1)
         now=datetime(2026,11,9,tzinfo=timezone.utc)
-        self.assertEqual(plan_periodic_services(self.store,self.catalog,OWNER,asset,now),4)
+        self.assertEqual(plan_periodic_services(self.store,self.catalog,OWNER,asset,now),5)
         self.assertEqual(plan_periodic_services(self.store,self.catalog,OWNER,asset,now),0)
         monthly=next(r for r in self.store.list(OWNER,'workflow') if r['payload']['title'].startswith('month '))
         self.assertEqual(monthly['payload']['reason'],'客户工作日日历尚未配置')
