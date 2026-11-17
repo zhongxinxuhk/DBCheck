@@ -40,6 +40,15 @@ from typing import Any, Dict, List, Optional, Tuple
 # 组件 id 前缀（Workflow inspect 节点 ref 统一格式）
 COMP_PREFIX = "insp"
 
+# Legacy built-in workflows retain their portable labels as chapter titles evolve.
+COMPONENT_TITLE_ALIASES = {
+    '慢查询': ('SQL 与计划', '慢SQL与执行资源', '查询性能分析'),
+    '表空间': ('逻辑存储空间', '数据库空间使用'),
+    '磁盘': ('数据库文件状态', '数据文件与容量'),
+    '锁': ('锁与阻塞', '锁等待检查', '锁和阻塞分析'),
+    '会话': ('会话与连接检查', '会话与连接', '实例与连接状态'),
+}
+
 # 标题关键词 → 类别标签（用于组件分组展示与 runbook 语义匹配）
 _CATEGORY_KEYWORDS: List[Tuple[str, Tuple[str, ...]]] = [
     ("slow",     ("慢查询", "慢 SQL", "slow_query", "慢sql")),
@@ -152,8 +161,9 @@ def resolve_component(db_type: str, match_title: str) -> Optional[Dict[str, Any]
     匹配优先级（自高到低）：
     1. 标题**完全等于** ``match_title``（default 模板优先）
     2. 标题完全相等（任意模板）
-    3. 标题**包含** ``match_title`` 子串（default 模板优先）
-    4. 标题包含子串（任意模板）
+    3. 旧版通用模板关键词对应的现行完整章节标题
+    4. 标题**包含** ``match_title`` 子串（default 模板优先）
+    5. 标题包含子串（任意模板）
 
     为什么把「完全相等」提到子串之前：子串匹配存在天然歧义——``安全与合规``
     既是周巡检章节的完整标题，又是月度健康检查「安全与合规深度核查」的前缀。
@@ -176,6 +186,10 @@ def resolve_component(db_type: str, match_title: str) -> Optional[Dict[str, Any]
     for c in ordered:
         if _title(c) == kw:
             return c
+    for alias in COMPONENT_TITLE_ALIASES.get(kw, ()):
+        for c in ordered:
+            if _title(c) == alias.lower():
+                return c
     for c in ordered:
         if kw in _title(c):
             return c

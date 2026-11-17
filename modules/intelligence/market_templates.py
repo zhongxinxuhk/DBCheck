@@ -14,6 +14,10 @@
 - 专家节点仅使用「诊断 hub」等通用节点，不硬编码专家清单。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -36,6 +40,7 @@ def _tpl(name: str, description: str, steps: List[Dict[str, Any]],
 
 def builtin_templates() -> List[Dict[str, Any]]:
     """内置 runbook 模板清单（导入时按目标实例动态解析组件）。"""
+    from .service_workflow_templates import build_workflows
     return [
         _tpl(
             "性能三查（慢查询 → 诊断 → 报告）",
@@ -104,4 +109,4 @@ def builtin_templates() -> List[Dict[str, Any]]:
             ],
             [["s1", "s2"], ["s2", "s3"], ["s3", "s4"]],
         ),
-    ]
+    ] + [{"schema": _SCHEMA, "schema_version": 1, **template} for template in build_workflows()]
