@@ -101,6 +101,8 @@ class DeliveryStore:
                     raise ValueError('修订须保持原报告资产范围')
                 if any(previous['request'][key] != request[key] for key in ['deliverables', 'period', 'date']):
                     raise ValueError('修订须保持原报告类型与统计周期')
+                if previous['request'].get('workflow_ids', []) != request.get('workflow_ids', []):
+                    raise ValueError('修订须保持原专项事件范围')
                 report_id = previous['report_id']
                 revision = 1 + max((self.decode(r['payload'])['revision'] for r in db.execute(
                     'SELECT payload FROM delivery_jobs WHERE tenant=?', (actor['tenant_id'],))

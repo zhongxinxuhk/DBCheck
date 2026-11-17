@@ -38,6 +38,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         <fieldset><legend>文件格式</legend><label class="inline"><input name="format" type="checkbox" value="xlsx" checked>Excel（多 Sheet）</label><label class="inline"><input name="format" type="checkbox" value="docx">Word</label><label class="inline">Excel 文件组织<select id="rc-layout"><option value="separate">按交付物拆分</option><option value="combined">合并为综合工作簿</option></select></label></fieldset>
         <details><summary>单次采集、Sheet 与修订设置</summary>
           <label>采集批次<select id="rc-run"><option value="">按周期汇总</option></select></label>
+          <label>专项事件<select id="rc-event"><option value="">本周期相关事件</option></select></label>
           <fieldset><legend>工作表，全部取消时导出完整表组</legend><div id="rc-sheets" class="rc-sheet-list"></div></fieldset>
           <label>修订原因<input id="rc-reason" maxlength="400" placeholder="修订历史报告时填写"></label>
           <input id="rc-previous" type="hidden">

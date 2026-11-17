@@ -14,7 +14,7 @@ from modules.inspection.basic_info import FIELD_ORDER
 from .catalog import all_items
 from .delivery_catalog import DELIVERABLES, WORKFLOW_KEYS
 from .labels import FIELD_LABELS
-from .service import period_bounds, timestamp
+from .service import period_bounds, timestamp, sla_result
 from .store import canonical, utcnow
 from .delivery_store import digest
 
@@ -74,11 +74,15 @@ def request_options(data, assets):
         raise ValueError('所选工作表不属于当前交付物')
     if not isinstance(data.get('layout', 'separate'), str) or data.get('layout', 'separate') not in {'separate', 'combined'}:
         raise ValueError('工作簿组织方式无效')
+    workflow_ids = data.get('workflow_ids') or []
+    if not isinstance(workflow_ids, list) or any(not isinstance(value, str) for value in workflow_ids):
+        raise ValueError('事件范围须为记录编号列表')
     return {'deliverables': types, 'asset_ids': sorted(set(ids)), 'period': period,
             'date': data.get('date') or datetime.now(TZ).date().isoformat(),
             'start': start.isoformat(), 'end': end.isoformat(),
             'cutoff': cutoff.astimezone(timezone.utc).isoformat(), 'formats': list(dict.fromkeys(formats)),
-            'run_id': run_id, 'sheets': selected_sheets, 'layout': data.get('layout', 'separate')}
+            'run_id': run_id, 'sheets': selected_sheets, 'layout': data.get('layout', 'separate'),
+            'workflow_ids': list(dict.fromkeys(workflow_ids))}
 
 
 def sources_from_context(context):
@@ -186,6 +190,18 @@ def build_snapshot(services, archive, actor, catalog, options):
         if timestamp(occurred) < start and closed_at and timestamp(closed_at) < start:
             continue
         workflows.append(record)
+    selected_events = set(options.get('workflow_ids', []))
+    if selected_events:
+        if not selected_events <= {r['id'] for r in workflows}:
+            raise ValueError('事件不存在、不在所选资产周期内或截止时点缺少对应版本')
+        references = set(selected_events)
+        for record in workflows:
+            if record['id'] in selected_events:
+                reference = record['payload'].get('details', {}).get('incident_reference')
+                if reference:
+                    references.add(reference)
+        workflows = [r for r in workflows if r['id'] in selected_events or
+                     r['payload'].get('details', {}).get('incident_reference') in references]
     checks = [r for r in records if r['asset_id'] in assets and r['kind'] == 'inspection'
               and r['item_id'] in items and start <= timestamp(r['payload'].get('collected_at') or r['updated_at']) < end
               and (not options['run_id'] or r['payload'].get('run_id') == options['run_id'])]
@@ -297,15 +313,27 @@ def build_snapshot(services, archive, actor, catalog, options):
                '状态': STATUS.get(p.get('state'), p.get('state')), '原始状态': p.get('state'),
                **{label(k): v for k, v in details.items()},
                '发现时间': p.get('detected_at'), '故障等级': p.get('priority'),
+               '关联故障': details.get('incident_reference') or p.get('incident_reference'),
                '重大故障': bool(details.get('major_incident') or p.get('major_incident')),
                '审批人': p.get('approved_by'), '执行人': p.get('executor'),
                '验证证据': p.get('verification_reference') or details.get('verification_reference'),
                '闭环时间': next((v['time'] for v in reversed(p.get('timeline', [])) if v.get('state') == 'closed'), None),
                '期初转入': timestamp(p.get('detected_at') or r['created_at']) < start,
                '逾期': bool(details.get('deadline') and deadline_time(details['deadline']) < min(end, cutoff) and p.get('state') != 'closed')}
+        if key in WORKFLOW_KEYS['incident'] and p.get('detected_at'):
+            try:
+                row['故障时效核对'] = sla_result({**details, **p}, now=effective_cutoff)
+            except ValueError:
+                row['故障时效核对'] = '事件时间或分级待核对'
         for group, keys in WORKFLOW_KEYS.items():
             if key in keys:
                 grouped[group].append(row)
+    major_references = {r['记录编号'] for r in grouped['incident'] if r['重大故障']}
+    major_references.update(r['关联故障'] for r in grouped['incident'] if r['重大故障'] and r['关联故障'])
+    for rows in grouped.values():
+        for row in rows:
+            if row['关联故障'] in major_references:
+                row['重大故障'] = True
     assignments = {
         'maintenance': ['维护计划与执行', '运维分析'],
         'change': ['变更记录', '审批执行', '前后对比', '回滚验证', '策略变更'],
@@ -324,7 +352,9 @@ def build_snapshot(services, archive, actor, catalog, options):
             elif name in {'治理记录', '效果验证'}:
                 values = [r for r in values if r['需求项'] == 'sql_optimization']
             elif name == '故障时间线':
-                values = [{**business_row(assets[r['asset_id']], r), **v} for r in workflows
+                values = [{**business_row(assets[r['asset_id']], r), **v,
+                           '重大故障': r['id'] in major_references or r['payload'].get('details', {}).get('incident_reference') in major_references}
+                          for r in workflows
                           if items.get(r['item_id'], {}).get('key') in WORKFLOW_KEYS['incident']
                           for v in r['payload'].get('timeline', [])]
             put(name, values)
@@ -400,7 +430,7 @@ def build_snapshot(services, archive, actor, catalog, options):
         '验证结果': ['标题', '处理结果', '验证证据', '业务验证', '数据库验证', '闭环时间'],
     }
     for name, fields in projections.items():
-        sheets[name] = [{**{k: r.get(k) for k in ['资产编号', '资产名称', '记录编号', '需求项']},
+        sheets[name] = [{**{k: r.get(k) for k in ['资产编号', '资产名称', '记录编号', '需求项', '重大故障', '关联故障']},
                          **{k: r.get(k) for k in fields}} for r in sheets.get(name, [])]
     reviews = []
     changes = []
