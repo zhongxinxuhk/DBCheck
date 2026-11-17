@@ -8,13 +8,12 @@ import ctypes
 import hashlib
 import json
 import os
-import platform
 import queue
+import re
 import subprocess
 import sys
 import threading
 import urllib.request
-import uuid
 from pathlib import Path
 
 import psutil
@@ -473,30 +472,58 @@ def remove_local_license(directory):
     return removed
 
 
-def device_serial_number():
-    """Encode stable machine information for display by the desktop launcher."""
-    machine_id = ""
-    if os.name == "nt":
-        try:
-            import winreg
+_ACTIVATION_CODE_RE = re.compile(
+    r"DBP[12]\.[A-Za-z0-9_-]+\.[A-Fa-f0-9]{20,64}", re.IGNORECASE
+)
+_ACTIVATION_MAX_LENGTH = 20000
 
-            with winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Microsoft\Cryptography",
-                0,
-                winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
-            ) as key:
-                machine_id = str(winreg.QueryValueEx(key, "MachineGuid")[0]).strip()
-        except OSError:
-            pass
-    # Keep the identifier independent of installation path and OS patch versions.
-    components = ["DBPulse-device-v1", platform.system(), platform.machine()]
-    if machine_id:
-        components.append(machine_id)
-    else:
-        components.extend([platform.node(), str(uuid.getnode())])
-    digest = hashlib.sha256("\0".join(components).encode("utf-8")).hexdigest()[:24].upper()
-    return "DBP-" + "-".join(digest[index:index + 4] for index in range(0, 24, 4))
+
+def device_serial_number():
+    """Return the same device serial as the web system-info page.
+
+    The serial has exactly one owner, ``modules.system_info.license``. The
+    launcher must never compute its own identifier: doing so produced a
+    different serial in the window header than the one shown (and signed into
+    activation codes) by the web console.
+    """
+    try:
+        from modules.system_info.license import get_device_serial
+
+        return get_device_serial()
+    except Exception:
+        # Never invent a second identifier. If the service module cannot load,
+        # read the cache written by the web console instead.
+        try:
+            from modules.core import paths
+
+            cached = (paths.DATA_DIR / "device_serial.txt").read_text(
+                encoding="utf-8"
+            ).strip().upper()
+        except Exception:
+            return ""
+        return cached if cached.startswith("DBP-") else ""
+
+
+def normalize_activation_code(value):
+    """Collapse wrapping and canonicalize the ``DBP1``/``DBP2`` prefix."""
+    code = "".join(str(value or "").split())
+    upper = code.upper()
+    for prefix in ("DBP1.", "DBP2."):
+        if upper.startswith(prefix):
+            return prefix + code[len(prefix):]
+    return code
+
+
+def clipboard_activation_code(value):
+    """Extract a signed activation code from arbitrary clipboard text."""
+    raw = str(value or "").strip()
+    if not raw or len(raw) > _ACTIVATION_MAX_LENGTH:
+        return ""
+    match = _ACTIVATION_CODE_RE.search(raw)
+    if not match:
+        return ""
+    prefix, rest = match.group(0).split(".", 1)
+    return prefix.upper() + "." + rest
 
 
 # --- Window presentation -----------------------------------------------------
@@ -807,6 +834,9 @@ def desktop_layout(root, directory, status, detail):
     serial = device_serial_number()
 
     def copy_serial():
+        if not serial:
+            copy_hint.set("读取失败")
+            return
         try:
             root.clipboard_clear()
             root.clipboard_append(serial)
@@ -816,8 +846,8 @@ def desktop_layout(root, directory, status, detail):
         root.after(2500, lambda: copy_hint.set("点击复制"))
 
     ttk.Button(
-        serial_row, text=serial, command=copy_serial, style="Serial.TButton",
-        cursor="hand2", takefocus=True,
+        serial_row, text=serial or "序列号读取失败", command=copy_serial,
+        style="Serial.TButton", cursor="hand2", takefocus=True,
     ).pack(side="left")
     tk.Label(serial_row, textvariable=copy_hint, bg=SURFACE, fg=FAINT,
              font=(UI_FONT, 9)).pack(side="left", padx=(px(10), px(0)))
@@ -904,19 +934,27 @@ def desktop_layout(root, directory, status, detail):
 
     licence_actions = tk.Frame(licence, bg=SURFACE)
     licence_actions.pack(fill="x")
+
+    def open_activation():
+        activation_dialog(root, refresh_local_authorization)
+
+    ttk.Button(
+        licence_actions, text="激活授权", style="Primary.TButton",
+        command=open_activation, cursor="hand2",
+    ).pack(side="left")
     remove_licence = ttk.Button(
         licence_actions, text="移除授权", style="Danger.TButton",
         state="disabled", command=lambda: remove_local_authorization(),
         cursor="hand2",
     )
-    remove_licence.pack(side="left")
+    remove_licence.pack(side="left", padx=(px(8), px(0)))
     ttk.Button(
         licence_actions, text="刷新授权状态", style="Link.TButton",
         command=lambda: refresh_local_authorization(), cursor="hand2",
     ).pack(side="left", padx=(px(8), px(0)))
     tk.Label(
         licence_actions,
-        text="激活请在 Web 系统信息页完成；此处可刷新或移除本机授权。",
+        text="激活码与右上角序列号绑定。",
         bg=SURFACE, fg=FAINT, font=(UI_FONT, 9),
     ).pack(side="left", padx=(px(14), px(0)))
 
@@ -1010,6 +1048,206 @@ def desktop_layout(root, directory, status, detail):
     log_view = tk.Frame(log_card, bg=LOG_BG)
     log_view.pack(fill="both", expand=True)
     return frame, indicator, buttons, backup_buttons, log_header, log_view
+
+
+def activation_dialog(root, on_activated=None):
+    """Show the offline activation dialog, prefilled from the clipboard.
+
+    Validation, device binding and persistence are delegated to
+    ``modules.system_info.license`` so the desktop window and the web console
+    share one serial, one signature implementation and one local record.
+    ``on_activated`` is called after a successful activation so the licence
+    card can refresh immediately.
+    """
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+
+    from modules.system_info import license as license_service
+
+    px = ui_px(root)
+    window = tk.Toplevel(root)
+    window.title("激活软件授权")
+    window.transient(root)
+    window.configure(bg=SURFACE)
+    window.resizable(False, False)
+    window.grab_set()
+
+    panel = tk.Frame(window, bg=SURFACE)
+    panel.pack(fill="both", expand=True, padx=px(22), pady=px(18))
+    tk.Label(
+        panel, text="激活 DBPulse", bg=SURFACE, fg=INK,
+        font=(UI_FONT, 12, "bold"),
+    ).pack(anchor="w")
+    tk.Label(
+        panel,
+        text="粘贴授权方签发的完整激活码。打开窗口时会自动读取剪贴板中已复制的激活码；"
+             "也可以按 Ctrl+V 或点击“从剪贴板粘贴”。",
+        bg=SURFACE, fg=MUTED, font=(UI_FONT, 9), justify="left",
+        wraplength=px(500),
+    ).pack(anchor="w", pady=(px(4), px(12)))
+
+    serial = device_serial_number()
+    serial_row = tk.Frame(panel, bg=SURFACE_SOFT, highlightbackground=HAIRLINE,
+                          highlightthickness=1)
+    serial_row.pack(fill="x")
+    tk.Label(serial_row, text="设备序列号", bg=SURFACE_SOFT, fg=MUTED,
+             font=(UI_FONT, 9)).pack(side="left", padx=(px(10), px(8)),
+                                     pady=px(7))
+    serial_hint = tk.StringVar(master=window, value="点击复制")
+    serial_label = tk.Label(
+        serial_row, text=serial, bg=SURFACE_SOFT, fg=INK,
+        font=(MONO_FONT, 9), cursor="hand2",
+    )
+    serial_label.pack(side="left")
+
+    def copy_serial():
+        if not serial:
+            serial_hint.set("读取失败")
+            return
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(serial)
+            serial_hint.set("已复制")
+        except tk.TclError:
+            serial_hint.set("复制失败")
+        root.after(2000, lambda: serial_hint.set("点击复制"))
+
+    serial_label.bind("<Button-1>", lambda _event: copy_serial())
+    ttk.Button(
+        serial_row, text="复制", style="Link.TButton", command=copy_serial,
+        cursor="hand2",
+    ).pack(side="left", padx=(px(4), px(0)))
+    tk.Label(serial_row, textvariable=serial_hint, bg=SURFACE_SOFT, fg=FAINT,
+             font=(UI_FONT, 9)).pack(side="left")
+
+    tk.Label(panel, text="激活码", bg=SURFACE, fg=INK_SOFT,
+             font=(UI_FONT, 9, "bold")).pack(anchor="w", pady=(px(12), px(5)))
+    code_box = tk.Frame(panel, bg=SURFACE, highlightbackground=HAIRLINE,
+                        highlightthickness=1)
+    code_box.pack(fill="x")
+    code_input = tk.Text(
+        code_box, height=7, width=64, wrap="char", bg=SURFACE, fg=INK,
+        insertbackground=INK, font=(MONO_FONT, 9), relief="flat", bd=0,
+        padx=px(9), pady=px(8), selectbackground="#dbe6f5",
+        selectforeground=INK,
+    )
+    code_input.pack(fill="both", expand=True)
+
+    clipboard_hint = tk.StringVar(master=window, value="")
+    try:
+        clipboard_code = clipboard_activation_code(root.clipboard_get())
+    except tk.TclError:
+        clipboard_code = ""
+    if clipboard_code:
+        code_input.insert("1.0", clipboard_code)
+        clipboard_hint.set("已自动读取剪贴板中的激活码，确认无误后点击“确定激活”。")
+    else:
+        clipboard_hint.set("剪贴板中没有发现激活码，可直接粘贴（Ctrl+V）。")
+    tk.Label(
+        panel, textvariable=clipboard_hint, bg=SURFACE, fg=FAINT,
+        font=(UI_FONT, 9), justify="left", wraplength=px(500),
+    ).pack(anchor="w", pady=(px(5), px(0)))
+
+    feedback = tk.StringVar(master=window, value="")
+    feedback_label = tk.Label(
+        panel, textvariable=feedback, bg=SURFACE, fg=DANGER_COLOR,
+        font=(UI_FONT, 9), justify="left", wraplength=px(500), anchor="w",
+    )
+    feedback_label.pack(fill="x", pady=(px(7), px(0)))
+
+    def paste_clipboard():
+        try:
+            text = root.clipboard_get()
+        except tk.TclError:
+            feedback.set("剪贴板为空或内容无法读取")
+            return
+        code = clipboard_activation_code(text) or str(text or "").strip()
+        if not code:
+            feedback.set("剪贴板为空或内容无法读取")
+            return
+        code_input.delete("1.0", "end")
+        code_input.insert("1.0", code)
+        code_input.focus_set()
+        feedback.set("")
+        clipboard_hint.set("已从剪贴板粘贴，确认无误后点击“确定激活”。")
+
+    def confirm_activation():
+        code = normalize_activation_code(code_input.get("1.0", "end"))
+        if not code:
+            feedback.set("请先粘贴或输入激活码")
+            code_input.focus_set()
+            return
+        feedback.set("正在校验激活码…")
+        feedback_label.configure(fg=MUTED)
+        window.update_idletasks()
+        try:
+            result = license_service.activate_license(code, actor="desktop")
+        except Exception as error:  # keep the dialog usable on unexpected I/O
+            feedback_label.configure(fg=DANGER_COLOR)
+            feedback.set("激活失败：{}".format(error))
+            return
+        if not result.get("ok"):
+            feedback_label.configure(fg=DANGER_COLOR)
+            feedback.set(str(result.get("error") or "激活失败"))
+            code_input.focus_set()
+            return
+        if on_activated is not None:
+            try:
+                on_activated()
+            except Exception:
+                pass
+        license_info = result.get("license") or {}
+        messagebox.showinfo(
+            "激活成功",
+            "授权已生效。\n\n授权对象：{}\n授权版本：{}\n到期时间：{}".format(
+                license_info.get("licensed_to") or "—",
+                license_info.get("edition") or "—",
+                license_info.get("expires_at") or "长期有效",
+            ),
+            parent=window,
+        )
+        window.destroy()
+
+    def show_context_menu(event):
+        menu = tk.Menu(window, tearoff=False)
+        menu.add_command(label="粘贴", command=paste_clipboard)
+        menu.add_command(
+            label="全选",
+            command=lambda: (code_input.tag_add("sel", "1.0", "end-1c"),
+                             code_input.mark_set("insert", "1.0")),
+        )
+        menu.add_separator()
+        menu.add_command(label="清空", command=lambda: code_input.delete("1.0", "end"))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    code_input.bind("<Button-3>", show_context_menu)
+    code_input.bind("<Control-Return>", lambda _event: confirm_activation())
+    window.bind("<Escape>", lambda _event: window.destroy())
+
+    footer = tk.Frame(panel, bg=SURFACE)
+    footer.pack(fill="x", pady=(px(14), px(0)))
+    ttk.Button(footer, text="取消", command=window.destroy,
+               cursor="hand2").pack(side="right")
+    ttk.Button(
+        footer, text="确定激活", command=confirm_activation,
+        style="Primary.TButton", cursor="hand2",
+    ).pack(side="right", padx=(px(0), px(8)))
+    ttk.Button(
+        footer, text="从剪贴板粘贴", command=paste_clipboard,
+        style="Link.TButton", cursor="hand2",
+    ).pack(side="left")
+
+    window.update_idletasks()
+    left = root.winfo_rootx() + (root.winfo_width() - window.winfo_width()) // 2
+    top = root.winfo_rooty() + max(
+        40, (root.winfo_height() - window.winfo_height()) // 3
+    )
+    window.geometry("+{0}+{1}".format(max(0, left), max(0, top)))
+    code_input.focus_set()
+    return window
 
 
 def maintenance_dialog(root, settings, state, on_save):

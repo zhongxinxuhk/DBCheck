@@ -17,6 +17,9 @@ from modules.desktop.local_backup import LocalBackup, RecoveryRequired
 from modules.desktop.log_output import LogOutput
 from modules.desktop.windows_launcher import (
     BackendProcess,
+    clipboard_activation_code,
+    device_serial_number,
+    normalize_activation_code,
     read_local_license,
     remove_local_license,
 )
@@ -47,6 +50,53 @@ def rewrite_archive(path, change):
     with zipfile.ZipFile(path, "w") as destination:
         for name, value in content.items():
             destination.writestr(name, value)
+
+
+def test_desktop_serial_uses_the_web_license_identity(monkeypatch):
+    """The window header and the web console must expose the same serial."""
+    from modules.system_info import license as license_service
+
+    serial = "DBP-AAAA-BBBB-CCCC-DDDD"
+    monkeypatch.setattr(license_service, "get_device_serial", lambda: serial)
+    assert device_serial_number() == serial
+
+
+def test_activation_code_is_extracted_from_clipboard_text():
+    code = "DBP2.eyJ2IjoyfQ." + "A" * 64
+    assert clipboard_activation_code("激活码：\n" + code + "\n请勿外传") == code
+    assert clipboard_activation_code(code) == code
+    assert clipboard_activation_code("dbp2." + code.split(".", 1)[1]) == code
+    assert clipboard_activation_code("普通文本") == ""
+    assert clipboard_activation_code("") == ""
+
+
+def test_activation_code_normalization_removes_wrapping():
+    assert normalize_activation_code(" DBP2.abc\n def \r\n") == "DBP2.abcdef"
+    assert normalize_activation_code("dbp2.abc") == "DBP2.abc"
+
+
+def test_desktop_activation_is_visible_to_the_local_license_card(
+    installation, monkeypatch
+):
+    from modules.system_info import license as license_service
+
+    serial = "DBP-AAAA-BBBB-CCCC-DDDD"
+    monkeypatch.setattr(
+        license_service, "_LICENSE_PATH", installation / "data/system_license.json"
+    )
+    monkeypatch.setattr(license_service, "get_device_serial", lambda: serial)
+    code = license_service.issue_activation_code(
+        licensed_to_type="organization",
+        licensed_to="示例单位",
+        device_serial=serial,
+        valid_days=30,
+    )
+
+    result = license_service.activate_license(code, actor="desktop")
+    assert result["ok"], result
+    record = read_local_license(installation)
+    assert record["license_id"] == result["license_id"]
+    assert record["device_serial"] == serial
 
 
 def test_local_license_can_be_read_and_removed(installation):
