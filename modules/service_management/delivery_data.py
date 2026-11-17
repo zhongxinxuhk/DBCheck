@@ -171,7 +171,8 @@ def build_snapshot(services, archive, actor, catalog, options):
                          'updated_at': observation['observed_at'], 'created_at': observation['observed_at'],
                          'payload': {'run_id': observation['id'], 'source_results': observation['source_results'],
                                      'provenance': 'inspection_snapshot', 'collected_at': observation['observed_at']}})
-    legacy_runs, legacy_notes = legacy_observations(assets, start, effective_cutoff)
+    legacy_runs, legacy_notes = legacy_observations(assets, start, effective_cutoff) if getattr(
+        services, 'include_legacy_history', True) else ([], '按指定单次巡检批次导出')
     captured = {r['payload']['run_id'] for r in runs if r['payload'].get('run_id')}
     runs.extend(r for r in legacy_runs if r['payload'].get('native_task_id') not in captured)
     runs.sort(key=lambda r: timestamp(r['payload'].get('collected_at') or r['updated_at']))

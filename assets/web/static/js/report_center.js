@@ -301,9 +301,10 @@
             node("p", "签名公钥指纹"),
             node("code", job.manifest.key_id),
           );
+          actions.append(downloadLink(job));
+          if (!job.request.history_export)
+            actions.append(button("生成修订版", () => revision(job)));
           actions.append(
-            downloadLink(job),
-            button("生成修订版", () => revision(job)),
             button("校验", () => {
               $("verify-job").value = job.id;
               verifyArtifacts();

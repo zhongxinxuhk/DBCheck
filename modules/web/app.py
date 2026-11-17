@@ -1954,6 +1954,7 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
         # 历史快照
         try:
             context['_report_task_id'] = task_id
+            context['_report_file_name'] = file_name
             from modules.inspection.analyzer import HistoryManager
             hm = HistoryManager(BASE_DIR)
             hm.save_snapshot(
@@ -1972,7 +1973,7 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
             try:
                 from modules.service_management.delivery_capture import capture_inspection
                 with app.app_context():
-                    _delivery_observation = capture_inspection({**task, 'id': task_id}, context)
+                    _delivery_observation = capture_inspection({**task, 'id': task_id, 'report_path': ofile}, context)
                     _delivery_run_id = (_delivery_observation or {}).get('id')
             except Exception as error:
                 _emit('log', {'msg': '[报告中心] 观测归档失败：%s' % str(error)[:200]})

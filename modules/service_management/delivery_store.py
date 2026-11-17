@@ -41,6 +41,12 @@ class DeliveryStore:
                 CREATE TABLE IF NOT EXISTS delivery_observations (
                     id TEXT PRIMARY KEY, tenant INTEGER NOT NULL, asset_id TEXT NOT NULL,
                     observed_at TEXT NOT NULL, payload BLOB NOT NULL);
+                CREATE TABLE IF NOT EXISTS delivery_inspection_reports (
+                    tenant INTEGER NOT NULL, report_name TEXT NOT NULL, payload BLOB NOT NULL,
+                    PRIMARY KEY(tenant,report_name));
+                CREATE TABLE IF NOT EXISTS delivery_history_exports (
+                    tenant INTEGER NOT NULL, cache_key TEXT NOT NULL, job_id TEXT NOT NULL,
+                    PRIMARY KEY(tenant,cache_key));
             ''')
 
     def seal(self, data):
@@ -61,13 +67,16 @@ class DeliveryStore:
         body = self.decode(row['payload'])
         if body['id'] != row['id'] or body['tenant'] != row['tenant'] or body['owner'] != row['owner']:
             raise ValueError('报告归属完整性校验失败')
+        if body['request'].get('history_export') and not (actor.get('admin') and actor['tenant_id'] == 1):
+            raise PermissionError('历史报告仅安装租户管理员可访问')
         if row['owner'] != actor['id'] and not actor.get('admin') and not actor.get('approver'):
             raise PermissionError('无权访问此报告任务')
-        if 'source_ids' in body['request'] and hasattr(self.services, 'visible'):
+        if 'source_ids' in body['request'] and not body['request'].get('history_export') and hasattr(self.services, 'visible'):
             if not set(body['request']['source_ids']) <= self.services.visible:
                 raise PermissionError('报告数据源权限已变化')
         for asset_id in body['request']['asset_ids']:
-            self.services.get(actor, asset_id, db)
+            if not body['request'].get('history_export'):
+                self.services.get(actor, asset_id, db)
         body.update(state=row['state'], version=row['version'], updated_at=row['updated_at'])
         return body
 
@@ -88,12 +97,17 @@ class DeliveryStore:
                     continue
         return results
 
-    def create(self, actor, request, snapshot, *, previous_id=None, reason=''):
+    def create(self, actor, request, snapshot, *, previous_id=None, reason='', cache_key=None):
         now = utcnow()
         identity = uuid.uuid4().hex
         with self.services.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             self.services._verify(db)
+            if cache_key:
+                cached = db.execute('SELECT job_id FROM delivery_history_exports WHERE tenant=? AND cache_key=?',
+                                    (actor['tenant_id'],cache_key)).fetchone()
+                if cached:
+                    return self._job(db,actor,cached['job_id'])
             revision = 1
             report_id = identity
             if previous_id:
@@ -122,7 +136,58 @@ class DeliveryStore:
                        'VALUES(?,?,?,?,?,?,?)',
                        (identity, actor['tenant_id'], actor['id'], 'queued', now, now, self.seal(body)))
             self.services._audit(db, actor, 'delivery.create', identity, digest(canonical(request).encode()))
+            if cache_key:
+                db.execute('INSERT INTO delivery_history_exports VALUES(?,?,?)',(actor['tenant_id'],cache_key,identity))
         return self.get(actor, identity)
+
+    def link_inspection_report(self, actor, report_name, observation, source_asset, file_sha256):
+        self.services.get(actor, observation['asset_id'])
+        if source_asset['id']!=observation['asset_id'] or source_asset['tenant']!=actor['tenant_id']:
+            raise ValueError('原报告与数据源快照归属不一致')
+        value = {'tenant':actor['tenant_id'],'report_name':report_name,'run_id':observation['id'],
+                 'source_id':observation['asset_id'],'source_asset':source_asset,
+                 'observed_at':observation['observed_at'],'file_sha256':file_sha256}
+        with self.services.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.services._verify(db)
+            self.services.get(actor,observation['asset_id'],db)
+            db.execute('INSERT INTO delivery_inspection_reports VALUES(?,?,?) ON CONFLICT(tenant,report_name) '
+                       'DO UPDATE SET payload=excluded.payload',(actor['tenant_id'],report_name,self.seal(value)))
+            self.services._audit(db,actor,'delivery.report-link',observation['id'],digest(canonical(value).encode()))
+
+    def inspection_report(self, actor, report_name):
+        with self.services.connection() as db:
+            self.services._verify(db)
+            row=db.execute('SELECT payload FROM delivery_inspection_reports WHERE tenant=? AND report_name=?',
+                           (actor['tenant_id'],report_name)).fetchone()
+            if not row:
+                return None
+            value=self.decode(row['payload'])
+            if value['tenant']!=actor['tenant_id'] or value['report_name']!=report_name:
+                raise ValueError('原巡检报告关联完整性校验失败')
+            if value['source_asset']['id']!=value['source_id'] or value['source_asset']['tenant']!=actor['tenant_id']:
+                raise ValueError('原巡检数据源快照归属不一致')
+            if not (actor.get('admin') and actor['tenant_id'] == 1):
+                self.services.get(actor,value['source_id'],db)
+            observed=db.execute('SELECT payload FROM delivery_observations WHERE id=? AND tenant=? AND asset_id=?',
+                                (value['run_id'],actor['tenant_id'],value['source_id'])).fetchone()
+            if not observed:
+                raise ValueError('原巡检采集记录缺失')
+            observation=self.decode(observed['payload'])
+            if observation['id']!=value['run_id'] or observation['asset_id']!=value['source_id'] or observation['tenant']!=actor['tenant_id']:
+                raise ValueError('原巡检采集归属不一致')
+            return value,observation
+
+    def retry_history_export(self, actor, job_id):
+        with self.services.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            job=self._job(db,actor,job_id)
+            if job['state']=='failed' and job['request'].get('history_export'):
+                job['error']=''
+                db.execute("UPDATE delivery_jobs SET state='queued',version=version+1,updated_at=?,payload=? WHERE id=?",
+                           (utcnow(),self.seal(job),job_id))
+                self.services._audit(db,actor,'delivery.history-retry',job_id,'')
+        return self.get(actor,job_id)
 
     def claim(self, actor, job_id):
         with self.services.connection() as db:
