@@ -782,9 +782,7 @@ class OperationsTest(unittest.TestCase):
         codes = {row[0] for row in catalogue}
         required = {
             "inventory",
-            "batch-inspection",
-            "clusters",
-            "services",
+            "report-center",
             "system-info",
         }
         self.assertTrue(required <= codes)
@@ -793,8 +791,9 @@ class OperationsTest(unittest.TestCase):
         # flow 由专业版扩展登记，license 是既有隐藏入口。
         self.assertFalse(sidebar_codes - codes - {"flow", "license"})
         self.assertLess(html.index('id="nav-inventory"'), html.index('id="nav-wizard"'))
-        self.assertIn('id="page-batch-inspection"', html)
-        self.assertIn("/operations/inventory?tab=batch", html)
+        self.assertIn('id="page-report-center"', html)
+        self.assertIn("{% include 'report_center.html' %}", html)
+        self.assertTrue({'services','clusters','batch-inspection'}.isdisjoint(sidebar_codes))
         from i18n import _LANGS, get_all_translations
 
         for lang in _LANGS:
@@ -804,7 +803,7 @@ class OperationsTest(unittest.TestCase):
 
     def test_operator_menu_initialization_and_sync_include_operations(self):
         tree = ast.parse((ROOT / "modules/user_management/seed.py").read_text())
-        required = {"inventory", "batch-inspection", "clusters", "services"}
+        required = {"inventory", "report-center"}
         checked = 0
         for n in ast.walk(tree):
             if not isinstance(n, ast.Assign):
@@ -818,10 +817,10 @@ class OperationsTest(unittest.TestCase):
                 checked += 1
         self.assertEqual(checked, 2)
 
-    def test_cluster_and_service_pages_mount_in_main_content(self):
+    def test_inventory_and_report_center_mount_in_main_content(self):
         from flask import render_template
         html = (ROOT/'web_templates/index.html').read_text(encoding='utf-8-sig')
-        for code in ('clusters','services'):
+        for code in ('inventory','report-center'):
             self.assertRegex(html,r'onclick="showPage\(\''+code+r'\'\)" id="nav-'+code+r'"')
             self.assertIn('id="page-'+code+'"',html)
             self.assertNotRegex(html,r'href="/'+code+r'" id="nav-'+code+r'"')
@@ -833,10 +832,14 @@ class OperationsTest(unittest.TestCase):
             self.assertNotIn('<!doctype',embedded.lower())
             self.assertNotIn('<body',embedded.lower())
             self.assertIn('<!doctype',standalone.lower())
-        js = (ROOT/'assets/web/static/js/service_management.js').read_text()
+        with self.app.test_request_context('/'):
+            report_center = render_template('report_center.html')
+        self.assertIn('id="report-center"',report_center)
+        self.assertNotIn('<body',report_center.lower())
+        js = (ROOT/'assets/web/static/js/report_center.js').read_text()
         self.assertIn('root.querySelectorAll',js)
         self.assertNotIn('document.querySelectorAll',js)
-        self.assertIn('window.initServiceManagementPage',js)
+        self.assertIn('window.initReportCenterPage',js)
 
     def test_options_and_template_render(self):
         self.assertEqual(self.client.get("/api/operations/options").status_code, 200)

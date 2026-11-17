@@ -177,6 +177,14 @@ def adapt_accounts(rows,asset):
         username=pick(row,'用户名','username','user_name','member_name','login_name','grantee')
         fill(row,'用户名',username,'原报告账号/授权主体')
         title=str(row.get('原报告章节','')).casefold()
+        scope = pick(row, '主体范围', 'principal_scope')
+        source = str(row.get('来源查询') or '').casefold()
+        if scope is None and ('server_' in source or 'sysadmin' in title):
+            scope = 'server'
+        elif scope is None and source.endswith(('accounts', 'role_members', 'permissions')):
+            scope = 'database'
+        fill(row, '主体范围', scope, '原生账号与授权查询范围')
+        fill(row, '数据库名称', pick(row, 'database_name'), '原生授权所属数据库')
         if 'sysadmin' in title:
             fill(row,'角色','sysadmin','原报告固定角色成员查询')
         grant=pick(row,'state_desc')
@@ -196,7 +204,9 @@ def adapt_accounts(rows,asset):
         if row.get('记录类型')!='用户账号' or missing(row.get('用户名')):
             continue
         username=row['用户名']
-        related=[entry for entry in rows if entry.get('用户名')==username]
+        related=[entry for entry in rows if entry.get('用户名')==username
+                 and entry.get('主体范围')==row.get('主体范围')
+                 and entry.get('数据库名称')==row.get('数据库名称')]
         roles=sorted({str(entry['角色']) for entry in related if not missing(entry.get('角色'))})
         permissions=sorted({str(entry['权限'])+((' ON '+str(entry['授权对象'])) if not missing(entry.get('授权对象')) else '')
                             for entry in related if not missing(entry.get('权限'))})
@@ -353,7 +363,7 @@ def adapt_tables(sheets,metadata,asset,observed_at):
         row['参数快照版本']='sha256:'+digest(canonical([row.get('参数名称'),row.get('配置值'),row.get('运行值'),row.get('单位')]).encode())[:16]
         if row.get('字段来源',{}).get('参数版本')=='本次参数值快照摘要':
             row['参数版本']=row['参数快照版本']
-    sheets['用户及权限表']=deduplicate(sheets['用户及权限表'],('用户名','记录类型','角色','权限','授权对象'))
+    sheets['用户及权限表']=deduplicate(sheets['用户及权限表'],('用户名','主体范围','数据库名称','记录类型','角色','权限','授权对象'))
     nodes=sheets['集群参数表']
     cluster_description=str(facts.get('集群属性') or '')
     if cluster_description.casefold() in {'单实例','单机','standalone','single instance'} and all(
