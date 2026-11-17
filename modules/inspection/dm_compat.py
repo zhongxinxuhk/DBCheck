@@ -209,9 +209,8 @@ def version_query_candidates() -> List[str]:
     return [
         'SELECT ID_CODE FROM V$VERSION',
         'SELECT BUILD_VERSION FROM V$INSTANCE',
-        'SELECT VERSION$ FROM V$VERSION',
-        'SELECT BANNER FROM V$VERSION WHERE ROWNUM = 1',
         'SELECT * FROM V$VERSION',
+        'SELECT BANNER FROM V$VERSION WHERE ROWNUM = 1',
     ]
 
 

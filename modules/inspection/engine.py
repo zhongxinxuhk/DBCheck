@@ -1612,10 +1612,11 @@ class BaseInspectionEngine:
             rows = fetch_rows(cursor, 1001)
             for row in rows[:1000]:
                 data.append(dict(zip(columns, row)))
-            if len(rows) > 1000:
-                self._safe_errors.append('查询结果超过1000行，需要缩小范围后复核')
-            self.context.setdefault('_query_status', {})[item_name] = {'status': 'collected', 'rows': len(data), 'truncated': len(rows) > 1000}
-            return {"columns": columns, "data": data, "_truncated": len(rows) > 1000}
+            truncated = len(rows) > 1000 or getattr(cursor, 'truncated', False) is True
+            if truncated:
+                self._safe_errors.append('查询结果超出安全返回范围，需要缩小范围后复核')
+            self.context.setdefault('_query_status', {})[item_name] = {'status': 'collected', 'rows': len(data), 'truncated': truncated}
+            return {"columns": columns, "data": data, "_truncated": truncated}
         except Exception as e:
             # 分类错误，生成友好描述
             err_str = str(e)

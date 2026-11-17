@@ -376,7 +376,7 @@ def build_jdbc_url(
 
     # Oracle：use_sid 走 @host:port:SID 旧格式（service_name 字段承载 SID 值）
     if db_type == 'oracle_jdbc' and use_sid:
-        _sid = service_name or _prof.get('service_default') or 'ORCL'
+        _sid = service_name or extra.get('sid') or database or _prof.get('service_default') or 'ORCL'
         return f'jdbc:oracle:thin:@{host}:{_port}:{_sid}'
 
     # SQL Server：encrypt=false 时省略 trustServerCertificate（部分驱动/服务器在
@@ -445,8 +445,9 @@ def _sort_jars_by_version(jars: List[str]) -> List[str]:
     import re
 
     def _ver(p: str):
-        _m = re.search(r'(\d+)', os.path.basename(p))
-        return int(_m.group(1)) if _m else 0
+        directory = os.path.basename(os.path.dirname(p))
+        version = directory if re.match(r'^\d', directory) else os.path.basename(p)
+        return tuple(int(part) for part in re.findall(r'\d+', version))
     return sorted(jars, key=_ver, reverse=True)
 
 
@@ -611,7 +612,13 @@ def resolve_driver_jars(db_type: str, driver_version: str = '', *,
             return _append_driver_deps(db_type, _prefer_jvm_compatible(db_type, _resolved))
     except Exception:  # noqa: BLE001
         pass
-    for _d in (fallback_dirs or []):
+    if fallback_dirs is None:
+        from modules.core.paths import PROJECT_ROOT
+        catalog = JDBC_PLUGIN_TO_CATALOG.get(db_type, db_type)
+        directory = PROJECT_ROOT / 'drivers' / catalog
+        fallback_dirs = [str(directory / driver_version if driver_version else directory)]
+        recursive = True
+    for _d in fallback_dirs:
         if not _d or not os.path.isdir(_d):
             continue
         import glob
@@ -798,7 +805,8 @@ def open_jdbc_connection(
         **extra,
     )
 
-    _jars = resolve_driver_jars(db_type, driver_version, fallback_dirs=fallback_dirs)
+    _jars = resolve_driver_jars(db_type, driver_version, fallback_dirs=fallback_dirs,
+                              recursive=bool(extra.get('recursive', False)))
     # HGDB 兜底：HighGo 专属驱动 jar（com.highgo.jdbc.Driver）未捆绑时，
     # 回退到标准 PostgreSQL 驱动（org.postgresql.Driver + jdbc:postgresql://），
     # HGDB 线协议兼容 PostgreSQL，可直接连通，避免缺 jar 报 Class not found。

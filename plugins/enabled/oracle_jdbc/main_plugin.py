@@ -438,7 +438,7 @@ def get_connection(host, port, user, password, service_name='ORCL', sysdba=False
 
 
 # ── 数据源获取函数（供 web_ui.py 使用）─────────────────────────────
-def getData(ip, port, user, password, database='ORCL', ssh_info=None, template_id=None, service_name=None, sysdba=False, driver_version='', use_sid=False):
+def getData(ip, port, user, password, database='ORCL', ssh_info=None, template_id=None, service_name=None, sysdba=False, driver_version='', use_sid=False, jdbc_url=None):
     """
     获取 Oracle JDBC 数据源
 
@@ -456,7 +456,7 @@ def getData(ip, port, user, password, database='ORCL', ssh_info=None, template_i
     :return: OracleJdbcInspector 对象，失败返回 None
     """
     db_name = service_name or database or 'ORCL'
-    inspector = OracleJdbcInspector(ip, int(port), user, password, db_name, ssh_info, template_id, sysdba=sysdba, driver_version=driver_version, use_sid=use_sid)
+    inspector = OracleJdbcInspector(ip, int(port), user, password, db_name, ssh_info, template_id, sysdba=sysdba, driver_version=driver_version, use_sid=use_sid, jdbc_url=jdbc_url)
     ok, msg = inspector.connect()
     if not ok:
         print(f"[Oracle JDBC] 连接失败: {msg}")
@@ -475,12 +475,15 @@ def get_task_config():
         'connect_test': test_connection,
         'connect_test_args': lambda info: [
             info['ip'], info['port'], info['user'], info['password'],
-            info.get('service_name', 'ORCL'), bool(info.get('sysdba', False))
+            info.get('service_name') or info.get('sid') or info.get('database') or 'ORCL',
+            bool(info.get('sysdba', False)), info.get('jdbc_url'),
+            info.get('driver_version', ''), bool(info.get('use_sid', False))
         ],
         'getdata_args': lambda info, template_id=None: (
             [info['ip'], info['port'], info['user'], info['password']],
             {'ssh_info': {}, 'template_id': template_id,
-             'service_name': info.get('service_name', 'ORCL'),
+             'service_name': info.get('service_name') or info.get('sid') or info.get('database') or 'ORCL',
+             'jdbc_url': info.get('jdbc_url'),
              'sysdba': bool(info.get('sysdba', False)),
              'driver_version': info.get('driver_version', ''),
              'use_sid': bool(info.get('use_sid', False))}

@@ -24,3 +24,5 @@ bcrypt==4.3.0
 
 croniter==7.0.0
 APScheduler==3.11.3
+
+pypdf==7.1.0

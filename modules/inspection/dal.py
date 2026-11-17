@@ -299,6 +299,43 @@ def init_database(db_path: str = None):
 
     from modules.inspection.business_templates import ensure_business_defaults
     ensure_business_defaults(db_path=db_path)
+    ensure_production_query_fixes(db_path=db_path)
+
+
+def ensure_production_query_fixes(db_path=None):
+    """Update exact shipped SQL while preserving edited and user-created queries."""
+    import re
+    from modules.inspection.init_db import ORACLE_DEFAULT_CHAPTERS, SQLSERVER_DEFAULT_CHAPTERS
+
+    replacements = {}
+    for family, chapters, key in [('oracle', ORACLE_DEFAULT_CHAPTERS, 'temp_space'),
+                                  ('sqlserver', SQLSERVER_DEFAULT_CHAPTERS, 'unused_indexes')]:
+        query = next(query for chapter in chapters for query in chapter['queries'] if query['key'] == key)
+        current = query['sql']
+        if family == 'oracle':
+            previous = current.replace('SUM(bytes_used + bytes_free)', 'SUM(bytes)').replace(
+                'SUM(bytes_used)', 'SUM(NVL(blocks,0))*8192').replace('v$temp_space_header', 'dba_temp_files')
+        else:
+            previous = current.replace(' AND ius.database_id = DB_ID()', '')
+        replacements[(family, key)] = (re.sub(r'\s+', ' ', previous).strip(), current)
+    connection = get_db_connection(db_path)
+    changed = 0
+    try:
+        rows = connection.execute(
+            'SELECT q.id,q.query_key,q.query_sql,t.db_type FROM inspection_query q '
+            'JOIN inspection_chapter c ON c.id=q.chapter_id '
+            'JOIN inspection_template t ON t.id=c.template_id WHERE t.is_preset=1 '
+            "AND q.query_key IN ('temp_space','unused_indexes')").fetchall()
+        for row in rows:
+            replacement = replacements.get((row['db_type'], row['query_key']))
+            if replacement and re.sub(r'\s+', ' ', row['query_sql']).strip() == replacement[0]:
+                changed += connection.execute(
+                    'UPDATE inspection_query SET query_sql=? WHERE id=? AND query_sql=?',
+                    (replacement[1], row['id'], row['query_sql'])).rowcount
+        connection.commit()
+        return changed
+    finally:
+        connection.close()
 
 
 def create_template(db_type: str, template_name: str, description: str = None,

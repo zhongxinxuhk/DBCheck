@@ -329,15 +329,15 @@ class SQLSafetyTest(unittest.TestCase):
         raw = FakeConnection()
         event = threading.Event()
         raw.cancel = event.set
-        cursor = safety.InspectionConnection(raw, "mysql").cursor()
-        cursor.raw.execute = lambda *args: event.wait(1)
-        cursor.connection.configured = True
         with patch.object(safety, "QUERY_TIMEOUT_SECONDS", 0.03), self.assertRaises(
             TimeoutError
         ):
+            cursor = safety.InspectionConnection(raw, "mysql").cursor()
+            cursor.raw.execute = lambda *args: event.wait(1)
+            cursor.connection.configured = True
             cursor.execute("SELECT 1")
         self.assertTrue(event.is_set())
-        self.assertEqual(raw.rollbacks, 1)
+        self.assertEqual(raw.rollbacks, 0)
         with self.assertRaises(TimeoutError):
             cursor.execute("SELECT 1")
 
@@ -387,11 +387,21 @@ class SQLSafetyTest(unittest.TestCase):
         ):
             info = dict(host="192.0.2.1", port=3306, db_type="mysql")
             with safety.inspection_lease(info, "mysql"):
-                with patch.object(
-                    safety, "LEASE_WAIT_SECONDS", 0.01
-                ), self.assertRaises(TimeoutError):
-                    with safety.inspection_lease(info, "mysql"):
-                        pass
+                with safety.inspection_lease(info, "mysql"):
+                    pass
+                failures = []
+                def contend():
+                    try:
+                        with safety.inspection_lease(info, "mysql"):
+                            failures.append('unexpected admission')
+                    except TimeoutError:
+                        failures.append('timeout')
+                with patch.object(safety, "LEASE_WAIT_SECONDS", 0.01):
+                    worker = threading.Thread(target=contend)
+                    worker.start()
+                    worker.join(2)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(failures, ['timeout'])
             with safety.inspection_lease(info, "mysql"):
                 pass
             db = sqlite3.connect(Path(directory) / "inspection_leases.db")

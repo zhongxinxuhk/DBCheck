@@ -139,6 +139,12 @@ def normalize(instance, kind, result, previous=None):
 
 
 def collect_node(instance, kind, previous=None):
+    from modules.inspection.sql_safety import inspection_lease
+    with inspection_lease(instance, instance['db_type']):
+        return _collect_node(instance, kind, previous)
+
+
+def _collect_node(instance, kind, previous=None):
     from modules.ssh import resolve_db_endpoint
     from modules.core.data_security import assert_readonly_sql
     sqls = queries(kind)

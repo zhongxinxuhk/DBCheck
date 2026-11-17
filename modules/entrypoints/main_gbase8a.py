@@ -34,7 +34,11 @@ class GBase8aInspector(BaseInspectionEngine):
             vc = str(self.database).strip()
             if not re.fullmatch(r'[A-Za-z0-9_]+', vc):
                 raise ValueError('GBase 8a 虚拟集群名格式无效')
-            cursor.execute('USE VC ' + vc)
+            select_vc = getattr(cursor, 'select_virtual_cluster', None)
+            if callable(select_vc):
+                select_vc(vc)
+            else:
+                cursor.execute('USE VC ' + vc)
         return super()._execute_query_safe(cursor, sql, item_name=item_name)
 
     def connect(self):
