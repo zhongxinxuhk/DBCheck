@@ -57,6 +57,12 @@ def collect_owner_details(cursor, db_type):
             truncated=len(values)>1000 or getattr(cursor,'remaining',None)==0
             rows=[dict(zip(columns,[value if isinstance(value,(int,float,bool,type(None))) else str(value) for value in row]))
                   for row in values[:1000]]
+            if family == 'sqlserver' and key in {
+                'accounts', 'role_members', 'permissions', 'server_accounts',
+                'server_role_members', 'server_permissions',
+            }:
+                for row in rows:
+                    row['principal_scope'] = 'server' if key.startswith('server_') else 'database'
             results[key]={'status':'collected','rows':redact(rows),'truncated':truncated,
                           'scope':'current_connection_metadata_visibility','completeness':'bounded_metadata',
                           'query_sha256':hashlib.sha256(sql.encode()).hexdigest(),

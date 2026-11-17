@@ -3746,7 +3746,8 @@ ZH_TW.update({
 })
 
 ZH_TW.update({
-    "menu.inventory": "資料庫運維台帳",
+    "menu.inventory": "資產台帳",
+    "menu.report-center": "報告中心",
     "menu.batch-inspection": "多資料源整體巡檢",
     "menu.clusters": "叢集管理",
     "menu.services": "運維服務與需求驗收",

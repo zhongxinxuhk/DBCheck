@@ -18,6 +18,20 @@ def sheets(rows):
 
 
 class OwnerFieldAdaptationTests(unittest.TestCase):
+    def test_sqlserver_account_permissions_stay_in_their_original_scope(self):
+        data=sheets({'用户及权限表':[
+            {'记录类型':'用户账号','用户名':'same','来源查询':'accounts','database_name':'app'},
+            {'记录类型':'用户账号','用户名':'same','来源查询':'server_accounts'},
+            {'记录类型':'角色成员','用户名':'same','角色':'db_datareader','来源查询':'role_members','database_name':'app'},
+            {'记录类型':'角色成员','用户名':'same','角色':'sysadmin','来源查询':'server_role_members'},
+            {'记录类型':'角色成员','用户名':'same','角色':'db_owner','来源查询':'role_members','database_name':'other'},
+        ]})
+        adapt_tables(data,{'db_type':'sqlserver'},None,None)
+        accounts=[row for row in data['用户及权限表'] if row['记录类型']=='用户账号']
+        self.assertEqual(len(accounts),2)
+        self.assertEqual(accounts[0]['角色'],'db_datareader')
+        self.assertEqual(accounts[1]['角色'],'sysadmin')
+
     def test_duplicate_evidence_keeps_conflicts_serializable(self):
         import json
         first={'用户名':'qa','说明':'first'}
