@@ -42,6 +42,14 @@ class ServiceStore:
         if os.name != 'nt':
             os.chmod(self.path, 0o600)
         with self.connection() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS service_record_history '
+                       '(id TEXT NOT NULL, version INTEGER NOT NULL, recorded_at TEXT NOT NULL, '
+                       'record BLOB NOT NULL, PRIMARY KEY(id,version))')
+            db.execute('CREATE TABLE IF NOT EXISTS service_finding_links '
+                       '(fingerprint TEXT PRIMARY KEY, workflow_id TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS service_finding_observations '
+                       '(run_id TEXT NOT NULL,item_id TEXT NOT NULL,workflow_id TEXT NOT NULL,observed_at TEXT NOT NULL, '
+                       'PRIMARY KEY(run_id,item_id))')
             db.executescript('''
                              CREATE TABLE IF NOT EXISTS service_records
                              (
@@ -221,6 +229,44 @@ class ServiceStore:
     def _seal(self, payload, scope):
         return self.cipher.encrypt(canonical({'scope': scope, 'body': payload}).encode())
 
+    def _remember(self, db, record_id):
+        row = db.execute('SELECT * FROM service_records WHERE id=?', (record_id,)).fetchone()
+        value = self._decode(row)
+        db.execute('INSERT OR IGNORE INTO service_record_history VALUES(?,?,?,?)',
+                   (record_id, row['version'], row['updated_at'], self.cipher.encrypt(canonical(value).encode())))
+
+    def reporting_records(self, actor, cutoff):
+        """Read authorized records and their cutoff versions in one database snapshot."""
+        with self.connection() as db:
+            db.execute('BEGIN')
+            self._verify(db)
+            result = []
+            for row in db.execute('SELECT * FROM service_records WHERE tenant=? ORDER BY updated_at,id',
+                                  (actor['tenant_id'],)).fetchall():
+                if not self._visible(actor, row, db):
+                    continue
+                value = self._decode(row)
+                if value['updated_at'] <= cutoff:
+                    result.append(value)
+                    continue
+                old = db.execute('SELECT record FROM service_record_history WHERE id=? AND recorded_at<=? '
+                                 'ORDER BY version DESC LIMIT 1', (row['id'], cutoff)).fetchone()
+                if old:
+                    historical = json.loads(self.cipher.decrypt(old['record']))
+                    if historical['id'] != row['id'] or historical['tenant'] != actor['tenant_id']:
+                        raise ValueError('历史记录归属不一致')
+                    result.append(historical)
+                elif row['kind'] == 'asset':
+                    history = db.execute('SELECT * FROM service_asset_history WHERE asset_id=? AND recorded_at<=? '
+                                         'ORDER BY version DESC LIMIT 1', (row['id'], cutoff)).fetchone()
+                    if history:
+                        envelope = json.loads(self.cipher.decrypt(history['payload']))
+                        if envelope['scope']['id'] != row['id'] or envelope['scope']['tenant'] != actor['tenant_id']:
+                            raise ValueError('历史资产归属不一致')
+                        result.append({**value, 'version': history['version'], 'payload': envelope['body'],
+                                       'updated_at': history['recorded_at']})
+            return result
+
     def get(self, actor, record_id, db=None):
         if db is None:
             with self.connection() as conn:
@@ -278,6 +324,7 @@ class ServiceStore:
             old = db.execute('SELECT 1 FROM service_records WHERE id=?', (record_id,)).fetchone()
             if old:
                 record = self.get(actor, record_id, db)
+                self._remember(db, record_id)
                 if record['kind'] in {'evidence', 'inspection'}:
                     raise ValueError('证据只允许追加，禁止覆盖')
                 if record['kind'] != kind or version != record['version']:
@@ -320,6 +367,7 @@ class ServiceStore:
                            (record_id, actor['tenant_id'], record_owner, kind, asset_id, item_id, 1, encrypted, now,
                             now))
             self._audit(db, actor, kind + '.save', record_id, hashlib.sha256(encrypted).hexdigest())
+            self._remember(db, record_id)
             if kind == 'asset':
                 db.execute('INSERT INTO service_asset_history VALUES(?,?,?,?)',
                            (record_id, scope['version'], encrypted, now))
@@ -340,6 +388,41 @@ class ServiceStore:
                 result.append(
                     {'version': row['version'], 'recorded_at': row['recorded_at'], 'details': envelope['body']})
             return result
+
+    def record_finding(self, actor, asset_id, item_id, run_id, evidence_id, workflow_item):
+        """One active remediation per check, preserving approved workflow payloads."""
+        fingerprint = hashlib.sha256(canonical([actor['tenant_id'], asset_id, item_id]).encode()).hexdigest()
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._verify(db)
+            asset = self.get(actor, asset_id, db)
+            duplicate = db.execute('SELECT workflow_id FROM service_finding_observations WHERE run_id=? AND item_id=?',
+                                   (run_id, item_id)).fetchone()
+            if duplicate:
+                return duplicate['workflow_id']
+            link = db.execute('SELECT workflow_id FROM service_finding_links WHERE fingerprint=?', (fingerprint,)).fetchone()
+            previous = self.get(actor, link['workflow_id'], db) if link else None
+            now = utcnow()
+            if previous and previous['payload'].get('state') != 'closed':
+                workflow_id = previous['id']
+            else:
+                workflow_id = uuid.uuid4().hex
+                body = {'title': '巡检异常整改 ' + item_id, 'state': 'draft', 'requester': actor['id'],
+                        'asset_version': asset['version'], 'timeline': [], 'detected_at': now, 'priority': 'NORMAL',
+                        'module_id': 'M2', 'provenance': 'inspection_finding', 'fingerprint': fingerprint,
+                        'recurrence_of': previous['id'] if previous else None,
+                        'details': {'finding_reference': evidence_id, 'alert_reference': run_id}}
+                scope = dict(id=workflow_id, tenant=actor['tenant_id'], owner=actor['id'], kind='workflow',
+                             asset_id=asset_id, item_id=workflow_item, version=1)
+                encrypted = self._seal(body, scope)
+                db.execute('INSERT INTO service_records VALUES(?,?,?,?,?,?,?,?,?,?)',
+                           (workflow_id, actor['tenant_id'], actor['id'], 'workflow', asset_id, workflow_item, 1, encrypted, now, now))
+                self._remember(db, workflow_id)
+                db.execute('INSERT OR REPLACE INTO service_finding_links VALUES(?,?)', (fingerprint, workflow_id))
+                self._audit(db, actor, 'finding.create', workflow_id, hashlib.sha256(encrypted).hexdigest())
+            db.execute('INSERT INTO service_finding_observations VALUES(?,?,?,?)', (run_id, item_id, workflow_id, now))
+            self._audit(db, actor, 'finding.observe', workflow_id, hashlib.sha256(canonical([run_id, evidence_id]).encode()).hexdigest())
+        return workflow_id
 
     def scheduled_assets(self):
         with self.connection() as db:
@@ -366,10 +449,12 @@ class ServiceStore:
         measured = {'execution_reference', 'verification_reference', 'validation_reference', 'before_metrics',
                     'after_metrics', 'resolved_at', 'responded_at', 'plan_at', 'intervened_at', 'restore_started',
                     'restore_finished', 'verified_at', 'business_validation', 'database_validation', 'review_reference',
-                    'onsite_reference', 'rollback_result', 'outcome', 'rpo_minutes', 'rto_minutes', 'escalated_at'}
+                    'onsite_reference', 'rollback_result', 'outcome', 'rpo_minutes', 'rto_minutes', 'escalated_at',
+                    'verified_asset_values'}
         if not isinstance(updates, dict) or set(updates) - measured:
             raise ValueError('执行后仅允许补充测量及验证证据，禁止改写审批方案')
-        forbidden = {'requester', 'approved_by', 'approved_at', 'executor', 'state', 'timeline', 'tenant', 'owner'}
+        forbidden = {'requester', 'approved_by', 'approved_at', 'executor', 'state', 'timeline', 'tenant', 'owner',
+                     'details', 'asset_updates', 'asset_version', 'asset_version_before'}
         if forbidden.intersection(evidence):
             raise ValueError('禁止客户端设置审批身份或受控状态')
         # Transition and audit append share one transaction, preventing double approval.
@@ -383,6 +468,7 @@ class ServiceStore:
             if record['kind'] != 'workflow' or record['version'] != version:
                 raise ValueError('工作流或版本无效')
             data = record['payload']
+            self._remember(db, record_id)
             asset = self.get(actor, record['asset_id'], db)
             if data.get('asset_version') != asset['version']:
                 raise ValueError('台账版本已变化，原审批方案须重新核对')
@@ -407,6 +493,38 @@ class ServiceStore:
                 data['executor'] = actor['id']
                 if not evidence.get('execution_reference'):
                     raise ValueError('必须登记受控执行记录')
+            asset_updates = data.get('details', {}).get('asset_updates')
+            if target == 'closed' and asset_updates:
+                from .service import validate_asset
+                allowed_fields = {'approved_parameters', 'parameter_snapshot', 'parameter_version', 'tables',
+                                  'version', 'patch_level', 'host', 'port', 'database', 'instance_name', 'charset',
+                                  'file_size', 'archive_path', 'archive_mode', 'storage_mode', 'disaster_recovery',
+                                  'cluster_id', 'cluster_type', 'node_count', 'node_names', 'architecture',
+                                  'cluster_network', 'backup_policy_id', 'backup_policy_version', 'backup_window',
+                                  'backup_method', 'backup_frequency', 'backup_retention', 'backup_owner'}
+                if not isinstance(asset_updates, dict) or set(asset_updates) - allowed_fields:
+                    raise ValueError('批准方案包含不允许自动同步的台账字段')
+                if actor['id'] != asset['owner'] and not actor.get('admin'):
+                    raise PermissionError('同步正式台账须由资产所有者或管理员复核')
+                if data['details'].get('verified_asset_values') != asset_updates:
+                    raise ValueError('实际验证值与批准的台账更新方案不一致')
+                new_payload = {**asset['payload'], **asset_updates, 'change_reference': record_id}
+                validate_asset(new_payload)
+                self._remember(db, asset['id'])
+                asset_scope = {k: asset[k] for k in ('id', 'tenant', 'owner', 'kind', 'asset_id', 'item_id', 'version')}
+                asset_scope['version'] += 1
+                sealed_asset = self._seal(new_payload, asset_scope)
+                changed_at = utcnow()
+                count = db.execute('UPDATE service_records SET payload=?,version=version+1,updated_at=? WHERE id=? AND version=?',
+                                   (sealed_asset, changed_at, asset['id'], asset['version'])).rowcount
+                if count != 1:
+                    raise ValueError('台账并发修改冲突')
+                db.execute('INSERT INTO service_asset_history VALUES(?,?,?,?)',
+                           (asset['id'], asset_scope['version'], sealed_asset, changed_at))
+                self._remember(db, asset['id'])
+                self._audit(db, actor, 'asset.verified-change', asset['id'], hashlib.sha256(sealed_asset).hexdigest())
+                data['asset_version_before'] = asset['version']
+                data['asset_version'] = asset_scope['version']
             data.update(redact(evidence))
             data['state'] = target
             data.setdefault('timeline', []).append({'state': target, 'actor': actor['id'], 'time': utcnow()})
@@ -416,6 +534,7 @@ class ServiceStore:
             db.execute('UPDATE service_records SET payload=?,version=version+1,updated_at=? WHERE id=? AND version=?',
                        (encrypted, utcnow(), record_id, version))
             self._audit(db, actor, 'workflow.' + target, record_id, hashlib.sha256(encrypted).hexdigest())
+            self._remember(db, record_id)
         return self.get(actor, record_id)
 
     def record_event(self, actor, record_id, version, event, reference):
@@ -432,6 +551,7 @@ class ServiceStore:
                 raise ValueError('事件目标或版本无效，已闭环记录不可追加修改')
             data = record['payload']
             field = fields[event]
+            self._remember(db, record_id)
             if data.get(field):
                 raise ValueError('服务事件时间已登记，禁止覆盖')
             observed = utcnow()
@@ -445,4 +565,5 @@ class ServiceStore:
             db.execute('UPDATE service_records SET payload=?,version=version+1,updated_at=? WHERE id=? AND version=?',
                        (encrypted, observed, record_id, version))
             self._audit(db, actor, 'service.event.' + event, record_id, hashlib.sha256(encrypted).hexdigest())
+            self._remember(db, record_id)
         return self.get(actor, record_id)

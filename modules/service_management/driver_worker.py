@@ -17,9 +17,9 @@ def isolated_collect(instance,asset):
         command = [sys.executable,'--service-collect-cli'] if getattr(sys,'frozen',False) else [sys.executable,'-m','modules.service_management.driver_worker']
         result = subprocess.run(command,
                                 input=json.dumps({'instance':instance,'asset':asset}),text=True,
-                                stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=100,
+                                stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=300 if asset.get('_delivery_full_inventory') else 100,
                                 cwd=str(PROJECT_ROOT),check=False)
-        if result.returncode or len(result.stdout)>2_000_000:
+        if result.returncode or len(result.stdout)>(64_000_000 if asset.get('_delivery_full_inventory') else 2_000_000):
             raise ValueError('采集进程异常退出或结果超限')
         value=json.loads(result.stdout)
         if not isinstance(value,dict):

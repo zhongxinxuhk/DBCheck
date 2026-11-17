@@ -3866,6 +3866,7 @@ ZI.update({
     "menu.batch-inspection": "多数据源整体巡检",
     "menu.clusters": "集群管理",
     "menu.services": "运维服务与需求验收",
+    "menu.report-center": "报告中心",
     "menu.system-info": "系统信息"
 })
 

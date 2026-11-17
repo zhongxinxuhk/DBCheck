@@ -3865,6 +3865,7 @@ EN.update({
     "menu.batch-inspection": "Multi-source Inspection",
     "menu.clusters": "Cluster Management",
     "menu.services": "Operations Services and Acceptance",
+    "menu.report-center": "Report Center",
     "menu.system-info": "System Information"
 })
 

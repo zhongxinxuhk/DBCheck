@@ -8488,6 +8488,9 @@ function wfCloseRunDrawer() {
     <div class="nav-item" onclick="showPage('services')" id="nav-services">
       <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 5V3h8v2M7 10h10M7 15h10"/></svg></span><span>运维服务与需求验收</span>
     </div>
+    <a class="nav-item" href="/reports/center" id="nav-report-center">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h5M9 12h6M9 16h6"/></svg></span><span>报告中心</span>
+    </a>
 
     <!-- ── 智能巡检 ── -->
     <div class="nav-section" data-i18n="webui.nav_group_inspection" data-page-node-id="ZyqVYiEOcSAMJSAUJ5FTIj">智能巡检</div>
@@ -16702,6 +16705,7 @@ function pollStatus() {
             </div>
             <div class="report-dl-group">
               <a class="report-dl-btn report-dl-word" href="/api/download/${currentTaskId}" download>📝 Word</a>
+              <a class="report-dl-btn" href="/reports/center${data.delivery_run_id ? '?run_id=' + encodeURIComponent(data.delivery_run_id) : ''}">Excel 分项导出</a>
               <button class="report-dl-btn report-dl-pdf" type="button" onclick="downloadReportPdf('${currentTaskId}')">📄 PDF</button>
               <button class="report-dl-btn report-dl-share" type="button" onclick="shareDbInspectReport('${currentTaskId}')">📤 分享</button>
             </div>

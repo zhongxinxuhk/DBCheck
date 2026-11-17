@@ -83,12 +83,15 @@ def plan_periodic_services(store,catalog,actor,asset_record,now):
     items = all_items(catalog)
     created = 0
     for period,key in (('week','inspection_schedule'),('month','inspection_schedule'),
-                       ('quarter','quarterly_review'),('year','maintenance_schedule')):
+                       ('quarter','quarterly_review'),('quarter','asset_review'),('year','maintenance_schedule')):
         start,end = period_bounds(period,now.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
         if end.date().isoformat()<=start_date:
             continue
         item = next(v for v in items.values() if v['key']==key)
-        identifier = hashlib.sha256((asset_record['id']+period+start.isoformat()).encode()).hexdigest()
+        identity_key = asset_record['id']+period+start.isoformat()
+        if key == 'asset_review':
+            identity_key += ':asset_review'
+        identifier = hashlib.sha256(identity_key.encode()).hexdigest()
         try:
             store.get(actor,identifier)
             continue

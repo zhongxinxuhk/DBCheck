@@ -1953,6 +1953,7 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
 
         # 历史快照
         try:
+            context['_report_task_id'] = task_id
             from modules.inspection.analyzer import HistoryManager
             hm = HistoryManager(BASE_DIR)
             hm.save_snapshot(
@@ -1964,6 +1965,17 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
             )
         except Exception as e:
             _emit('log', {'msg': f"[警告] 历史快照保存失败: {e}"})
+
+        # 保存报告中心的同批观测，复用已登记数据源和台账。
+        _delivery_run_id = None
+        if task and task.get('datasource_id'):
+            try:
+                from modules.service_management.delivery_capture import capture_inspection
+                with app.app_context():
+                    _delivery_observation = capture_inspection({**task, 'id': task_id}, context)
+                    _delivery_run_id = (_delivery_observation or {}).get('id')
+            except Exception as error:
+                _emit('log', {'msg': '[报告中心] 观测归档失败：%s' % str(error)[:200]})
 
         # 计算评分和风险等级（供前端展示使用）
         risk_count = context.get('risk_count', 0)
@@ -2028,6 +2040,7 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
                 'ai_advice': context.get('ai_advice', ''),
                 'basic_info': _inventory_basic_info,
                 'inventory_sync': _inventory_sync_result,
+                'delivery_run_id': _delivery_run_id,
             }
             # status 必须在 result 之后设置，避免前端轮询到 done 但 result 还是空的
             task['status'] = 'done'
