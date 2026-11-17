@@ -8,24 +8,34 @@ import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlencode
 
-from flask import current_app, jsonify, render_template, request, send_file
+from flask import current_app, jsonify, request, send_file, redirect
 
 from .delivery_catalog import choices, COMBINATIONS
 from .delivery_data import request_options, build_snapshot
 from .delivery_render import render_job, package, watermark, content_diff, verify_package
 from .delivery_store import DeliveryStore, digest
 from .routes import bp, actor, store, catalog, visible_instance
+from .report_sources import sources_for, report_catalog
+from .catalog import FIELDS
+from .labels import FIELD_LABELS
 
 _lock = threading.Lock()
 
 
-def archive():
-    return DeliveryStore(store())
+def archive(identity=None):
+    return DeliveryStore(sources_for(identity or actor()))
 
 
 def summary(job):
+    source_ids = job['request'].get('source_ids')
+    if source_ids is None:
+        sources = sources_for(actor())
+        source_ids = [sources.get(actor(), identity)['payload'].get('instance_id') for identity in job['request']['asset_ids']]
     return {k: v for k, v in job.items() if k not in {'snapshot', 'public_key', 'generations'}} | {
+        'source_ids': [identity for identity in source_ids if identity],
+        'source_mapping_status': 'mapped' if source_ids and all(source_ids) else 'needs_review',
         'coverage': job['snapshot']['coverage'],
         'source_manifest_sha256': job['snapshot']['source_manifest_sha256']}
 
@@ -42,15 +52,32 @@ def resolve_actor(app, identity):
 
 def generate(app, identity, job_id):
     with app.app_context():
-        database = archive()
+        database = archive(identity)
         try:
             identity = resolve_actor(app, identity)
             if not database.claim(identity, job_id):
                 return
             job = database.get(identity, job_id)
-            rendered = render_job(job)
+            if job['request'].get('collect_first'):
+                sources = sources_for(identity)
+                from modules.operations.routes import prepare_batch, resources
+                spec, members = prepare_batch(sources.principal, {'instance_ids': job['request']['source_ids'],
+                    'name': '报告前巡检', 'concurrency': 2})
+                service = resources()[1]
+                run, _ = service.store.create(sources.principal, 'report-' + job_id, spec, members)
+                database.collection_run(identity, job_id, run['id'])
+                service.run(run)
+                options = {**job['request'], 'cutoff': datetime.now(timezone.utc).isoformat()}
+                snapshot = build_snapshot(sources, database, identity, report_catalog(identity), options)
+                completed = service.store.get(run['id'])
+                snapshot['collection_results'] = [{key: member.get(key) for key in
+                    ('instance_id', 'name', 'status', 'error')} for member in completed['payload']['members']]
+                snapshot['coverage']['failed_sources'] = sum(member['status'] != 'done' for member in completed['payload']['members'])
+                job = database.refresh_snapshot(identity, job_id, options, snapshot)
+            automatic = 'source_ids' in job['request']
+            rendered = render_job(job, published=automatic)
             identity = resolve_actor(app, identity)
-            database.finish(identity, job_id, rendered)
+            database.finish(identity, job_id, rendered, auto_publish=automatic)
         except Exception as error:
             from modules.core.data_security import redact
             current_app.logger.exception('Report generation failed for %s', job_id)
@@ -77,60 +104,71 @@ def submit(job, identity):
 @bp.route('/reports/center')
 def report_center():
     actor()
-    return render_template('report_center.html')
+    if request.args.get('run_id'):
+        return redirect('/?' + urlencode({'run_id': request.args['run_id']}) + '#report-center')
+    return redirect('/#report-center')
 
 
 @bp.route('/api/services/deliverables/catalog')
+@bp.route('/api/report-center/catalog')
 def delivery_catalog():
     actor()
     return jsonify(ok=True, deliverables=choices(), combinations=COMBINATIONS)
 
 
 @bp.route('/api/services/deliverables/preview', methods=['POST'])
+@bp.route('/api/report-center/preview', methods=['POST'])
 def delivery_preview():
     identity = actor()
-    services = store()
-    options = request_options(request.get_json(silent=True), services.list(identity, 'asset'))
-    snapshot = build_snapshot(services, archive(), identity, catalog(), options)
+    services = sources_for(identity)
+    body = request.get_json(silent=True)
+    if request.path.startswith('/api/report-center') and (not isinstance(body, dict) or 'source_ids' not in body):
+        raise ValueError('请选择一个或多个数据源')
+    options = request_options(body, services.list(identity, 'asset'))
+    snapshot = build_snapshot(services, archive(), identity, report_catalog(identity), options)
     return jsonify(ok=True, request=options, coverage=snapshot['coverage'],
                    sheets={k: len(v) for k, v in snapshot['sheets'].items()},
                    source_manifest_sha256=snapshot['source_manifest_sha256'])
 
 
 @bp.route('/api/services/deliverables/jobs', methods=['GET', 'POST'])
+@bp.route('/api/report-center/jobs', methods=['GET', 'POST'])
 def delivery_jobs():
     identity = actor()
     database = archive()
     if request.method == 'GET':
-        assets = {a['id']: a['payload'].get('asset_name') for a in store().list(identity, 'asset')}
-        plans = [{'id': r['id'], 'title': r['payload'].get('title'),
-                  'period': r['payload'].get('details', {}).get('frequency'),
-                  'state': r['payload'].get('state'), 'asset_name': assets.get(r['asset_id'])}
-                 for r in store().list(identity, 'workflow')
-                 if r['payload'].get('provenance') == 'periodic_service_plan' or
-                 r['payload'].get('details', {}).get('major_incident')]
-        return jsonify(ok=True, jobs=[summary(v) for v in database.list(identity)], plans=plans)
+        return jsonify(ok=True, jobs=[summary(v) for v in database.list(identity)])
     data = request.get_json(silent=True)
+    if request.path.startswith('/api/report-center') and (not isinstance(data, dict) or 'source_ids' not in data):
+        raise ValueError('请选择一个或多个数据源')
     if isinstance(data, dict) and (not isinstance(data.get('previous_id', ''), str) or len(str(data.get('reason', ''))) > 400):
         raise ValueError('修订参数无效或原因超过400字符')
-    options = request_options(data, store().list(identity, 'asset'))
-    snapshot = build_snapshot(store(), database, identity, catalog(), options)
+    services = sources_for(identity)
+    options = request_options(data, services.list(identity, 'asset'))
+    snapshot = build_snapshot(services, database, identity, report_catalog(identity), options)
     job = database.create(identity, options, snapshot, previous_id=data.get('previous_id'), reason=str(data.get('reason') or ''))
     submit(job, identity)
     return jsonify(ok=True, job=summary(database.get(identity, job['id']))), 202
 
 
 @bp.route('/api/services/deliverables/jobs/<job_id>')
+@bp.route('/api/report-center/jobs/<job_id>')
 def delivery_job(job_id):
     return jsonify(ok=True, job=summary(archive().get(actor(), job_id)))
 
 
 @bp.route('/api/services/deliverables/jobs/<job_id>/retry', methods=['POST'])
+@bp.route('/api/report-center/jobs/<job_id>/retry', methods=['POST'])
 def delivery_retry(job_id):
     identity = actor()
     database = archive()
     old = database.get(identity, job_id)
     stale = datetime.fromisoformat(old['updated_at']) < datetime.now(timezone.utc) - timedelta(minutes=20)
+    if old.get('inspection_run_id') and old['state'] == 'generating':
+        from modules.operations.routes import resources
+        from modules.operations.batch import TERMINAL
+        if resources()[1].store.get(old['inspection_run_id'])['status'] not in TERMINAL:
+            raise ValueError('关联巡检仍在执行，请等待完成')
     if old['state'] != 'failed' and not (old['state'] in {'queued', 'generating'} and stale):
         raise ValueError('仅失败或中断超过20分钟的生成任务可重试')
     if old['state'] != 'failed':
@@ -141,6 +179,7 @@ def delivery_retry(job_id):
 
 
 @bp.route('/api/services/deliverables/jobs/<job_id>/publish', methods=['POST'])
+@bp.route('/api/report-center/jobs/<job_id>/publish', methods=['POST'])
 def delivery_publish(job_id):
     identity = actor()
     database = archive()
@@ -156,6 +195,7 @@ def delivery_publish(job_id):
 
 
 @bp.route('/api/services/deliverables/<job_id>/download')
+@bp.route('/api/report-center/<job_id>/download')
 def delivery_download(job_id):
     identity = actor()
     database = archive()
@@ -183,6 +223,7 @@ def delivery_download(job_id):
 
 
 @bp.route('/api/services/deliverables/<job_id>/verification')
+@bp.route('/api/report-center/<job_id>/verification')
 def delivery_verification(job_id):
     job = archive().get(actor(), job_id)
     return jsonify(ok=True, manifest=job.get('manifest'), signature=job.get('signature'),
@@ -190,6 +231,7 @@ def delivery_verification(job_id):
 
 
 @bp.route('/api/services/deliverables/verify', methods=['POST'])
+@bp.route('/api/report-center/verify', methods=['POST'])
 def delivery_verify():
     identity = actor()
     database = archive()
@@ -246,28 +288,71 @@ def delivery_verify():
 
 
 @bp.route('/api/services/deliverables/keys', methods=['GET', 'POST'])
+@bp.route('/api/report-center/keys', methods=['GET', 'POST'])
 def delivery_keys():
     return jsonify(ok=True, keys=archive().keys(actor(), rotate=request.method == 'POST'))
 
 
 @bp.route('/api/services/deliverables/observations')
+@bp.route('/api/report-center/observations')
 def delivery_observations():
     identity = actor()
-    ids = [r['id'] for r in store().list(identity, 'asset')]
+    sources = sources_for(identity)
+    ids = [r['id'] for r in sources.list(identity, 'asset')]
     rows = [{k: v for k, v in value.items() if k != 'source_results'} for value in archive().observations(identity, ids)]
     rows.extend({'id': r['payload'].get('run_id'), 'asset_id': r['asset_id'], 'observed_at': r['updated_at']}
-                for r in store().list(identity, 'inspection') if r['item_id'] == 'run-evidence')
+                for r in sources.list(identity, 'inspection') if r['item_id'] == 'run-evidence')
     return jsonify(ok=True, observations=rows)
 
 
 @bp.route('/api/services/deliverables/assets/<asset_id>/collect', methods=['POST'])
+@bp.route('/api/report-center/sources/<asset_id>/collect', methods=['POST'])
 def collect_register(asset_id):
     identity = actor()
-    asset = store().get(identity, asset_id)
-    instance = visible_instance(identity, asset['payload'].get('instance_id'))
+    return jsonify(ok=True, **collect_source(identity, asset_id))
+
+
+def collect_source(identity, asset_id):
+    asset = sources_for(identity).get(identity, asset_id)
+    from modules.pro import get_instance_manager
+    instance = get_instance_manager().get_instance_decrypted(asset['payload'].get('instance_id'))
+    if not instance:
+        raise ValueError('数据源已删除')
     from .inspection import collect
     sources = collect(instance, {**asset['payload'], '_delivery_full_inventory': True})
-    observation = archive().observe(identity, asset_id, sources)
-    return jsonify(ok=True, observation={k: v for k, v in observation.items() if k != 'source_results'},
-                   statuses={k: {field: v.get(field) for field in ['status', 'reason', 'row_count', 'completeness']}
-                             for k, v in sources.items()})
+    observation = archive(identity).observe(identity, asset_id, sources)
+    return {'observation': {k: v for k, v in observation.items() if k != 'source_results'},
+            'statuses': {k: {field: v.get(field) for field in ['status', 'reason', 'row_count', 'completeness']}
+                         for k, v in sources.items()}}
+
+
+@bp.route('/api/report-center/sources')
+def report_source_choices():
+    identity = actor()
+    records = sources_for(identity).list(identity, 'asset')
+    records.sort(key=lambda record: str(record['payload'].get('asset_name') or '').casefold())
+    clusters = []
+    if current_app.config.get('REPORT_INVENTORY') is None:
+        from modules.operations.routes import resources
+        sources = sources_for(identity)
+        for cluster in resources()[2].list(sources.principal):
+            members = [m['instance_id'] for m in cluster['spec']['members'] if m.get('enabled', True)]
+            if cluster['spec'].get('service_instance_id'):
+                members.append(cluster['spec']['service_instance_id'])
+            if set(members) <= sources.visible:
+                clusters.append({'id': cluster['id'], 'name': cluster['name'], 'source_ids': list(dict.fromkeys(members))})
+    return jsonify(ok=True, clusters=clusters, sources=[{'id': r['id'], **{key: r['payload'].get(key) for key in
+        ['asset_name', 'db_type', 'database', 'project_id', 'system', 'environment', 'cluster_id', 'tags']}}
+        for r in records])
+
+
+@bp.route('/api/report-center/events', methods=['GET', 'POST'])
+def report_events():
+    identity = actor()
+    sources = sources_for(identity)
+    if request.method == 'POST':
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            raise ValueError('事件资料须为对象')
+        return jsonify(ok=True, record=sources.save_event(identity, body))
+    return jsonify(ok=True, records=sources.list(identity, 'workflow'), fields=FIELDS, labels=FIELD_LABELS)

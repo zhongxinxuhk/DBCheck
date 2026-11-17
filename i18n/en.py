@@ -3861,7 +3861,7 @@ EN.update({
 })
 
 EN.update({
-    "menu.inventory": "Database Inventory",
+    "menu.inventory": "Asset Inventory",
     "menu.batch-inspection": "Multi-source Inspection",
     "menu.clusters": "Cluster Management",
     "menu.services": "Operations Services and Acceptance",

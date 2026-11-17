@@ -1,54 +1,38 @@
 <!-- Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>报告中心 · {{ product_name|default('DBPulse') }}</title>
-  <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/static/css/report_center.css">
-  <script src="/static/js/report_center.js" defer></script>
-</head>
-<body>
-  <main id="report-center">
-    <header class="rc-header">
-      <div><a href="/">返回工作台</a><h1>报告中心</h1><p>周期交付、台账导出与报告原件校验</p></div>
-      <button id="rc-refresh" type="button">刷新</button>
-    </header>
+<link rel="stylesheet" href="/static/css/report_center.css">
+  <section id="report-center">
     <div id="rc-message" role="status" aria-live="polite"></div>
-    <nav aria-label="报告中心">
+    <div class="rc-toolbar"><nav aria-label="报告中心">
       <button data-tab="generate" class="active" type="button">生成与导出</button>
-      <button data-tab="tasks" type="button">交付任务</button>
-      <button data-tab="archive" type="button">报告档案</button>
+      <button data-tab="archive" type="button">报告记录</button>
       <button data-tab="verify" type="button">报告校验</button>
-    </nav>
+    </nav><button id="rc-refresh" type="button">刷新</button></div>
     <section id="rc-generate" class="rc-pane">
       <form id="rc-form">
         <div class="rc-grid">
           <label>周期组合<select id="rc-period"><option value="month">月度</option><option value="quarter">季度</option><option value="year">年度</option><option value="week">周度</option></select></label>
           <label>周期内日期<input id="rc-date" type="date" required></label>
           <label>数据截止时间<input id="rc-cutoff" type="datetime-local" step="1" required></label>
-          <label>选择预置交付组合<select id="rc-combination"><option value="month">月度报告包</option><option value="quarter">季度报告包</option><option value="year">年度报告包</option><option value="week">周度报告包</option><option value="register">七类台账</option><option value="custom">自选交付物</option></select></label>
+          <label>报告类型<select id="rc-combination"><option value="run">本次巡检</option><option value="month" selected>月度报告包</option><option value="quarter">季度报告包</option><option value="year">年度报告包</option><option value="week">周度报告包</option><option value="register">七类台账</option><option value="custom">自选交付物</option></select></label>
         </div>
         <div class="rc-columns">
-          <fieldset><legend>资产范围</legend><input id="rc-asset-filter" type="search" placeholder="按资产、系统、项目或库型筛选" aria-label="筛选资产"><div id="rc-assets" class="rc-checklist"></div><a href="/#services">登记或维护服务资产</a></fieldset>
+          <fieldset><legend>选择数据源 <span id="rc-selected-count">已选 0</span></legend><input id="rc-asset-filter" type="search" placeholder="按数据源、系统、项目或库型筛选" aria-label="筛选数据源"><div class="rc-actions"><button id="rc-select-visible" type="button">选择筛选结果</button><button id="rc-clear" type="button">清空</button><button id="rc-expand-cluster" type="button">选择集群成员</button></div><select id="rc-cluster" aria-label="选择集群"><option value="">选择集群</option></select><div id="rc-assets" class="rc-checklist"></div></fieldset>
           <fieldset><legend>交付物</legend><div id="rc-deliverables" class="rc-checklist"></div></fieldset>
         </div>
-        <fieldset><legend>文件格式</legend><label class="inline"><input name="format" type="checkbox" value="xlsx" checked>Excel（多 Sheet）</label><label class="inline"><input name="format" type="checkbox" value="docx">Word</label><label class="inline">Excel 文件组织<select id="rc-layout"><option value="separate">按交付物拆分</option><option value="combined">合并为综合工作簿</option></select></label></fieldset>
+        <fieldset><legend>文件格式</legend><label class="inline"><input name="format" type="checkbox" value="xlsx" checked>Excel（多 Sheet）</label><label class="inline"><input name="format" type="checkbox" value="docx">Word</label><label class="inline">Excel 文件组织<select id="rc-layout"><option value="combined">合并为综合工作簿</option><option value="separate">按交付物拆分</option></select></label></fieldset>
         <details><summary>单次采集、Sheet 与修订设置</summary>
           <label>采集批次<select id="rc-run"><option value="">按周期汇总</option></select></label>
-          <label>专项事件<select id="rc-event"><option value="">本周期相关事件</option></select></label>
+          <label>专项事件<select id="rc-event"><option value="">本周期相关事件</option></select></label><button id="rc-add-event" type="button">补充事件资料</button>
           <fieldset><legend>工作表，全部取消时导出完整表组</legend><div id="rc-sheets" class="rc-sheet-list"></div></fieldset>
           <label>修订原因<input id="rc-reason" maxlength="400" placeholder="修订历史报告时填写"></label>
           <input id="rc-previous" type="hidden">
         </details>
-        <div class="rc-actions"><button id="rc-collect" type="button">全量采集所选资产台账</button><button id="rc-preview" type="button">预览覆盖情况</button><button type="submit" class="primary">生成报告</button><span id="rc-revision-label"></span></div>
+        <input id="rc-collect-first" type="checkbox" hidden><label class="inline"><input id="rc-split-sources" type="checkbox">按数据源拆分文件</label><div class="rc-actions"><button id="rc-collect" type="button">巡检后生成</button><button id="rc-preview" type="button">预览覆盖情况</button><button type="submit" class="primary">生成报告</button><span id="rc-revision-label"></span></div>
       </form>
       <div id="rc-preview-result"></div>
     </section>
-    <section id="rc-tasks" class="rc-pane" hidden><h2>交付任务</h2><div id="rc-plans"></div><div id="rc-task-list"></div></section>
-    <section id="rc-archive" class="rc-pane" hidden><h2>报告档案</h2><input id="rc-archive-filter" type="search" placeholder="搜索报告编号、日期或交付物" aria-label="筛选报告档案"><div id="rc-archive-list"></div></section>
+    <section id="rc-archive" class="rc-pane" hidden><div id="rc-task-list"></div><input id="rc-archive-filter" type="search" placeholder="搜索报告编号、日期或交付物" aria-label="筛选报告档案"><div id="rc-archive-list"></div></section>
     <section id="rc-verify" class="rc-pane" hidden>
       <h2>核对收到的报告</h2>
       <form id="rc-verify-form">
@@ -60,6 +44,18 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       </form>
       <div id="rc-verify-result" aria-live="polite"></div>
     </section>
-  </main>
-</body>
-</html>
+  <dialog id="rc-event-dialog">
+  <form id="rc-event-form">
+    <h2>事件资料</h2>
+    <label>数据源<select id="rc-event-source" required></select></label>
+    <label>资料类型<select id="rc-event-key"><option value="incident_lifecycle">故障记录</option><option value="incident_review">故障复盘</option><option value="maintenance_schedule">例行维护</option><option value="platform_change">数据库变更</option><option value="recovery_drill">备份恢复演练</option><option value="sql_optimization">慢 SQL 治理</option><option value="index_change">索引优化</option><option value="parameter_change">参数调优</option><option value="architecture_change">架构改造</option><option value="quarterly_review">季度分析</option><option value="asset_review">季度台账核对</option></select></label>
+    <label>标题<input id="rc-event-title" required maxlength="200"></label>
+    <label>状态<select id="rc-event-state"><option value="draft">待补充</option><option value="executing">已执行</option><option value="verified">已验证</option></select></label>
+    <label class="inline"><input id="rc-event-major" type="checkbox">重大故障</label>
+    <div id="rc-event-fields" class="rc-grid"></div>
+    <div class="rc-actions"><button type="submit" class="primary">保存资料</button><button type="button" id="rc-event-cancel">取消</button></div>
+  </form>
+</dialog>
+</section>
+
+<script src="/static/js/report_center.js" defer></script>

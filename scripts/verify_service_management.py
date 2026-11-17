@@ -585,7 +585,7 @@ class WebSecurity(unittest.TestCase):
         self.login()
         result=self.client.get('/services')
         self.assertEqual(result.status_code,302)
-        self.assertEqual(result.headers['Location'],'/#services')
+        self.assertEqual(result.headers['Location'],'/#inventory')
         self.assertEqual(result.headers['Cache-Control'],'no-store, private')
         item=next(i for i in all_items(load_catalog(CATALOG)).values() if i['kind']=='inspection')
         result=self.client.post('/api/services/evidence',json={'item_id':item['id'],'status':'pass'},headers={'X-CSRF-Token':'fixture-csrf'})

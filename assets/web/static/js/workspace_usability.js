@@ -98,23 +98,28 @@
   // Keep browser back/forward and refresh aligned with the selected workspace.
   let restoring = false;
   function restorePage() {
-    const name = location.hash.slice(1);
+    const original = location.hash.slice(1);
+    const name = ['services','datasources','clusters','batch-inspection'].includes(original) ? 'inventory' : original;
+    if(original!==name) history.replaceState({page:name},'', '#'+name);
     const target = items.find((item) => item.id === "nav-" + name);
     if (target && target.style.display !== "none" && byId("page-" + name)) {
       restoring = true;
       target.click();
+      if (original === "clusters") window.showInventoryTab("clusters");
+      if (original === "batch-inspection") window.showInventoryTab("batch");
       restoring = false;
     }
   }
   const originalShowPage = window.showPage;
   window.showPage = function (name) {
     originalShowPage(name);
+    const canonical = ["services", "datasources", "clusters", "batch-inspection"].includes(name) ? "inventory" : name;
     if (
       window.__workspaceAppReady &&
       !restoring &&
-      location.hash !== "#" + name
+      location.hash !== "#" + canonical
     )
-      history.pushState({ page: name }, "", "#" + name);
+      history.pushState({ page: canonical }, "", "#" + canonical);
   };
   window.addEventListener("popstate", restorePage);
   document.addEventListener(

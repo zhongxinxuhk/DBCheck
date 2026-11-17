@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 "use strict";
 (() => {
-  const $ = (id) => document.getElementById("rc-" + id);
+  const root = document.getElementById("report-center");
+  if (!root) return;
+  const $ = (id) => root.querySelector("#rc-" + id);
   const state = {
     assets: [],
     catalog: [],
@@ -16,7 +18,7 @@
     generating: "生成中",
     failed: "生成失败",
     draft: "待复核",
-    published: "已发布",
+    published: "已完成",
   };
   const title = (id) => state.catalog.find((v) => v.id === id)?.title || id;
   const message = (value, error = false) => {
@@ -49,7 +51,10 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
             };
-    const response = await fetch("/api/services/" + path, options);
+    const response = await fetch(
+      "/api/report-center/" + path.replace(/^deliverables\//, ""),
+      options,
+    );
     if (response.status === 401) {
       location.href = "/um/login";
       throw new Error("请先登录");
@@ -59,18 +64,28 @@
     return result;
   }
   function tab(name) {
-    document
+    root
       .querySelectorAll("[data-tab]")
       .forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
-    document
+    root
       .querySelectorAll(".rc-pane")
       .forEach((p) => (p.hidden = p.id !== "rc-" + name));
   }
-  document
+  root
     .querySelectorAll("[data-tab]")
     .forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
   function checks(container, values, selected) {
     container.replaceChildren();
+    const groups = new Map();
+    if (container === $("deliverables")) {
+      ["台账", "巡检与周期报告", "专项报告"].forEach((name) => {
+        const group = node("details");
+        group.open = true;
+        group.append(node("summary", name));
+        container.append(group);
+        groups.set(name, group);
+      });
+    }
     values.forEach((value) => {
       const label = node("label");
       const input = node("input");
@@ -78,7 +93,22 @@
       input.value = value.id;
       input.checked = selected.includes(value.id);
       label.append(input, node("span", value.title));
-      container.append(label);
+      const category = /^D0[1-7]$/.test(value.id)
+        ? "台账"
+        : [
+              "RUN",
+              "D08",
+              "D09",
+              "D10",
+              "D11",
+              "D12",
+              "D13",
+              "D18",
+              "D22",
+            ].includes(value.id)
+          ? "巡检与周期报告"
+          : "专项报告";
+      (groups.get(category) || container).append(label);
     });
   }
   const checked = (container) =>
@@ -99,19 +129,28 @@
   }
   function combination() {
     const choice = $("combination").value;
+    $("period").closest("label").hidden = ["run", "register"].includes(choice);
+    $("date").closest("label").hidden = ["run", "register"].includes(choice);
     if (choice === "custom") return;
-    const selected = state.combinations[choice] || [];
+    const selected =
+      choice === "run" ? ["RUN"] : state.combinations[choice] || [];
     $("deliverables")
       .querySelectorAll("input")
       .forEach((i) => (i.checked = selected.includes(i.value)));
-    [...$("deliverables").children]
-      .sort(
-        (a, b) =>
-          Number(b.querySelector("input").checked) -
-          Number(a.querySelector("input").checked),
-      )
-      .forEach((item) => $("deliverables").append(item));
-    if (choice !== "register") $("period").value = choice;
+    $("deliverables")
+      .querySelectorAll("details")
+      .forEach((group) => {
+        group.open = Boolean(group.querySelector("input:checked"));
+        [...group.querySelectorAll(":scope > label")]
+          .sort(
+            (left, right) =>
+              Number(right.querySelector("input").checked) -
+              Number(left.querySelector("input").checked),
+          )
+          .forEach((label) => group.append(label));
+      });
+    if (["week", "month", "quarter", "year"].includes(choice))
+      $("period").value = choice;
     sheets();
   }
   function options() {
@@ -122,14 +161,16 @@
         .toISOString()
         .slice(0, 19);
     return {
-      asset_ids: checked($("assets")),
+      source_ids: checked($("assets")),
+      collect_first: $("collect-first").checked,
+      split_sources: $("split-sources").checked,
       deliverables: checked($("deliverables")),
       period: $("period").value,
       date: $("date").value,
       cutoff: state.cutoffEdited
         ? new Date($("cutoff").value).toISOString()
         : undefined,
-      formats: [...document.querySelectorAll("input[name=format]:checked")].map(
+      formats: [...root.querySelectorAll("input[name=format]:checked")].map(
         (i) => i.value,
       ),
       run_id: $("run").value,
@@ -188,7 +229,7 @@
   function downloadLink(job, artifact) {
     const a = node("a", artifact ? artifact.name : "下载交付包");
     a.href =
-      "/api/services/deliverables/" +
+      "/api/report-center/" +
       encodeURIComponent(job.id) +
       "/download" +
       (artifact
@@ -199,6 +240,7 @@
   function revision(job) {
     $("previous").value = job.id;
     $("reason").value = "";
+    $("reason").closest("details").open = true;
     $("revision-label").textContent = "修订报告 " + job.report_id;
     $("period").value = job.request.period;
     $("date").value = job.request.date;
@@ -207,7 +249,14 @@
     $("event").value = job.request.workflow_ids?.[0] || "";
     $("assets")
       .querySelectorAll("input")
-      .forEach((i) => (i.checked = job.request.asset_ids.includes(i.value)));
+      .forEach(
+        (i) =>
+          (i.checked = (
+            job.source_ids ||
+            job.request.source_ids ||
+            job.request.asset_ids
+          ).includes(i.value)),
+      );
     $("deliverables")
       .querySelectorAll("input")
       .forEach((i) => (i.checked = job.request.deliverables.includes(i.value)));
@@ -226,84 +275,51 @@
         .includes(search),
     );
     table(
-      $("task-list"),
-      ["报告 / 周期", "交付物", "状态", "操作"],
-      state.jobs.map((job) => {
+      $("archive-list"),
+      ["报告 / 周期", "交付物", "状态", "文件与操作"],
+      jobs.map((job) => {
         const actions = node("div");
-        if (
-          job.state === "failed" ||
-          ["queued", "generating"].includes(job.state)
-        )
+        if (["queued", "generating", "failed"].includes(job.state))
           actions.append(
             button("重试中断任务", async () => {
               await api("deliverables/jobs/" + job.id + "/retry", {});
               await refresh();
             }),
           );
-        if (job.state === "draft")
-          actions.append(
-            button("复核并发布", async () => {
-              await api("deliverables/jobs/" + job.id + "/publish", {
-                version: job.version,
-              });
-              await refresh();
-              message("正式报告已签名归档");
-            }),
+        if (job.artifacts.length) {
+          const details = node("details");
+          details.append(node("summary", "文件、摘要与签名"));
+          job.artifacts.forEach((artifact) => {
+            const line = node("div");
+            line.append(
+              downloadLink(job, artifact),
+              node("code", artifact.sha256),
+            );
+            details.append(line);
+          });
+          details.append(
+            node("p", "签名公钥指纹"),
+            node("code", job.manifest.key_id),
           );
-        if (["draft", "published"].includes(job.state))
-          actions.append(downloadLink(job));
+          actions.append(
+            downloadLink(job),
+            button("生成修订版", () => revision(job)),
+            button("校验", () => {
+              $("verify-job").value = job.id;
+              verifyArtifacts();
+              tab("verify");
+            }),
+            details,
+          );
+        }
         return [
-          job.report_id + " / " + job.request.date,
+          job.report_id + " / v" + job.revision + " / " + job.request.date,
           job.request.deliverables.map(title).join("、"),
           (labels[job.state] || job.state) +
             (job.error ? " · " + job.error : ""),
           actions,
         ];
       }),
-    );
-    table(
-      $("archive-list"),
-      ["报告 / 版本", "统计周期", "文件与 SHA-256", "签名与操作"],
-      jobs
-        .filter((j) => ["draft", "published"].includes(j.state))
-        .map((job) => {
-          const files = node("div");
-          job.artifacts.forEach((a) => {
-            const block = node("div");
-            block.append(downloadLink(job, a), node("code", a.sha256));
-            files.append(block);
-          });
-          const actions = node("div");
-          actions.append(
-            node("div", "签名公钥指纹"),
-            node("code", job.manifest.key_id),
-            downloadLink(job),
-            button("生成修订版", () => revision(job)),
-          );
-          actions.append(
-            button("核验此报告", () => {
-              $("verify-job").value = job.id;
-              verifyArtifacts();
-              tab("verify");
-            }),
-          );
-          const superseded = state.jobs.some(
-            (v) =>
-              v.report_id === job.report_id &&
-              v.revision > job.revision &&
-              v.state === "published",
-          );
-          return [
-            job.report_id +
-              " / v" +
-              job.revision +
-              " · " +
-              (superseded ? "历史发布版本" : labels[job.state]),
-            job.request.start + " 至 " + job.request.end,
-            files,
-            actions,
-          ];
-        }),
     );
     const selected = $("verify-job").value;
     $("verify-job").replaceChildren(node("option", "请选择报告"));
@@ -337,13 +353,11 @@
     const data = await api("deliverables/jobs");
     state.jobs = data.jobs;
     renderJobs();
-    table(
-      $("plans"),
-      ["服务计划", "周期", "状态", "资产"],
-      (data.plans || []).map((p) => [p.title, p.period, p.state, p.asset_name]),
-    );
     clearTimeout(state.timer);
-    if (state.jobs.some((j) => ["queued", "generating"].includes(j.state)))
+    if (
+      active() &&
+      state.jobs.some((j) => ["queued", "generating"].includes(j.state))
+    )
       state.timer = setTimeout(
         () => refresh().catch((e) => message(e.message, true)),
         5000,
@@ -371,7 +385,7 @@
   };
   $("archive-filter").oninput = renderJobs;
   $("verify-job").onchange = verifyArtifacts;
-  $("refresh").onclick = () => refresh().catch((e) => message(e.message, true));
+
   $("preview").onclick = async () => {
     try {
       const data = await api("deliverables/preview", options());
@@ -383,7 +397,7 @@
         checks: "检查结果",
         uncollected_days: "缺采集天数",
         workflows: "服务记录",
-        open_issues: "未结问题",
+        open_issues: "未结整改记录",
       };
       Object.entries(data.coverage).forEach(([k, v]) => {
         const item = node("div", labels[k] || k);
@@ -396,41 +410,9 @@
       message(e.message, true);
     }
   };
-  $("collect").onclick = async () => {
-    const b = $("collect");
-    b.disabled = true;
-    try {
-      const ids = checked($("assets"));
-      if (!ids.length) throw new Error("请选择资产");
-      const problems = [];
-      for (const id of ids) {
-        message("正在全量采集 " + id);
-        const value = await api(
-          "deliverables/assets/" + encodeURIComponent(id) + "/collect",
-          {},
-        );
-        Object.entries(value.statuses)
-          .filter(([, v]) => v.status !== "collected")
-          .forEach(([key, v]) =>
-            problems.push(key + " " + (v.reason || v.status)),
-          );
-      }
-      $("cutoff").value = new Date(
-        Date.now() - new Date().getTimezoneOffset() * 60000,
-      )
-        .toISOString()
-        .slice(0, 19);
-      message(
-        problems.length
-          ? "采集已归档，需核对 " + problems.join("、")
-          : "全量采集已归档，可以预览并导出",
-        problems.length > 0,
-      );
-    } catch (e) {
-      message(e.message, true);
-    } finally {
-      b.disabled = false;
-    }
+  $("collect").onclick = () => {
+    $("collect-first").checked = true;
+    $("form").requestSubmit($("form").querySelector('button[type="submit"]'));
   };
   $("form").onsubmit = async (event) => {
     event.preventDefault();
@@ -442,10 +424,11 @@
       $("previous").value = "";
       $("revision-label").textContent = "";
       await refresh();
-      tab("tasks");
+      tab("archive");
     } catch (e) {
       message(e.message, true);
     } finally {
+      $("collect-first").checked = false;
       b.disabled = false;
     }
   };
@@ -501,13 +484,29 @@
     $("cutoff").value = local.slice(0, 19);
     const [catalog, assets, observations, workflows] = await Promise.all([
       api("deliverables/catalog"),
-      api("assets"),
+      api("sources"),
       api("deliverables/observations"),
-      api("workflows"),
+      api("events"),
     ]);
     state.catalog = catalog.deliverables;
     state.combinations = catalog.combinations;
-    state.assets = assets.assets;
+    $("event").replaceChildren(new Option("本周期相关事件", ""));
+    $("run").replaceChildren(new Option("按周期汇总", ""));
+    $("cluster").replaceChildren(new Option("选择集群", ""));
+    state.assets = assets.sources.map((source) => ({
+      id: source.id,
+      payload: source,
+    }));
+    state.observations = observations.observations;
+    state.eventFields = workflows.fields;
+    state.eventLabels = workflows.labels;
+    (assets.clusters || []).forEach((cluster) => {
+      const option = node("option", cluster.name);
+      option.value = JSON.stringify(cluster.source_ids);
+      $("cluster").append(option);
+    });
+    $("cluster").hidden = !(assets.clusters || []).length;
+    $("expand-cluster").hidden = !(assets.clusters || []).length;
     workflows.records.forEach((record) => {
       const option = node("option", record.payload.title + " / " + record.id);
       option.value = record.id;
@@ -522,11 +521,14 @@
           a.payload.system,
           a.payload.project_id,
           a.payload.db_type,
+          a.payload.database,
+          a.payload.environment,
+          ...(a.payload.tags || []),
         ]
           .filter(Boolean)
           .join(" · "),
       })),
-      state.assets.map((a) => a.id),
+      [],
     );
     checks(
       $("deliverables"),
@@ -557,9 +559,174 @@
         .forEach((i) => (i.checked = i.value === "RUN"));
       sheets();
     }
-    if (!state.assets.length) message("请先从运维服务登记资产，再选择报告范围");
+    if (!state.assets.length) message("请在资产台账中添加数据源");
+    updateSelection();
     await refresh();
   }
   window.addEventListener("pagehide", () => clearTimeout(state.timer));
-  init().catch((e) => message(e.message, true));
+
+  function updateSelection() {
+    $("selected-count").textContent = "已选 " + checked($("assets")).length;
+  }
+  $("assets").addEventListener("change", updateSelection);
+  $("select-visible").onclick = () => {
+    $("assets")
+      .querySelectorAll("label:not([hidden]) input")
+      .forEach((input) => (input.checked = true));
+    updateSelection();
+  };
+  $("clear").onclick = () => {
+    $("assets")
+      .querySelectorAll("input")
+      .forEach((input) => (input.checked = false));
+    updateSelection();
+  };
+  $("expand-cluster").onclick = () => {
+    const ids = JSON.parse($("cluster").value || "[]");
+    $("assets")
+      .querySelectorAll("input")
+      .forEach((input) => {
+        if (ids.includes(input.value)) input.checked = true;
+      });
+    updateSelection();
+  };
+  $("refresh").onclick = () => {
+    const source_ids = checked($("assets"));
+    initialization = null;
+    window.initReportCenterPage({ source_ids });
+  };
+  function eventFields() {
+    $("event-fields").replaceChildren();
+    [
+      ...new Set([
+        ...(state.eventFields?.[$("event-key").value] || []),
+        "verification_reference",
+      ]),
+    ].forEach((key) => {
+      const label = node("label", state.eventLabels?.[key] || key);
+      const isTime =
+        key.endsWith("_at") ||
+        ["restore_started", "restore_finished"].includes(key);
+      const input = node(
+        isTime || key.endsWith("_minutes") || key === "deadline"
+          ? "input"
+          : "textarea",
+      );
+      if (isTime) input.type = "datetime-local";
+      else if (key.endsWith("_minutes")) {
+        input.type = "number";
+        input.min = "0";
+      } else if (key === "deadline") input.type = "date";
+      else input.rows = 2;
+      input.dataset.field = key;
+      label.append(input);
+      $("event-fields").append(label);
+    });
+  }
+  $("event-key").onchange = eventFields;
+  $("event-cancel").onclick = () => $("event-dialog").close();
+  $("add-event").onclick = () => {
+    $("event-source").replaceChildren();
+    state.assets
+      .filter((asset) => checked($("assets")).includes(asset.id))
+      .forEach((asset) => {
+        const option = node("option", asset.payload.asset_name);
+        option.value = asset.id;
+        $("event-source").append(option);
+      });
+    eventFields();
+    $("event-dialog").showModal();
+  };
+  $("event-form").onsubmit = async (event) => {
+    event.preventDefault();
+    try {
+      const details = Object.fromEntries(
+        [...$("event-fields").querySelectorAll("[data-field]")]
+          .filter((input) => input.value.trim())
+          .map((input) => [
+            input.dataset.field,
+            input.type === "datetime-local"
+              ? new Date(input.value).toISOString()
+              : input.type === "number"
+                ? Number(input.value)
+                : input.value.trim(),
+          ]),
+      );
+      details.major_incident = $("event-major").checked;
+      const data = await api("events", {
+        source_id: $("event-source").value,
+        key: $("event-key").value,
+        title: $("event-title").value,
+        state: $("event-state").value,
+        details,
+      });
+      const option = node("option", data.record.payload.title);
+      option.value = data.record.id;
+      $("event").append(option);
+      $("event").value = option.value;
+      $("event-dialog").close();
+      message("事件资料已保存");
+    } catch (error) {
+      message(error.message, true);
+    }
+  };
+
+  let initialization;
+  function active() {
+    return root.closest(".page")?.classList.contains("active") ?? true;
+  }
+  window.initReportCenterPage = async (context = {}) => {
+    try {
+      initialization ||= init();
+      await initialization;
+      if (context.source_ids || context.run_id) tab("generate");
+      if (context.source_ids || context.run_id) {
+        $("asset-filter").value = "";
+        $("asset-filter").oninput();
+      }
+      if (context.source_ids) {
+        $("assets")
+          .querySelectorAll("input")
+          .forEach(
+            (input) =>
+              (input.checked = context.source_ids.includes(input.value)),
+          );
+        updateSelection();
+      }
+      if (context.run_id) {
+        const selected = state.observations.find(
+          (observation) => observation.id === context.run_id,
+        );
+        if (selected && !context.source_ids) {
+          $("assets")
+            .querySelectorAll("input")
+            .forEach(
+              (input) => (input.checked = input.value === selected.asset_id),
+            );
+          updateSelection();
+        }
+        let option = [...$("run").options].find(
+          (o) => o.value === context.run_id,
+        );
+        if (!option) {
+          option = node("option", context.run_id);
+          option.value = context.run_id;
+          $("run").append(option);
+        }
+        $("run").value = context.run_id;
+        $("combination").value = "run";
+        combination();
+      }
+      await refresh();
+    } catch (error) {
+      initialization = null;
+      message(error.message, true);
+    }
+  };
+  window.addEventListener("workspace-page-change", (event) => {
+    if (event.detail.page !== "report-center") clearTimeout(state.timer);
+  });
+  window.addEventListener("workspace-datasources-updated", () => {
+    initialization = null;
+  });
 })();

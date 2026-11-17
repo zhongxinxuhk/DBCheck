@@ -379,6 +379,9 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         overflow-wrap: anywhere;
         user-select: text;
       }
+      .inventory-more {position:relative;}
+      .inventory-more summary {cursor:pointer;padding:8px 13px;border:1px solid #c6d3e2;border-radius:6px;}
+      .inventory-more>div {position:absolute;right:0;top:100%;z-index:10;display:grid;gap:6px;background:var(--surface,#fff);padding:12px;border:1px solid #c6d3e2;border-radius:8px;min-width:190px;box-shadow:0 8px 24px #0002;}
     </style>
   </head>
   <body>
@@ -397,11 +400,11 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             <option value="">全部集群</option></select
           ><select id="system-filter" aria-label="筛选业务系统"><option value="">全部业务系统</option></select><select id="environment-filter" aria-label="筛选运行环境"><option value="">全部运行环境</option></select><select id="owner-filter" aria-label="筛选运维责任人"><option value="">全部责任人</option></select><span class="spacer"></span
           ><button id="new-record" class="primary">新增台账及数据源</button
-          ><button id="bulk-grouping">批量维护业务分组</button><button id="manage-groups">维护巡检分组</button><button id="inventory-history">台账变更总览</button
-          ><button id="import-records">导入台账 Excel</button
-          ><button id="test-selected">批量测试连接</button
-          ><button id="export-records">导出台账 Excel</button
-          ><button id="inspect-selected">巡检所选数据源</button>
+          ><button id="inspect-selected">巡检所选数据源</button><button id="report-selected">生成报告</button>
+          <details class="inventory-more"><summary>更多操作</summary><div>
+            <button id="bulk-grouping">批量维护业务分组</button><button id="manage-groups">维护巡检分组</button><button id="inventory-history">台账变更总览</button>
+            <button id="import-records">导入台账 Excel</button><button id="test-selected">批量测试连接</button><button id="export-records">导出台账 Excel</button>
+          </div></details>
         </div>
         <div class="muted" id="inventory-count"></div>
         <div class="scroll">
@@ -679,7 +682,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             .map((r) => {
               const s = r.source,
                 m = r.metadata;
-              return `<tr><td><input type="checkbox" data-select="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""} aria-label="选择 ${esc(s.name)}"></td><td><strong>${esc(r.configuration_id)}</strong><br>${esc(s.name)}</td><td>${esc(s.db_type)}<br>${esc(s.host)}:${esc(s.port)}</td><td><div>${esc(s.user)}</div><div class="credential-value">${esc(s.password)}</div></td><td>${esc(m.system)}<br><span class="muted">${esc(m.business)}</span><br><span class="muted">环境 ${esc(m.environment || '未登记')}</span>${r.observation ? `<br><span class="muted">巡检 ${esc(String(r.observation.observed_at || "").slice(0, 10))}</span>` : ""}</td><td>${esc(clusterNames(r).join("、"))}<br><span class="muted">${esc(m.node_names)}</span></td><td>${esc(m.owner)}<br>${esc(m.lifecycle || "未登记")}</td><td class="nowrap"><button data-action="edit" data-id="${esc(r.id)}">${canWrite ? "维护" : "查看"}</button> <button data-action="history" data-id="${esc(r.id)}">变更记录</button>${canWrite ? ` <button class="danger" data-action="delete" data-id="${esc(r.id)}">删除</button>` : ""}</td></tr>`;
+              return `<tr><td><input type="checkbox" data-select="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""} aria-label="选择 ${esc(s.name)}"></td><td><strong>${esc(r.configuration_id)}</strong><br>${esc(s.name)}</td><td>${esc(s.db_type)}<br>${esc(s.host)}:${esc(s.port)}</td><td><div>${esc(s.user)}</div><div class="credential-value">${esc(s.password)}</div></td><td>${esc(m.system)}<br><span class="muted">${esc(m.business)}</span><br><span class="muted">环境 ${esc(m.environment || '未登记')}</span>${r.observation ? `<br><span class="muted">巡检 ${esc(String(r.observation.observed_at || "").slice(0, 10))}</span>` : ""}</td><td>${esc(clusterNames(r).join("、"))}<br><span class="muted">${esc(m.node_names)}</span></td><td>${esc(m.owner)}<br>${esc(m.lifecycle || "未登记")}</td><td class="nowrap"><button data-action="edit" data-id="${esc(r.id)}">${canWrite ? "维护" : "查看"}</button> <button data-action="history" data-id="${esc(r.id)}">变更记录</button><button data-action="report" data-id="${esc(r.id)}">报告</button>${canWrite ? ` <button class="danger" data-action="delete" data-id="${esc(r.id)}">删除</button>` : ""}</td></tr>`;
             })
             .join("") ||
           '<tr><td colspan="8">暂无台账。已有数据源会自动出现在此处。</td></tr>';
@@ -1439,6 +1442,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
                 edit: () => edit(r),
                 delete: () => deleteRecord(r),
                 history: () => history(r),
+                report: () => {if(window.parent!==window)window.parent.postMessage({type:'operations-open-report',source_ids:[r.id]},location.origin);else location.href='/#report-center';},
               }[d.action],
             )
             .catch((e) => message(e.message));
@@ -1507,6 +1511,11 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       $("close-history").onclick = () => $("history-dialog").close();
       $("inventory-history").onclick = () =>
         history().catch((error) => message(error.message));
+      $('report-selected').onclick = () => {
+        if(!state.selected.size){message('请选择数据源');return;}
+        if(window.parent!==window) window.parent.postMessage({type:'operations-open-report',source_ids:[...state.selected]},location.origin);
+        else location.href='/#report-center';
+      };
       $('inspect-selected').onclick = () => {
         if (!state.selected.size) {message('请先选择需要巡检的数据源');return;}
         if (window.parent !== window) {
