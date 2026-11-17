@@ -58,7 +58,7 @@ def invalid(error):
 @bp.route('/services')
 def page():
     actor()
-    return redirect('/#services')
+    return redirect('/#inventory')
 
 
 @bp.route('/api/services/catalog')

@@ -194,6 +194,18 @@ def docx(title, sections, description):
 
 def render_job(job, published=False):
     snapshot, request = job['snapshot'], job['request']
+    if request.get('split_sources') and len(request['asset_ids']) > 1:
+        rendered = []
+        for source_id in request['asset_ids']:
+            assets = [a for a in snapshot['assets'] if a['id'] == source_id]
+            selected = {**snapshot, 'assets': assets, 'coverage': snapshot.get('coverage_by_source', {}).get(source_id, snapshot['coverage']),
+                         'sheets': {name: [r for r in rows if r.get('资产编号') == source_id]
+                         for name, rows in snapshot['sheets'].items()}}
+            child = {**job, 'snapshot': selected, 'request': {**request, 'asset_ids': [source_id], 'split_sources': False}}
+            suffix = digest(source_id.encode())[:12]
+            prefix = re.sub(r'[\\/*?:"<>|]', '_', str(assets[0]['payload'].get('asset_name') or source_id))[:40]
+            rendered.extend((prefix + '_' + suffix + '_' + name, content, metadata) for name, content, metadata in render_job(child, published))
+        return rendered
     rendered = []
     combined = request.get('layout') == 'combined' and 'xlsx' in request['formats']
     units = [(kind, format_name) for kind in request['deliverables'] for format_name in request['formats']
@@ -223,6 +235,7 @@ def render_job(job, published=False):
                        '资产范围': [a['payload'].get('asset_name') for a in snapshot['assets']],
                        '覆盖情况': snapshot['coverage'], '模板版本': 'delivery-v1',
                        '历史映射与缺口': snapshot.get('history_notes'),
+                       '本次采集状态': snapshot.get('collection_results'),
                        '内容SHA256': content_sha256, '来源清单SHA256': snapshot['source_manifest_sha256']}
         if combined and kind == 'COMBINED':
             description['交付物目录'] = {DELIVERABLES[key][0]: DELIVERABLES[key][2] for key in request['deliverables']}

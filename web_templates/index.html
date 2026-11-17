@@ -8477,20 +8477,11 @@ function wfCloseRunDrawer() {
     <!-- ── 运维中台 ── -->
     <div class="nav-section">运维中台</div>
     <div class="nav-item" onclick="showPage('inventory')" id="nav-inventory">
-      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>数据库运维台账</span>
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>资产台账</span>
     </div>
-    <div class="nav-item" onclick="showPage('batch-inspection')" id="nav-batch-inspection">
-      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><path d="m17 16 4 3-4 3"/></svg></span><span>多数据源整体巡检</span>
-    </div>
-    <div class="nav-item" onclick="showPage('clusters')" id="nav-clusters">
-      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="m10 8-4 8m8-8 4 8M8 19h8"/></svg></span><span>集群管理</span>
-    </div>
-    <div class="nav-item" onclick="showPage('services')" id="nav-services">
-      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 5V3h8v2M7 10h10M7 15h10"/></svg></span><span>运维服务与需求验收</span>
-    </div>
-    <a class="nav-item" href="/reports/center" id="nav-report-center">
+    <div class="nav-item" onclick="showPage('report-center')" id="nav-report-center">
       <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h5M9 12h6M9 16h6"/></svg></span><span>报告中心</span>
-    </a>
+    </div>
 
     <!-- ── 智能巡检 ── -->
     <div class="nav-section" data-i18n="webui.nav_group_inspection" data-page-node-id="ZyqVYiEOcSAMJSAUJ5FTIj">智能巡检</div>
@@ -8609,9 +8600,6 @@ function wfCloseRunDrawer() {
     <div class="nav-section" data-i18n="webui.nav_group_datasource" data-page-node-id="kBAOW1ECHlfwTmjaIUTXCo">数据源与配置</div>
     <div class="nav-item" onclick="showPage('oracle-client')" id="nav-oracle-client" data-page-node-id="MYRiP7FnFSYQOYGknY01JO">
       <span class="icon" data-page-node-id="eQCDZmrngg0iyqsXARIAxY"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="WDxUsF4Fi51sjSoWnuNoOl"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" data-page-node-id="QP0tPOK4BknGvofY7sUq6B"/><polyline points="7 10 12 15 17 10" data-page-node-id="BZIv1AcONlwYCBX83vLRZL"/><line x1="12" y1="15" x2="12" y2="3" data-page-node-id="ud8YtM0NDIa8R8qbCuQ0BA"/></svg></span> <span data-i18n="webui.nav_oracle_client" data-page-node-id="ut8P85FQanYz4nxBe5d7qD">数据库驱动管理</span>
-    </div>
-    <div class="nav-item" onclick="showPage('datasources')" id="nav-datasources" data-page-node-id="tAtRFETveOoEHCBV3K9YVv">
-      <span class="icon" data-page-node-id="x3EBDGw0mIFRaFX8XLIkKi"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="oXXsxykQdKK1Ev56gTXU4F"><ellipse cx="12" cy="5" rx="8" ry="3" data-page-node-id="eoFeAN2YInEeTnYtL20RPW"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" data-page-node-id="8rMng2X2yF77s6J83IyEpz"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" data-page-node-id="AVh3nZn6u5FBq0y23G19aO"/></svg></span> <span data-i18n="webui.nav_datasources" data-page-node-id="3GeboddpVNJDCsqvA4hBkF">数据源管理</span>
     </div>
     <div class="nav-item" onclick="showPage('inspection-config')" id="nav-inspection-config" data-page-node-id="2CHDzSXkqnulgGAx8LYqgx">
       <span class="icon" data-page-node-id="hi12eCzlodh63R5yM7zEDp"><svg viewBox="0 0 24 24" aria-hidden="true" data-page-node-id="ueOoRibkkf7csPWajVHWGr"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" data-page-node-id="cBaACVFDPAogm5aX0CRtL6"/><path d="M1 14h6M9 8h6M17 16h6" data-page-node-id="w2TTA78HtGwr6tzY5oYkix"/></svg></span> <span data-i18n="webui.nav_inspection_config" data-page-node-id="B5kxKKmTiCuQd1xe796ekC">巡检配置管理</span>
@@ -11438,23 +11426,23 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
         </div>
       </div><!-- /page-doc-kb -->
 
-      <div class="page" id="page-clusters" style="display:none">
-        {% with embedded=true %}{% include 'clusters.html' %}{% endwith %}
-      </div>
-      <div class="page" id="page-services" style="display:none">
-        {% with embedded=true %}{% include 'service_management.html' %}{% endwith %}
+      <div class="page" id="page-report-center" style="display:none">
+        {% include 'report_center.html' %}
       </div>
 
       <div class="page" id="page-monitor-screen" style="display:none">
         <div class="workspace-toolbar"><button class="btn btn-ghost" onclick="window.open('/monitor-screen', '_blank', 'noopener')">全屏窗口打开</button></div>
         <iframe id="monitor-screen-frame" title="监控大屏" allowfullscreen style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0"></iframe>
       </div>
-      <div class="page" id="page-batch-inspection" style="display:none">
-        <iframe id="batch-operations-frame" title="多数据源整体巡检" style="width:100%;height:calc(100vh - 115px);min-height:700px;border:0;border-radius:10px"></iframe>
-      </div>
-
       <div class="page" id="page-inventory" style="display:none">
-        <iframe id="operations-frame" title="数据库运维台账" style="width:100%;height:calc(100vh - 115px);min-height:700px;border:0;border-radius:10px"></iframe>
+        <div class="workspace-toolbar" style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="btn btn-ghost" onclick="showInventoryTab('table')">资产台账</button>
+          <button class="btn btn-ghost" onclick="showInventoryTab('batch')">批量巡检</button>
+          <button class="btn btn-ghost" onclick="showInventoryTab('clusters')">集群视图</button>
+        </div>
+        <div id="inventory-table"><iframe id="operations-frame" title="资产台账" style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0;border-radius:10px"></iframe></div>
+        <div id="inventory-batch" hidden><iframe id="batch-operations-frame" title="批量巡检" style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0;border-radius:10px"></iframe></div>
+        <div id="inventory-clusters" hidden>{% with embedded=true %}{% include 'clusters.html' %}{% endwith %}</div>
       </div>
 
       <!-- ══ Page: Schema Dict (系统字典表维护) ══ -->
@@ -14428,7 +14416,17 @@ function dm8OfflineDownloadReport() {
 }
 
 // ─── Page Navigation ───
+function showInventoryTab(name) {
+  ['table','batch','clusters'].forEach(tab=>{document.getElementById('inventory-'+tab).hidden=tab!==name;});
+  const id=name==='batch'?'batch-operations-frame':'operations-frame';
+  if(name==='clusters') window.initClusterPage();
+  else {const frame=document.getElementById(id);if(!frame.getAttribute('src'))frame.src='/operations/inventory'+(name==='batch'?'?tab=batch':'');}
+}
+window.openReportCenter = function(context={}) {window.__reportCenterContext=context;showPage('report-center');};
 function showPage(name) {
+  const inventoryTab=({services:'table',datasources:'table','batch-inspection':'batch',clusters:'clusters'})[name];
+  if(inventoryTab) name='inventory';
+  window.dispatchEvent(new CustomEvent('workspace-page-change',{detail:{page:name}}));
   // P0-c：切换页面时关闭自治闭环抽屉（避免 fixed 抽屉残留浮层）
   try { closeAutonomyDrawer(); } catch (e) {}
   // v2.6.2：更新全局页面变量（供 AI 上下文感知使用）
@@ -14503,8 +14501,8 @@ function showPage(name) {
     'sql-audit': ['SQL 审核', '提交 SQL 变更前的安全审计：解析、规则校验、风险评分（MVP1 仅只读分析，不执行）'],
     'autonomy': ['安全自治 DBA 闭环', '检测→诊断→提议→审批闸门→执行→复检 的可审计自治闭环（P0-c 看板）'],
     'clusters': ['集群管理', '集群成员、运行状态与节点巡检'],
-    'services': ['运维服务与需求验收', '需求覆盖、资产证据与运维闭环'],
-    'inventory': ['数据库运维台账', '资产统一维护、数据源同步与规范台账导出'],
+    'report-center': ['报告中心', '选择数据源生成报告、查阅归档与校验文件'],
+    'inventory': ['资产台账', '数据源与台账统一维护'],
     'workflow-task': [i18n('menu.workflow_task') || '工作任务', '管理工作流与整体巡检的手动运行、定时计划及运行报告'],
     'batch-inspection': ['多数据源整体巡检', '选择多个数据源或集群，一次执行并生成整体巡检报告'],
     'fleet': ['智能基线 · Smart Baseline', '无监督基线学习 + 漂移检测 + 容量预测：从单点巡检到全库智能（P1）'],
@@ -14528,7 +14526,7 @@ function showPage(name) {
   if (name === 'rag') showRagPage();
   if (name === 'doc-kb') loadDocKb();
   if (name === 'clusters') window.initClusterPage();
-  if (name === 'services') window.initServiceManagementPage();
+  if (name === 'report-center' && window.initReportCenterPage) {window.initReportCenterPage(window.__reportCenterContext||{});window.__reportCenterContext=null;}
   if (name === 'monitor-screen') {
     const frame = document.getElementById('monitor-screen-frame');
     if (!frame.getAttribute('src')) frame.src = '/monitor-screen';
@@ -14538,8 +14536,7 @@ function showPage(name) {
     if (!frame.getAttribute('src')) frame.src = '/operations/inventory?tab=batch';
   }
   if (name === 'inventory') {
-    const frame = document.getElementById('operations-frame');
-    if (!frame.getAttribute('src')) frame.src = '/operations/inventory';
+    showInventoryTab(inventoryTab||'table');
   }
   if (name === 'schema-dict') loadSchemaDict();
   if (name === 'home') { loadHomeStats(); startHomeRefresh(); } else { stopHomeRefresh(); }
@@ -16705,7 +16702,7 @@ function pollStatus() {
             </div>
             <div class="report-dl-group">
               <a class="report-dl-btn report-dl-word" href="/api/download/${currentTaskId}" download>📝 Word</a>
-              <a class="report-dl-btn" href="/reports/center${data.delivery_run_id ? '?run_id=' + encodeURIComponent(data.delivery_run_id) : ''}">Excel 分项导出</a>
+              <a class="report-dl-btn" href="#report-center" onclick="window.openReportCenter({run_id:'${data.delivery_run_id||''}'});return false;">Excel 分项导出</a>
               <button class="report-dl-btn report-dl-pdf" type="button" onclick="downloadReportPdf('${currentTaskId}')">📄 PDF</button>
               <button class="report-dl-btn report-dl-share" type="button" onclick="shareDbInspectReport('${currentTaskId}')">📤 分享</button>
             </div>
@@ -31628,6 +31625,7 @@ document.addEventListener('keydown', function(e) {
 window.addEventListener('message', function(event) {
   const frames = ['operations-frame', 'batch-operations-frame'].map(id => document.getElementById(id));
   if (event.origin !== window.location.origin || !frames.some(frame => frame?.contentWindow === event.source)) return;
+  if (event.data?.type === 'operations-open-report') {window.openReportCenter({source_ids:event.data.source_ids||[]});}
   if (event.data?.type === 'operations-open-batch') {
     window.__operationsBatchSelection = event.data.instance_ids || [];
     showPage('batch-inspection');

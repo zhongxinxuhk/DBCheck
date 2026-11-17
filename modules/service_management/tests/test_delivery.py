@@ -31,6 +31,26 @@ ADMIN = {'id': 12, 'tenant_id': 1, 'admin': True, 'approver': True}
 OTHER = {'id': 21, 'tenant_id': 2, 'admin': True, 'approver': True}
 
 
+class InventoryFixture:
+    def __init__(self, ids=('native',)):
+        now = datetime.now(timezone.utc).isoformat()
+        self.records = {identity: {'id': identity, 'configuration_id': 'CI-' + identity, 'version': 1,
+            'source': {'name': identity, 'db_type': 'oracle', 'host': '192.0.2.1', 'port': 1521,
+                       'database': identity, 'created_at': now, 'updated_at': now},
+            'metadata': {'system': 'fixture', 'owner': 'fixture', 'tables': {}}, 'revision': 'fixture'} for identity in ids}
+
+    def get(self, identity):
+        if identity not in self.records:
+            raise LookupError('missing fixture')
+        return self.records[identity]
+
+    def list(self, ids):
+        return [self.get(identity) for identity in ids]
+
+    def history(self, actor, ids):
+        return []
+
+
 class DeliveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -205,16 +225,18 @@ class DeliveryTests(unittest.TestCase):
         app = Flask(__name__, template_folder=str(ROOT / 'web_templates'))
         principal = Principal(id=11, tenant_id=1, roles=['operator'])
         app.config.update(SERVICE_STORE=self.services, SERVICE_CATALOG_PATH=ROOT / 'scripts/fixtures/service_catalog.json',
-                          DELIVERY_SYNC=True, DELIVERY_PRINCIPAL_RESOLVER=lambda _: principal)
+                          DELIVERY_SYNC=True, DELIVERY_PRINCIPAL_RESOLVER=lambda _: principal,
+                          REPORT_INVENTORY=InventoryFixture(), REPORT_VISIBLE_IDS=lambda _: ['native'])
         @app.before_request
         def identity(): g.security_principal = principal
         app.register_blueprint(bp)
         client = app.test_client()
-        self.assertEqual(client.get('/reports/center').status_code, 200)
-        response = client.post('/api/services/deliverables/jobs', json={'deliverables': ['D01'], 'date': self.date})
+        self.assertEqual(client.get('/reports/center').status_code, 302)
+        self.assertEqual(client.get('/reports/center?run_id=fixture-run').headers['Location'], '/?run_id=fixture-run#report-center')
+        response = client.post('/api/report-center/jobs', json={'source_ids': ['native'], 'deliverables': ['D01'], 'date': self.date})
         self.assertEqual(response.status_code, 202, response.json)
         job = response.json['job']
-        self.assertEqual(job['state'], 'draft', job.get('error'))
+        self.assertEqual(job['state'], 'published', job.get('error'))
         artifact = job['artifacts'][0]
         downloaded = client.get('/api/services/deliverables/' + job['id'] + '/download?artifact_id=' + artifact['artifact_id'])
         self.assertEqual(downloaded.status_code, 200)
@@ -266,7 +288,8 @@ class DeliveryTests(unittest.TestCase):
 
     def test_invalid_request_shapes(self):
         for extra in [{'deliverables': [{}]}, {'deliverables': []}, {'formats': [{}]}, {'formats': []},
-                      {'asset_ids': []}, {'sheets': [{}]}, {'asset_ids': ['foreign']}]:
+                      {'asset_ids': []}, {'source_ids': None}, {'collect_first': 'yes'},
+                      {'sheets': [{}]}, {'asset_ids': ['foreign']}]:
             with self.assertRaises((ValueError, PermissionError)):
                 self.options(**extra)
 
@@ -275,19 +298,15 @@ class DeliveryTests(unittest.TestCase):
         principal = Principal(id=11, tenant_id=1, roles=['operator'])
         app = Flask(__name__)
         app.config.update(SERVICE_STORE=self.services, SERVICE_CATALOG_PATH=ROOT / 'scripts/fixtures/service_catalog.json')
-        class Inventory:
-            def get(self, identity):
-                return {'source': {'name': 'native', 'db_type': 'oracle'}, 'metadata': {'system': 'fixture'},
-                        'configuration_id': 'CI-NATIVE', 'revision': 'fixture'}
+        app.config.update(REPORT_INVENTORY=InventoryFixture(), REPORT_VISIBLE_IDS=lambda _: ['native'])
         task = {'datasource_id': 'native', 'owner_user_id': 11, 'owner_tenant_id': 1, 'id': 'native-run'}
         context = {'parameters': [{'name': 'processes', 'value': 120}], 'auto_analyze': [{'col1': 'fixture issue'}]}
-        with app.app_context(), patch('modules.access.get_principal', return_value=principal), \
-                patch('modules.access.get_owner', return_value={}), patch('modules.access.visible_to', return_value=True), \
-                patch('modules.operations.routes.resources', return_value=(Inventory(), None, None)):
+        with app.app_context(), patch('modules.access.get_principal', return_value=principal):
             first = capture_inspection(task, context)
             second = capture_inspection(task, context)
         self.assertEqual(first, second)
         self.assertEqual(first['id'], 'native-run')
+        self.assertEqual(len(self.services.list(OWNER, 'asset')), 1)
 
     def test_legacy_mapping_uses_instance_id_and_preserves_unknown_scope(self):
         import sqlite3
@@ -331,6 +350,111 @@ class DeliveryTests(unittest.TestCase):
         selected = self.job(deliverables=['D16'], workflow_ids=[normal['id']])
         rows = selected['snapshot']['sheets']['故障记录']
         self.assertEqual([r['记录编号'] for r in rows], [normal['id']])
+
+    def test_direct_sources_need_no_service_registration_or_customer_catalog(self):
+        app = Flask(__name__)
+        principal = Principal(id=11, tenant_id=1, roles=['operator'])
+        inventory = InventoryFixture(('one', 'two'))
+        allowed = ['one', 'two']
+        app.config.update(SERVICE_STORE=self.services, SERVICE_CATALOG_PATH=Path(self.temp.name)/'missing.json',
+                          REPORT_INVENTORY=inventory, REPORT_VISIBLE_IDS=lambda _: allowed,
+                          DELIVERY_SYNC=True, DELIVERY_PRINCIPAL_RESOLVER=lambda _: principal)
+        @app.before_request
+        def identity(): g.security_principal = principal
+        app.register_blueprint(bp)
+        client = app.test_client()
+        choices = client.get('/api/report-center/sources').json['sources']
+        self.assertEqual({row['id'] for row in choices}, set(allowed))
+        self.assertNotIn('password', json.dumps(choices))
+        self.assertEqual(client.post('/api/report-center/jobs', json={'deliverables':['D01']}).status_code, 400)
+        created = client.post('/api/report-center/jobs', json={'source_ids':allowed,'deliverables':['D01','D04'],
+                             'layout':'combined','split_sources':True})
+        self.assertEqual(created.status_code,202,created.json)
+        job=created.json['job']
+        self.assertEqual(job['state'],'published',job.get('error'))
+        self.assertEqual(len(job['artifacts']),2)
+        self.assertEqual(len(self.services.list(OWNER,'asset')),1)
+        self.assertEqual(set(job['request']['source_ids']),set(allowed))
+        allowed.remove('two')
+        self.assertEqual(client.get('/api/report-center/'+job['id']+'/download').status_code,403)
+
+    def test_new_reports_read_current_inventory_and_link_legacy_observations(self):
+        from modules.service_management.report_sources import ReportSources, report_catalog
+        principal=Principal(id=11,tenant_id=1,roles=['operator'])
+        inventory=InventoryFixture()
+        self.services.save(OWNER,'asset',{**self.payload,'instance_id':'native'},record_id=self.asset['id'],version=1)
+        records=ReportSources(self.services,inventory,principal,['native'])
+        archive=DeliveryStore(records)
+        observations=archive.observations(OWNER,['native'])
+        self.assertEqual(observations[0]['asset_id'],'native')
+        app=Flask(__name__)
+        with app.app_context():
+            options=request_options({'source_ids':['native'],'deliverables':['D03']},records.list(OWNER,'asset'))
+            snapshot=build_snapshot(records,archive,OWNER,report_catalog(OWNER),options)
+        self.assertTrue(any(row.get('配置值')==120 for row in snapshot['sheets']['数据库参数']))
+        inventory.records['native']['metadata']['owner']='updated owner'
+        self.assertEqual(records.get(OWNER,'native')['payload']['owner'],'updated owner')
+        legacy = self.job(deliverables=['D01'])
+        new_options={**legacy['request'],'source_ids':['native'],'asset_ids':['native']}
+        revised=archive.create(OWNER,new_options,legacy['snapshot'],previous_id=legacy['id'],reason='source mapping')
+        self.assertEqual(revised['revision'],2)
+
+    def test_source_event_versions_are_cutoff_aware(self):
+        from modules.service_management.report_sources import ReportSources
+        records=ReportSources(self.services,InventoryFixture(),Principal(id=11,tenant_id=1,roles=['operator']),['native'])
+        event=records.save_event(OWNER,{'source_id':'native','key':'incident_lifecycle','title':'initial','details':{}})
+        cutoff=datetime.now(timezone.utc).isoformat()
+        records.save_event(OWNER,{'id':event['id'],'version':event['version'],'source_id':'native',
+                                 'key':'incident_lifecycle','title':'revised','details':{}})
+        self.assertEqual(records.events(OWNER,cutoff)[0]['payload']['title'],'initial')
+        self.assertEqual(records.events(OWNER)[0]['payload']['title'],'revised')
+        with self.assertRaises(ValueError):
+            records.save_event(OWNER,{'source_id':'native','key':'incident_lifecycle','state':'verified','details':{}})
+
+    def test_collect_then_generate_reuses_batch_runner(self):
+        from modules.service_management.report_sources import sources_for
+        app=Flask(__name__)
+        principal=Principal(id=11,tenant_id=1,roles=['operator'])
+        app.config.update(SERVICE_STORE=self.services, REPORT_INVENTORY=InventoryFixture(),
+                          REPORT_VISIBLE_IDS=lambda _: ['native'], DELIVERY_SYNC=True,
+                          DELIVERY_PRINCIPAL_RESOLVER=lambda _: principal)
+        @app.before_request
+        def identity(): g.security_principal=principal
+        app.register_blueprint(bp)
+        class Batch:
+            def __init__(batch):
+                batch.store=batch
+                batch.value={'id':'fixture-batch','payload':{'members':[{'instance_id':'native','status':'done'}]}}
+            def create(batch,*args): return batch.value,True
+            def get(batch,*args): return batch.value
+            def run(batch,run):
+                DeliveryStore(sources_for(OWNER)).observe(OWNER,'native',{'instance':{'status':'collected','rows':[{'status':'OPEN'}]}})
+        batch=Batch()
+        with patch('modules.operations.routes.prepare_batch',return_value=({},[])) as prepared, \
+             patch('modules.operations.routes.resources',return_value=(None,batch,None)):
+            response=app.test_client().post('/api/report-center/jobs',json={
+                'source_ids':['native'],'deliverables':['RUN'],'collect_first':True})
+        self.assertEqual(response.status_code,202,response.json)
+        self.assertEqual(response.json['job']['state'],'published',response.json['job'].get('error'))
+        self.assertEqual(response.json['job']['coverage']['runs'],1)
+        self.assertEqual(response.json['job']['inspection_run_id'],'fixture-batch')
+        self.assertEqual(prepared.call_count,1)
+
+    def test_inventory_review_is_bound_to_its_source_version(self):
+        from modules.service_management.report_sources import ReportSources, report_catalog
+        inventory=InventoryFixture()
+        records=ReportSources(self.services,inventory,Principal(id=11,tenant_id=1,roles=['operator']),['native'])
+        records.save_event(OWNER,{'source_id':'native','key':'asset_review','title':'quarterly inventory',
+            'state':'verified','details':{'inventory_date':self.date,'scope_reference':'fixture-list',
+            'reconciliation_result':'pass','audit_reference':'fixture-audit','verification_reference':'fixture-verified'}})
+        app=Flask(__name__)
+        def snapshot():
+            options=request_options({'source_ids':['native'],'deliverables':['D01']},records.list(OWNER,'asset'))
+            return build_snapshot(records,DeliveryStore(records),OWNER,report_catalog(OWNER),options)
+        with app.app_context():
+            self.assertEqual(snapshot()['sheets']['季度核对记录'][0]['核对状态'],'已核对')
+            inventory.records['native']['version']=2
+            self.assertEqual(snapshot()['sheets']['季度核对记录'][0]['核对状态'],'待全量核对')
 
 
 if __name__ == '__main__':

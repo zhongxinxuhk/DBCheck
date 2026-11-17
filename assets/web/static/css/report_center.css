@@ -1,57 +1,57 @@
 /* Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 */
-:root {
-  color-scheme: light;
+#report-center {
+  color-scheme: inherit;
   font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
-  color: #1d3149;
+  color: var(--text, #1d3149);
   background: #f2f5f9;
 }
-* {
+#report-center * {
   box-sizing: border-box;
 }
-body {
+#report-center {
   margin: 0;
 }
-main {
+#report-center {
   max-width: 1500px;
   padding: 32px 40px 70px;
   margin: auto;
 }
-a {
+#report-center a {
   color: #245fa4;
   text-decoration: none;
 }
-h1 {
+#report-center h1 {
   font-size: 30px;
   letter-spacing: -0.6px;
   margin: 12px 0 8px;
 }
-h2 {
+#report-center h2 {
   font-size: 20px;
   margin: 0 0 20px;
 }
-p {
-  color: #64748b;
+#report-center p {
+  color: var(--text-muted, #64748b);
   line-height: 1.7;
 }
-.rc-header {
+#report-center .rc-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
 }
-.rc-header p {
+#report-center .rc-header p {
   margin: 0;
 }
-nav {
+#report-center nav {
   display: flex;
   gap: 8px;
   border-bottom: 1px solid #dce3ed;
   margin: 22px 0;
   overflow: auto;
 }
-button {
-  background: white;
+#report-center button {
+  background: var(--surface, #fff);
   color: #274363;
   border: 1px solid #cdd7e4;
   border-radius: 7px;
@@ -59,58 +59,58 @@ button {
   font: inherit;
   cursor: pointer;
 }
-button:hover {
+#report-center button:hover {
   background: #edf3fa;
 }
-button:disabled {
+#report-center button:disabled {
   opacity: 0.55;
   cursor: wait;
 }
-nav button {
+#report-center nav button {
   border: 0;
   border-bottom: 3px solid transparent;
   border-radius: 0;
   background: transparent;
   white-space: nowrap;
 }
-nav button.active {
+#report-center nav button.active {
   color: #1757a0;
   border-bottom-color: #2366b4;
   font-weight: 600;
 }
-.primary {
+#report-center .primary {
   background: #245fa4;
   color: white;
   border-color: #245fa4;
 }
-.primary:hover {
+#report-center .primary:hover {
   background: #174c8a;
 }
-.rc-pane {
-  background: white;
+#report-center .rc-pane {
+  background: var(--surface, #fff);
   border: 1px solid #dce3ed;
   border-radius: 12px;
   padding: 26px;
 }
-.rc-grid {
+#report-center .rc-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
 }
-.rc-columns {
+#report-center .rc-columns {
   display: grid;
   grid-template-columns: 1fr 1.3fr;
   gap: 20px;
 }
-label {
+#report-center label {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin: 10px 0;
   font-size: 14px;
 }
-input,
-select {
+#report-center input,
+#report-center select {
   font: inherit;
   color: inherit;
   border: 1px solid #cbd5e1;
@@ -118,178 +118,258 @@ select {
   border-radius: 6px;
   min-width: 0;
   max-width: 100%;
-  background: white;
+  background: var(--surface, #fff);
 }
-input[type="checkbox"] {
+#report-center input[type="checkbox"] {
   accent-color: #245fa4;
   margin: 0;
   flex: none;
 }
-fieldset {
+#report-center fieldset {
   border: 1px solid #dde4ed;
   border-radius: 8px;
   margin: 20px 0;
   padding: 15px;
   min-width: 0;
 }
-legend {
+#report-center legend {
   font-weight: 600;
   padding: 0 8px;
 }
-.rc-checklist {
+#report-center .rc-checklist {
   max-height: 300px;
   overflow: auto;
   padding: 5px 0;
 }
-#rc-asset-filter,
-#rc-archive-filter {
+#report-center #rc-asset-filter,
+#report-center #rc-archive-filter {
   width: 100%;
 }
-.rc-checklist label,
-.rc-sheet-list label,
-.inline {
+#report-center .rc-checklist label,
+#report-center .rc-sheet-list label,
+#report-center .inline {
   flex-direction: row;
   align-items: flex-start;
   gap: 9px;
   line-height: 1.5;
 }
-.rc-checklist label {
+#report-center .rc-checklist label {
   padding: 7px 5px;
   margin: 0;
 }
-.rc-checklist label:hover {
+#report-center .rc-checklist label:hover {
   background: #f1f5fa;
 }
-.inline {
+#report-center .inline {
   display: inline-flex;
   margin-right: 25px;
 }
-.rc-sheet-list {
+#report-center .rc-sheet-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px 14px;
 }
-details {
+#report-center details {
   padding: 12px 0;
 }
-summary {
+#report-center summary {
   cursor: pointer;
   color: #476683;
 }
-.rc-actions {
+#report-center .rc-actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 22px;
   align-items: center;
 }
-.rc-table-wrap {
+#report-center .rc-table-wrap {
   overflow: auto;
   margin-top: 18px;
 }
-table {
+#report-center table {
   border-collapse: collapse;
   width: 100%;
   font-size: 13px;
 }
-th,
-td {
+#report-center th,
+#report-center td {
   padding: 12px;
   border-bottom: 1px solid #e3e9f1;
   text-align: left;
   vertical-align: top;
 }
-th {
+#report-center th {
   background: #f4f7fb;
   font-weight: 600;
   white-space: nowrap;
 }
-td {
+#report-center td {
   max-width: 440px;
   overflow-wrap: anywhere;
 }
-td button,
-td a {
+#report-center td button,
+#report-center td a {
   display: inline-block;
   margin: 2px 6px 4px 0;
   font-size: 12px;
   padding: 7px 10px;
 }
-code {
+#report-center code {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.rc-card {
+#report-center .rc-card {
   padding: 18px;
   background: #f5f8fc;
   border: 1px solid #dce5f0;
   border-radius: 8px;
   margin-top: 18px;
 }
-.rc-stats {
+#report-center .rc-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
 }
-.rc-stats div {
+#report-center .rc-stats div {
   background: #eef4fc;
   padding: 16px 20px;
   min-width: 140px;
   border-radius: 8px;
 }
-.rc-stats strong {
+#report-center .rc-stats strong {
   display: block;
   font-size: 25px;
   padding-top: 7px;
 }
-#rc-message:not(:empty) {
+#report-center #rc-message:not(:empty) {
   padding: 13px 16px;
   background: #e7f0fb;
   border-radius: 8px;
   overflow-wrap: anywhere;
 }
-#rc-message.error {
+#report-center #rc-message.error {
   background: #fff0ee;
   color: #a63124;
 }
-dl {
+#report-center dl {
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
   gap: 10px;
 }
-dt {
-  color: #64748b;
+#report-center dt {
+  color: var(--text-muted, #64748b);
 }
-dd {
+#report-center dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
-[hidden] {
+#report-center [hidden] {
   display: none !important;
 }
 @media (max-width: 900px) {
-  main {
+  #report-center {
     padding: 20px 14px 45px;
   }
-  .rc-grid {
+  #report-center .rc-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .rc-columns {
+  #report-center .rc-columns {
     grid-template-columns: 1fr;
     gap: 0;
   }
-  .rc-pane {
+  #report-center .rc-pane {
     padding: 18px;
   }
-  .rc-sheet-list {
+  #report-center .rc-sheet-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 500px) {
-  .rc-grid {
+  #report-center .rc-grid {
     grid-template-columns: 1fr;
   }
-  dl {
+  #report-center dl {
     grid-template-columns: 1fr;
   }
+}
+
+#report-center {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 24px;
+  background: transparent;
+  font-family: inherit;
+}
+#report-center .rc-pane {
+  background: var(--surface, #fff);
+  border-color: var(--border, #dce3ed);
+}
+#report-center input,
+#report-center select,
+#report-center textarea {
+  background: var(--surface2, #fff);
+  color: var(--text, #1d3149);
+  border-color: var(--border, #cbd5e1);
+}
+#report-center dialog {
+  width: min(960px, 95vw);
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid var(--border, #dce3ed);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  color: var(--text, #1d3149);
+  padding: 24px;
+}
+#report-center dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+#report-center .rc-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+#report-center button {
+  color: var(--text, #274363);
+  border-color: var(--border, #cdd7e4);
+}
+#report-center button.primary {
+  color: #fff;
+}
+#report-center th,
+#report-center .rc-card,
+#report-center .rc-stats div {
+  background: var(--surface2, #f4f7fb);
+  color: var(--text, #274363);
+}
+#report-center button:hover,
+#report-center .rc-checklist label:hover {
+  background: var(--surface2, #edf3fa);
+}
+#report-center .primary:hover {
+  background: #174c8a;
+}
+#report-center .rc-checklist details {
+  padding: 5px;
+}
+
+#report-center #rc-message:not(:empty) {
+  background: var(--surface2, #e7f0fb);
+  color: var(--text, #1d3149);
+  border-left: 3px solid var(--accent, #245fa4);
+}
+#report-center #rc-message.error {
+  background: #fff0ee;
+  color: #a63124;
+  border-left-color: #a63124;
+}
+#report-center summary {
+  color: var(--text-muted, #476683);
+}
+#report-center a {
+  color: var(--accent, #245fa4);
 }

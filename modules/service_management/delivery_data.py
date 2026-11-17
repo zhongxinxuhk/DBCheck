@@ -43,15 +43,18 @@ def label(key):
 def request_options(data, assets):
     if not isinstance(data, dict):
         raise ValueError('报告参数须为对象')
+    for flag in ('collect_first', 'split_sources'):
+        if not isinstance(data.get(flag, False), bool):
+            raise ValueError('采集与拆分选项须为布尔值')
     types = data.get('deliverables', ['D09'])
     if not isinstance(types, list) or not types or len(types) > len(DELIVERABLES) or any(not isinstance(t, str) or t not in DELIVERABLES for t in types):
         raise ValueError('交付物类型无效')
     types = list(dict.fromkeys(types))
-    ids = data.get('asset_ids')
-    if ids is None:
+    ids = data.get('source_ids', data.get('asset_ids'))
+    if ids is None and 'source_ids' not in data:
         ids = [a['id'] for a in assets]
     if not isinstance(ids, list) or not ids or any(not isinstance(v, str) for v in ids):
-        raise ValueError('请先登记服务资产并选择报告范围')
+        raise ValueError('请选择一个或多个数据源')
     allowed = {a['id'] for a in assets}
     if not set(ids) <= allowed:
         raise PermissionError('报告包含无权访问的资产')
@@ -66,7 +69,7 @@ def request_options(data, assets):
     if not isinstance(formats, list) or not formats or any(not isinstance(v, str) or v not in {'xlsx', 'docx'} for v in formats):
         raise ValueError('导出格式须为 xlsx 或 docx')
     run_id = str(data.get('run_id') or '')
-    if 'RUN' in types and not run_id:
+    if 'RUN' in types and not run_id and 'source_ids' not in data:
         raise ValueError('单次巡检导出须指定采集批次')
     selected_sheets = data.get('sheets') or []
     sheet_names = {s for t in types for s in DELIVERABLES[t][2]}
@@ -82,7 +85,10 @@ def request_options(data, assets):
             'start': start.isoformat(), 'end': end.isoformat(),
             'cutoff': cutoff.astimezone(timezone.utc).isoformat(), 'formats': list(dict.fromkeys(formats)),
             'run_id': run_id, 'sheets': selected_sheets, 'layout': data.get('layout', 'separate'),
-            'workflow_ids': list(dict.fromkeys(workflow_ids))}
+            'workflow_ids': list(dict.fromkeys(workflow_ids)),
+            **({'source_ids': sorted(set(ids))} if 'source_ids' in data else {}),
+            'collect_first': bool(data.get('collect_first', False)),
+            'split_sources': bool(data.get('split_sources', False))}
 
 
 def sources_from_context(context):
@@ -173,10 +179,14 @@ def build_snapshot(services, archive, actor, catalog, options):
         runs = [r for r in runs if r['payload'].get('run_id') == options['run_id']]
         if not runs:
             raise ValueError('采集批次不存在、晚于截止时间或不在所选范围')
+    elif options['deliverables'] == ['RUN']:
+        runs = list({run['asset_id']: run for run in runs}.values())
     latest = {}
     for run in runs:
         latest[run['asset_id']] = run
     in_period = [r for r in runs if start <= timestamp(r['payload'].get('collected_at') or r['updated_at']) < end]
+    if options['deliverables'] == ['RUN']:
+        in_period = runs
     workflows = []
     for record in records:
         if record['asset_id'] not in assets or record['kind'] != 'workflow':
@@ -224,7 +234,7 @@ def build_snapshot(services, archive, actor, catalog, options):
         '备份策略': ['backup_policy_id', 'backup_data_type', 'backup_content', 'backup_window', 'backup_method',
                      'backup_frequency', 'backup_retention', 'backup_owner', 'backup_policy_version', 'backup_change_reference'],
     }
-    table_keys = {'集群参数': 'cluster_parameters', '数据库参数': 'database_parameters', '逻辑存储空间': 'tablespaces',
+    table_keys = {'集群节点': 'cluster_nodes', '集群参数': 'cluster_parameters', '数据库参数': 'database_parameters', '逻辑存储空间': 'tablespaces',
                   '用户账号': 'accounts', '角色成员': 'role_members', '权限明细': 'permissions', '备份策略': 'backup_policies'}
     for name in {s for t in options['deliverables'] for s in DELIVERABLES[t][2]} | {'备份执行'}:
         rows = []
@@ -438,7 +448,11 @@ def build_snapshot(services, archive, actor, catalog, options):
         review_records = [r for r in workflows if r['asset_id'] == aid and
                           items.get(r['item_id'], {}).get('key') == 'asset_review']
         review = review_records[-1] if review_records else None
-        reviewed = bool(review and review['payload'].get('state') == 'closed' and
+        review_state = review['payload'].get('state') if review else None
+        explicit_inventory_review = bool(review and review['payload'].get('provenance') == 'report_event' and
+                                         review['payload'].get('details', {}).get('audit_reference') and
+                                         review['payload'].get('details', {}).get('verification_reference'))
+        reviewed = bool(review and (review_state == 'closed' or (review_state == 'verified' and explicit_inventory_review)) and
                         review['payload'].get('asset_version') == asset['version'] and
                         review['payload'].get('details', {}).get('reconciliation_result') == 'pass')
         reviews.append({**business_row(asset), '核对状态': '已核对' if reviewed else '待全量核对',
@@ -477,6 +491,12 @@ def build_snapshot(services, archive, actor, catalog, options):
                 'coverage': {'assets': len(assets), 'runs': len(in_period), 'checks': len(checks),
                              'uncollected_days': sum(not r['样本数'] for r in daily),
                              'workflows': len(workflows), 'open_issues': len(sheets['遗留问题'])}}
+    snapshot['coverage_by_source'] = {identity: {
+        'assets': 1, 'runs': sum(r['asset_id'] == identity for r in in_period),
+        'checks': sum(r['asset_id'] == identity for r in checks),
+        'uncollected_days': sum(r['资产编号'] == identity and not r['样本数'] for r in daily),
+        'workflows': sum(r['asset_id'] == identity for r in workflows),
+        'open_issues': sum(r['资产编号'] == identity for r in sheets['遗留问题'])} for identity in assets}
     return redact(snapshot, mask_identity=True, preserve_network=True)
 
 

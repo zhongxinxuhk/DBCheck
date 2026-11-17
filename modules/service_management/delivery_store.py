@@ -63,6 +63,9 @@ class DeliveryStore:
             raise ValueError('报告归属完整性校验失败')
         if row['owner'] != actor['id'] and not actor.get('admin') and not actor.get('approver'):
             raise PermissionError('无权访问此报告任务')
+        if 'source_ids' in body['request'] and hasattr(self.services, 'visible'):
+            if not set(body['request']['source_ids']) <= self.services.visible:
+                raise PermissionError('报告数据源权限已变化')
         for asset_id in body['request']['asset_ids']:
             self.services.get(actor, asset_id, db)
         body.update(state=row['state'], version=row['version'], updated_at=row['updated_at'])
@@ -97,7 +100,11 @@ class DeliveryStore:
                 previous = self._job(db, actor, previous_id)
                 if previous['state'] not in {'published', 'draft'} or not reason.strip():
                     raise ValueError('修订须关联已生成报告并填写原因')
-                if previous['request']['asset_ids'] != request['asset_ids']:
+                previous_ids = previous['request']['asset_ids']
+                if 'source_ids' in request and 'source_ids' not in previous['request']:
+                    previous_ids = sorted({self.services.get(actor, identity, db)['payload'].get('instance_id') or identity
+                                           for identity in previous_ids})
+                if previous_ids != request['asset_ids']:
                     raise ValueError('修订须保持原报告资产范围')
                 if any(previous['request'][key] != request[key] for key in ['deliverables', 'period', 'date']):
                     raise ValueError('修订须保持原报告类型与统计周期')
@@ -127,6 +134,27 @@ class DeliveryStore:
             self.services._audit(db, actor, 'delivery.generating', job_id, '')
         return True
 
+    def refresh_snapshot(self, actor, job_id, options, snapshot):
+        with self.services.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            job = self._job(db, actor, job_id)
+            if job['state'] != 'generating' or job['request'].get('source_ids') != options.get('source_ids'):
+                raise ValueError('报告任务状态或来源已变化')
+            job.update(request=options, snapshot=snapshot)
+            db.execute('UPDATE delivery_jobs SET payload=?,updated_at=? WHERE id=?', (self.seal(job), utcnow(), job_id))
+            self.services._audit(db, actor, 'delivery.snapshot', job_id, digest(canonical(snapshot).encode()))
+        return self.get(actor, job_id)
+
+    def collection_run(self, actor, job_id, run_id):
+        with self.services.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            job = self._job(db, actor, job_id)
+            if job['state'] != 'generating':
+                raise ValueError('报告任务已中断')
+            job['inspection_run_id'] = run_id
+            db.execute('UPDATE delivery_jobs SET payload=?,updated_at=? WHERE id=?', (self.seal(job), utcnow(), job_id))
+            self.services._audit(db, actor, 'delivery.collect', job_id, run_id)
+
     def key(self, db, tenant):
         row = db.execute('SELECT * FROM delivery_keys WHERE tenant=? AND active=1', (tenant,)).fetchone()
         if row is None:
@@ -149,7 +177,7 @@ class DeliveryStore:
             raise ValueError('签名密钥指纹不匹配')
         return row['id'], private, public
 
-    def finish(self, actor, job_id, rendered, *, publish=False, expected_version=None):
+    def finish(self, actor, job_id, rendered, *, publish=False, expected_version=None, auto_publish=False):
         """Commit final bytes, signed manifest and lifecycle in one SQLite transaction."""
         with self.services.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -169,7 +197,7 @@ class DeliveryStore:
                 db.execute('INSERT INTO delivery_artifacts VALUES(?,?,?,?,?)',
                            (artifact_id, job_id, name, info['sha256'], self.seal(archive)))
                 artifacts.append(info)
-            state = 'published' if publish else 'draft'
+            state = 'published' if publish or auto_publish else 'draft'
             manifest = {'schema': 'dbpulse-report-manifest-v1', 'job_id': job_id,
                         'report_id': job['report_id'], 'revision': job['revision'], 'state': state,
                         'generated_at': utcnow(), 'cutoff': job['request']['cutoff'],
@@ -181,7 +209,7 @@ class DeliveryStore:
             generation = {'manifest': manifest, 'signature': signature, 'public_key': public.decode()}
             job.setdefault('generations', []).append(generation)
             job.update(artifacts=artifacts, **generation)
-            if publish:
+            if publish or auto_publish:
                 job.update(publisher=actor['id'], published_at=utcnow())
             db.execute('UPDATE delivery_jobs SET state=?,version=version+1,updated_at=?,payload=? WHERE id=?',
                        (state, utcnow(), self.seal(job), job_id))
@@ -275,14 +303,15 @@ class DeliveryStore:
         results = []
         with self.services.connection() as db:
             self.services._verify(db)
-            for asset_id in asset_ids:
+            aliases = self.services.observation_ids(actor, asset_ids) if hasattr(self.services, 'observation_ids') else [(v, v) for v in asset_ids]
+            for stored_id, asset_id in aliases:
                 self.services.get(actor, asset_id, db)
                 for row in db.execute('SELECT * FROM delivery_observations WHERE tenant=? AND asset_id=? ORDER BY observed_at',
-                                      (actor['tenant_id'], asset_id)):
+                                      (actor['tenant_id'], stored_id)):
                     value = self.decode(row['payload'])
-                    if value['tenant'] != actor['tenant_id'] or value['asset_id'] != asset_id or value['id'] != row['id']:
+                    if value['tenant'] != actor['tenant_id'] or value['asset_id'] != stored_id or value['id'] != row['id']:
                         raise ValueError('采集观测归属校验失败')
-                    results.append(value)
+                    results.append({**value, 'asset_id': asset_id})
         return results
 
     def keys(self, actor, rotate=False):

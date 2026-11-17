@@ -3862,7 +3862,7 @@ ZI.update({
 })
 
 ZI.update({
-    "menu.inventory": "数据库运维台账",
+    "menu.inventory": "资产台账",
     "menu.batch-inspection": "多数据源整体巡检",
     "menu.clusters": "集群管理",
     "menu.services": "运维服务与需求验收",

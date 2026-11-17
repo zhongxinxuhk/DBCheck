@@ -30,9 +30,6 @@ from modules.user_management.utils.password import hash_password
 menus_data = [
     ('home',             'menu.home',            0, 10),
     ('inventory',        'menu.inventory',       0, 11),
-    ('batch-inspection', 'menu.batch-inspection',0, 12),
-    ('clusters',         'menu.clusters',        0, 13),
-    ('services',         'menu.services',        0, 14),
     ('report-center',    'menu.report-center',   0, 15),
     ('system-info',      'menu.system-info',     0, 68),
     ('wizard',           'menu.wizard',          0, 21),
@@ -43,7 +40,6 @@ menus_data = [
     ('server-history',   'menu.server-history',  0, 26),
     ('trend',            'menu.trend',           0, 27),
     ('dm8-offline',      'menu.dm8-offline',     0, 28),
-    ('datasources',     'menu.datasources',      0, 31),
     ('inspection-config','menu.inspection-config',0, 32),
     ('baseline-config',  'menu.baseline-config', 0, 33),
     ('server-thresholds','menu.server-thresholds',0, 34),
@@ -161,7 +157,7 @@ def init_seed_data():
     # 6. 给 operator 角色分配运维菜单
     operator_role = db.query_one("SELECT id FROM um_role WHERE role_code='operator'")
     if operator_role and access_perm:
-        operator_menus = ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services', 'report-center']
+        operator_menus = ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'disaster-recovery', 'inventory', 'report-center']
         cnt = 0
         for menu in menus:
             if menu['menu_code'] in operator_menus:
@@ -243,9 +239,10 @@ def sync_menus():
                     )
                     print(f"  [sync] 更新菜单 menu_name: {code} -> {name}")
 
+        db.execute("UPDATE um_menu SET status=0 WHERE menu_code IN ('services','clusters','batch-inspection','datasources')")
         role_menu_map = {
             'admin': 'ALL',
-            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'datasources', 'disaster-recovery', 'inventory', 'batch-inspection', 'clusters', 'services', 'report-center'],
+            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'disaster-recovery', 'inventory', 'report-center'],
             'viewer': ['home', 'reports', 'monitor-slow', 'ai'],
         }
         access_perm = db.query_one("SELECT id FROM um_permission WHERE perm_level=1")
