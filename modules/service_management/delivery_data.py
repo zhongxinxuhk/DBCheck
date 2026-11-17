@@ -17,6 +17,7 @@ from .labels import FIELD_LABELS
 from .service import period_bounds, timestamp, sla_result
 from .store import canonical, utcnow
 from .delivery_store import digest
+from .owner_field_adaptation import redact_owner_tables
 
 TZ = ZoneInfo('Asia/Shanghai')
 STATUS = {'pass': '通过', 'fail': '不符合', 'error': '采集失败', 'blocked': '阻断',
@@ -104,7 +105,22 @@ def sources_from_context(context):
     basic = context.get('basic_info_db') or context.get('basic_info')
     if isinstance(basic, dict):
         result['basic_info'] = {'rows': [basic], 'status': 'collected', 'scope': 'current_connection'}
-    return redact(result, mask_identity=True, preserve_network=True)
+    for key,value in (context.get('_owner_details') or {}).items():
+        if isinstance(value,dict):
+            result[key]=value
+    identity={}
+    for source,key in [('ip','host'),('port','port')]:
+        rows=context.get(source)
+        if isinstance(rows,list) and len(rows)==1 and isinstance(rows[0],dict):
+            identity[key]=next(iter(rows[0].values()),None)
+    if identity:
+        result['inspection_identity']={'status':'collected','rows':[identity],'scope':'original_inspection_connection'}
+    cleaned=redact(result, mask_identity=True, preserve_network=True)
+    # These fixed system-view queries are account inventory, not business-user query results.
+    for key,value in (context.get('_owner_details') or {}).items():
+        if isinstance(value,dict):
+            cleaned[key]=redact(value,preserve_network=True)
+    return cleaned
 
 
 def business_row(asset, record=None):
@@ -129,7 +145,7 @@ def detail_rows(value):
 def source_matches(key, section):
     aliases = {
         '集群节点': ('cluster_nodes', 'rac_instance', 'ha_nodes'),
-        '数据库参数': ('parameters', 'db_parameters', 'parameter', 'global_variables', 'para', 'params'),
+        '数据库参数': ('parameters', 'parameter_metadata', 'db_parameters', 'parameter', 'global_variables', 'variables', 'para', 'params','settings'),
         '逻辑存储空间': ('storage', 'tablespace', 'tablespaces', 'tablespace_usage', 'tablespace_info', 'ts_usage'),
         '存储文件': ('files', 'datafiles', 'data_files', 'db_files'),
         '用户账号': ('accounts', 'server_accounts', 'users', 'user_info', 'db_users', 'user_status'),
@@ -139,13 +155,16 @@ def source_matches(key, section):
         '慢SQL': ('slow_sql', 'slow_queries', 'top_sql', 'slow_query', 'long_sql', 'top_sql_elapsed', 'top_elapsed'),
         '索引观测': ('indexes', 'index_health', 'index_usage'),
         '性能观测': ('waits', 'cache', 'sessions', 'target_cpu', 'target_filesystems', 'shared_pool'),
-        '数据库基本信息': ('basic_info', 'version', 'instance', 'archive'),
+        '数据库基本信息': ('basic_info', 'inspection_identity', 'version', 'instance', 'archive'),
+        '备份策略': ('backup_configuration','backup_schedules','backup_policies'),
     }
     native = key.lower()
-    for prefix in ('oracle_', 'sqlserver_', 'dm_', 'gbase8a_', 'mysql_', 'pg_'):
+    for prefix in ('oracle_', 'sqlserver_', 'dm_', 'gbase8a_', 'mysql_', 'pg_', 'my_', 'dba_'):
         if native.startswith(prefix):
             native = native[len(prefix):]
             break
+    if native.startswith('dba_'):
+        native=native[4:]
     return native in aliases.get(section, ())
 
 
@@ -498,7 +517,7 @@ def build_snapshot(services, archive, actor, catalog, options):
         'uncollected_days': sum(r['资产编号'] == identity and not r['样本数'] for r in daily),
         'workflows': sum(r['asset_id'] == identity for r in workflows),
         'open_issues': sum(r['资产编号'] == identity for r in sheets['遗留问题'])} for identity in assets}
-    return redact(snapshot, mask_identity=True, preserve_network=True)
+    return redact_owner_tables(snapshot)
 
 
 def deadline_time(value):

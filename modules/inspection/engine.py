@@ -1154,6 +1154,8 @@ class BaseInspectionEngine:
                 from modules.inspection.basic_info import collect_db
                 self.context['basic_info_db'] = collect_db(
                     cursor, self.db_type, getattr(self, 'database', None))
+                from modules.inspection.owner_details import collect_owner_details
+                self.context['_owner_details'] = collect_owner_details(cursor, self.db_type)
                 print('[INFO] 核心属性采集: %d 项' % len(self.context['basic_info_db']))
             except Exception as _bi_err:
                 print('[WARN] 核心属性采集失败（报告将标注未采集）: %s' % _bi_err)

@@ -802,6 +802,20 @@ class Inventory:
                 )
             ]
 
+    def observation_for_report(self, actor, filename):
+        """Resolve an immutable observation by exact report basename, never by latest timestamp."""
+        if not actor.is_admin:
+            raise PermissionError('按历史文件读取原始观测需要管理员权限')
+        with self.connection() as db:
+            rows=db.execute('SELECT id,instance_id,task_id,observed_at,report_path FROM operations_inventory_observed WHERE tenant=?',
+                            (actor.tenant_id,)).fetchall()
+            matches=[row for row in rows if str(row['report_path']).replace('\\','/').split('/')[-1]==filename]
+            if len(matches)!=1:
+                return None
+            row=matches[0]
+            payload=db.execute('SELECT payload FROM operations_inventory_observed WHERE id=?',(row['id'],)).fetchone()
+            return {**dict(row),'data':self.open(payload['payload'])}
+
 
 def report_overrides(engine):
     """只读读取既有台账，供巡检报告合并核心属性。"""

@@ -187,6 +187,27 @@ class HistoryXlsxTests(unittest.TestCase):
         self.assertNotIn('fixture-private-password',extracted)
         self.assertNotIn('fixture-private-key',extracted)
 
+    def test_matching_encrypted_inventory_observation_recovers_original_accounts(self):
+        observed='2026-11-17T01:00:00+00:00'
+        old_metadata={'configuration_id':'CI-TIME','owner':'ORIGINAL_TEAM',
+                      'tables':{'accounts':[{'username':'audit@example.test','purpose':'audit','owner':'ACCOUNT_TEAM'}]}}
+        self.inventory.records['native']['metadata']['owner']='CURRENT_TEAM'
+        self.inventory.history=lambda actor,ids:[{'created':'2026-11-17T00:00:00+00:00',
+            'details':{'before':None,'after':{'source':{'host':'192.0.2.10','port':1521,'db_type':'oracle','database':'original'},
+                                          'metadata':old_metadata}}}]
+        self.inventory.observation_for_report=lambda actor,name:{'id':17,'instance_id':'native','task_id':'original-inventory-run',
+            'observed_at':observed,'data':{'auto_fields':{'charset':'UTF8'},'basic_info':{'db_name':'original'},
+            'specialized':{'accounts':{'status':'collected','rows':[{'username':'audit@example.test','status':'OPEN'}]}}}}
+        response=self.post()
+        self.assertEqual(response.status_code,202,response.json)
+        workbook,_=self.workbook(response.json['job'])
+        users=str(list(workbook['用户及权限表'].values))
+        assets=str(list(workbook['全品类数据库资产底账清单'].values))
+        self.assertIn('audit@example.test',users)
+        self.assertIn('ACCOUNT_TEAM',users)
+        self.assertIn('ORIGINAL_TEAM',assets)
+        self.assertNotIn('CURRENT_TEAM',assets)
+
 
 if __name__=='__main__':
     unittest.main()
