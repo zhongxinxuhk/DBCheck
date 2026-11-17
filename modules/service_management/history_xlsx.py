@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import ipaddress
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -22,8 +23,9 @@ from .delivery_store import digest
 from .report_sources import report_catalog
 from .service import period_bounds, timestamp
 from .store import canonical, utcnow
+from .owner_field_adaptation import missing, field_key, adapt_tables, classify_missing, redact_owner_tables
 
-SCHEMA = 'owner-single-inspection-v1'
+SCHEMA = 'owner-single-inspection-v2'
 SENSITIVE = re.compile(r'密码|口令|私钥|密钥|password|passwd|pwd|secret|token|credential|authentication_string',re.I)
 TABLES = {
     '全品类数据库资产底账清单': ['资产底账'],
@@ -72,24 +74,73 @@ ALIASES = {
     '开始时间': ['start_time','backup_start_date'], '结束时间': ['end_time','backup_finish_date'],
     '执行状态': ['status','备份状态'], '备份大小': ['backup_size','output_bytes'],
 }
+ALIASES.update({
+    '配置项编号':['configuration_id','配置编号','CI编号'],
+    '数据库名称':['database','database_name','db_name','table_catalog','table_schema','数据库名'],
+    '实例名称':['instance_name','server_name','实例名'],
+    '数据库版本':['version','product_version','数据库版本及补丁号'],
+    '数据库版本及补丁号':['version_patch','product_version','版本及补丁号','补丁版本','数据库版本'],
+    '数据库地址':['host','ip','ip_address','server_address','IP地址','数据库IP地址'],
+    '端口':['port','port_number'], '上线时间':['online_date','上线日期'],
+    '运行状态':['lifecycle','instance_status','database_status','open_mode','运行模式','实例状态'],
+    '参数名称':['parameter_name','para_name','variable_name','name','名称','参数名'],
+    '参数值':['para_value','variable_value','value','配置值'],
+    '配置值':['para_value','variable_value','config_value','value','参数值'],
+    '运行值':['value_in_use','runtime_value','setting','实际值','当前值','实际运行值'],
+    '单位':['unit','units','参数单位'], '参数版本':['parameter_version','快照版本'],
+    '观测时间':['observed_at','collected_at','采集时间','记录时间'],
+    '逻辑存储空间名称':['tablespace_name','space_name','dbspace','dbspace_name','表空间','表空间名称'],
+    '类型':['type_desc','contents','segment_type','storage_type','空间类型'],
+    '文件路径':['file_path','file_name','physical_name','file_paths','文件名称','物理名称','数据文件路径'],
+    '自动扩展模式':['autoextensible','autoextend','自动扩展'],
+    '当前使用率':['used_pct','used_percent','usage_pct','used_percentage','使用率（%）','已用百分比','使用率'],
+    '使用率阈值':['usage_threshold','使用率告警阈值'],
+    '用户名':['username','user_name','login_name','login_user','member_name','grantee','usename','授权主体'],
+    '角色':['granted_role','role_name','rolname','授权角色'],
+    '权限':['privilege','privilege_type','permission_name','permission_type','具体权限'],
+    '授权对象':['object_name','table_name','对象名称'],
+    '业务用途':['purpose','purposes','business','用途'],
+    '责任归属人':['account_owner','account_owners','账号责任人'],
+    '备份任务编号':['session_key','backup_set_id','backup_id','备份编号'],
+    '备份类型':['input_type','backup_type','type'],
+    '开始时间':['start_time','backup_start_date','backup_start_time','start_date'],
+    '结束时间':['end_time','backup_finish_date','backup_finish_time','end_date'],
+    '备份大小':['backup_size','output_bytes','backup_bytes'],
+    '执行频率':['repeat_interval','backup_frequency','备份频率'],
+    '运维责任人':['backup_owner','备份责任人','owner'],
+    '检查项':['检查项名称','检查名称','parameter_name','参数名称','参数','check_name'],
+    '检查结果':['结论','status','状态'], '实测值':['当前值','current_value','value_in_use','实测内容'],
+    '判定依据':['期望值','expected_value','expected','原因'],
+    '问题根因':['root_cause'], '验证记录':['verification_reference','验证证据'],
+})
 
 
 def owner_rows(title, rows):
-    def folded(value):
-        value=re.sub(r'^([A-Za-z_][A-Za-z0-9_.$]*)\s*[（(].*$',r'\1',str(value))
-        return re.sub(r'[\s_（）()]','',value.casefold())
     results=[]
     for row in rows:
-        lookup={folded(key):value for key,value in row.items()}
+        lookup={field_key(key):value for key,value in row.items()}
         normalized={}
         for header in HEADERS[title]:
             candidates=[header,*ALIASES.get(header,[])]
+            if header=='数据库名称' and title=='数据库基本信息表':
+                candidates+=['name','名称']
+            if header=='用户名' and title=='用户及权限表' and row.get('记录类型')=='用户账号':
+                candidates+=['name','名称']
+            if header=='节点名称' and title=='集群参数表':
+                candidates+=['instance_name','host_name','实例名称','主机名']
             if title=='集群参数表' and header=='参数名称' and row.get('记录类型')!='集群参数' and \
                     not any(word in str(row.get('原报告章节','')).casefold() for word in ('参数','parameter')):
                 candidates=['参数名称','parameter_name','variable_name']
-            normalized[header]=next((lookup[folded(key)] for key in candidates if lookup.get(folded(key)) not in (None,'')),None)
+            origin=next((key for key in candidates if not missing(lookup.get(field_key(key)))),None)
+            normalized[header]=lookup[field_key(origin)] if origin is not None else None
+            if origin is not None and header not in row.get('字段来源',{}):
+                normalized.setdefault('_原字段来源',{})[header]='原字段 '+str(origin)
+            if normalized[header] is None and any(str(lookup.get(field_key(key))).casefold() in
+                    {'[masked]','[email]','[phone]','[identity]'} for key in candidates):
+                normalized.setdefault('字段缺项原因',{})[header]='原资料标识已脱敏，需要该次原始观测记录'
         normalized.update({key:value for key,value in row.items() if key not in normalized})
-        normalized['未记录字段']=[header for header in HEADERS[title] if normalized[header] in (None,'','未记录','未采集','未登记')]
+        normalized['字段来源']={**normalized.pop('_原字段来源',{}),**row.get('字段来源',{})}
+        classify_missing(title,normalized,HEADERS[title])
         results.append(normalized)
     return results
 
@@ -109,6 +160,12 @@ def report_file(root, filename):
 def topic(title, headers):
     text = (title + ' ' + ' '.join(headers)).casefold()
     columns={re.split(r'[（(]',header.casefold())[0].strip() for header in headers}
+    if columns & {'para_name','parameter_name'} and columns & {'para_value','parameter_value','value'}:
+        return '数据库参数表'
+    if columns & {'table_schema','tablespace_name'} and columns & {'data_mb','total_mb','size_gb','used_mb'}:
+        return '逻辑存储空间属性表'
+    if any(word in title.casefold() for word in ('数据库基本信息','数据库基础信息','核心属性','database basic','database information')):
+        return '数据库基本信息表'
     if ('基线' in title or 'baseline' in title.casefold()) and columns & {'期望值','运算符','expected','operator'}:
         return '巡检检查结果'
     if ('备份' in text or 'backup' in text) and columns & {
@@ -148,10 +205,15 @@ def extract_tables(content):
         document = Document(io.BytesIO(content))
     except (KeyError, ValueError, PackageNotFoundError, XMLSyntaxError) as error:
         raise ValueError('原巡检报告格式异常，请核对 Word 文件完整性') from error
-    from .report import sanitize_document
-    sanitize_document(document, preserve_network=True)
     from docx.table import Table
     groups = {name: [] for name in [*TABLES, '巡检检查结果', '异常及整改记录', '备份执行记录', '原始表格明细']}
+    family=None
+    masthead=' '.join(paragraph.text for paragraph in document.paragraphs[:5]).upper()
+    for marker,code in [('SQL SERVER','sqlserver'),('ORACLE','oracle'),('DM8','dm'),('GBASE8A','gbase8a'),('POSTGRESQL','pg'),('MYSQL','mysql')]:
+        if marker in masthead:
+            family=code
+            break
+    groups['_report_identity']=[{'db_type':family}] if family else []
     title = '原报告'
     table_number = 0
     for element in document.element.body:
@@ -168,36 +230,47 @@ def extract_tables(content):
         rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
         if not rows:
             continue
+        cover= len(rows[0])==2 and rows[0][0].rstrip('：:') in {'服务器地址','数据库地址','巡检人员','报告生成时间'}
         headers = []
-        for index, text in enumerate(rows[0], 1):
+        for index, text in enumerate(['配置项','内容'] if cover else rows[0], 1):
             header = text or '列' + str(index)
             while header in headers:
                 header += '_' + str(index)
             headers.append(header)
-        destination = topic(title, headers)
+        destination = '数据库基本信息表' if cover else topic(title, headers)
         section=TABLES.get(destination,[destination])[0]
         joined=(title+' '+' '.join(headers)).casefold()
         if destination=='用户及权限表':
-            section='角色成员' if any(word in joined for word in ('角色','granted_role','role member')) else \
-                '权限明细' if any(word in joined for word in ('权限','privilege','permission','grantee')) else '用户账号'
+            names={re.split(r'[（(]',header.casefold())[0].strip() for header in headers}
+            section='角色成员' if names & {'granted_role','role_name','member_name','role_principal_id'} or '角色成员' in title else \
+                '权限明细' if names & {'privilege','privilege_type','permission_name','grantee','权限','具体权限'} else '用户账号'
         elif destination=='逻辑存储空间属性表':
             section='存储文件' if any(word in joined for word in ('数据文件','file_name','physical_name','datafile','data file')) else '逻辑存储空间'
         elif destination=='集群参数表':
             section='集群参数' if '参数' in title or 'parameter' in title.casefold() else '集群节点' if any(
                 word in joined for word in ('节点','成员','node','inst_id')) else '集群基本信息'
         extracted = []
-        for number, values in enumerate(rows[1:], 2):
+        for number, values in enumerate(rows if cover else rows[1:], 1 if cover else 2):
             row = {'来源': '原巡检报告表格', '记录类型':section, '原报告章节': title, '原表号': table_number, '原表行号': number,
                    **dict(zip(headers, values))}
             for header in headers:
                 if SENSITIVE.search(header):
                     row[header]='[REDACTED]'
-            parameter=next((row.get(header) for header in headers if header.casefold() in
-                            {'参数名称','参数名','名称','name','variable_name','parameter_name'}),None)
+            parameter=next((row.get(header) for header in headers if field_key(header) in
+                            {field_key(key) for key in ('参数名称','参数名','名称','name','variable_name','para_name','parameter_name',
+                                                       'policy_parameter','配置项','配置项名称','属性','属性名称')}),None)
             if parameter and SENSITIVE.search(str(parameter)):
                 for header in headers:
-                    if header.casefold() in {'参数值','配置值','运行值','当前值','value','variable_value','value_in_use'}:
+                    if field_key(header) in {field_key(key) for key in ('参数值','配置值','运行值','当前值','value','variable_value',
+                        'para_value','display_value','policy_value','value_in_use','值','内容','登记值')}:
                         row[header]='[REDACTED]'
+            if destination=='用户及权限表':
+                identifier_keys={'username':'用户名','user_name':'用户名','login_name':'用户名','member_name':'用户名',
+                                 'grantee':'授权主体','role_name':'角色','granted_role':'角色'}
+                for header,value in zip(headers,values):
+                    native=re.split(r'[（(]',header.casefold())[0].strip()
+                    if native in identifier_keys:
+                        row[identifier_keys[native]]=value
             extracted.append(row)
             groups['原始表格明细'].append(row)
         if destination == '数据库基本信息表' and len(headers) == 2 and extracted:
@@ -205,7 +278,7 @@ def extract_tables(content):
             groups[destination].append({'来源': '原巡检报告表格','记录类型':section,'原报告章节': title, '原表号': table_number, **values})
         else:
             groups[destination].extend(extracted)
-    return redact(groups, mask_identity=True, preserve_network=True)
+    return redact_owner_tables(groups)
 
 
 def exact_history_metadata(filename, history_file):
@@ -220,8 +293,18 @@ def exact_history_metadata(filename, history_file):
                    if str(row['report_path'] or '').replace('\\', '/').split('/')[-1] == filename]
     if len(matches) != 1:
         return {}
-    allowed = ('id', 'instance_id', 'instance_name', 'db_type', 'inspect_time', 'health_score', 'risk_count', 'risk_level')
-    return {key: matches[0].get(key) for key in allowed}
+    allowed = ('id', 'instance_id', 'instance_name', 'db_type', 'host', 'inspect_time', 'health_score', 'risk_count', 'risk_level')
+    result={key:matches[0].get(key) for key in allowed}
+    if missing(result.get('host')):
+        encoded=re.search(r'巡检报告_((?:\d{1,3}\.){3}\d{1,3}|localhost)_',filename)
+        if encoded:
+            try:
+                if encoded[1]!='localhost':ipaddress.ip_address(encoded[1])
+                result['host']=encoded[1]
+                result['host_source']='与该原巡检记录精确匹配的系统文件名'
+            except ValueError:
+                pass
+    return result
 
 
 def exact_legacy_context(filename, history_file):
@@ -262,6 +345,22 @@ class NoAdditionalObservations:
         return []
 
 
+def historical_asset(archive,actor,source_id,moment,label=None):
+    asset={'id':source_id,'asset_id':'','kind':'asset','tenant':actor['tenant_id'],'owner':actor['id'],'version':0,
+           'payload':{'instance_id':source_id,'asset_name':label or source_id},
+           'created_at':moment.isoformat(),'updated_at':moment.isoformat()}
+    versions=[row for row in archive.services.inventory.history(archive.services.principal,{source_id})
+              if timestamp(row['created'])<=moment and row['details'].get('after')]
+    if versions:
+        prior=max(versions,key=lambda row:timestamp(row['created']))
+        previous=prior['details']['after']
+        asset['payload'].update(previous.get('metadata',{}))
+        for key in ('host','port','database','db_type'):
+            asset['payload'][key]=previous.get('source',{}).get(key)
+        asset['version']=(prior['details'].get('before') or {}).get('version',0)+1
+    return asset
+
+
 def single_snapshot(actor, asset, observation):
     day=timestamp(observation['observed_at']).astimezone(TZ).date().isoformat()
     start,end=period_bounds('month',day)
@@ -287,13 +386,28 @@ def historical_export(actor, archive, path, *, legacy_context_db, pro_history_db
         metadata = exact_history_metadata(filename, pro_history_db)
     except sqlite3.Error:
         metadata = {}
+    if missing(metadata.get('host')):
+        encoded=re.search(r'巡检报告_((?:\d{1,3}\.){3}\d{1,3}|localhost)_',filename)
+        if encoded:
+            try:
+                if encoded[1]!='localhost':ipaddress.ip_address(encoded[1])
+                metadata['host']=encoded[1]
+                metadata['host_source']='原报告文件名所载连接地址（待核对）'
+            except ValueError:
+                pass
     source_ids = []
     snapshot = None
     note = '按指定原报告提取，未关联可验证的结构化采集批次。缺失字段以未记录展示。'
     inspected_at = metadata.get('inspect_time') or '原报告未关联可验证巡检时间'
+    frozen_asset=None
+    inventory_observation=None
+    inventory_observation_used=False
+    if hasattr(archive.services,'inventory') and hasattr(archive.services.inventory,'observation_for_report'):
+        inventory_observation=archive.services.inventory.observation_for_report(archive.services.principal,filename)
     if linked:
         reference, observation = linked
         source_ids = [reference['source_id']]
+        frozen_asset=reference['source_asset']
         snapshot = single_snapshot(actor, reference['source_asset'], observation)
         inspected_at = observation['observed_at']
         note = '已关联该原报告的固定采集批次。'
@@ -310,9 +424,6 @@ def historical_export(actor, archive, path, *, legacy_context_db, pro_history_db
             if context.get('_instance_id') in archive.services.visible:
                 source_id = context['_instance_id']
                 # Historical values come from the original context, with identity-only registration fields.
-                current = archive.services.get(actor, source_id)
-                asset = {**current, 'version': 0, 'payload': {key: current['payload'].get(key) for key in
-                    ('instance_id', 'asset_name', 'db_type', 'configuration_id')}}
                 source_ids = [source_id]
                 moment = datetime.fromisoformat(stamp)
                 if moment.tzinfo is None:
@@ -320,15 +431,42 @@ def historical_export(actor, archive, path, *, legacy_context_db, pro_history_db
                     moment = moment.replace(tzinfo=ZoneInfo('Asia/Shanghai'))
                 observation = {'id': 'history-' + str(identity), 'observed_at': moment.isoformat(),
                                'source_results': sources_from_context(context)}
+                asset=historical_asset(archive,actor,source_id,moment,metadata.get('instance_name'))
+                frozen_asset=asset
                 snapshot = single_snapshot(actor, asset, observation)
                 inspected_at = observation['observed_at']
                 note = '按原报告文件名/任务编号精确关联历史快照，台账登记字段以原报告为依据。'
     sheets = {}
+    observed_sections={}
+    if inventory_observation and (not linked or linked[0]['file_sha256']==checksum):
+        inventory_observation_used=True
+        if frozen_asset is None:
+            moment=timestamp(inventory_observation['observed_at'])
+            frozen_asset=historical_asset(archive,actor,inventory_observation['instance_id'],moment,metadata.get('instance_name'))
+            frozen_asset['payload'].update(inventory_observation['data'].get('auto_fields',{}))
+            for key,value in inventory_observation['data'].get('basic_info',{}).items():
+                if not missing(value):frozen_asset['payload'].setdefault(key,value)
+            source_ids=[inventory_observation['instance_id']]
+            inspected_at=inventory_observation['observed_at']
+            note='已按原报告精确关联同次加密台账观测，已使用该时点的基础属性及专项明细。'
+        for key,section,title in [('accounts','用户账号','用户及权限表'),('tablespaces','逻辑存储空间','逻辑存储空间属性表')]:
+            block=inventory_observation['data'].get('specialized',{}).get(key,{})
+            if block.get('status')=='collected':
+                observed_sections[section]=[{'来源':'同次加密台账观测','记录类型':section,
+                    '观测时间':inventory_observation['observed_at'],'采集批次':inventory_observation['task_id'],
+                    **{({'username':'用户名','size':'存储大小','used_pct':'当前使用率','name':'逻辑存储空间名称'}.get(field,field)):value
+                       for field,value in row.items()}} for row in block.get('rows',[])]
     for title, sections in TABLES.items():
         rows = []
         for section in sections:
             collected=[{**row,'记录类型':section} for row in snapshot['sheets'].get(section,[])
                        if row.get('状态')!='未采集'] if snapshot else []
+            if section in observed_sections:
+                if section=='用户账号':
+                    collected=[row for row in collected if not missing(owner_rows(title,[row])[0].get('用户名'))]
+                    collected+=observed_sections[section]
+                elif not collected:
+                    collected=observed_sections[section]
             original=[row for row in document_groups[title] if row.get('记录类型')==section]
             # Registered summaries use the released document. Query detail keeps every captured row.
             if section in {'资产底账','数据库基本信息','集群基本信息','备份策略'} and original:
@@ -337,7 +475,7 @@ def historical_export(actor, archive, path, *, legacy_context_db, pro_history_db
                 rows.extend(collected or original)
         sheets[title] = rows or [{'状态': '原巡检未记录', '说明': '该次巡检缺少此类数据，需以该次采集范围核对'}]
     if sheets['全品类数据库资产底账清单'][0].get('状态')=='原巡检未记录' and document_groups['数据库基本信息表']:
-        basic=document_groups['数据库基本信息表'][0]
+        basic=next((row for row in document_groups['数据库基本信息表'] if '配置项编号' in row or '字符集' in row),document_groups['数据库基本信息表'][0])
         fields={key:value for key,value in basic.items() if key in HEADERS['全品类数据库资产底账清单'] or key in ('实例名','数据库名')}
         if fields:
             sheets['全品类数据库资产底账清单']=[{'来源':'原报告基本信息映射',**fields}]
@@ -351,8 +489,14 @@ def historical_export(actor, archive, path, *, legacy_context_db, pro_history_db
     sheets['原始表格明细'] = document_groups['原始表格明细']
     if snapshot and snapshot['sheets'].get('监控采集明细'):
         sheets['原始采集明细']=snapshot['sheets']['监控采集明细']
+    if missing(metadata.get('db_type')) and document_groups.get('_report_identity'):
+        metadata['db_type']=document_groups['_report_identity'][0].get('db_type')
+    # Aggregate identity only from this file, its exact history record and its frozen source state.
+    adapt_tables(sheets,metadata,frozen_asset,inspected_at if snapshot or inventory_observation_used else metadata.get('inspect_time'))
+    for title in HEADERS:
+        sheets[title]=owner_rows(title,sheets[title])
     if snapshot is None:
-        snapshot = {'assets': [], 'sources': [], 'coverage': {'assets': 0, 'runs': 1, 'checks': len(sheets['巡检检查结果']),
+        snapshot = {'assets': [frozen_asset] if frozen_asset else [], 'sources': [], 'coverage': {'assets': 0, 'runs': 1, 'checks': len(sheets['巡检检查结果']),
                     'uncollected_days': 0, 'workflows': 0, 'open_issues': len(sheets['异常及整改记录'])}}
     now = utcnow()
     options = {'source_ids': source_ids, 'asset_ids': source_ids, 'deliverables': ['RUN'], 'formats': ['xlsx'],
@@ -361,7 +505,10 @@ def historical_export(actor, archive, path, *, legacy_context_db, pro_history_db
                'history_export': True, 'original_report': filename, 'original_sha256': checksum,
                'inspection_time': inspected_at, 'history_export_schema': SCHEMA}
     sources = [*snapshot['sources'], {'report_name': filename, 'sha256': checksum}]
-    snapshot.update(sheets=redact(sheets, mask_identity=True, preserve_network=True), start=now, end=now,
+    if inventory_observation_used:
+        sources.append({'inventory_observation_id':inventory_observation['id'],'task_id':inventory_observation['task_id'],
+                        'payload_sha256':digest(canonical(inventory_observation['data']).encode())})
+    snapshot.update(sheets=redact_owner_tables(sheets), start=now, end=now,
                     cutoff=now, sources=sources, source_manifest_sha256=digest(canonical(sources).encode()),
                     history_sheet_names=list(sheets), history_notes={'export_note': note, 'original_record': metadata})
     snapshot['coverage']={'原报告数':1,'已关联数据源数':len(source_ids),'台账Sheet数':len(TABLES),

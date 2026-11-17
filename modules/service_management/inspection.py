@@ -59,11 +59,19 @@ INVENTORY_QUERIES = {
     },
     'sqlserver': {
         'accounts': 'SELECT PRINCIPAL_ID,NAME AS USERNAME,TYPE_DESC,CREATE_DATE FROM SYS.DATABASE_PRINCIPALS',
-        'role_members': 'SELECT ROLE_PRINCIPAL_ID,MEMBER_PRINCIPAL_ID FROM SYS.DATABASE_ROLE_MEMBERS',
-        'permissions': 'SELECT GRANTEE_PRINCIPAL_ID,CLASS_DESC,MAJOR_ID,MINOR_ID,PERMISSION_NAME,STATE_DESC FROM SYS.DATABASE_PERMISSIONS',
+        'role_members': 'SELECT R.ROLE_PRINCIPAL_ID,R.MEMBER_PRINCIPAL_ID,P.NAME AS ROLE_NAME,U.NAME AS USERNAME '
+                        'FROM SYS.DATABASE_ROLE_MEMBERS R JOIN SYS.DATABASE_PRINCIPALS P ON R.ROLE_PRINCIPAL_ID=P.PRINCIPAL_ID '
+                        'JOIN SYS.DATABASE_PRINCIPALS U ON R.MEMBER_PRINCIPAL_ID=U.PRINCIPAL_ID',
+        'permissions': 'SELECT P.GRANTEE_PRINCIPAL_ID,P.CLASS_DESC,P.MAJOR_ID,P.MINOR_ID,P.PERMISSION_NAME,P.STATE_DESC,'
+                       'U.NAME AS USERNAME,CASE WHEN P.CLASS=1 THEN OBJECT_SCHEMA_NAME(P.MAJOR_ID) END AS SCHEMA_NAME,'
+                       'CASE WHEN P.CLASS=1 THEN OBJECT_NAME(P.MAJOR_ID) END AS OBJECT_NAME '
+                       'FROM SYS.DATABASE_PERMISSIONS P LEFT JOIN SYS.DATABASE_PRINCIPALS U ON P.GRANTEE_PRINCIPAL_ID=U.PRINCIPAL_ID',
         'server_accounts': 'SELECT PRINCIPAL_ID,NAME AS USERNAME,TYPE_DESC,IS_DISABLED FROM SYS.SERVER_PRINCIPALS',
-        'server_permissions': 'SELECT GRANTEE_PRINCIPAL_ID,CLASS_DESC,MAJOR_ID,PERMISSION_NAME,STATE_DESC FROM SYS.SERVER_PERMISSIONS',
-        'server_role_members': 'SELECT ROLE_PRINCIPAL_ID,MEMBER_PRINCIPAL_ID FROM SYS.SERVER_ROLE_MEMBERS',
+        'server_permissions': 'SELECT P.GRANTEE_PRINCIPAL_ID,P.CLASS_DESC,P.MAJOR_ID,P.PERMISSION_NAME,P.STATE_DESC,U.NAME AS USERNAME '
+                              'FROM SYS.SERVER_PERMISSIONS P LEFT JOIN SYS.SERVER_PRINCIPALS U ON P.GRANTEE_PRINCIPAL_ID=U.PRINCIPAL_ID',
+        'server_role_members': 'SELECT R.ROLE_PRINCIPAL_ID,R.MEMBER_PRINCIPAL_ID,P.NAME AS ROLE_NAME,U.NAME AS USERNAME '
+                               'FROM SYS.SERVER_ROLE_MEMBERS R JOIN SYS.SERVER_PRINCIPALS P ON R.ROLE_PRINCIPAL_ID=P.PRINCIPAL_ID '
+                               'JOIN SYS.SERVER_PRINCIPALS U ON R.MEMBER_PRINCIPAL_ID=U.PRINCIPAL_ID',
     },
     'gbase8a': {
         'accounts': 'SELECT DISTINCT GRANTEE AS USERNAME FROM INFORMATION_SCHEMA.USER_PRIVILEGES',
@@ -193,6 +201,8 @@ def collect(instance, asset, factory=None, _worker=False):
             queries = {key: value for key, value in queries.items() if key in
                        {'version', 'instance', 'parameters', 'storage', 'files', 'archive', 'cluster_nodes'}}
             queries.update(INVENTORY_QUERIES[family])
+            from modules.inspection.owner_details import BACKUP_QUERIES
+            queries.update(BACKUP_QUERIES.get(family,{}))
         if family=='sqlserver' and ('2014' in str(asset.get('version')) or str(asset.get('version','')).startswith('12.')):
             queries['shared_pool'] = 'SELECT TOP 100 TYPE,PAGES_KB FROM SYS.DM_OS_MEMORY_CLERKS'
         for key, sql in queries.items():

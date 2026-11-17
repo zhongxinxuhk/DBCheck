@@ -267,7 +267,7 @@ class DeliveryStore:
                         'report_id': job['report_id'], 'revision': job['revision'], 'state': state,
                         'generated_at': utcnow(), 'cutoff': job['request']['cutoff'],
                         'period_start': job['snapshot']['start'], 'period_end': job['snapshot']['end'],
-                        'template_version': 'delivery-v1', 'canonicalization': 'json-sortkeys-utf8-v1',
+                        'template_version': job['request'].get('history_export_schema','delivery-v1'), 'canonicalization': 'json-sortkeys-utf8-v1',
                         'key_id': key_id, 'algorithm': 'ECDSA-P256-SHA256', 'artifacts': artifacts}
             signed = canonical(manifest).encode()
             signature = base64.b64encode(private.sign(signed, ec.ECDSA(hashes.SHA256()))).decode()

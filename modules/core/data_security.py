@@ -148,9 +148,12 @@ def redact(value, *, mask_identity=False, preserve_network=False, key=''):
                            preserve_network=preserve_network, key=str(k))
             for k, v in value.items()
         }
-        label = str(value.get('name') or value.get('NAME') or value.get('variable_name') or value.get('VARIABLE_NAME') or '')
+        label = str(value.get('name') or value.get('NAME') or value.get('variable_name') or value.get('VARIABLE_NAME') or
+                    value.get('para_name') or value.get('PARA_NAME') or value.get('parameter_name') or value.get('PARAMETER_NAME') or
+                    value.get('policy_parameter') or value.get('POLICY_PARAMETER') or '')
         if _SECRET.search(label):
-            for field in ('value','VALUE','variable_value','VARIABLE_VALUE','setting'):
+            for field in ('value','VALUE','variable_value','VARIABLE_VALUE','setting','display_value','DISPLAY_VALUE',
+                          'value_in_use','VALUE_IN_USE','para_value','PARA_VALUE','policy_value','POLICY_VALUE'):
                 if field in output:
                     output[field] = '[REDACTED]'
         return output

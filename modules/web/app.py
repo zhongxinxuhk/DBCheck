@@ -1837,7 +1837,9 @@ def run_inspection_task(task_id, db_info: dict, inspector_name, template_id=None
             _inventory_specialized = build_specialized_observation(context)
         except Exception as _special_err:
             print('[WARN] 专项台账实测快照提取失败: %s' % _special_err)
+        _owner_details_snapshot = copy.deepcopy(context.get('_owner_details') or {})
         context = redact(context, mask_identity=True, preserve_network=True)
+        context['_owner_details'] = redact(_owner_details_snapshot, preserve_network=True)
         if hasattr(data, 'context'):
             data.context = context
         if getattr(data, 'inspector', None) is not None:

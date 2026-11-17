@@ -244,6 +244,7 @@ def render_job(job, published=False):
             description.pop('统计开始')
             description.pop('统计结束（不含）')
             description.update({'数据范围':'指定原巡检报告及其对应采集批次',
+                                '模板版本':request['history_export_schema'],
                                 '原巡检报告':request['original_report'], '原报告文件SHA256':request['original_sha256'],
                                 '原巡检记录时间':request['inspection_time']})
         if combined and kind == 'COMBINED':
