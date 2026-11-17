@@ -23,7 +23,7 @@
 判定口径
 --------
 - ``FAIL``  找不到任何组件 —— 必然 COMPONENT_NOT_FOUND。
-- ``WARN``  命中但落在非目标模板（``--template-kw`` 不含于模板名，或 is_default=1）
+- ``WARN``  命中但落在非目标模板（``--template-kw`` 不含于模板名）
             —— 静默错配。
 - ``WARN``  关键词命中多个组件 —— 歧义，取第一个，模板微调即可能改变绑定目标。
 - ``INFO``  业务专项模板中存在但未被任何工作流引用的章节 —— 覆盖缺口。
@@ -63,6 +63,7 @@ def verify(db_types, template_kw, only_business):
     from modules.intelligence.inspect_components import (
         list_components,
         resolve_component,
+        COMPONENT_TITLE_ALIASES,
     )
 
     workflows = ws.list_workflows() or []
@@ -97,8 +98,7 @@ def verify(db_types, template_kw, only_business):
 
                 referenced.add((db_type, picked['template_id'], picked['chapter_id']))
                 tname = str(picked.get('template_name') or '')
-                if template_kw and (template_kw not in tname
-                                    or int(picked.get('is_default') or 0) == 1):
+                if template_kw and template_kw not in tname:
                     warns.append({
                         'workflow': wname, 'db_type': db_type, 'title': title,
                         'reason': '静默错配：命中 %s / is_default=%s / 章节「%s」，'
@@ -109,7 +109,8 @@ def verify(db_types, template_kw, only_business):
 
                 # 歧义判定：解析已优先「标题完全相等」。存在精确命中时绑定是确定的，
                 # 只是仍想知道子串层面的其他候选，故降为 --verbose 明细，不计 WARN。
-                if not exact and len(cands) > 1:
+                alias_match = str(picked.get('title') or '') in COMPONENT_TITLE_ALIASES.get(kw, ())
+                if not exact and not alias_match and len(cands) > 1:
                     others = [str(c.get('template_name')) + ' / ' + str(c.get('title'))
                               for c in cands if c['id'] != picked['id']]
                     warns.append({

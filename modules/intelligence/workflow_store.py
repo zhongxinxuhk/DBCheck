@@ -11,6 +11,10 @@ SQLite，支持列表 / 保存（按 id 幂等 upsert）/ 删除。执行时由 
 存储路径一律以 ``modules.core.paths.DATA_DIR`` 为准，与诊断历史库同目录。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from __future__ import annotations
 
 import json
@@ -37,8 +41,11 @@ def _init_db() -> None:
     with _LOCK:
         if _MIGRATED:
             return
+        from pathlib import Path
+        Path(_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(_DB_PATH, timeout=15)
         try:
-            conn = sqlite3.connect(_DB_PATH)
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS workflows (
@@ -82,10 +89,38 @@ def _init_db() -> None:
                 if col not in _wf_cols:
                     conn.execute(
                         f"ALTER TABLE workflows ADD COLUMN {col} {ctype} DEFAULT {dflt}")
+            _seed_default_workflows(conn)
             conn.commit()
-            conn.close()
-        finally:
             _MIGRATED = True
+        finally:
+            conn.close()
+
+
+def _seed_default_workflows(conn):
+    """Install each default once, preserving existing rows and later deletions."""
+    from .market_templates import builtin_templates
+
+    conn.execute("CREATE TABLE IF NOT EXISTS workflow_default_templates ("
+                 "name TEXT PRIMARY KEY, version TEXT NOT NULL, workflow_id INTEGER)")
+    for template in builtin_templates():
+        name = template['name']
+        if conn.execute('SELECT 1 FROM workflow_default_templates WHERE name=?', (name,)).fetchone():
+            continue
+        existing = conn.execute('SELECT id FROM workflows WHERE name=? ORDER BY id LIMIT 1', (name,)).fetchone()
+        version = template.get('version', '1.0.0')
+        if existing:
+            workflow_id = existing[0]
+        else:
+            stamp = _now()
+            cursor = conn.execute(
+                'INSERT INTO workflows (name,steps,edges,description,author,version,category,tags,'
+                'source,visibility,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                (name, json.dumps(template['steps'], ensure_ascii=False),
+                 json.dumps(template['edges'], ensure_ascii=False), template.get('description', ''),
+                 template.get('author', 'DBCheck 官方'), version, template.get('category', '官方内置'),
+                 json.dumps(template.get('tags', []), ensure_ascii=False), 'builtin', 'local', stamp, stamp))
+            workflow_id = cursor.lastrowid
+        conn.execute('INSERT INTO workflow_default_templates VALUES(?,?,?)', (name, version, workflow_id))
 
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
@@ -347,10 +382,10 @@ def market_list(remote_url: Optional[str] = None) -> List[Dict[str, Any]]:
                 "id": "builtin::%s" % t.get("name", i),
                 "name": t.get("name", "内置模板"),
                 "description": t.get("description", ""),
-                "author": "DBCheck 官方",
-                "version": "1.0.0",
-                "category": "官方内置",
-                "tags": [],
+                "author": t.get("author", "DBCheck 官方"),
+                "version": t.get("version", "1.0.0"),
+                "category": t.get("category", "官方内置"),
+                "tags": t.get("tags", []),
                 "source": "builtin",
                 "visibility": "published",
                 "steps": t.get("steps", []),

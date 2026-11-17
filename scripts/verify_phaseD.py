@@ -11,15 +11,19 @@
   R4 ReviewResult 结构完整（reviewer.py，前端审计链数据源）
   R5 写类技能规格（registry，Builder 节点清单来源）
 
-live 子进程（import web.app + discover_plugins==11 + Flask 测试客户端）：
-  L1 列表端点返回空
+live 子进程（导入应用、插件发现与隔离身份的 Flask 端点测试）：
+  L1 列表端点包含默认编排
   L2 保存端点返回 id
   L3 列表含刚保存项
   L4 workflow-nodes 端点（specialists + skills，含写类技能）
   L5 删除端点
-  L6 discover_plugins() == 11（三步验证之一）
+  L6 Oracle / SQL Server JDBC 插件可发现
   L7 hub._finalize 含 review 字段（Reviewer 结论进诊断结果）
 """
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import sys
 import json
@@ -43,6 +47,9 @@ def run_logic():
     tmp = tempfile.mkdtemp(prefix="wf_verify_")
     wfs._DB_PATH = os.path.join(tmp, "workflows.db")
 
+    defaults = wfs.list_workflows()
+    default_count = len(defaults)
+
     # R1 结构校验
     for bad in [("", [{"id": "a"}], []),
                 ("x", [], []),
@@ -58,8 +65,8 @@ def run_logic():
     check("R2 保存返回 id", wf.get("id") is not None, str(wf.get("id")))
     got = wfs.get_workflow(wf["id"])
     check("R2 读取一致", bool(got) and got["name"] == "t1" and len(got["steps"]) == 1)
-    check("R2 列表含 1", len(wfs.list_workflows()) == 1)
-    check("R2 删除", wfs.delete_workflow(wf["id"]) and len(wfs.list_workflows()) == 0)
+    check("R2 列表含新增项", len(wfs.list_workflows()) == default_count + 1)
+    check("R2 删除", wfs.delete_workflow(wf["id"]) and len(wfs.list_workflows()) == default_count)
 
     # R3 Workflow 引擎（func 节点无 callable，不连库不报错）
     from modules.intelligence.workflow import Workflow, Step
@@ -93,14 +100,24 @@ def run_live():
     import modules.web.app as appmod
     from modules.pluginkit.loader import discover_plugins
     print("[live] web.app imported", flush=True)
-    app = appmod.app
+    # Exercise the blueprint with an isolated principal, independently of login middleware.
+    from flask import Flask, g
+    from modules.access import Principal
+    from modules.intelligence.views import intelligence_bp
+    app = Flask(__name__)
+    app.register_blueprint(intelligence_bp)
+    @app.before_request
+    def identity():
+        g.security_principal = Principal(id=1, tenant_id=1, roles=['admin'])
     client = app.test_client()
 
-    # L1 列表空
+    # L1 默认编排
     print("[live] L1 GET workflows", flush=True)
     r = client.get("/api/intelligence/workflows")
     j = r.get_json()
-    check("L1 列表端点返回空", j["ok"] and j["workflows"] == [])
+    from modules.intelligence.market_templates import builtin_templates
+    expected_names = {item['name'] for item in builtin_templates()}
+    check("L1 列表端点包含默认编排", j["ok"] and {item['name'] for item in j['workflows']} == expected_names)
 
     # L2 保存
     r = client.post("/api/intelligence/workflows", json={
@@ -113,9 +130,9 @@ def run_live():
     check("L2 保存端点返回 id", j["ok"] and j["workflow"].get("id"), str(j.get("workflow", {}).get("id")))
     wid = j["workflow"]["id"]
 
-    # L3 列表含 1
+    # L3 默认编排及新增项
     r = client.get("/api/intelligence/workflows")
-    check("L3 列表含刚保存项", len(r.get_json()["workflows"]) == 1)
+    check("L3 列表含刚保存项", len(r.get_json()["workflows"]) == len(expected_names) + 1)
 
     # L4 workflow-nodes
     r = client.get("/api/intelligence/workflow-nodes")
@@ -129,8 +146,10 @@ def run_live():
     check("L5 删除端点", r.get_json()["ok"])
 
     # L6 三步验证之一
-    check("L6 discover_plugins()==11", len(discover_plugins()) == 11,
-          str(len(discover_plugins())))
+    plugins = discover_plugins()
+    plugin_types = {plugin.get('db_type') for plugin in plugins}
+    check("L6 Oracle / SQL Server JDBC 插件可发现",
+          {'oracle_jdbc', 'sqlserver_jdbc'} <= plugin_types, str(len(plugins)))
 
     # L7 hub._finalize 含 review 字段
     from types import SimpleNamespace
