@@ -218,6 +218,9 @@ def render_job(job, published=False):
             names = list(dict.fromkeys(name for key in request['deliverables'] for name in DELIVERABLES[key][2]))
         else:
             title, _, names = DELIVERABLES[kind]
+        if request.get('history_export'):
+            title='数据库单次巡检交付表'
+            names=snapshot['history_sheet_names']
         sections = {name: snapshot['sheets'].get(name, []) for name in names
                     if not request['sheets'] or name in request['sheets']}
         if kind == 'COMBINED':
@@ -237,8 +240,15 @@ def render_job(job, published=False):
                        '历史映射与缺口': snapshot.get('history_notes'),
                        '本次采集状态': snapshot.get('collection_results'),
                        '内容SHA256': content_sha256, '来源清单SHA256': snapshot['source_manifest_sha256']}
+        if request.get('history_export'):
+            description.pop('统计开始')
+            description.pop('统计结束（不含）')
+            description.update({'数据范围':'指定原巡检报告及其对应采集批次',
+                                '原巡检报告':request['original_report'], '原报告文件SHA256':request['original_sha256'],
+                                '原巡检记录时间':request['inspection_time']})
         if combined and kind == 'COMBINED':
-            description['交付物目录'] = {DELIVERABLES[key][0]: DELIVERABLES[key][2] for key in request['deliverables']}
+            description['交付物目录'] = snapshot['history_sheet_names'] if request.get('history_export') else {
+                DELIVERABLES[key][0]: DELIVERABLES[key][2] for key in request['deliverables']}
         artifact_id = uuid.uuid4().hex
         metadata = {'artifact_id': artifact_id, 'report_id': job['report_id'], 'revision': job['revision'],
                     'deliverable': kind, 'format': format_name, 'content_sha256': content_sha256,
@@ -246,6 +256,8 @@ def render_job(job, published=False):
         raw = xlsx(title, sections, description) if format_name == 'xlsx' else docx(title, sections, description)
         content = stamped(raw, metadata)
         filename = f'{kind}_{title}_{request["date"]}_v{job["revision"]}.{format_name}'
+        if request.get('history_export'):
+            filename = request['original_report'][:-5] + '_业主交付表.xlsx'
         rendered.append((filename, content, metadata))
     return rendered
 

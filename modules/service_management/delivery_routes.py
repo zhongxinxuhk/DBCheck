@@ -143,6 +143,8 @@ def delivery_jobs():
         raise ValueError('请选择一个或多个数据源')
     if isinstance(data, dict) and (not isinstance(data.get('previous_id', ''), str) or len(str(data.get('reason', ''))) > 400):
         raise ValueError('修订参数无效或原因超过400字符')
+    if isinstance(data,dict) and data.get('previous_id') and database.get(identity,data['previous_id'])['request'].get('history_export'):
+        raise ValueError('该文件对应固定的原巡检报告，请在数据库巡检历史中重新导出')
     services = sources_for(identity)
     options = request_options(data, services.list(identity, 'asset'))
     snapshot = build_snapshot(services, database, identity, report_catalog(identity), options)
@@ -356,3 +358,26 @@ def report_events():
             raise ValueError('事件资料须为对象')
         return jsonify(ok=True, record=sources.save_event(identity, body))
     return jsonify(ok=True, records=sources.list(identity, 'workflow'), fields=FIELDS, labels=FIELD_LABELS)
+
+
+@bp.route('/api/report-center/history-xlsx', methods=['POST'])
+def history_xlsx():
+    identity=actor()
+    if not (identity['admin'] and identity['tenant_id']==1):
+        raise PermissionError('历史报告仅安装租户管理员可访问')
+    body=request.get_json(silent=True)
+    if not isinstance(body,dict):
+        raise ValueError('请选择原巡检报告')
+    from modules.core import paths
+    from .history_xlsx import report_file, historical_export
+    path=report_file(current_app.config.get('HISTORY_REPORTS_DIR') or paths.REPORTS_DIR,body.get('filename'))
+    database=archive(identity)
+    options,snapshot,key=historical_export(identity,database,path,
+        legacy_context_db=current_app.config.get('HISTORY_CONTEXT_DB') or paths.DATA_DIR/'history.db',
+        pro_history_db=current_app.config.get('HISTORY_PRO_DB') or paths.PRO_DATA_DIR/'pro_history.db')
+    job=database.create(identity,options,snapshot,cache_key=key)
+    if job['state']=='failed':
+        job=database.retry_history_export(identity,job['id'])
+    if job['state']=='queued':
+        submit(job,identity)
+    return jsonify(ok=True,job=summary(database.get(identity,job['id']))),202

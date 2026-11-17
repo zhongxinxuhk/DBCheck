@@ -17072,7 +17072,8 @@ function reportRow(f) {
       </div>
     </div>
     <div class="ri-actions">
-      <a class="btn btn-primary ri-download" href="/api/download_file?name=${encodeURIComponent(f.name)}" download>下载</a>
+      <a class="btn btn-primary ri-download" href="/api/download_file?name=${encodeURIComponent(f.name)}" download>Word</a>
+      <button type="button" class="btn btn-ghost ri-download" data-report-action="xlsx" data-report-name="${nameAttr}" aria-label="导出业主要求的多 Sheet Excel">XLSX</button>
       <details class="ri-menu">
         <summary class="ri-more" aria-label="更多操作">⋯</summary>
         <div class="ri-menu-pop">
@@ -17083,6 +17084,35 @@ function reportRow(f) {
       </details>
     </div>
   </div>`;
+}
+
+async function downloadHistoryXlsx(filename, button) {
+  const original=button.textContent;
+  button.disabled=true;
+  button.textContent='生成中…';
+  try {
+    let response=await fetch('/api/report-center/history-xlsx', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename})});
+    let data=await response.json();
+    if(!response.ok||!data.ok) throw new Error(data.error||'Excel 生成失败');
+    let job=data.job;
+    while(['queued','generating'].includes(job.state)) {
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      response=await fetch('/api/report-center/jobs/'+encodeURIComponent(job.id));
+      data=await response.json();
+      if(!response.ok||!data.ok) throw new Error(data.error||'无法获取生成进度');
+      job=data.job;
+    }
+    if(!job.artifacts.length||job.state==='failed') throw new Error(job.error||'Excel 尚未生成');
+    const artifact=job.artifacts[0];
+    response=await fetch('/api/report-center/'+encodeURIComponent(job.id)+'/download?artifact_id='+encodeURIComponent(artifact.artifact_id));
+    if(!response.ok) {const error=await response.json();throw new Error(error.error||'Excel 下载失败');}
+    const url=URL.createObjectURL(await response.blob());
+    const link=document.createElement('a');link.href=url;link.download=artifact.name;
+    document.body.append(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    toastSuccess('单次巡检 Excel 已生成');
+  } catch(error) {toastError(error.message);}
+  finally {button.disabled=false;button.textContent=original;}
 }
 
 function renderReportsPagination(total) {
@@ -17200,7 +17230,8 @@ function bindReportControls() {
     const name = action.dataset.reportName;
     const menu = action.closest('details');
     if (menu) menu.open = false;
-    if (action.dataset.reportAction === 'issues') showReportIssues(name, action.dataset.reportIssues);
+    if (action.dataset.reportAction === 'xlsx') downloadHistoryXlsx(name,action);
+    else if (action.dataset.reportAction === 'issues') showReportIssues(name, action.dataset.reportIssues);
     else if (action.dataset.reportAction === 'share') shareReportFile(name);
     else if (action.dataset.reportAction === 'delete') deleteReport(name);
   });
