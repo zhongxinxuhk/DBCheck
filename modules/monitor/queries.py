@@ -675,7 +675,7 @@ MAX_CONN_QUERY_SQL = {
     'postgresql': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
     'pg': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
     'ivorysql': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
-    'oracle': "SELECT TO_NUMBER(VALUE) AS max_conn FROM v$parameter WHERE NAME = 'processes'",
+    'oracle': "SELECT TO_NUMBER(VALUE) AS max_conn FROM v$parameter WHERE NAME = 'sessions'",  # 会话上限；processes 只是进程上限
     'sqlserver': "SELECT 32767 AS max_conn",
     'dm': "SELECT VALUE AS max_conn FROM V$DM_INI WHERE PARA_NAME = 'MAX_SESSIONS'",
     'tidb': "SELECT @@global.max_connections AS max_conn",
