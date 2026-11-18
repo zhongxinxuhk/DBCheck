@@ -23423,6 +23423,7 @@ async function executeFixSql(taskId, sql) {
   .mon-tag-tidb      { background:rgba(249,115,22,0.12);color:#fb923c; }
   .mon-tag-oracle    { background:rgba(239,68,68,0.12);color:#f87171; }
   .mon-tag-gbase8a   { background:rgba(34,197,94,0.12);color:#4ade80; }
+  .mon-tag-gbase     { background:rgba(8,145,178,0.12);color:#22d3ee; }
   .mon-tag-dm8       { background:rgba(34,197,94,0.12);color:#4ade80; }
   .mon-tag-sqlserver { background:rgba(59,130,246,0.12);color:#60a5fa; }
   .mon-tag-default   { background:rgba(148,163,184,0.12);color:#94a3b8; }
@@ -28723,24 +28724,38 @@ async function deleteBackupHistory(recordId) {
     // 设计稿已无此图表区域，保留函数避免报错
   }
 
-  // 从数据源名称推测数据库类型
-  function guessDbType(source) {
+  // 从数据源名称推测数据库类型；有 db_type 字段时优先用它，
+  // 避免实例名不含 “Oracle/SQL Server” 时被误标成 DB。
+  function normalizeMonitorDbType(dbType) {
+    var t = String(dbType || '').toLowerCase();
+    if (t === 'oracle_jdbc') return 'oracle';
+    if (t === 'sqlserver_jdbc' || t === 'mssql') return 'sqlserver';
+    if (t === 'postgresql') return 'pg';
+    if (t === 'dm' || t === 'dm8') return 'dm8';
+    if (t === 'ivorysql' || t === 'ivory') return 'ivory';
+    if (t === 'mariadb' || t === 'percona') return 'mysql';
+    if (t === 'gbase8s') return 'gbase';
+    if (['kingbase', 'hgdb', 'uxdb', 'vastbase', 'halodb', 'highgo', 'opengauss', 'greenplum'].indexOf(t) > -1) return 'pg';
+    return t;
+  }
+  function guessDbType(source, dbType) {
+    if (dbType) return normalizeMonitorDbType(dbType);
     var s = (source || '').toLowerCase();
     if (s.indexOf('gbase8a') > -1 || s.indexOf('gbase 8a') > -1) return 'gbase8a';
     if (s.indexOf('tidb') > -1) return 'tidb';
     if (s.indexOf('mysql') > -1) return 'mysql';
     if (s.indexOf('ivory') > -1) return 'ivory';
     if (s.indexOf('postgres') > -1 || s.indexOf('pg-') > -1) return 'pg';
-    if (s.indexOf('oracle') > -1) return 'oracle';
+    if (s.indexOf('oracle') > -1 || s.indexOf('ora-') > -1) return 'oracle';
     if (s.indexOf('dm') > -1 || s.indexOf('达梦') > -1) return 'dm8';
     if (s.indexOf('sqlserver') > -1 || s.indexOf('mssql') > -1 || s.indexOf('sql') > -1) return 'sqlserver';
     return 'default';
   }
-  function dbTypeTag(source) {
-    var type = guessDbType(source);
+  function dbTypeTag(source, dbType) {
+    var type = guessDbType(source, dbType);
     var map = {
       mysql:'MySQL', pg:'PostgreSQL', ivory:'IvorySQL', tidb:'TiDB',
-      oracle:'Oracle', gbase8a:'GBase 8a', dm8:'DM8', sqlserver:'SQL Server', default:'DB'
+      oracle:'Oracle', gbase8a:'GBase 8a', gbase:'GBase 8s', dm8:'DM8', sqlserver:'SQL Server', default:'DB'
     };
     return '<span class="mon-tag mon-tag-' + type + '">' + (map[type] || 'DB') + '</span>';
   }
@@ -28891,7 +28906,7 @@ async function deleteBackupHistory(recordId) {
       var title = sql.length > 80 ? ' title="' + escHtml(sql) + '"' : '';
       html += '<tr>'
         + '<td>' + (i + 1) + '</td>'
-        + '<td style="white-space:nowrap">' + dbTypeTag(item.source) + ' <span style="font-size:12px">' + escHtml(item.source) + '</span></td>'
+        + '<td style="white-space:nowrap">' + dbTypeTag(item.source, item.db_type) + ' <span style="font-size:12px">' + escHtml(item.source) + '</span></td>'
         + '<td style="text-align:center" class="' + timeCls + '">' + timeFmt + '</td>'
         + '<td style="text-align:right;font-family:monospace">' + cnt.toLocaleString() + '</td>'
         + '<td style="text-align:right;font-family:monospace">' + totalFmt + '</td>'
@@ -29119,7 +29134,7 @@ async function deleteBackupHistory(recordId) {
     monitorConnData.forEach(function(inst) {
       (inst.sessions || []).forEach(function(s) {
         if (!filterSrc || inst.source === filterSrc) {
-          allSessions.push(Object.assign({source: inst.source}, s));
+          allSessions.push(Object.assign({source: inst.source, db_type: inst.db_type}, s));
         }
       });
     });
@@ -29135,16 +29150,16 @@ async function deleteBackupHistory(recordId) {
     // DB 类型缩写映射
     var dbAbbr = {
       mysql:'MY', pg:'PG', ivory:'PG', tidb:'TD', gbase8a:'GB',
-      oracle:'OR', dm8:'DM', sqlserver:'MS', default:'DB'
+      oracle:'OR', gbase:'GB', dm8:'DM', sqlserver:'MS', default:'DB'
     };
 
     var html = '';
     allSessions.forEach(function(s) {
-      var type = guessDbType(s.source);
+      var type = guessDbType(s.source, s.db_type);
       var abbr = dbAbbr[type] || 'DB';
       var tagColor = {
         mysql:'#0A2A6E', pg:'#0A2A6E', ivory:'#0A2A6E', tidb:'#fb923c',
-        oracle:'#EF4444', gbase8a:'#22c55e', dm8:'#00C8A0', sqlserver:'#0A2A6E', default:'#94a3b8'
+        oracle:'#EF4444', gbase8a:'#22c55e', gbase:'#0891b2', dm8:'#00C8A0', sqlserver:'#0A2A6E', default:'#94a3b8'
       }[type] || '#94a3b8';
 
       var userHtml = '<span class="mon-session-tag" style="background:' + tagColor + '22;color:' + tagColor + '">' + abbr + '</span> '
@@ -29154,7 +29169,7 @@ async function deleteBackupHistory(recordId) {
       var state = (s.state || '').toLowerCase();
       var stateCls = '';
       if (state.indexOf('execut') > -1 || state.indexOf('run') > -1 || state.indexOf('active') > -1) stateCls = 'mon-state-executing';
-      else if (state.indexOf('lock') > -1 || state.indexOf('wait') > -1) stateCls = 'mon-state-locked';
+      else if (state.indexOf('lock') > -1 || state.indexOf('wait') > -1 || state.indexOf('blocked') > -1) stateCls = 'mon-state-locked';
       else if (state.indexOf('sleep') > -1) stateCls = 'mon-state-sleep';
       else if (state.indexOf('idle') > -1) stateCls = 'mon-state-idle';
       var stateHtml = '<span class="' + stateCls + '">' + escHtml(s.state || '-') + '</span>';
