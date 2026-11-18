@@ -97,7 +97,7 @@ MYSQL_REPL_SQL8 = "SHOW REPLICA STATUS"
 GBASE8A_STAT_SQL = "SHOW GLOBAL STATUS"
 GBASE8A_TBS_SQL = (
     "SELECT table_schema AS name, "
-    "ROUND(SUM(COALESCE(data_length, 0) + COALESCE(index_length, 0)) / 1048576, 1) AS total_mb "
+    "ROUND(SUM(COALESCE(data_length, 0)) / 1048576, 1) AS total_mb "
     "FROM information_schema.tables "
     "WHERE table_schema NOT IN ('information_schema', 'gbase', 'gclusterdb', 'performance_schema') "
     "GROUP BY table_schema ORDER BY total_mb DESC LIMIT 10"
