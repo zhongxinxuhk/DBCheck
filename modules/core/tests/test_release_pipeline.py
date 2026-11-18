@@ -4,6 +4,7 @@
 """Release version reuse, platform completeness and clean asset integrity gates."""
 
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -412,3 +413,224 @@ def test_release_requires_exact_windows_linux_packages(tmp_path):
     (tmp_path / 'release-manifest.json').write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match='Windows x64, Linux x64, Linux ARM64'):
         release.verify_assets(tmp_path, 'v1.0.1', 'source')
+
+
+class ArtifactCleanupGitHub:
+    def __init__(self):
+        self.sha = 'a' * 40
+        self.tag = 'v1.0.8'
+        names = {f'DBPulse-{self.tag}-{platform}.zip' for platform in (*release.TARGETS, 'Windows-Linux-Portable')}
+        names.update({'release-manifest.json', 'SHA256SUMS.txt'})
+        self.release = {'tag_name': self.tag, 'draft': False, 'prerelease': False,
+                        'body': release.MARKER + '\n源提交为 `' + self.sha + '`。',
+                        'assets': [{'name': name, 'state': 'uploaded', 'size': 100} for name in names]}
+        self.runs = {17: {'head_sha': self.sha, 'status': 'completed', 'conclusion': 'success',
+                         'path': '.github/workflows/build-release.yml', 'head_branch': 'main'},
+                     18: {'head_sha': self.sha, 'status': 'completed', 'conclusion': 'failure',
+                         'path': '.github/workflows/build-release.yml', 'head_branch': 'main'}}
+        self.artifacts = [
+            {'id': 1, 'name': 'release-candidate-' + self.tag, 'expired': False, 'size_in_bytes': 100,
+             'workflow_run': {'id': 17, 'head_sha': self.sha}},
+            {'id': 2, 'name': 'customer-evidence', 'expired': False, 'size_in_bytes': 100,
+             'workflow_run': {'id': 17, 'head_sha': self.sha}},
+            {'id': 3, 'name': 'windows-transfer-fixture', 'expired': False, 'size_in_bytes': 100,
+             'workflow_run': {'id': 18, 'head_sha': self.sha}},
+        ]
+        self.deleted = []
+
+    def pages(self, path):
+        assert path == 'releases'
+        return [self.release]
+
+    def request(self, path, method='GET', data=None):
+        if path.startswith('git/ref/tags/'):
+            return {'object': {'type': 'commit', 'sha': self.sha}}
+        if path.startswith('actions/artifacts?'):
+            return {'artifacts': self.artifacts}
+        if path.startswith('actions/runs/'):
+            return self.runs[int(path.rsplit('/', 1)[1])]
+        assert method == 'DELETE'
+        self.deleted.append(int(path.rsplit('/', 1)[1]))
+
+
+def test_artifact_cleanup_requires_exact_published_assets_and_successful_run():
+    github = ArtifactCleanupGitHub()
+    assert release.cleanup_artifacts(github)['selected'] == 1
+    assert github.deleted == []
+    assert release.cleanup_artifacts(github, apply=True)['removed'] == 1
+    assert github.deleted == [1]
+
+
+@pytest.mark.parametrize('change', ['draft', 'missing_asset', 'wrong_source', 'other_workflow', 'failed_run'])
+def test_artifact_cleanup_preserves_unverified_or_unrelated_artifacts(change):
+    github = ArtifactCleanupGitHub()
+    if change == 'draft':
+        github.release['draft'] = True
+    elif change == 'missing_asset':
+        github.release['assets'].pop()
+    elif change == 'wrong_source':
+        github.release['body'] = release.MARKER + '\n源提交为 `' + 'b' * 40 + '`。'
+    elif change == 'other_workflow':
+        github.runs[17]['path'] = '.github/workflows/other.yml'
+    else:
+        github.runs[17]['conclusion'] = 'failure'
+    assert release.cleanup_artifacts(github, apply=True)['removed'] == 0
+    assert github.deleted == []
+
+
+def test_artifact_cleanup_allows_only_its_own_published_in_progress_run(monkeypatch):
+    github = ArtifactCleanupGitHub()
+    github.runs[17].update(status='in_progress', conclusion=None)
+    assert release.cleanup_artifacts(github, apply=True, current_run=17)['removed'] == 0
+    monkeypatch.setenv('GITHUB_RUN_ID', '17')
+    monkeypatch.setenv('GITHUB_SHA', github.sha)
+    assert release.cleanup_artifacts(github, apply=True, current_run=17)['removed'] == 1
+    assert github.deleted == [1]
+
+
+class StagingGitHub:
+    repository = 'fixture/project'
+    token = 'fixture-token'
+
+    def __init__(self):
+        self.releases = []
+        self.assets = []
+        self.content = {}
+        self.deleted = []
+
+    def pages(self, path):
+        return self.releases if path == 'releases' else self.assets
+
+    def request(self, path, method='GET', data=None):
+        if path == 'releases' and method == 'POST':
+            item = dict(data, id=71)
+            self.releases.append(item)
+            return item
+        if method == 'DELETE':
+            self.deleted.append(path)
+            if path.startswith('releases/assets/'):
+                self.assets = [a for a in self.assets if str(a['id']) != path.rsplit('/', 1)[1]]
+            return None
+        if path.startswith('git/ref/'):
+            import urllib.error
+            raise urllib.error.HTTPError(path, 404, 'missing', {}, None)
+        raise AssertionError(path)
+
+    def upload(self, release_id, path, *, label=None):
+        content = path.read_bytes()
+        self.content[path.name] = content
+        self.assets.append({'id': len(self.assets) + 1, 'name': path.name, 'size': len(content),
+                            'state': 'uploaded', 'label': label, 'digest': 'sha256:' + release.digest(path)})
+
+
+@pytest.fixture
+def staging_environment(monkeypatch):
+    monkeypatch.setenv('GITHUB_RUN_ID', '77')
+    monkeypatch.setenv('GITHUB_SHA', 'a' * 40)
+
+
+def test_staging_is_private_run_scoped_and_rejects_other_sources(staging_environment):
+    github = StagingGitHub()
+    item = release.staging_release(github, create=True)
+    assert item['draft'] and item['prerelease']
+    assert item['tag_name'] == 'ci-build-77'
+    assert release.staging_release(github)['id'] == item['id']
+    item['body'] = item['body'].replace('a' * 40, 'b' * 40)
+    with pytest.raises(ValueError, match='identity'):
+        release.staging_release(github)
+
+
+def test_staging_round_trip_preserves_only_selected_paths(tmp_path, staging_environment):
+    github = StagingGitHub()
+    release.staging_release(github, create=True)
+    root = tmp_path / 'source'
+    (root / 'bin/windows-x86_64').mkdir(parents=True)
+    (root / 'bin/windows-x86_64/dbcheck.exe').write_bytes(b'fixture binary')
+    (root / 'private-state.txt').write_text('excluded fixture')
+    release.stage_upload(root, 'component', ['bin/windows-x86_64'], github)
+    with zipfile.ZipFile(io.BytesIO(github.content['component.zip'])) as archive:
+        assert archive.namelist() == ['bin/windows-x86_64/dbcheck.exe']
+    def download(client, asset, destination):
+        destination.write_bytes(github.content[asset['name']])
+    with patch.object(release, 'download_staged_asset', side_effect=download):
+        output = tmp_path / 'restored'
+        release.stage_download(output, 'component', github)
+    assert (output / 'bin/windows-x86_64/dbcheck.exe').read_bytes() == b'fixture binary'
+    assert not (output / 'private-state.txt').exists()
+
+
+def test_missing_staging_and_archive_path_escape_fail_closed(tmp_path, staging_environment):
+    github = StagingGitHub()
+    with pytest.raises(ValueError, match='missing'):
+        release.stage_download(tmp_path / 'missing', 'component', github)
+    assert github.releases == []
+    release.staging_release(github, create=True)
+    github.assets.append({'id': 1, 'name': 'component.zip', 'state': 'uploaded'})
+    def malicious_download(client, asset, path):
+        with zipfile.ZipFile(path, 'w') as archive:
+            archive.writestr('../escape.txt', 'fixture')
+    with patch.object(release, 'download_staged_asset', side_effect=malicious_download):
+        with pytest.raises(ValueError, match='Unsafe'):
+            release.stage_download(tmp_path / 'output', 'component', github)
+    assert not (tmp_path / 'escape.txt').exists()
+
+
+def test_staging_redirect_never_forwards_github_credentials(tmp_path):
+    import hashlib
+    import io
+    import urllib.error
+    from unittest.mock import Mock
+    github = StagingGitHub()
+    content = b'verified fixture payload'
+    asset = {'id': 1, 'size': len(content), 'digest': 'sha256:' + hashlib.sha256(content).hexdigest()}
+    opener = Mock()
+    opener.open.side_effect = urllib.error.HTTPError('https://api.github.com/fixture', 302, 'redirect',
+        {'Location': 'https://release-assets.githubusercontent.com/fixture'}, None)
+    with patch.object(release.urllib.request, 'build_opener', return_value=opener), \
+         patch.object(release.urllib.request, 'urlopen', return_value=io.BytesIO(content)) as download:
+        release.download_staged_asset(github, asset, tmp_path / 'download.zip')
+    assert download.call_args.args[0].get_header('Authorization') is None
+    assert (tmp_path / 'download.zip').read_bytes() == content
+
+
+def test_staging_download_rejects_changed_bytes(tmp_path):
+    import hashlib
+    import io
+    from unittest.mock import Mock
+    content = b'correct'
+    opener = Mock()
+    opener.open.return_value = io.BytesIO(b'changed')
+    asset = {'id': 1, 'size': len(content), 'digest': 'sha256:' + hashlib.sha256(content).hexdigest()}
+    with patch.object(release.urllib.request, 'build_opener', return_value=opener):
+        with pytest.raises(ValueError, match='mismatch'):
+            release.download_staged_asset(StagingGitHub(), asset, tmp_path / 'download.zip')
+
+
+def test_release_transport_avoids_artifact_quota_and_preserves_publication_gates():
+    import yaml
+    producer = (ROOT / '.github/workflows/portable-release.yml').read_text()
+    consumer = (ROOT / '.github/workflows/build-release.yml').read_text()
+    assert 'actions/upload-artifact@' not in producer + consumer
+    assert 'actions/download-artifact@' not in producer + consumer
+    jobs = yaml.safe_load(consumer)['jobs']
+    assert jobs['publish']['needs'] == ['checks', 'version', 'packages']
+    assert jobs['packages']['permissions']['contents'] == 'write'
+    native = yaml.safe_load(producer)['jobs']
+    assert native['native']['needs'] == 'prepare'
+    assert native['verify-transfer']['needs'] == ['assemble', 'windows-state']
+    assert 'stage-cleanup' in jobs['publish']['steps'][-2]['run']
+
+
+def test_staging_cleanup_waits_for_a_complete_published_release(staging_environment):
+    github = StagingGitHub()
+    stage = release.staging_release(github, create=True)
+    published = ArtifactCleanupGitHub().release
+    published['id'] = 80
+    github.releases.append(published)
+    asset = published['assets'].pop()
+    with pytest.raises(ValueError, match='incomplete'):
+        release.stage_cleanup(published['tag_name'], 'a' * 40, github)
+    assert github.deleted == []
+    published['assets'].append(asset)
+    release.stage_cleanup(published['tag_name'], 'a' * 40, github)
+    assert github.deleted == ['releases/' + str(stage['id'])]
