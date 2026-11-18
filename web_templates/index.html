@@ -28762,6 +28762,10 @@ async function deleteBackupHistory(recordId) {
         slowestSql = item.sql_text || item.query_text || '-';
       }
     });
+    // 数据源计数应覆盖「已接入监控但当前无慢查询」的库（如 GBase 8a），
+    // 否则慢查询页的「监控数据源」卡片只统计有 Top SQL 的库，会把它们漏掉。
+    monitorConnData.forEach(function(item) { if (item.source) sources[item.source] = true; });
+    monitorAllSources.forEach(function(s) { if (s) sources[s] = true; });
 
     var srcKeys = Object.keys(sources);
     var srcNames = srcKeys.join('·');
