@@ -51,9 +51,27 @@ def source_value(key, value):
             raise ValueError("连接开关请填写是或否")
         return text in {"1", "true", "是", "启用"}
     if key in {"port", "ssh_port"}:
-        if isinstance(value, bool) or not str(value).isdigit():
-            raise ValueError("端口必须为整数")
-        return int(value)
+        # Excel 重新保存/复制后，整数端口常变成 3306.0、' 3306 ' 或 '3306.0'；
+        # 只要数值是 1~65535 的整数就按整数接收，避免导出台账无法回导。
+        if isinstance(value, bool):
+            raise ValueError("端口必须为1到65535的整数")
+        if isinstance(value, int):
+            port = value
+        elif isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError("端口必须为1到65535的整数")
+            port = int(value)
+        else:
+            try:
+                number = float(str(value).strip())
+            except (TypeError, ValueError):
+                raise ValueError("端口必须为1到65535的整数") from None
+            if not number.is_integer():
+                raise ValueError("端口必须为1到65535的整数")
+            port = int(number)
+        if not 1 <= port <= 65535:
+            raise ValueError("端口必须为1到65535的整数")
+        return port
     if key == "tags":
         if isinstance(value, str) and value.startswith("["):
             return json.loads(value)
