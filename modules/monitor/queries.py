@@ -384,6 +384,57 @@ LIMIT 50
 """
 
 # ═══════════════════════════════════════════════════════════════
+# GBase 8a MPP Cluster（南大通用，MySQL 协议 + information_schema；
+# 原生 PyMySQL 通道，不是 GBase 8s 的 JDBC 通道）
+# ═══════════════════════════════════════════════════════════════
+
+# 8a 没有 MySQL 的 performance_schema 语句摘要表，用 PROCESSLIST 的当前
+# 执行语句近似「实时慢查询」：TIME 为会话已执行秒数，按耗时倒序取 Top 30。
+# 列名与 MySQL 慢查询模板保持一致，前端无需为 8a 单独适配。
+GBASE8A_SLOW_QUERY_SQL = """
+SELECT
+    SUBSTRING(INFO, 1, 200) AS sql_text,
+    ROUND(TIME, 3) AS avg_time_s,
+    ROUND(TIME, 3) AS max_time_s,
+    1 AS exec_count,
+    ROUND(TIME, 3) AS total_time_s,
+    DB AS schema_name,
+    CONCAT(ID, '_', TIME) AS digest
+FROM information_schema.PROCESSLIST
+WHERE INFO IS NOT NULL
+  AND INFO NOT LIKE 'COMMIT%'
+  AND INFO NOT LIKE 'ROLLBACK%'
+  AND COMMAND <> 'Sleep'
+  AND ID <> CONNECTION_ID()
+ORDER BY TIME DESC
+LIMIT 30
+"""
+
+# CONNECTION_ID() 在极老 8a 版本上可能不可用；去掉自身连接过滤作为兜底，
+# 宁可多一条监控自身会话，也不让整块慢查询采集中断。
+GBASE8A_SLOW_QUERY_FALLBACK_SQL = """
+SELECT
+    SUBSTRING(INFO, 1, 200) AS sql_text,
+    ROUND(TIME, 3) AS avg_time_s,
+    ROUND(TIME, 3) AS max_time_s,
+    1 AS exec_count,
+    ROUND(TIME, 3) AS total_time_s,
+    DB AS schema_name,
+    CONCAT(ID, '_', TIME) AS digest
+FROM information_schema.PROCESSLIST
+WHERE INFO IS NOT NULL
+  AND INFO NOT LIKE 'COMMIT%'
+  AND INFO NOT LIKE 'ROLLBACK%'
+  AND COMMAND <> 'Sleep'
+ORDER BY TIME DESC
+LIMIT 30
+"""
+
+# 连接/会话明细：与 MySQL 同口径（information_schema.PROCESSLIST + 派生表
+# 统计每用户连接数）。8a 的 PROCESSLIST 是集群视角，便于直接看协调器会话。
+GBASE8A_CONNECTION_SQL = MYSQL_CONNECTION_SQL
+
+# ═══════════════════════════════════════════════════════════════
 # DB2（IBM Db2，SYSIBMADM 管理视图，监控账号需 SYSMON 权限；JDBC 子进程通道）
 # ═══════════════════════════════════════════════════════════════
 
@@ -511,6 +562,7 @@ SLOW_QUERY_TEMPLATES = {
     'dm': DM_SLOW_QUERY_SQL,
     'tidb': TIDB_SLOW_QUERY_SQL,
     'gbase': GBASE_SLOW_QUERY_SQL,
+    'gbase8a': GBASE8A_SLOW_QUERY_SQL,
     'db2': DB2_SLOW_QUERY_SQL,
     'clickhouse': CLICKHOUSE_SLOW_QUERY_SQL,
     # OceanBase MySQL 租户兼容 performance_schema.events_statements_summary_by_digest（4.x），
@@ -540,6 +592,7 @@ SLOW_QUERY_FALLBACK_TEMPLATES = {
     'ivorysql': PG_SLOW_QUERY_FALLBACK_SQL,
     'tidb': TIDB_SLOW_QUERY_FALLBACK_SQL,
     'clickhouse': CLICKHOUSE_SLOW_QUERY_FALLBACK_SQL,
+    'gbase8a': GBASE8A_SLOW_QUERY_FALLBACK_SQL,
     # Oracle 11gR1 的 v$sql 无 max_elapsed_time 列（ORA-00904），降级版以 avg 充当 max
     'oracle': ORACLE_SLOW_QUERY_FALLBACK_SQL,
     # OB processlist 版 fallback：performance_schema 不可用/老版本 OB 的兜底（100% 兼容）
@@ -569,6 +622,7 @@ CONNECTION_TEMPLATES = {
     'dm': DM_CONNECTION_SQL,
     'tidb': TIDB_CONNECTION_SQL,
     'gbase': GBASE_CONNECTION_SQL,
+    'gbase8a': GBASE8A_CONNECTION_SQL,
     'db2': DB2_CONNECTION_SQL,
     'clickhouse': CLICKHOUSE_CONNECTION_SQL,
     # OceanBase MySQL 租户兼容 information_schema.processlist（含派生表 JOIN），
@@ -603,6 +657,7 @@ MAX_CONNECTION_DEFAULTS = {
     'dm': 1000,
     'tidb': 16384,
     'gbase': 100,       # Informix 血统无统一 max sessions 参数，用保守默认
+    'gbase8a': 1000,    # 8a MPP 常见默认量级；实际以 @@max_connections 为准
     'db2': 500,         # MAX_CONNECTIONS 因版本而异，取中位默认（查询失败时兜底）
     'clickhouse': 4096, # 官方默认 max_connections
     'oceanbase': 1000,  # OB 租户常见默认量级（实际以 @@global.max_connections 查询为准）
@@ -624,6 +679,7 @@ MAX_CONN_QUERY_SQL = {
     'sqlserver': "SELECT 32767 AS max_conn",
     'dm': "SELECT VALUE AS max_conn FROM V$DM_INI WHERE PARA_NAME = 'MAX_SESSIONS'",
     'tidb': "SELECT @@global.max_connections AS max_conn",
+    'gbase8a': "SELECT @@max_connections AS max_conn",  # 8a 用 @@ 变量，避免 GLOBAL_VARIABLES 版本差异
     'oceanbase': "SELECT @@global.max_connections AS max_conn",  # MySQL 租户兼容
     # db2：DBCFG 对监控账号通常不可见（实测空行集），直接用 MAX_CONNECTION_DEFAULTS 兜底
     'clickhouse': ("SELECT toUInt32(value) AS max_conn FROM system.server_settings "
