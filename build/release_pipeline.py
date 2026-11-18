@@ -65,11 +65,13 @@ class GitHub:
                 return result
             page += 1
 
-    def upload(self, release_id, path):
+    def upload(self, release_id, path, *, label=None):
         endpoint = (
             f"/repos/{self.repository}/releases/{release_id}/assets?name="
             + urllib.parse.quote(path.name)
         )
+        if label:
+            endpoint += '&label=' + urllib.parse.quote(label)
         connection = http.client.HTTPSConnection("uploads.github.com", timeout=900)
         try:
             connection.putrequest("POST", endpoint)
@@ -592,10 +594,231 @@ def publish(directory, version, sha):
     print(json.dumps({"tag": version, "url": release["html_url"], "published": True}))
 
 
+
+
+def staging_release(github, *, create=False):
+    run_id = os.environ['GITHUB_RUN_ID']
+    sha = os.environ['GITHUB_SHA']
+    if not run_id.isdigit() or not re.fullmatch(r'[a-f0-9]{40}', sha):
+        raise ValueError('Invalid staging run identity')
+    tag = 'ci-build-' + run_id
+    existing = next((item for item in github.pages('releases') if item['tag_name'] == tag), None)
+    body = f'{MARKER}\nTemporary CI transport for run {run_id}.\n源提交为 `{sha}`。'
+    if existing:
+        if not existing['draft'] or existing.get('body') != body:
+            raise ValueError('Staging release identity does not match this run')
+        return existing
+    if not create:
+        return None
+    return github.request('releases', 'POST', {'tag_name': tag, 'target_commitish': sha,
+                          'name': 'CI staging ' + run_id, 'body': body, 'draft': True, 'prerelease': True})
+
+
+def stage_upload(root, name, entries=None, github=None):
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', name):
+        raise ValueError('Invalid staging asset name')
+    github = github or GitHub()
+    staging = staging_release(github)
+    if not staging:
+        raise ValueError('Private release transport was not initialized')
+    root = root.resolve(strict=True)
+    files = set()
+    for entry in entries or ['.']:
+        path = root / entry
+        if not path.resolve().is_relative_to(root) or not path.exists():
+            raise ValueError('Staging entry is missing or outside its root')
+        files.update(path.rglob('*') if path.is_dir() else [path])
+    files = sorted(path for path in files if path.is_file())
+    if not files:
+        raise ValueError('Staging asset has no files')
+    with tempfile.TemporaryDirectory(prefix='dbpulse-stage-') as folder:
+        archive = Path(folder) / (name + '.zip')
+        with zipfile.ZipFile(archive, 'w') as package:
+            for path in files:
+                if not path.resolve().is_relative_to(root):
+                    raise ValueError('Staging file points outside its root')
+                package.write(path, path.relative_to(root), compress_type=(
+                    zipfile.ZIP_STORED if path.suffix == '.zip' else zipfile.ZIP_DEFLATED))
+        if archive.stat().st_size >= 2 * 1024 ** 3:
+            raise ValueError('Staging asset exceeds the GitHub Release 2 GiB limit')
+        for asset in github.pages(f"releases/{staging['id']}/assets"):
+            if asset['name'] == archive.name:
+                github.request('releases/assets/' + str(asset['id']), 'DELETE')
+        github.upload(staging['id'], archive, label='sha256:' + digest(archive))
+    print(json.dumps({'staged': name, 'files': len(files), 'draft': True}))
+
+
+class _NoAssetRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def download_staged_asset(github, asset, destination):
+    checksum = asset.get('digest') or asset.get('label') or ''
+    if not re.fullmatch(r'sha256:[a-f0-9]{64}', checksum):
+        raise ValueError('Staging asset has no SHA-256 receipt')
+    url = f"https://api.github.com/repos/{github.repository}/releases/assets/{asset['id']}"
+    request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + github.token,
+                                     'Accept': 'application/octet-stream', 'User-Agent': 'DBPulse-release-pipeline'})
+    try:
+        response = urllib.request.build_opener(_NoAssetRedirect).open(request, timeout=90)
+    except urllib.error.HTTPError as error:
+        if error.code not in (301, 302, 303, 307, 308):
+            raise
+        location = error.headers.get('Location', '')
+        if urllib.parse.urlsplit(location).scheme != 'https':
+            raise ValueError('Staging download requires HTTPS') from error
+        # The signed asset URL is fetched without forwarding the GitHub token.
+        response = urllib.request.urlopen(urllib.request.Request(location, headers={
+            'User-Agent': 'DBPulse-release-pipeline'}), timeout=90)
+    size = 0
+    with response, destination.open('wb') as stream:
+        for chunk in iter(lambda: response.read(1024 * 1024), b''):
+            size += len(chunk)
+            if size > asset['size']:
+                raise ValueError('Staging download exceeds its declared size')
+            stream.write(chunk)
+    if size != asset['size'] or digest(destination) != checksum.removeprefix('sha256:'):
+        raise ValueError('Staging download SHA-256 or size mismatch')
+
+
+def stage_download(output, name, github=None):
+    github = github or GitHub()
+    staging = staging_release(github)
+    if not staging:
+        raise ValueError('Private release transport is missing')
+    asset = next((item for item in github.pages(f"releases/{staging['id']}/assets")
+                  if item['name'] == name + '.zip' and item.get('state') == 'uploaded'), None)
+    if not asset:
+        raise ValueError('Required staging asset is missing: ' + name)
+    output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='dbpulse-stage-') as folder:
+        archive = Path(folder) / 'input.zip'
+        download_staged_asset(github, asset, archive)
+        with zipfile.ZipFile(archive) as package:
+            for info in package.infolist():
+                path = (output / info.filename).resolve()
+                if not path.is_relative_to(output.resolve()) or '\\' in info.filename or ':' in info.filename:
+                    raise ValueError('Unsafe staging archive path')
+            package.extractall(output)
+    print(json.dumps({'restored': name, 'sha256': asset.get('digest') or asset.get('label')}))
+
+
+def stage_cleanup(version, sha, github=None):
+    github = github or GitHub()
+    published = next((item for item in github.pages('releases') if item['tag_name'] == version), None)
+    if not published or published['draft'] or MARKER not in published.get('body', '') or f'源提交为 `{sha}`' not in published.get('body', ''):
+        raise ValueError('Staging cleanup requires a published release for this source')
+    expected = {f'DBPulse-{version}-{platform}.zip' for platform in (*TARGETS, 'Windows-Linux-Portable')}
+    expected.update({'release-manifest.json', 'SHA256SUMS.txt'})
+    uploaded = {item['name'] for item in published.get('assets', [])
+                if item.get('state') == 'uploaded' and item.get('size', 0) > 0}
+    if not expected <= uploaded:
+        raise ValueError('Published assets are incomplete; preserve the staging release')
+    staging = staging_release(github)
+    if not staging:
+        return
+    github.request('releases/' + str(staging['id']), 'DELETE')
+    try:
+        reference = github.request('git/ref/tags/' + staging['tag_name'])
+        if reference['object']['sha'] == sha:
+            github.request('git/refs/tags/' + staging['tag_name'], 'DELETE')
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+    print(json.dumps({'staging_removed': staging['tag_name']}))
+
+
+def cleanup_artifacts(github=None, *, apply=False, current_run=None):
+    """Reclaim temporary artifacts only after their exact source has a verified release."""
+    github = github or GitHub()
+    releases = {}
+    for release in github.pages('releases'):
+        tag = release.get('tag_name', '')
+        body = release.get('body') or ''
+        source = re.search(r'源提交为 `([0-9a-f]{40})`', body)
+        if release.get('draft') or release.get('prerelease') or not TRAIN.fullmatch(tag) or MARKER not in body or not source:
+            continue
+        assets = {asset['name'] for asset in release.get('assets', [])
+                  if asset.get('state') == 'uploaded' and asset.get('size', 0) > 0}
+        expected = {f'DBPulse-{tag}-{platform}.zip' for platform in (*TARGETS, 'Windows-Linux-Portable')}
+        expected.update({'release-manifest.json', 'SHA256SUMS.txt'})
+        if not expected <= assets:
+            continue
+        try:
+            reference = github.request('git/ref/tags/' + tag)
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                continue
+            raise
+        if reference['object'].get('type') != 'commit' or reference['object']['sha'] != source[1]:
+            continue
+        releases[source[1]] = tag
+    artifacts = []
+    page = 1
+    while True:
+        batch = github.request(f'actions/artifacts?per_page=100&page={page}')['artifacts']
+        artifacts.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    runs = {}
+    selected = []
+    for artifact in artifacts:
+        run = artifact.get('workflow_run') or {}
+        tag = releases.get(run.get('head_sha'))
+        if not tag or artifact.get('expired'):
+            continue
+        names = {f'portable-component-{platform}' for platform in TARGETS}
+        names |= {f'transfer-verification-{platform}' for platform in TARGETS}
+        names |= {'windows-transfer-fixture', 'release-candidate-' + tag}
+        if artifact['name'] not in names:
+            continue
+        run_id = run['id']
+        if run_id not in runs:
+            runs[run_id] = github.request('actions/runs/' + str(run_id))
+        details = runs[run_id]
+        if details.get('path', '').split('@')[0] != '.github/workflows/build-release.yml' or details.get('head_branch') != 'main':
+            continue
+        finished = details.get('status') == 'completed' and details.get('conclusion') == 'success'
+        publishing = (str(run_id) == str(current_run) == os.environ.get('GITHUB_RUN_ID')
+                      and run['head_sha'] == os.environ.get('GITHUB_SHA')
+                      and details.get('status') == 'in_progress')
+        if details.get('head_sha') != run['head_sha'] or not (finished or publishing):
+            continue
+        selected.append(artifact)
+    removed = 0
+    for artifact in selected if apply else []:
+        try:
+            github.request('actions/artifacts/' + str(artifact['id']), 'DELETE')
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        removed += 1
+    result = {'apply': apply, 'selected': len(selected), 'removed': removed,
+              'bytes': sum(artifact['size_in_bytes'] for artifact in selected)}
+    print(json.dumps(result))
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("plan")
+    commands.add_parser('stage-init')
+    stage_put = commands.add_parser('stage-upload')
+    stage_put.add_argument('--root', type=Path, required=True)
+    stage_put.add_argument('--name', required=True)
+    stage_put.add_argument('--entry', action='append')
+    stage_get = commands.add_parser('stage-download')
+    stage_get.add_argument('--output', type=Path, required=True)
+    stage_get.add_argument('--name', required=True)
+    stage_remove = commands.add_parser('stage-cleanup')
+    stage_remove.add_argument('--version', required=True)
+    stage_remove.add_argument('--sha', required=True)
+    cleanup = commands.add_parser('cleanup-artifacts')
+    cleanup.add_argument('--apply', action='store_true')
+    cleanup.add_argument('--current-run', default=None)
     notes_command = commands.add_parser("notes", help="Preview release notes without publishing")
     notes_command.add_argument("--version", required=True)
     notes_command.add_argument("--sha", default="HEAD")
@@ -627,6 +850,17 @@ def main():
     args = parser.parse_args()
     if args.command == "plan":
         plan()
+    elif args.command == 'stage-init':
+        value = staging_release(GitHub(), create=True)
+        print(json.dumps({"staging": value["tag_name"], "draft": True, "url": value.get("html_url")}))
+    elif args.command == 'stage-upload':
+        stage_upload(args.root, args.name, args.entry)
+    elif args.command == 'stage-download':
+        stage_download(args.output, args.name)
+    elif args.command == 'stage-cleanup':
+        stage_cleanup(args.version, args.sha)
+    elif args.command == 'cleanup-artifacts':
+        cleanup_artifacts(apply=args.apply, current_run=args.current_run)
     elif args.command == "notes":
         args.output.write_text(
             release_notes(args.version, args.sha, args.base), encoding="utf-8"

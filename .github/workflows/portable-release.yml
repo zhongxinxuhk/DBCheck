@@ -15,9 +15,23 @@ on:
         required: true
         default: v1.0.1
 permissions:
-  contents: read
+  contents: write
 jobs:
+  prepare:
+    name: Prepare private release transport
+    runs-on: ubuntu-24.04
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python build/release_pipeline.py stage-init
   native:
+    needs: prepare
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -81,22 +95,20 @@ jobs:
           docker run --rm -e GITHUB_SHA -v "$PWD:/src" -w /src debian:11-slim \
             /src/.portable-build/native-python/${{ matrix.platform }}/python/bin/python3.12 \
             build/release_pipeline.py check-component --bundle .portable-build/staged/DBPulse-Portable --platform '${{ matrix.platform }}' --output '.portable-build/staged/DBPulse-Portable/verification/${{ matrix.platform }}.json'
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: portable-component-${{ matrix.platform }}
-          path: |
-            .portable-build/staged/DBPulse-Portable/bin/${{ matrix.platform }}
-            .portable-build/staged/DBPulse-Portable/runtime/${{ matrix.platform }}
-            .portable-build/staged/DBPulse-Portable/verification/${{ matrix.platform }}.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 3
+      - name: Stage verified native component
+        shell: bash
+        run: |
+          python build/release_pipeline.py stage-upload --name 'portable-component-${{ matrix.platform }}' \
+            --root .portable-build/staged/DBPulse-Portable \
+            --entry 'bin/${{ matrix.platform }}' --entry 'runtime/${{ matrix.platform }}' \
+            --entry 'verification/${{ matrix.platform }}.json'
   assemble:
     name: Assemble release candidates
     needs: native
     runs-on: ubuntu-24.04
     env:
       RELEASE_VERSION: ${{ inputs.version }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -104,19 +116,16 @@ jobs:
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          pattern: portable-component-*
-          merge-multiple: true
-          path: .portable-build/components
+      - name: Restore verified native components
+        shell: bash
+        run: |
+          python build/release_pipeline.py stage-download --name portable-component-windows-x86_64 --output .portable-build/components
+          python build/release_pipeline.py stage-download --name portable-component-linux-x86_64 --output .portable-build/components
+          python build/release_pipeline.py stage-download --name portable-component-linux-arm64 --output .portable-build/components
       - run: python build/portable_release.py drivers --cache .portable-build/downloads
       - run: python build/release_pipeline.py assemble --components .portable-build/components --output release-assets --version "$RELEASE_VERSION" --sha "$GITHUB_SHA"
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: release-candidate-${{ inputs.version }}
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 3
+      - name: Stage verified release candidates
+        run: python build/release_pipeline.py stage-upload --name release-candidate --root release-assets
   windows-state:
     name: Create configuration using Windows executable
     needs: assemble
@@ -124,6 +133,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       PYTHONUTF8: '1'
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -131,19 +141,13 @@ jobs:
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: release-candidate-${{ inputs.version }}
-          path: release-assets
+      - name: Restore verified release candidates
+        run: python build/release_pipeline.py stage-download --name release-candidate --output release-assets
       - name: Save encrypted datasource, key file and changed account password
         shell: bash
         run: python build/release_pipeline.py transfer-seed --archive "release-assets/DBPulse-$RELEASE_VERSION-Windows-Linux-Portable.zip" --output windows-transfer-fixture.zip
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: windows-transfer-fixture
-          path: windows-transfer-fixture.zip
-          if-no-files-found: error
-          retention-days: 1
+      - name: Stage synthetic Windows migration fixture
+        run: python build/release_pipeline.py stage-upload --name windows-transfer-fixture --root . --entry windows-transfer-fixture.zip
   verify-transfer:
     name: Verify copied Windows state on ${{ matrix.platform }}
     needs: [assemble, windows-state]
@@ -159,6 +163,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       PYTHONUTF8: '1'
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -166,20 +171,14 @@ jobs:
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: release-candidate-${{ inputs.version }}
-          path: release-assets
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: windows-transfer-fixture
-          path: transfer-fixture
+      - name: Restore verified candidates and synthetic migration fixture
+        shell: bash
+        run: |
+          python build/release_pipeline.py stage-download --name release-candidate --output release-assets
+          python build/release_pipeline.py stage-download --name windows-transfer-fixture --output transfer-fixture
       - name: Verify credentials and user password without reconfiguration
         shell: bash
         run: python build/release_pipeline.py transfer-verify --archive "release-assets/DBPulse-$RELEASE_VERSION-${{ matrix.archive }}.zip" --fixture transfer-fixture/windows-transfer-fixture.zip --platform '${{ matrix.platform }}' --output 'verification/${{ matrix.platform }}.json'
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: transfer-verification-${{ matrix.platform }}
-          path: verification/*.json
-          if-no-files-found: error
-          retention-days: 7
+      - name: Record verified migration result
+        shell: bash
+        run: cat 'verification/${{ matrix.platform }}.json' >> "$GITHUB_STEP_SUMMARY"
