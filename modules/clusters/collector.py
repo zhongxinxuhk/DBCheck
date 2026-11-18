@@ -168,10 +168,11 @@ def _collect_node(instance, kind, previous=None):
     payload['jdbc_url'] = url
     command = [sys.executable,'--jdbc-collect-cli'] if getattr(sys,'frozen',False) else [
         sys.executable,str(PROJECT_ROOT/'modules/monitor/jdbc_collect_cli.py')]
-    environment = dict(os.environ,DBCheck_NO_GEVENT_PATCH='1')
+    environment = dict(os.environ,DBCheck_NO_GEVENT_PATCH='1',
+                       PYTHONIOENCODING='utf-8',PYTHONUTF8='1')
     try:
         process = subprocess.run(command,input=json.dumps(payload),capture_output=True,text=True,
-                                 timeout=35,env=environment)
+                                 encoding='utf-8',errors='replace',timeout=35,env=environment)
         # Existing CLI prints the structured batch on its final JSON line.
         lines = [line for line in process.stdout.splitlines() if line.strip().startswith('{')]
         if process.returncode or not lines:
