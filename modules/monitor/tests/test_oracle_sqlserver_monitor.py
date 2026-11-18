@@ -32,6 +32,8 @@ def test_oracle_sqlserver_templates_registered():
         assert key in queries.MAX_CONNECTION_DEFAULTS
 
     assert "NAME = 'sessions'" in queries.MAX_CONN_QUERY_SQL['oracle']
+    assert "'blocked'" in queries.ORACLE_CONNECTION_SQL
+    assert "'blocked'" in queries.SQLSERVER_CONNECTION_SQL
 
     assert screen_metrics.db_family('oracle') == 'oracle'
     assert screen_metrics.db_family('oracle_jdbc') == 'oracle'
@@ -161,3 +163,26 @@ def test_sqlserver_connection_dispatch(monkeypatch):
     assert 'SERVER=mssql-db,1433' in conn_str
     assert 'Database=master' in conn_str
     assert 'TrustServerCertificate=yes' in conn_str
+
+
+def test_connection_blocked_sessions_are_counted(monkeypatch):
+    engine = MonitorEngine()
+
+    def fake_query(instance_id, sql, timeout=None):
+        if sql == queries.ORACLE_CONNECTION_SQL:
+            return [
+                {'username': 'u1', 'state': 'blocked'},
+                {'username': 'u2', 'state': 'ACTIVE'},
+                {'username': 'u3', 'state': 'INACTIVE'},
+            ]
+        if sql == queries.MAX_CONN_QUERY_SQL['oracle']:
+            return [{'max_conn': 100}]
+        return []
+
+    monkeypatch.setattr(engine, '_connect_and_query', fake_query)
+    result = engine._collect_conn('ora-1', 'oracle', 'Oracle (db:1521)')
+
+    assert result['total'] == 3
+    assert result['max_conn'] == 100
+    assert result['connections'] == {'active': 1, 'idle': 1, 'blocked': 1}
+    assert result['usage_pct'] == 3.0

@@ -203,7 +203,8 @@ SELECT * FROM (
     s.machine AS host,
     s.program AS command,
     ROUND((SYSDATE - s.logon_time) * 24, 1) AS duration_h,
-    s.status AS state,
+    CASE WHEN s.blocking_session IS NOT NULL THEN 'blocked'
+         ELSE s.status END AS state,
     SUBSTR(s.sql_id, 1, 200) AS current_sql
   FROM v$session s
   WHERE s.type != 'BACKGROUND'
@@ -236,7 +237,8 @@ SELECT TOP 50
     DB_NAME(s.database_id) AS database_name,
     COALESCE(r.command, 'idle') AS command,
     ROUND(DATEDIFF(SECOND, ISNULL(r.start_time, s.last_request_start_time), GETDATE()) / 3600.0, 1) AS duration_h,
-    COALESCE(r.status, 'sleeping') AS state,
+    CASE WHEN r.blocking_session_id IS NOT NULL AND r.blocking_session_id <> 0
+         THEN 'blocked' ELSE COALESCE(r.status, 'sleeping') END AS state,
     SUBSTRING(st.text, 1, 200) AS current_sql,
     (SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE login_name = s.login_name) AS user_conn_count,
     (SELECT COUNT(*) FROM sys.dm_exec_sessions) AS total_connections
