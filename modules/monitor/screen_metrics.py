@@ -51,6 +51,9 @@ from modules.monitor.native_collect import NATIVE_DB_TYPES, collect_native
 _DB_FAMILY = {
     'mysql': 'mysql', 'mariadb': 'mysql', 'oceanbase': 'mysql', 'tidb': 'mysql',
     'percona': 'mysql',
+    # GBase 8a 是 MySQL 线协议 + information_schema，归入 mysql family；
+    # 其独有的 STATUS/TBS SQL 在 collect_extra 里按 8a 覆盖（见下方常量）。
+    'gbase8a': 'mysql',
     'postgresql': 'pg', 'pg': 'pg', 'ivorysql': 'pg',
     'oracle': 'oracle',
     'sqlserver': 'sqlserver', 'mssql': 'sqlserver',
@@ -87,6 +90,18 @@ MYSQL_TBS_SQL = (
 # 复制延迟（主从/级联；列名随版本可能是 Seconds_Behind_Master）
 MYSQL_REPL_SQL = "SHOW SLAVE STATUS"
 MYSQL_REPL_SQL8 = "SHOW REPLICA STATUS"
+
+# ── GBase 8a MPP 专属 ──
+# 8a 的 SHOW GLOBAL STATUS 不支持 MySQL 5.7+ 的 WHERE 过滤语法，取全量后由
+# collect_extra 按 Variable_name 解析；集群无 MySQL 主从复制，故不采 repl。
+GBASE8A_STAT_SQL = "SHOW GLOBAL STATUS"
+GBASE8A_TBS_SQL = (
+    "SELECT table_schema AS name, "
+    "ROUND(SUM(COALESCE(data_length, 0) + COALESCE(index_length, 0)) / 1048576, 1) AS total_mb "
+    "FROM information_schema.tables "
+    "WHERE table_schema NOT IN ('information_schema', 'gbase', 'gclusterdb', 'performance_schema') "
+    "GROUP BY table_schema ORDER BY total_mb DESC LIMIT 10"
+)
 
 # ── OceanBase（MySQL 租户）专属 ──
 # OB 的 SHOW GLOBAL STATUS 不提供 Queries / Com_commit / Com_rollback / Innodb_*
@@ -482,6 +497,12 @@ def collect_extra(engine, instance_id, db_type):
         # OceanBase（MySQL 租户）：计数器换 OB 原生 v$sysstat，容量查询 COALESCE 加固
         sqls = dict(sqls, ob_stat=OB_STAT_SQL, ob_stat_local=OB_STAT_SQL_LOCAL,
                     tbs=OB_TBS_SQL)
+    if sqls and normalize_db_type(db_type) == 'gbase8a':
+        # 8a 复用 mysql family 的计数器解析，但替换为 8a 兼容的 STATUS/TBS SQL；
+        # 集群无 MySQL 主从复制，移除 repl 键让 q() 直接返回 None，不刷错误日志。
+        sqls = dict(sqls, stat=GBASE8A_STAT_SQL, tbs=GBASE8A_TBS_SQL)
+        sqls.pop('repl', None)
+        sqls.pop('repl8', None)
     counters, extras = {}, {'tbs': None, 'repl_lag_s': None, 'lock_waits': None,
                             # RAC / ADG 身份与配对（仅 oracle family 填充，其余保持 None）
                             'role': None, 'db_unique_name': None, 'db_name': None,
@@ -492,6 +513,8 @@ def collect_extra(engine, instance_id, db_type):
         return counters, extras
 
     def q(key):
+        if key not in sqls:
+            return None
         try:
             return engine.run_query(instance_id, sqls[key])
         except Exception as e:

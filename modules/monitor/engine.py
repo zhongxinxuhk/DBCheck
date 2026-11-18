@@ -721,6 +721,24 @@ class MonitorEngine:
         # 「巡检通过、大屏宕机」的分裂现象。
         host, port, _tun = resolve_db_endpoint(inst)
 
+        if db_type == 'gbase8a':
+            # GBase 8a 走 MySQL 协议原生连接（不是 8s 的 JDBC 通道）。
+            # 端点已由 resolve_db_endpoint 处理过 SSH 隧道；只有真的拿到隧道
+            # 时才标记 _tunnel_ready（此时明文 pymysql 走已加密的本地转发），
+            # 否则保留直连路径，让 connect_gbase8a 继续强制 TLS CA 校验。
+            # 监控只取集群级 STATUS/PROCESSLIST，不绑定虚拟集群，故不传
+            # database/schema 触发 USE VC / select_db。
+            from modules.db_types.compatibility import connect_gbase8a
+            options = dict(inst)
+            options.update(host=host, port=port, password=password,
+                           database='', virtual_cluster='', schema='',
+                           ssh_tunnel=False)
+            if _tun is None:
+                options.pop('_tunnel_ready', None)
+            else:
+                options['_tunnel_ready'] = True
+            return connect_gbase8a(options)
+
         if db_type in ('mysql', 'mariadb', 'oceanbase', 'starrocks', 'doris'):
             # MariaDB / OceanBase MySQL 租户与 MySQL 协议/参数高度兼容，复用同款 pymysql 连接逻辑。
             # OceanBase MySQL 租户的 database 即租户名，默认 sys。
