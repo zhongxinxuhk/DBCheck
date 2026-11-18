@@ -22,6 +22,18 @@ def display(value):
     return value
 
 
+def source_display(key, value):
+    """端口列始终导出为整数单元格，保证导出的台账可以直接回导。"""
+    if key in {"port", "ssh_port"} and value not in (None, ""):
+        try:
+            number = float(str(value).strip())
+            if number.is_integer() and 1 <= int(number) <= 65535:
+                return int(number)
+        except (TypeError, ValueError):
+            pass
+    return display(value)
+
+
 def inventory_xlsx(records, history):
     """从已授权、已解密的台账快照导出原值，文本单元格按文本保存。"""
     from openpyxl import Workbook
@@ -128,7 +140,7 @@ def inventory_xlsx(records, history):
         m, s = r["metadata"], r["source"]
         rows.append(
             [r["configuration_id"], s["name"]]
-            + [s.get(k, "") for k in source_keys]
+            + [source_display(k, s.get(k, "")) for k in source_keys]
             + [m.get(k, "") for k in asset_keys]
         )
     sheet(
@@ -221,7 +233,7 @@ def inventory_xlsx(records, history):
         base + [SOURCE_FIELDS[k] for k in extras],
         [
             [r["configuration_id"], r["source"]["name"]]
-            + [r["source"].get(k, "") for k in extras]
+            + [source_display(k, r["source"].get(k, "")) for k in extras]
             for r in records
         ],
     )
