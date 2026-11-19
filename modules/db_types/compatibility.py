@@ -217,6 +217,19 @@ def is_loopback_endpoint(data):
         return False
 
 
+def plaintext_allowed(value):
+    """GBase 8a 明文直连必须由用户显式开启。
+
+    缺省、空串、0/false 一律返回 False，保持「直连需可信CA」的安全默认；
+    只有显式勾选「允许明文直连」才放行，避免静默降级。
+    """
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return bool(value)
+
+
 def connect_gbase8a(data):
     import pymysql
     import ssl
@@ -232,10 +245,17 @@ def connect_gbase8a(data):
             # 传输已由 SSH 通道加密，无需再叠 TLS。
             options.update(host=host,port=int(port))
             connection=pymysql.connect(**options)
+        elif plaintext_allowed(data.get('gbase8a_allow_plaintext')):
+            # 与 Navicat 默认一致：用户显式选择明文直连时不协商 TLS。
+            # 只有配置里明确开启才走到这里，默认路径继续强制 CA 校验。
+            print('[GBase 8a] 已启用明文直连（未使用 TLS），仅建议用于可信内网')
+            options.update(host=data.get('host') or data.get('ip'),port=int(data['port']))
+            connection=pymysql.connect(**options)
         else:
             ca=data.get('tls_ca_file')
             if not ca or not Path(ca).is_file():
-                raise ValueError('GBase 8a直连需要可信CA；也可配置数据库主机的SSH加密隧道')
+                raise ValueError('GBase 8a直连需要可信CA；若服务端未启用TLS（Navicat默认明文直连），'
+                                 '请开启「允许明文直连」，或配置数据库主机的SSH加密隧道')
             context=ssl.create_default_context(cafile=ca)
             context.minimum_version=ssl.TLSVersion.TLSv1_2
             options.update(host=data.get('host') or data.get('ip'),port=int(data['port']),ssl=context,defer_connect=True)

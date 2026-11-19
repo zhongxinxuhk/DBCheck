@@ -311,6 +311,8 @@ class DatabaseInstance:
     tls_ca_file: str = ""  # TLS CA 证书路径
     tls_cert_key_file: str = ""  # TLS 客户端证书路径
     tls_allow_invalid_certs: int = 0  # 是否允许无效证书（0/1）
+    # GBase 8a 专用：显式允许不经 TLS 的明文直连（默认 0 = 直连必须提供可信 CA）
+    gbase8a_allow_plaintext: int = 0
     # Redis / Redis Cluster 专用
     seed_nodes: str = ""    # 集群种子节点（逗号分隔 host:port，或 JSON 数组）
     # SQL Server (JDBC) 专用
@@ -698,6 +700,11 @@ class InstanceManager:
                 c.execute('ALTER TABLE instances ADD COLUMN "ssh_key_password" TEXT DEFAULT \'\'')
             except Exception:
                 pass
+            # 迁移：GBase 8a 明文直连开关（默认 0 = 直连继续强制 TLS CA 校验）
+            try:
+                c.execute('ALTER TABLE instances ADD COLUMN "gbase8a_allow_plaintext" INTEGER DEFAULT 0')
+            except Exception:
+                pass
             # 迁移：为旧表添加 jdbc_url 列（JDBC 完整连接串，Oracle JDBC 等优先于
             # host/port/service_name；缺失会导致监控采集回退用车段字段重建 URL，
             # 触发 issue #58 —— 大屏误报 Oracle 宕机）
@@ -721,6 +728,7 @@ class InstanceManager:
                     service_name TEXT DEFAULT '', gbase_server_name TEXT DEFAULT '', tenant TEXT DEFAULT '', sysdba INTEGER DEFAULT 0,
                     connect_mode TEXT DEFAULT '', auth_source TEXT DEFAULT '', auth_mechanism TEXT DEFAULT '', replica_set TEXT DEFAULT '',
                     tls INTEGER DEFAULT 0, tls_ca_file TEXT DEFAULT '', tls_cert_key_file TEXT DEFAULT '', tls_allow_invalid_certs INTEGER DEFAULT 0,
+                    gbase8a_allow_plaintext INTEGER DEFAULT 0,
                     ssh_host TEXT DEFAULT '', ssh_port INTEGER DEFAULT 22,
                     ssh_user TEXT DEFAULT '', ssh_password TEXT DEFAULT '',
                     ssh_key_file TEXT DEFAULT '', ssh_key_password TEXT DEFAULT '', ssh_enabled INTEGER DEFAULT 0,
@@ -743,10 +751,11 @@ class InstanceManager:
                     INSERT OR REPLACE INTO instances
                     (id, name, db_type, host, port, "user", password, "database", service_name, gbase_server_name, tenant, sysdba,
                      connect_mode, auth_source, auth_mechanism, replica_set, tls, tls_ca_file, tls_cert_key_file, tls_allow_invalid_certs,
+                     gbase8a_allow_plaintext,
                      ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_file, ssh_key_password, ssh_enabled, ssh_tunnel,
                      tags, "group", enabled, description, created_at, updated_at, connection_mode,
                      encrypt, trust_server_certificate, use_sid, driver_version, jdbc_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     d.get("id", ""), d.get("name", ""), d.get("db_type", ""),
                     d.get("host", ""), d.get("port", 0), d.get("user", ""),
@@ -761,6 +770,7 @@ class InstanceManager:
                     d.get("tls_ca_file", ""),
                     d.get("tls_cert_key_file", ""),
                     1 if d.get("tls_allow_invalid_certs") else 0,
+                    1 if d.get("gbase8a_allow_plaintext") else 0,
                     d.get("ssh_host", ""), d.get("ssh_port", 22),
                     d.get("ssh_user", ""), d.get("ssh_password", ""),
                     d.get("ssh_key_file", ""), d.get("ssh_key_password", ""), 1 if d.get("ssh_enabled") else 0,
@@ -854,6 +864,7 @@ class InstanceManager:
             "tls_ca_file": "TEXT DEFAULT ''",
             "tls_cert_key_file": "TEXT DEFAULT ''",
             "tls_allow_invalid_certs": "INTEGER DEFAULT 0",
+            "gbase8a_allow_plaintext": "INTEGER DEFAULT 0",
             "ssh_host": "TEXT DEFAULT ''",
             "ssh_port": "INTEGER DEFAULT 22",
             "ssh_user": "TEXT DEFAULT ''",
