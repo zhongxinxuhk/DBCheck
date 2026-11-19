@@ -61,6 +61,20 @@ def test_desktop_serial_uses_the_web_license_identity(monkeypatch):
     assert device_serial_number() == serial
 
 
+def test_desktop_and_web_serial_share_one_cached_value(monkeypatch, tmp_path):
+    """The window, the web payload and activation codes use one serial file."""
+    from modules.system_info import license as license_service
+
+    monkeypatch.setattr(license_service, "_SERIAL_PATH", tmp_path / "device_serial.txt")
+    monkeypatch.setattr(
+        license_service, "_LICENSE_PATH", tmp_path / "system_license.json"
+    )
+    expected = license_service.get_device_serial()
+    assert (tmp_path / "device_serial.txt").read_text().strip() == expected
+    assert device_serial_number() == expected
+    assert license_service.get_license_info()["device_serial"] == expected
+
+
 def test_activation_code_is_extracted_from_clipboard_text():
     code = "DBP2.eyJ2IjoyfQ." + "A" * 64
     assert clipboard_activation_code("激活码：\n" + code + "\n请勿外传") == code

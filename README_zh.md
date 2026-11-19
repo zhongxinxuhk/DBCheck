@@ -1153,6 +1153,12 @@ cd dist
 dbcheck.exe
 ```
 
+### Windows 离线更新
+
+在状态窗口点击“离线更新”，选择由本版本构建脚本生成的完整 Windows 离线包（ZIP，包含 `offline-update.json`）。更新会先校验版本、目标平台、文件路径、PE 架构和哈希，然后停止后台服务；当前窗口退出后，离线包内的独立更新助手会替换程序文件并自动重启。
+
+`data/` 数据目录不会被覆盖，账号、数据源、台账、授权、加密密钥、日志和备份都会保留；`modules/pro/rules/custom` 与 `overrides.yaml` 也会在替换后恢复。旧程序文件保存在 `data/backups/offline_update/`，启动失败会自动回滚。
+
 ## Linux
 
 ```bash

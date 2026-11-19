@@ -41,6 +41,14 @@ if getattr(sys, 'frozen', False):
     if os.path.isdir(_packaged_java):
         os.environ.setdefault('JAVA_HOME', _packaged_java)
 
+# ── 离线更新助手入口（必须在便携目录引导和单实例守卫之前）──────────────
+# 更新助手由新解压的离线包内 dbcheck.exe 启动，运行在临时目录中，
+# 因此不会锁住待替换的旧 _internal，也不会触发旧实例的单实例锁。
+if '--offline-update-helper' in sys.argv[1:]:
+    from modules.desktop.offline_update import helper_main as _offline_update_helper
+
+    sys.exit(_offline_update_helper())
+
 from modules.core.portable import bootstrap as _portable_bootstrap
 _portable_bootstrap()
 

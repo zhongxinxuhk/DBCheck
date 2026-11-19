@@ -185,6 +185,17 @@ def stage_resources(destination, required_platforms=None):
         metadata = json.loads(marker.read_text())
         if metadata.get("layout") != "shared-multi-platform":
             raise ValueError("Existing destination is not a DBPulse portable bundle")
+        capability = destination / "offline-update.json"
+        if not capability.is_file():
+            capability.write_text(
+                json.dumps(
+                    {"schema": 1, "helper": "--offline-update-helper"},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         return metadata
     if any(destination.iterdir()):
         raise ValueError("Resource staging destination must be empty")
@@ -212,6 +223,15 @@ def stage_resources(destination, required_platforms=None):
         if not valid_driver:
             jar.unlink()
     shutil.copy2(ROOT / "modules/config/version.json", destination / "version.json")
+    (destination / "offline-update.json").write_text(
+        json.dumps(
+            {"schema": 1, "helper": "--offline-update-helper"},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     for name in ("LICENSE", "NOTICE"):
         shutil.copy2(ROOT / name, destination / name)
     shutil.copy2(ROOT / "build/portable/start.sh", destination / "start.sh")

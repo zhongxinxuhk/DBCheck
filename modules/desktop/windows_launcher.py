@@ -21,6 +21,7 @@ import psutil
 from modules.desktop.local_backup import LocalBackup, RecoveryRequired
 from modules.desktop.log_output import LogOutput
 from modules.desktop.maintenance import Maintenance, CrashRecovery
+from modules.desktop.offline_update import OfflineUpdate, OfflineUpdateError
 
 ADDRESS = "http://127.0.0.1:5003"
 # 大屏为匿名只读页，点击后无需登录即可投屏查看实例状态。
@@ -1426,6 +1427,9 @@ def main():
     apply_window_chrome(root)
     busy = False
     quitting = False
+    restarting_for_update = False
+    pending_update = None
+    updater = OfflineUpdate(directory)
     closing = threading.Event()
     test_mode = "--desktop-self-test" in sys.argv
     test_ok = False
@@ -1461,6 +1465,31 @@ def main():
         recovery.intentional(False)
         action(backend.stop, "正在停止服务…")
 
+    def update_progress(message):
+        events.put(("log", "[更新] " + message + "\n"))
+
+    def prepare_offline_update():
+        if busy or pending_update is not None:
+            return
+        selected = filedialog.askopenfilename(
+            parent=root,
+            title="选择 DBPulse 离线更新包",
+            filetypes=[("DBPulse 离线更新包", "*.zip")],
+        )
+        if not selected:
+            return
+
+        def prepare():
+            prepared = updater.prepare(selected, update_progress)
+            if not backend.owned_running() and backend.healthy():
+                prepared.cleanup()
+                raise OfflineUpdateError(
+                    "检测到其他启动方式运行的服务，请先停止该服务后再离线更新"
+                )
+            events.put(("update_prepared", prepared))
+
+        action(prepare, "正在校验离线更新包…")
+
     start = ttk.Button(
         buttons, text="启动服务", command=start_service,
         style="Primary.TButton", cursor="hand2",
@@ -1482,6 +1511,13 @@ def main():
         command=lambda: webbrowser.open(MONITOR_ADDRESS),
         style="Link.TButton", cursor="hand2",
     ).pack(side="left", padx=(10, 0))
+    tk.Frame(buttons, bg=HAIRLINE_SOFT, width=1, height=20).pack(
+        side="right", padx=14
+    )
+    offline_update_button = ttk.Button(
+        buttons, text="离线更新", command=prepare_offline_update, cursor="hand2"
+    )
+    offline_update_button.pack(side="right")
 
     def progress(message):
         events.put(("log", "[备份] " + message + "\n"))
@@ -1590,6 +1626,66 @@ def main():
     )
     settings_button.pack(side="left", padx=(8, 0))
 
+    def confirm_offline_update(prepared):
+        if closing.is_set() or quitting:
+            prepared.cleanup()
+            return
+        summary = prepared.summary()
+        size = summary["bytes"] / (1024 * 1024)
+        message = (
+            "将使用以下离线包更新本机程序：\n\n"
+            + Path(summary["source"]).name
+            + "\n版本：" + (summary["current_version"] or "未知")
+            + " → " + summary["version"]
+            + "\n类型：" + summary["mode_label"]
+            + f"\n文件：{summary['files']} 个（约 {size:.1f} MB）\n\n"
+            "更新期间后台服务会停止，当前窗口会退出；更新助手完成文件替换后会自动重新启动。\n"
+            "data 数据目录（账号、数据源、台账、授权、密钥、日志与备份）不会被覆盖。\n"
+            "旧程序文件会保留在：\n" + summary["backup"] + "\n\n"
+            "确定开始离线更新？"
+        )
+        if not messagebox.askyesno("离线更新", message, parent=root):
+            prepared.cleanup()
+            return
+
+        def handoff():
+            handed_off = False
+            was_running = backend.owned_running()
+            if not was_running and backend.healthy():
+                prepared.cleanup()
+                raise OfflineUpdateError(
+                    "检测到其他启动方式运行的服务，请先停止该服务后再离线更新"
+                )
+            try:
+                if was_running:
+                    recovery.intentional(False)
+                    update_progress("正在停止后台服务…")
+                    backend.stop()
+                    if not updater._wait_healthy(
+                        lambda: not backend.healthy(), 15.0, 0.5
+                    ):
+                        raise OfflineUpdateError("后台服务未能停止，已取消更新")
+                updater.handoff(
+                    prepared,
+                    launcher_pid=os.getpid(),
+                    was_running=was_running,
+                    progress=update_progress,
+                )
+                handed_off = True
+                events.put(("update_handoff", summary["version"]))
+            except Exception:
+                if not handed_off:
+                    prepared.cleanup()
+                if was_running and not backend.owned_running():
+                    try:
+                        backend.start()
+                        recovery.intentional(True)
+                    except Exception:
+                        pass
+                raise
+
+        action(handoff, "正在停止服务并准备离线更新…")
+
     def maintenance_tick():
         if not busy and not quitting:
             signal = recovery.observe(
@@ -1694,7 +1790,7 @@ def main():
         action(backend.stop)
 
     def poll():
-        nonlocal busy, quitting
+        nonlocal busy, quitting, restarting_for_update, pending_update
         for _ in range(100):
             try:
                 event = events.get_nowait()
@@ -1710,6 +1806,12 @@ def main():
                     backend.error = message
                     append_log("[错误] " + message + "\n")
                     show()
+                elif kind == "update_prepared":
+                    pending_update = message
+                elif kind == "update_handoff":
+                    restarting_for_update = True
+                    quitting = True
+                    detail.set("更新助手已启动，正在退出并应用更新…")
             elif event == "idle":
                 busy = False
                 tray.busy = False
@@ -1726,6 +1828,14 @@ def main():
             elif isinstance(event, bool):
                 tray.running = event
 
+        if quitting and pending_update is not None:
+            pending_update.cleanup()
+            pending_update = None
+        if pending_update is not None and not busy and not quitting:
+            prepared = pending_update
+            pending_update = None
+            root.after(20, lambda item=prepared: confirm_offline_update(item))
+
         tray.stoppable = backend.owned_running()
         pending = tray.stoppable and not tray.running
         status.set("运行中" if tray.running else "启动中…" if pending else "已停止")
@@ -1740,7 +1850,13 @@ def main():
         stop.configure(
             state="normal" if not busy and backend.owned_running() else "disabled"
         )
-        for button in (export_button, import_button, verify_button, settings_button):
+        for button in (
+            export_button,
+            import_button,
+            verify_button,
+            settings_button,
+            offline_update_button,
+        ):
             button.configure(state="disabled" if busy else "normal")
         if not busy:
             detail.set(
@@ -1752,7 +1868,7 @@ def main():
                 )
             )
         if quitting and not busy:
-            if backend.error:
+            if backend.error and not restarting_for_update:
                 detail.set("退出失败：" + backend.error)
                 quitting = False
             else:
