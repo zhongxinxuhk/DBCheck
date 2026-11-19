@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 FORMAT = "dbpulse-desktop-backup"
+FORMAT_VERSION = 1
 TRANSIENT = {"desktop_process.json", "inspection_leases.db"}
 SCOPE_NAMES = ("data", "custom_rules", "rule_overrides")
 
@@ -168,15 +169,20 @@ class LocalBackup:
         ):
             raise ValueError("备份缺少有效清单")
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-        if (
-            not isinstance(manifest, dict)
-            or manifest.get("format") != FORMAT
-            or manifest.get("version") != 1
-        ):
+        if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
             raise ValueError("请选择由 DBPulse 状态窗口导出的备份 ZIP")
-        if manifest.get("scopes") != list(SCOPE_NAMES) or not isinstance(
-            manifest.get("files"), list
-        ):
+        # v1.0.x 早期清单可能没有 version 字段；格式和逐文件校验保持不变时按 v1 读取。
+        # 高版本备份显式拒绝，避免新版本新增的数据被旧版程序静默丢弃。
+        try:
+            version = int(manifest.get("version", FORMAT_VERSION))
+        except (TypeError, ValueError):
+            raise ValueError("备份版本信息不正确") from None
+        if version > FORMAT_VERSION:
+            raise ValueError("备份由更高版本的 DBPulse 创建，请先升级本程序再导入")
+        if version < 1:
+            raise ValueError("不支持该旧版本的数据备份")
+        manifest["version"] = version
+        if not isinstance(manifest.get("files"), list):
             raise ValueError("备份清单的数据范围不正确")
         seen = set()
         for item in manifest["files"]:
@@ -229,6 +235,20 @@ class LocalBackup:
             item["path"].startswith("data/") for item in manifest["files"]
         ):
             raise ValueError("备份文件与清单不一致或缺少系统数据")
+        scopes = manifest.get("scopes")
+        if scopes is None:
+            # 更早的状态窗口只写文件清单，没有 scopes 字段；按实际文件推断，
+            # 且不允许把空清单当成全量备份。
+            inferred = {
+                PurePosixPath(item["path"]).parts[0]
+                for item in manifest["files"]
+            }
+            if "data" not in inferred:
+                raise ValueError("备份清单的数据范围不正确")
+            scopes = [scope for scope in SCOPE_NAMES if scope in inferred]
+            manifest["scopes"] = scopes
+        elif scopes != list(SCOPE_NAMES):
+            raise ValueError("备份清单的数据范围不正确")
         return manifest
 
     @staticmethod
@@ -354,7 +374,7 @@ class LocalBackup:
         notify("备份验证通过，可用于导入恢复")
         return {
             "files": len(manifest["files"]),
-            "created_at": manifest["created_at"],
+            "created_at": manifest.get("created_at", ""),
             "verified": True,
         }
 
@@ -386,7 +406,7 @@ class LocalBackup:
             stage = Path(directory)
             manifest = self._extract_verified(source, stage, notify)
             # Resource replacements are prepared on their own filesystem.
-            for scope in SCOPE_NAMES:
+            for scope in manifest.get("scopes", SCOPE_NAMES):
                 target = self.scopes[scope]
                 content = stage / scope
                 if scope == "rule_overrides":

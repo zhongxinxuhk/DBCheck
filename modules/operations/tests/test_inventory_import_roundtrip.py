@@ -6,7 +6,7 @@
 import io
 
 import pytest
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from modules.operations.exports import inventory_xlsx
 from modules.operations.imports import parse_excel, source_value
@@ -57,3 +57,82 @@ def test_exported_ledger_can_be_reimported(port, ssh_port):
         assert isinstance(port_cell, int)
     finally:
         workbook.close()
+
+
+def test_legacy_ledger_sheet_titles_and_headers_are_accepted():
+    """低版本台账的旧工作表名/旧列名应能映射到当前台账字段。"""
+    workbook = Workbook()
+    page = workbook.active
+    page.title = "资产台账"
+    page.append([
+        "配置项编号", "数据源名称", "数据库类型", "数据库地址", "端口",
+        "账号", "数据库密码", "数据库名", "启用", "系统归属",
+    ])
+    page.append([
+        "CI-LEGACY", "旧版库", "mysql", "10.0.0.8", "3306",
+        "root", "placeholder", "legacy_db", "是", "旧系统",
+    ])
+
+    connection = workbook.create_sheet("数据源连接")
+    connection.append(["配置项编号", "JDBC连接串"])
+    connection.append(["CI-LEGACY", "jdbc:mysql://10.0.0.8:3306/legacy_db"])
+
+    basic = workbook.create_sheet("数据库基本信息")
+    basic.append(["配置项编号", "数据库名称", "字符集"])
+    basic.append(["CI-LEGACY", "legacy_db", "utf8mb4"])
+
+    policy = workbook.create_sheet("备份策略")
+    policy.append([
+        "配置项编号", "备份窗口", "备份类型", "内容", "方式",
+        "执行频率", "保留周期", "备份责任人",
+    ])
+    policy.append([
+        "CI-LEGACY", "每日 02:00", "全量", "全库", "物理",
+        "每天", "30天", "张三",
+    ])
+
+    workbook.create_sheet("说明").append(["旧版模板说明，导入时应忽略"])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    parsed = parse_excel(buffer.getvalue())
+
+    assert len(parsed) == 1
+    source = parsed[0]["source"]
+    assert source["name"] == "旧版库"
+    assert source["db_type"] == "mysql"
+    assert source["host"] == "10.0.0.8"
+    assert source["port"] == 3306
+    assert source["user"] == "root"
+    assert source["password"] == "placeholder"
+    assert source["database"] == "legacy_db"
+    assert source["enabled"] is True
+    assert source["jdbc_url"] == "jdbc:mysql://10.0.0.8:3306/legacy_db"
+    assert parsed[0]["metadata"]["system"] == "旧系统"
+    assert parsed[0]["metadata"]["charset"] == "utf8mb4"
+    assert "owner" not in parsed[0]["metadata"]
+    policy_row = parsed[0]["metadata"]["tables"]["backup_policies"][0]
+    assert policy_row["window"] == "每日 02:00"
+    assert policy_row["data_type"] == "全量"
+    assert policy_row["content"] == "全库"
+    assert policy_row["method"] == "物理"
+    assert policy_row["frequency"] == "每天"
+    assert policy_row["retention"] == "30天"
+    assert policy_row["owner"] == "张三"
+
+
+def test_unknown_nonempty_sheet_still_rejects_instead_of_silently_dropping_data():
+    workbook = Workbook()
+    page = workbook.active
+    page.title = "全品类数据库资产底账清单"
+    page.append(["配置项编号", "资产名称", "数据库类型", "数据库IP/主机", "数据库端口"])
+    page.append(["CI-001", "测试库", "mysql", "10.0.0.1", 3306])
+    workbook.create_sheet("旧版额外数据").append(
+        ["配置项编号", "说明", "CI-001", "不能静默丢弃"]
+    )
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    with pytest.raises(ValueError, match="不支持的工作表"):
+        parse_excel(buffer.getvalue())
