@@ -25,6 +25,12 @@ MAIN_TITLES = {
     "全品类数据库资产底账",
 }
 SHEET_ALIASES = {
+    "全品类数据库资产底账清单": MAIN,
+    "资产台账": MAIN,
+    "数据库资产台账": MAIN,
+    "资产底账清单": MAIN,
+    "资产底账": MAIN,
+    "全品类数据库资产底账": MAIN,
     "数据库基本信息": "数据库基本信息表",
     "数据库基本信息表": "数据库基本信息表",
     "数据源连接": "数据源连接配置",
@@ -107,19 +113,27 @@ def _canonical_row(values):
     return row
 
 
-def _header_matches(values, require_name):
+def _has_header(labels, canonical):
+    return canonical in labels or any(
+        alias in labels for alias in HEADER_ALIASES.get(canonical, ())
+    )
+
+
+def _header_matches(values, require_name, require_source=False):
     labels = {_text(value) for value in values if isinstance(value, str)}
-    has_ci = "配置项编号" in labels or any(
-        alias in labels for alias in HEADER_ALIASES["配置项编号"]
-    )
-    if not has_ci or not require_name:
-        return has_ci
-    return "资产名称" in labels or any(
-        alias in labels for alias in HEADER_ALIASES["资产名称"]
-    )
+    if not _has_header(labels, "配置项编号"):
+        return False
+    if require_source and not any(
+        _has_header(labels, label)
+        for label in ("数据库类型", "数据库IP/主机", "数据库端口")
+    ):
+        return False
+    if not require_name:
+        return True
+    return _has_header(labels, "资产名称")
 
 
-def rows(page, require_name=True):
+def rows(page, require_name=True, require_source=False):
     header = None
     for number, cells in enumerate(page.iter_rows(), 1):
         values = []
@@ -131,7 +145,7 @@ def rows(page, require_name=True):
                 value = value.isoformat()
             values.append(value)
         if header is None:
-            if _header_matches(values, require_name):
+            if _header_matches(values, require_name, require_source):
                 header = values
             elif number > 10:
                 raise ValueError(page.title + "缺少标准表头")
@@ -158,7 +172,7 @@ def _main_sheet(workbook):
     # 兼容没有标准标题但保留了标准表头的旧模板。
     for page in workbook:
         try:
-            rows(page, require_name=True).__next__()
+            rows(page, require_name=True, require_source=True).__next__()
         except StopIteration:
             return page
         except ValueError:
@@ -247,7 +261,9 @@ def parse_excel(content):
             if page is main:
                 continue
             title = SHEET_ALIASES.get(_text(page.title), _text(page.title))
-            if title in {MAIN, "台账变更记录"}:
+            if title == MAIN:
+                raise ValueError("台账包含重复主表：" + page.title)
+            if title == "台账变更记录":
                 continue
             if title in seen:
                 raise ValueError("台账包含重复工作表：" + page.title)

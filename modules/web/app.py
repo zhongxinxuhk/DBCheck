@@ -7023,6 +7023,7 @@ def api_monitor_slow_queries():
     try:
         from modules.monitor.engine import (
             build_slow_source_catalog,
+            flatten_slow_queries,
             get_monitor_engine,
         )
         engine = get_monitor_engine()
@@ -7035,25 +7036,7 @@ def api_monitor_slow_queries():
             # 实例表读取失败不应让慢查询列表整体 500；退回引擎快照。
             instances = None
         sources = build_slow_source_catalog(instances, data)
-        current_ids = (
-            {item.get('instance_id') for item in sources}
-            if instances is not None
-            else None
-        )
-        items = []
-        for iid, snapshot in (data or {}).items():
-            if current_ids is not None and iid not in current_ids:
-                continue
-            for row in snapshot.get('data', []):
-                items.append({
-                    'instance_id': iid,
-                    'source': snapshot.get('label', iid),
-                    'label': snapshot.get('label', iid),
-                    'db_type': snapshot.get('db_type', ''),
-                    'error': snapshot.get('error'),
-                    'ts': snapshot.get('ts', 0),
-                    **row,
-                })
+        items = flatten_slow_queries(data, sources)
         return jsonify({
             'ok': True,
             'items': items,

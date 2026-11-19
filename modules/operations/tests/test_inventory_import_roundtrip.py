@@ -136,3 +136,42 @@ def test_unknown_nonempty_sheet_still_rejects_instead_of_silently_dropping_data(
 
     with pytest.raises(ValueError, match="不支持的工作表"):
         parse_excel(buffer.getvalue())
+
+
+def test_main_sheet_fallback_ignores_sheets_without_source_columns():
+    workbook = Workbook()
+    note = workbook.active
+    note.title = "说明"
+    note.append(["配置项编号", "资产名称"])
+    note.append(["CI-NOTE", "说明页不是主表"])
+
+    legacy = workbook.create_sheet("旧版资产")
+    legacy.append([
+        "配置项编号", "资产名称", "数据库类型", "数据库IP/主机", "数据库端口",
+    ])
+    legacy.append(["CI-001", "测试库", "mysql", "10.0.0.1", 3306])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    parsed = parse_excel(buffer.getvalue())
+    assert len(parsed) == 1
+    assert parsed[0]["source"]["name"] == "测试库"
+    assert parsed[0]["source"]["host"] == "10.0.0.1"
+
+
+def test_duplicate_main_sheet_is_rejected_instead_of_silently_ignored():
+    workbook = Workbook()
+    main = workbook.active
+    main.title = "全品类数据库资产底账清单"
+    main.append(["配置项编号", "资产名称", "数据库类型", "数据库IP/主机", "数据库端口"])
+    main.append(["CI-001", "主表", "mysql", "10.0.0.1", 3306])
+    duplicate = workbook.create_sheet("资产台账")
+    duplicate.append(["配置项编号", "资产名称", "数据库类型", "数据库IP/主机", "数据库端口"])
+    duplicate.append(["CI-002", "重复表", "mysql", "10.0.0.2", 3306])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    with pytest.raises(ValueError, match="重复主表"):
+        parse_excel(buffer.getvalue())

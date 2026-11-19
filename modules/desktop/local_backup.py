@@ -247,8 +247,20 @@ class LocalBackup:
                 raise ValueError("备份清单的数据范围不正确")
             scopes = [scope for scope in SCOPE_NAMES if scope in inferred]
             manifest["scopes"] = scopes
-        elif scopes != list(SCOPE_NAMES):
+        elif (
+            not isinstance(scopes, list)
+            or not all(isinstance(scope, str) for scope in scopes)
+            or not scopes
+            or "data" not in scopes
+            or len(set(scopes)) != len(scopes)
+            or any(scope not in SCOPE_NAMES for scope in scopes)
+        ):
             raise ValueError("备份清单的数据范围不正确")
+        else:
+            # 旧版可能只声明 data；按声明范围恢复，未声明的规则目录保持现状。
+            manifest["scopes"] = [
+                scope for scope in SCOPE_NAMES if scope in scopes
+            ]
         return manifest
 
     @staticmethod

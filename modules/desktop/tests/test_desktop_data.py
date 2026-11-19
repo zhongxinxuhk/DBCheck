@@ -568,7 +568,7 @@ def test_legacy_data_only_backup_preserves_current_rule_files(installation, tmp_
     def change(content):
         manifest = json.loads(content["manifest.json"])
         manifest.pop("version", None)
-        manifest.pop("scopes", None)
+        manifest["scopes"] = ["data"]
         manifest["files"] = [
             item for item in manifest["files"] if item["path"].startswith("data/")
         ]
