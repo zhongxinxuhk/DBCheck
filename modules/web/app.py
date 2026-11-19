@@ -1571,7 +1571,9 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
             module_name='main_gbase8a',connect_test=test_gbase8a_connection,
             connect_test_args=lambda info:[{**info,'host':info['ip']}],
             getdata_args=lambda info:([info['ip'],info['port'],info['user'],info['password']],
-                                     {'database':info.get('database'),'template_id':template_id,'ssh_info':{'tls_ca_file':info.get('tls_ca_file','')}}),
+                                     {'database':info.get('database'),'template_id':template_id,
+                                      'ssh_info':{'tls_ca_file':info.get('tls_ca_file',''),
+                                                  'gbase8a_allow_plaintext':info.get('gbase8a_allow_plaintext',0)}}),
             conn_attr='conn_db2',smart_analyze='smart_analyze_gbase8a',
             filename_key='webui.gbase8a_report_filename',history_db_type='gbase8a',instance_prefix='gbase8a',
             error_task_name='GBase 8a MPP',log_start_key='webui.log_gbase8a_start',err_module_key='webui.err_gbase8a_module',
@@ -1739,6 +1741,8 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
 
         if db_type=='gbase8a':
             ssh_info['tls_ca_file']=db_info.get('tls_ca_file','')
+            # 明文直连开关必须随 ssh_info 一起下传；缺省 0 = 保持强制 TLS 校验
+            ssh_info['gbase8a_allow_plaintext']=db_info.get('gbase8a_allow_plaintext',0)
 
         # MongoDB 专用参数透传到 ssh_info（供插件 getData → MongoConnectionConfig 使用）
         if db_type == 'mongodb':
@@ -5399,7 +5403,9 @@ def api_start_inspection():
             db_info['ssh_tunnel'] = False
 
         if db_type=='gbase8a':
-            db_info['tls_ca_file']=(instance if datasource_id else data).get('tls_ca_file','')
+            _gbase_src = instance if datasource_id else data
+            db_info['tls_ca_file']=_gbase_src.get('tls_ca_file','')
+            db_info['gbase8a_allow_plaintext']=_gbase_src.get('gbase8a_allow_plaintext',0) or 0
         from modules.operations.policy import normalize_policy
         inspection_limits = normalize_policy(data.get('inspection_limits') or {})
         inspection_timeout = data.get('inspection_timeout', JDBC_INSPECTION_TIMEOUT)
@@ -8118,6 +8124,11 @@ def api_pro_datasource_add():
             gbase_server_name=data.get('gbase_server_name', ''),
             tenant=data.get('tenant', ''),
             seed_nodes=data.get('seed_nodes', ''),
+            # GBase 8a 直连参数：此前新增接口漏传 tls_ca_file，导致表单里填的 CA
+            # 路径根本没有落库，巡检时永远报「直连需要可信CA」。
+            tls_ca_file=data.get('tls_ca_file', '') if _db_type == 'gbase8a' else '',
+            gbase8a_allow_plaintext=(bool(data.get('gbase8a_allow_plaintext', False))
+                                     if _db_type == 'gbase8a' else False),
             # SQL Server (JDBC) 类型缺省走 jdbc；其它类型保持 odbc（向后兼容）
             connection_mode=data.get('connection_mode') or ('jdbc' if _db_type == 'sqlserver_jdbc' else 'odbc'),
             encrypt=bool(data.get('encrypt', False)) if _db_type == 'sqlserver_jdbc' else False,
@@ -12015,6 +12026,11 @@ def _stream_inspection_response(data, message, session_id, chat_context):
         db_info['jdbc_url'] = ds.get('jdbc_url') or ''
         db_info['encrypt'] = bool(ds.get('encrypt', False))
         db_info['trust_server_certificate'] = bool(ds.get('trust_server_certificate', True))
+    # GBase 8a：直连 TLS 参数与显式明文开关必须随 db_info 下传，
+    # 否则聊天/接口触发的巡检会永远停在「直连需要可信CA」。
+    if db_type == 'gbase8a':
+        db_info['tls_ca_file'] = ds.get('tls_ca_file', '')
+        db_info['gbase8a_allow_plaintext'] = ds.get('gbase8a_allow_plaintext', 0) or 0
 
     inspector_name = data.get('inspector_name', 'Jack')
     tasks[task_id] = {
@@ -12668,6 +12684,11 @@ def api_chat():
                 db_info['jdbc_url'] = ds.get('jdbc_url') or ''
                 db_info['encrypt'] = bool(ds.get('encrypt', False))
                 db_info['trust_server_certificate'] = bool(ds.get('trust_server_certificate', True))
+            # GBase 8a：直连 TLS 参数与显式明文开关必须随 db_info 下传，
+            # 否则聊天/接口触发的巡检会永远停在「直连需要可信CA」。
+            if db_type == 'gbase8a':
+                db_info['tls_ca_file'] = ds.get('tls_ca_file', '')
+                db_info['gbase8a_allow_plaintext'] = ds.get('gbase8a_allow_plaintext', 0) or 0
 
             inspector_name = data.get('inspector_name', 'Jack')
 
