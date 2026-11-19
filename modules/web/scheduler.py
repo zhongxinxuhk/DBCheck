@@ -304,13 +304,20 @@ def _run_plugin_inspection(db_info, inspector_name, ssh_info):
 
     # Generate output filename consistent with built-in runners
     from datetime import datetime
+    from modules.core.filename_safety import sanitize_filename_component
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    safe_label = ''.join(c if c.isalnum() or c in '-_' else '_' for c in (db_info.get('label') or db_type))
+    # 保留中文/常见字符，仅收敛 Windows 非法字符与超长；旧实现用 isalnum()
+    # 会把中文标签整段替换成下划线，报告名无法辨认。
+    safe_label = sanitize_filename_component(
+        db_info.get('label') or db_type, max_length=60, fallback=db_type)
     output_dir = str(paths.REPORTS_DIR)
     os.makedirs(output_dir, exist_ok=True)
     ofile = os.path.join(output_dir, '%s_%s_%s.docx' % (db_type, safe_label, ts))
 
     report_file = inspector.generate_report(ofile, inspector_name)
+    if not report_file:
+        detail = str(getattr(inspector, 'last_report_error', '') or '').strip()
+        raise RuntimeError('Word 报告渲染失败' + ('：' + detail if detail else ''))
     return report_file
 
 

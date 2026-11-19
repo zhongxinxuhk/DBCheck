@@ -51,6 +51,32 @@ paths.ensure_migrated()
 SCRIPT_DIR = str(PROJECT_ROOT)
 ENTRYPOINT_DIR = os.path.join(str(PROJECT_ROOT), "modules", "entrypoints")
 
+def _report_failure_detail(target):
+    """读取引擎记录的报告失败原因（兼容包装对象与检查器本体）。"""
+    return str(
+        getattr(target, 'last_report_error', '')
+        or getattr(getattr(target, 'inspector', None), 'last_report_error', '')
+        or ''
+    ).strip()
+
+
+def _raise_report_failure(target, message='Word 报告渲染失败'):
+    """报告生成返回空时抛出带真实原因的错误，避免只剩固定文案。"""
+    detail = _report_failure_detail(target)
+    raise RuntimeError(message + ('：' + detail if detail else ''))
+
+
+def _report_filename(prefix, db_info, timestamp, extension='.docx'):
+    """按「前缀_数据源名_时间戳」生成跨平台安全文件名。"""
+    from modules.core.filename_safety import build_report_filename
+    return build_report_filename(
+        prefix + '_{name}_{ts}',
+        name=db_info.get('label') or 'DBCheck',
+        timestamp=timestamp,
+        extension=extension,
+    )
+
+
 
 def _record_inspection(db_type, db_info, ret, report_path):
     """保存巡检记录到 Pro 模块"""
@@ -153,7 +179,7 @@ def run_mysql(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"MySQL巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("MySQL巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -177,7 +203,7 @@ def run_mysql(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('mysql', db_info, ret, ofile)
@@ -203,7 +229,7 @@ def run_mariadb(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"MariaDB巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("MariaDB巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -227,7 +253,7 @@ def run_mariadb(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('mariadb', db_info, ret, ofile)
@@ -253,7 +279,7 @@ def run_oceanbase(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"OceanBase巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("OceanBase巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -276,7 +302,7 @@ def run_oceanbase(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('oceanbase', db_info, ret, ofile)
@@ -302,7 +328,7 @@ def run_pg(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"PostgreSQL巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("PostgreSQL巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -325,7 +351,7 @@ def run_pg(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('pg', db_info, ret, ofile)
@@ -438,7 +464,7 @@ def run_dm(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"达梦巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("达梦巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -460,7 +486,7 @@ def run_dm(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('dm', db_info, ret, ofile)
@@ -521,7 +547,7 @@ def run_tidb(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"TiDB巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("TiDB巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -545,7 +571,7 @@ def run_tidb(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('tidb', db_info, ret, ofile)
@@ -571,7 +597,7 @@ def run_ivorysql(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"IvorySQL巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("IvorySQL巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -595,7 +621,7 @@ def run_ivorysql(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     _record_inspection('ivorysql', db_info, ret, ofile)
 
@@ -620,7 +646,7 @@ def run_halodb(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"HaloDB巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("HaloDB巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -645,7 +671,7 @@ def run_halodb(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     # 保存巡检记录到 Pro 模块
     _record_inspection('halodb', db_info, ret, ofile)
@@ -664,7 +690,7 @@ def run_yashandb(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"YashanDB巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("YashanDB巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -686,7 +712,7 @@ def run_yashandb(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     _record_inspection('yashandb', db_info, ret, ofile)
 
@@ -710,7 +736,7 @@ def run_gbase(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"GBase巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("GBase巡检报告", db_info, timestamp)
     output_file = os.path.join(reports_dir, file_name)
 
     inspector = mod.GBaseInspector(
@@ -728,7 +754,7 @@ def run_gbase(db_info, inspector_name, ssh_info=None):
         inspector.template_id = template_id
     ret = inspector.generate_report(output_file, inspector_name)
     if not ret:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(inspector)
 
     _record_inspection('gbase', db_info, ret, output_file)
     return output_file, file_name, ret
@@ -746,7 +772,7 @@ def run_kingbase(db_info, inspector_name, ssh_info=None):
     reports_dir = str(paths.REPORTS_DIR)
     os.makedirs(reports_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"KingbaseES巡检报告_{db_info['label']}_{timestamp}.docx"
+    file_name = _report_filename("KingbaseES巡检报告", db_info, timestamp)
     ofile = os.path.join(reports_dir, file_name)
 
     data = mod.getData(
@@ -769,7 +795,7 @@ def run_kingbase(db_info, inspector_name, ssh_info=None):
     success = data.generate_report(ofile, inspector_name)
 
     if not success:
-        raise RuntimeError("Word 报告渲染失败")
+        _raise_report_failure(data)
 
     _record_inspection('kingbase', db_info, ret, ofile)
 
@@ -829,7 +855,7 @@ def run_config_baseline(db_info, db_type, output_format='txt'):
     conn.close()
     
     if output_format == 'pdf':
-        file_name = f"{db_label}配置基线报告_{db_info['label']}_{timestamp}.pdf"
+        file_name = _report_filename(f"{db_label}配置基线报告", db_info, timestamp, extension='.pdf')
         ofile = os.path.join(reports_dir, file_name)
         success, result = generate_config_baseline_pdf_report(report, ofile, db_type)
         if not success:
@@ -837,7 +863,7 @@ def run_config_baseline(db_info, db_type, output_format='txt'):
     else:
         # 文本格式输出到控制台并保存
         report_text = format_config_baseline_report(report, db_type)
-        file_name = f"{db_label}配置基线报告_{db_info['label']}_{timestamp}.txt"
+        file_name = _report_filename(f"{db_label}配置基线报告", db_info, timestamp, extension='.txt')
         ofile = os.path.join(reports_dir, file_name)
         with open(ofile, 'w', encoding='utf-8') as f:
             f.write(report_text)
@@ -900,7 +926,7 @@ def run_index_health(db_info, db_type, output_format='txt'):
     conn.close()
     
     if output_format == 'pdf':
-        file_name = f"{db_label}索引健康分析_{db_info['label']}_{timestamp}.pdf"
+        file_name = _report_filename(f"{db_label}索引健康分析", db_info, timestamp, extension='.pdf')
         ofile = os.path.join(reports_dir, file_name)
         success, result = generate_index_health_pdf_report(report, ofile, db_type)
         if not success:
@@ -908,7 +934,7 @@ def run_index_health(db_info, db_type, output_format='txt'):
     else:
         # 文本格式输出到控制台并保存
         report_text = format_index_health_report(report, db_type)
-        file_name = f"{db_label}索引健康分析_{db_info['label']}_{timestamp}.txt"
+        file_name = _report_filename(f"{db_label}索引健康分析", db_info, timestamp, extension='.txt')
         ofile = os.path.join(reports_dir, file_name)
         with open(ofile, 'w', encoding='utf-8') as f:
             f.write(report_text)
