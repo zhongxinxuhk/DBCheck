@@ -30,6 +30,9 @@ from modules.user_management.utils.password import hash_password
 menus_data = [
     ('home',             'menu.home',            0, 10),
     ('inventory',        'menu.inventory',       0, 11),
+    # 数据源管理恢复为独立页面：台账只维护信息，连接配置（含 GBase8a
+    # 明文直连开关）回到专门的数据源管理页。c0d0c56 曾把该菜单下线。
+    ('datasources',      'menu.datasources',     0, 12),
     ('report-center',    'menu.report-center',   0, 15),
     ('system-info',      'menu.system-info',     0, 68),
     ('wizard',           'menu.wizard',          0, 21),
@@ -239,10 +242,13 @@ def sync_menus():
                     )
                     print(f"  [sync] 更新菜单 menu_name: {code} -> {name}")
 
-        db.execute("UPDATE um_menu SET status=0 WHERE menu_code IN ('services','clusters','batch-inspection','datasources')")
+        # datasources 已恢复为独立菜单，不再随 services/clusters/batch-inspection 一起下线。
+        db.execute("UPDATE um_menu SET status=0 WHERE menu_code IN ('services','clusters','batch-inspection')")
+        # 若旧库里 datasources 曾被禁用，这里显式恢复为启用（幂等）。
+        db.execute("UPDATE um_menu SET status=1 WHERE menu_code='datasources'")
         role_menu_map = {
             'admin': 'ALL',
-            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'disaster-recovery', 'inventory', 'report-center'],
+            'operator': ['home', 'wizard', 'monitor-slow', 'awr', 'reports', 'sql-editor', 'disaster-recovery', 'inventory', 'datasources', 'report-center'],
             'viewer': ['home', 'reports', 'monitor-slow', 'ai'],
         }
         access_perm = db.query_one("SELECT id FROM um_permission WHERE perm_level=1")

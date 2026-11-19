@@ -14438,7 +14438,11 @@ function showInventoryTab(name) {
 }
 window.openReportCenter = function(context={}) {window.__reportCenterContext=context;showPage('report-center');};
 function showPage(name) {
-  const inventoryTab=({services:'table',datasources:'table','batch-inspection':'batch',clusters:'clusters'})[name];
+  // 数据源管理已恢复为独立页面（page-datasources），不再重定向到资产台账。
+  // 台账（inventory）只维护信息；数据源连接配置（含 GBase8a 明文直连开关）
+  // 统一回到专门的数据源管理页处理。c0d0c56 曾把 datasources 并入台账，
+  // 导致 nav-datasources 形同虚设、命令面板与抽屉菜单都找不到该页面。
+  const inventoryTab=({services:'table','batch-inspection':'batch',clusters:'clusters'})[name];
   if(inventoryTab) name='inventory';
   window.dispatchEvent(new CustomEvent('workspace-page-change',{detail:{page:name}}));
   // P0-c：切换页面时关闭自治闭环抽屉（避免 fixed 抽屉残留浮层）
