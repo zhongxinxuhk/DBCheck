@@ -276,6 +276,16 @@ def native(args):
         ),
         encoding="utf-8",
     )
+    if args.platform == "windows":
+        (product / "offline-update.json").write_text(
+            json.dumps(
+                {"schema": 1, "helper": "--offline-update-helper"},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     result["clean_installation"] = True
     (product / "build-verification.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"

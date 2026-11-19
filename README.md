@@ -1158,6 +1158,12 @@ cd dist
 dbcheck.exe
 ```
 
+### Windows offline update
+
+Click **Offline Update** in the status window and select a complete Windows update ZIP produced by the current build scripts (it must contain `offline-update.json`). The updater validates the version, target platform, paths, PE architecture and hashes, stops the backend, exits the launcher, replaces program files from a detached helper inside the extracted package, and restarts automatically.
+
+The `data/` directory is never replaced, so accounts, data sources, inventory, licensing, encryption keys, logs and backups are preserved. Custom rules and `overrides.yaml` are restored after the swap. Previous program files are kept under `data/backups/offline_update/`, and a failed start rolls back automatically.
+
 ## Linux
 
 ```bash

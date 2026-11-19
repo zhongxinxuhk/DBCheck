@@ -111,6 +111,7 @@ a = Analysis(
         'modules.intelligence', 'modules.core', 'modules.config',
         'modules.db_types', 'modules.disaster_recovery', 'modules.objstore',
         'modules.pluginkit',
+        'modules.desktop.offline_update',
     ],
     hookspath=[],
     hooksconfig={},
@@ -144,7 +145,11 @@ exe = EXE(
 gui_analysis = Analysis(
     [os.path.join(PROJECT_DIR, 'modules', 'desktop', 'windows_launcher.py')],
     pathex=[PROJECT_DIR], binaries=[], datas=[],
-    hiddenimports=['tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'psutil'],
+    hiddenimports=[
+        'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'psutil',
+        'modules.system_info.license', 'modules.core.paths',
+        'modules.desktop.offline_update',
+    ],
     hookspath=[], hooksconfig={}, runtime_hooks=[os.path.join(PROJECT_DIR, 'build', 'runtime-hook-wine.py')], excludes=[], noarchive=False,
 )
 gui_pyz = PYZ(gui_analysis.pure)
