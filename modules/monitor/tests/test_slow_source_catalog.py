@@ -3,7 +3,10 @@
 
 """慢查询页数据源清单：无慢 SQL 的库也必须出现在下拉框和计数中。"""
 
-from modules.monitor.engine import build_slow_source_catalog
+from modules.monitor.engine import (
+    build_slow_source_catalog,
+    flatten_slow_queries,
+)
 
 
 def instance(iid, name, db_type='mysql', enabled=True, host='10.0.0.1'):
@@ -88,3 +91,33 @@ def test_catalog_falls_back_to_engine_snapshots_when_instance_read_fails():
 
 def test_empty_instance_list_means_no_current_sources():
     assert build_slow_source_catalog([], {'stale': snapshot('旧库', rows=1)}) == []
+
+
+def test_flatten_uses_current_label_after_instance_rename():
+    instances = [instance('mysql-1', '新名称', 'mysql')]
+    sources = build_slow_source_catalog(
+        instances,
+        {'mysql-1': snapshot('旧名称 (10.0.0.1:3306)', 'mysql', 2)},
+    )
+
+    items = flatten_slow_queries(
+        {'mysql-1': snapshot('旧名称 (10.0.0.1:3306)', 'mysql', 2)},
+        sources,
+    )
+
+    assert len(items) == 2
+    assert {item['source'] for item in items} == {'新名称 (10.0.0.1:3306)'}
+    assert {item['label'] for item in items} == {'新名称 (10.0.0.1:3306)'}
+
+
+def test_flatten_ignores_stale_or_empty_snapshots():
+    sources = build_slow_source_catalog([], {'stale': snapshot('旧库', rows=1)})
+
+    assert flatten_slow_queries({'stale': snapshot('旧库', rows=1)}, sources) == []
+    assert flatten_slow_queries({'x': {'data': None}}, [
+        {'instance_id': 'x', 'source': 'X', 'db_type': 'mysql'}
+    ]) == []
+
+
+def test_catalog_tolerates_missing_snapshots():
+    assert build_slow_source_catalog(None, None) == []

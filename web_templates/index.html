@@ -28784,9 +28784,12 @@ async function deleteBackupHistory(recordId) {
         slowestSql = item.sql_text || item.query_text || '-';
       }
     });
-    // 数据源计数应覆盖「已接入监控但当前无慢查询」的库（如 GBase 8a），
-    // 否则慢查询页的「监控数据源」卡片只统计有 Top SQL 的库，会把它们漏掉。
-    monitorConnData.forEach(function(item) { if (item.source) sources[item.source] = true; });
+    // sources 已覆盖全部已接入数据源；只有旧接口没有 sources 时才从行数据回填，
+    // 避免实例改名后旧 label 仍留在计数和下拉框里。
+    if (!monitorAllSources.length) {
+      monitorSlowData.forEach(function(item) { if (item.source) sources[item.source] = true; });
+      monitorConnData.forEach(function(item) { if (item.source) sources[item.source] = true; });
+    }
     monitorAllSources.forEach(function(s) { if (s) sources[s] = true; });
 
     var srcKeys = Object.keys(sources);
@@ -28818,12 +28821,17 @@ async function deleteBackupHistory(recordId) {
     var selConn = document.getElementById('mon-conn-filter-source');
     var cur = sel ? sel.value : '';
     var sources = {};
-    monitorSlowData.forEach(function(item) { sources[item.source] = true; });
-    monitorConnData.forEach(function(item) { sources[item.source] = true; });
+    if (!monitorAllSources.length) {
+      monitorSlowData.forEach(function(item) { sources[item.source] = true; });
+      monitorConnData.forEach(function(item) { sources[item.source] = true; });
+    }
     monitorAllSources.forEach(function(s) { if (s) sources[s] = true; });
     var keys = Object.keys(sources).sort();
     var opts = '<option value="">全部数据源</option>';
-    keys.forEach(function(k) { opts += '<option value="' + k + '">' + k + '</option>'; });
+    keys.forEach(function(k) {
+      var safe = escHtml(k);
+      opts += '<option value="' + safe + '">' + safe + '</option>';
+    });
     if (sel) { sel.innerHTML = opts; if (cur && sources[cur]) sel.value = cur; }
     if (selConn) { var curConn = selConn.value; selConn.innerHTML = opts; if (curConn && sources[curConn]) selConn.value = curConn; }
   }

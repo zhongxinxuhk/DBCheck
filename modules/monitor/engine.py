@@ -108,6 +108,7 @@ def build_slow_source_catalog(instances, snapshots):
     ``instances`` 为 ``None`` 表示实例列表读取失败，此时退回快照清单；传入
     空列表则明确表示当前没有启用的数据源。
     """
+    snapshots = snapshots or {}
     catalog = []
     seen = set()
     if instances is not None:
@@ -156,6 +157,39 @@ def build_slow_source_catalog(instances, snapshots):
         })
         seen.add(iid)
     return catalog
+
+
+def flatten_slow_queries(snapshots, sources):
+    """把慢查询快照展开为表格行，并优先使用当前数据源名称。
+
+    ``sources`` 来自 :func:`build_slow_source_catalog`。实例改名后引擎快照里
+    仍是旧 label；若表格继续使用旧 label，前端按新 label 筛选会把行全部过滤掉。
+    这里用当前清单的 label/db_type 覆盖快照元数据。
+    """
+    metadata = {
+        item.get('instance_id'): item
+        for item in (sources or [])
+        if isinstance(item, dict) and item.get('instance_id')
+    }
+    items = []
+    for iid, snapshot in (snapshots or {}).items():
+        if not isinstance(snapshot, dict) or iid not in metadata:
+            continue
+        source = metadata[iid]
+        label = source.get('source') or source.get('label') or snapshot.get('label', iid)
+        for row in snapshot.get('data') or []:
+            if not isinstance(row, dict):
+                continue
+            items.append({
+                'instance_id': iid,
+                'source': label,
+                'label': label,
+                'db_type': source.get('db_type') or snapshot.get('db_type', ''),
+                'error': snapshot.get('error'),
+                'ts': snapshot.get('ts', 0),
+                **row,
+            })
+    return items
 
 
 class MonitorEngine:
