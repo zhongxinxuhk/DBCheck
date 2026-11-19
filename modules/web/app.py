@@ -1833,8 +1833,13 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
         os.makedirs(reports_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filename_tmpl = _t(cfg['filename_key'])
-        ext_name = filename_tmpl.format(ip=db_info['ip'], name=label_name, ts=timestamp)
-        file_name = ext_name + '_' + task_id + '.docx'
+        # 数据源名称由用户输入，可能含 Windows 非法字符（如 10.60.6.216:1433
+        # 里的冒号）或超长；直接拼进文件名会让 Document.save() 抛 OSError，
+        # 最终只显示「生成报告文件失败」。这里统一收敛为安全文件名。
+        from modules.core.filename_safety import build_report_filename
+        file_name = build_report_filename(
+            filename_tmpl, ip=db_info['ip'], name=label_name, timestamp=timestamp,
+            suffix=task_id, extension='.docx')
         ofile = os.path.join(reports_dir, file_name)
 
         from modules.core.data_security import redact
@@ -1900,12 +1905,23 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
         if ofile_result and os.path.exists(ofile_result):
             print(f"[DEBUG] 文件确实存在，大小: {os.path.getsize(ofile_result)}")
         if not ofile_result:
-            # 补充诊断：文件是否存在、目录是否可写，便于定位
+            # 报告生成在引擎内部已被 try/except 包裹，真实异常只打到进程 stdout；
+            # Windows 打包版通常没有控制台，web 日志里只剩一句「生成报告文件失败」。
+            # 这里把引擎捕获的失败原因一并抛出并推送到前端日志，保证可回溯。
             _writable = os.access(reports_dir, os.W_OK)
+            _detail = str(
+                getattr(data, 'last_report_error', '')
+                or getattr(getattr(data, 'inspector', None), 'last_report_error', '')
+                or ''
+            ).strip()
             print(f"[ERROR] generate_report 返回空 ({ofile_result})；"
                   f"目标路径={ofile}；目录可写={_writable}；"
-                  f"文件已存在={os.path.exists(ofile)}")
-            raise RuntimeError(_t('webui.err_report_generate'))
+                  f"文件已存在={os.path.exists(ofile)}；原因={_detail or '未知'}")
+            _msg = _t('webui.err_report_generate')
+            if _detail:
+                _msg = f'{_msg}：{_detail}'
+            _emit('log', {'msg': f"[ERROR] {_msg}（报告文件：{file_name}）"})
+            raise RuntimeError(_msg)
         _emit('log', {'msg': _t('webui.log_report_ok').format(fname=file_name)})
         print(f"[REPORT] 报告已生成: {ofile_result}")
         print(f"[REPORT] 文件是否存在: {os.path.exists(ofile_result)}")
