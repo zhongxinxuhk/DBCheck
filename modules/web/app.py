@@ -7015,49 +7015,51 @@ def api_dashboard_history_overview():
 
 @app.route('/api/monitor/slow-queries', methods=['GET'])
 def api_monitor_slow_queries():
-    """获取各数据源慢查询数据"""
+    """获取各数据源慢查询数据与完整数据源清单。
+
+    ``items`` 只包含真实慢 SQL 行；``sources`` 则覆盖当前启用的全部数据源，
+    即使某个库没有慢 SQL 也会出现在下拉框和「监控数据源」计数里。
+    """
     try:
-        from modules.monitor.engine import get_monitor_engine
+        from modules.monitor.engine import (
+            build_slow_source_catalog,
+            get_monitor_engine,
+        )
         engine = get_monitor_engine()
         data = engine.get_slow_queries()
-        # 转换为列表格式方便前端展示
+        instances = None
+        try:
+            from modules.pro.instance_manager import get_instance_manager
+            instances = get_instance_manager().get_all_instances(mask_password=False)
+        except Exception:
+            # 实例表读取失败不应让慢查询列表整体 500；退回引擎快照。
+            instances = None
+        sources = build_slow_source_catalog(instances, data)
+        current_ids = (
+            {item.get('instance_id') for item in sources}
+            if instances is not None
+            else None
+        )
         items = []
-        if data:
-            for iid, d in data.items():
-                for row in d.get('data', []):
-                    items.append({
-                        'instance_id': iid,
-                        'source': d.get('label', iid),
-                        'label': d.get('label', iid),
-                        'db_type': d.get('db_type', ''),
-                        'error': d.get('error'),
-                        'ts': d.get('ts', 0),
-                        **row,
-                    })
-        else:
-            # 监控未启动/未采集：补占位项，使前端下拉框初始即可选全部数据源
-            try:
-                from modules.pro.instance_manager import get_instance_manager
-                im = get_instance_manager()
-                for inst in im.get_all_instances(mask_password=False):
-                    if not inst.get('enabled', True):
-                        continue
-                    if not inst.get('host'):
-                        continue
-                    iid = inst.get('id')
-                    label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
-                    items.append({
-                        'instance_id': iid,
-                        'source': label,
-                        'label': label,
-                        'db_type': inst.get('db_type', ''),
-                        'error': None,
-                        'ts': 0,
-                        'data': [],
-                    })
-            except Exception:
-                pass
-        return jsonify({'ok': True, 'items': items, 'status': engine.get_status()})
+        for iid, snapshot in (data or {}).items():
+            if current_ids is not None and iid not in current_ids:
+                continue
+            for row in snapshot.get('data', []):
+                items.append({
+                    'instance_id': iid,
+                    'source': snapshot.get('label', iid),
+                    'label': snapshot.get('label', iid),
+                    'db_type': snapshot.get('db_type', ''),
+                    'error': snapshot.get('error'),
+                    'ts': snapshot.get('ts', 0),
+                    **row,
+                })
+        return jsonify({
+            'ok': True,
+            'items': items,
+            'sources': sources,
+            'status': engine.get_status(),
+        })
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 

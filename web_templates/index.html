@@ -28711,6 +28711,13 @@ async function deleteBackupHistory(recordId) {
       const data = await res.json();
       if (data.ok) {
         monitorSlowData = data.items || [];
+        // sources 覆盖所有已启用数据源；items 只包含真实慢 SQL 行。
+        // 不能只从 items 反推数据源，否则「已接入但当前无慢查询」的库会消失。
+        if (Array.isArray(data.sources)) {
+          monitorAllSources = data.sources
+            .map(function(item) { return item && (item.source || item.label || item.instance_id); })
+            .filter(Boolean);
+        }
         updateMonitorStatus(data.status && data.status.running ? 'running' : 'stopped');
         renderMonitorSlowOverview();
         renderMonitorSlowFilterSources();
@@ -28831,6 +28838,7 @@ async function deleteBackupHistory(recordId) {
       const d1 = await r1.json();
       const d2 = await r2.json();
       const set = {};
+      (d1.sources || []).forEach(function(it) { if (it && it.source) set[it.source] = true; });
       (d1.items || []).forEach(function(it) { if (it.source) set[it.source] = true; });
       (d2.items || []).forEach(function(it) { if (it.source) set[it.source] = true; });
       monitorAllSources = Object.keys(set).sort();
@@ -28877,7 +28885,12 @@ async function deleteBackupHistory(recordId) {
     data.sort(function(a, b) { return (parseFloat(b[sortKey]) || 0) - (parseFloat(a[sortKey]) || 0); });
 
     if (data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px">当前未发现慢查询，系统运行良好</td></tr>';
+      var emptyText = src
+        ? '所选数据源当前未发现慢查询，系统运行良好'
+        : (monitorAllSources.length
+          ? '已接入 ' + monitorAllSources.length + ' 个数据源，当前未发现慢查询'
+          : '当前未发现慢查询，系统运行良好');
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px">' + emptyText + '</td></tr>';
       return;
     }
 
