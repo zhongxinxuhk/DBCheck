@@ -383,6 +383,14 @@ class InstanceManager:
         # 文件大小不变、SQLite 页复用、跨连接版本同步等边界影响，最可靠。
         self._instances_rev = 0
         self._groups_rev = 0
+        # 低版本备份/升级前的库可能缺列，先补齐再加载，避免 SELECT/ORDER BY 失败。
+        if os.path.exists(self.instances_db):
+            try:
+                with sqlite3.connect(self.instances_db) as instances:
+                    self._ensure_instance_columns(instances)
+            except sqlite3.Error as error:
+                # 修复失败不阻断启动；_load_data 仍会按原有兼容路径尝试读取。
+                print(f"[InstanceManager] 旧库列迁移跳过: {error}")
         self._load_data()
 
         # 初始化数据库
@@ -727,6 +735,7 @@ class InstanceManager:
                     jdbc_url TEXT DEFAULT ''
                 )
             """)
+            self._ensure_instance_columns(conn)
             c.execute("DELETE FROM instances")
             for inst in self._instances.values():
                 d = inst.to_dict() if not isinstance(inst, dict) else inst
@@ -812,6 +821,71 @@ class InstanceManager:
         self._bump_rev(self.groups_db)
         self._instances_rev = self._read_rev(self.instances_db)
         self._groups_rev = self._read_rev(self.groups_db)
+
+    def _ensure_instance_columns(self, conn):
+        """为旧版备份/升级前的 instances 表补齐当前版本需要的列。
+
+        备份是文件级恢复，低版本数据目录中的表可能缺少后来新增的列。
+        这里只做幂等 ADD COLUMN，不重写已有行；真正的数据迁移仍由
+        ``_save_data`` 和业务读取路径按缺省值处理。
+        """
+        if not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='instances'"
+        ).fetchone():
+            return
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(instances)")}
+        additions = {
+            "name": "TEXT DEFAULT ''",
+            "db_type": "TEXT DEFAULT ''",
+            "host": "TEXT DEFAULT ''",
+            "port": "INTEGER DEFAULT 0",
+            "user": "TEXT DEFAULT ''",
+            "password": "TEXT DEFAULT ''",
+            "database": "TEXT DEFAULT ''",
+            "service_name": "TEXT DEFAULT ''",
+            "gbase_server_name": "TEXT DEFAULT ''",
+            "tenant": "TEXT DEFAULT ''",
+            "sysdba": "INTEGER DEFAULT 0",
+            "connect_mode": "TEXT DEFAULT ''",
+            "auth_source": "TEXT DEFAULT ''",
+            "auth_mechanism": "TEXT DEFAULT ''",
+            "replica_set": "TEXT DEFAULT ''",
+            "tls": "INTEGER DEFAULT 0",
+            "tls_ca_file": "TEXT DEFAULT ''",
+            "tls_cert_key_file": "TEXT DEFAULT ''",
+            "tls_allow_invalid_certs": "INTEGER DEFAULT 0",
+            "ssh_host": "TEXT DEFAULT ''",
+            "ssh_port": "INTEGER DEFAULT 22",
+            "ssh_user": "TEXT DEFAULT ''",
+            "ssh_password": "TEXT DEFAULT ''",
+            "ssh_key_file": "TEXT DEFAULT ''",
+            "ssh_key_password": "TEXT DEFAULT ''",
+            "ssh_enabled": "INTEGER DEFAULT 0",
+            "ssh_tunnel": "INTEGER DEFAULT 0",
+            "tags": "TEXT DEFAULT '[]'",
+            "group": "TEXT DEFAULT 'default'",
+            "enabled": "INTEGER DEFAULT 1",
+            "description": "TEXT DEFAULT ''",
+            "created_at": "TEXT DEFAULT ''",
+            "updated_at": "TEXT DEFAULT ''",
+            "connection_mode": "TEXT DEFAULT 'odbc'",
+            "encrypt": "INTEGER DEFAULT 0",
+            "trust_server_certificate": "INTEGER DEFAULT 1",
+            "driver_version": "TEXT DEFAULT ''",
+            "use_sid": "INTEGER DEFAULT 0",
+            "jdbc_url": "TEXT DEFAULT ''",
+        }
+        for name, definition in additions.items():
+            if name in columns:
+                continue
+            try:
+                conn.execute(
+                    f'ALTER TABLE instances ADD COLUMN "{name}" {definition}'
+                )
+                columns.add(name)
+            except sqlite3.OperationalError:
+                # 并发进程可能已补齐同一列；不能把这种幂等冲突当成失败。
+                pass
 
     def _init_database(self):
         """初始化数据库"""

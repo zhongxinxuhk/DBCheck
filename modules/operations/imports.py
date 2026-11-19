@@ -15,9 +15,111 @@ from openpyxl import load_workbook
 from .inventory import ASSET_FIELDS, SOURCE_FIELDS, TABLES, BOOLEAN_FIELDS, Conflict
 
 MAIN = "全品类数据库资产底账清单"
+# 旧版台账模板的标题和表头名称。只做“旧名 -> 现行名”的补全，不覆盖现行列。
+MAIN_TITLES = {
+    "全品类数据库资产底账清单",
+    "资产台账",
+    "数据库资产台账",
+    "资产底账清单",
+    "资产底账",
+    "全品类数据库资产底账",
+}
+SHEET_ALIASES = {
+    "数据库基本信息": "数据库基本信息表",
+    "数据库基本信息表": "数据库基本信息表",
+    "数据源连接": "数据源连接配置",
+    "数据源连接表": "数据源连接配置",
+    "数据源连接配置表": "数据源连接配置",
+    "集群参数": "集群参数表",
+    "数据库参数": "数据库参数表",
+    "逻辑存储空间": "逻辑存储空间属性表",
+    "用户及权限": "用户及权限表",
+    "备份策略": "备份策略表",
+    "台账变更": "台账变更记录",
+    "变更记录": "台账变更记录",
+}
+IGNORED_SHEETS = {
+    "说明",
+    "使用说明",
+    "模板说明",
+    "台账使用说明",
+    "填写说明",
+    "导入说明",
+    "版本信息",
+    "README",
+    "Sheet",
+    "Sheet1",
+}
+HEADER_ALIASES = {
+    "配置项编号": ("配置编号", "CI编号", "资产编号"),
+    "资产名称": (
+        "数据源名称",
+        "资产/数据源名称",
+        "资产名",
+        "数据库名称",
+    ),
+    "数据库IP/主机": (
+        "数据库地址",
+        "数据库IP",
+        "IP地址",
+        "主机地址",
+        "数据库主机",
+        "数据库主机地址",
+        "主机",
+    ),
+    "数据库端口": ("端口", "端口号", "数据库端口号"),
+    "数据库账号": ("账号", "用户名", "数据库用户", "数据库用户名", "用户"),
+    "数据库密码": ("密码", "数据库口令", "口令"),
+    "数据源分组": ("分组", "组名"),
+    "启用数据源": ("启用", "是否启用", "启用状态"),
+    "数据库名称": ("数据库名", "库名"),
+    "节点": ("节点名称", "节点名"),
+    "变更记录": ("变更引用", "变更记录引用"),
+    "责任归属人": ("责任人", "负责人"),
+    "运维责任人": ("责任人", "负责人", "备份责任人"),
+    "具体权限": ("权限", "权限明细"),
+    "权限变更记录": ("变更引用", "权限变更引用"),
+    "逻辑存储空间名称": ("表空间名称", "存储空间名称"),
+    "存储大小": ("容量", "总大小"),
+    "自动扩展模式": ("自动扩展",),
+    "备份数据类型": ("备份类型", "数据类型"),
+    "备份内容": ("内容",),
+    "备份方式": ("方式",),
+    "保存周期": ("保留周期", "保存天数"),
+    "执行时间窗口": ("备份窗口", "执行窗口"),
+}
 
 
-def rows(page):
+def _text(value):
+    return value.strip().lstrip("\ufeff") if isinstance(value, str) else value
+
+
+def _canonical_row(values):
+    """兼容旧表头：仅在现行表头缺失时从旧列名补值。"""
+    row = {_text(key): value for key, value in values.items() if key is not None}
+    for canonical, aliases in HEADER_ALIASES.items():
+        if row.get(canonical) not in (None, ""):
+            continue
+        for alias in aliases:
+            if row.get(alias) not in (None, ""):
+                row[canonical] = row[alias]
+                break
+    return row
+
+
+def _header_matches(values, require_name):
+    labels = {_text(value) for value in values if isinstance(value, str)}
+    has_ci = "配置项编号" in labels or any(
+        alias in labels for alias in HEADER_ALIASES["配置项编号"]
+    )
+    if not has_ci or not require_name:
+        return has_ci
+    return "资产名称" in labels or any(
+        alias in labels for alias in HEADER_ALIASES["资产名称"]
+    )
+
+
+def rows(page, require_name=True):
     header = None
     for number, cells in enumerate(page.iter_rows(), 1):
         values = []
@@ -29,7 +131,7 @@ def rows(page):
                 value = value.isoformat()
             values.append(value)
         if header is None:
-            if "配置项编号" in values and "资产名称" in values:
+            if _header_matches(values, require_name):
                 header = values
             elif number > 10:
                 raise ValueError(page.title + "缺少标准表头")
@@ -37,9 +139,33 @@ def rows(page):
         if number > 10010:
             raise ValueError("单个工作表最多导入10000行")
         if any(value is not None and value != "" for value in values):
-            yield number, dict(zip(header, values))
+            yield number, _canonical_row(dict(zip(header, values)))
     if header is None:
         raise ValueError(page.title + "缺少标准表头")
+
+
+def _is_blank(page):
+    return not any(
+        any(value not in (None, "") for value in values)
+        for values in page.iter_rows(values_only=True)
+    )
+
+
+def _main_sheet(workbook):
+    for page in workbook:
+        if _text(page.title) in MAIN_TITLES:
+            return page
+    # 兼容没有标准标题但保留了标准表头的旧模板。
+    for page in workbook:
+        try:
+            rows(page, require_name=True).__next__()
+        except StopIteration:
+            return page
+        except ValueError:
+            continue
+        else:
+            return page
+    return None
 
 
 def source_value(key, value):
@@ -90,10 +216,11 @@ def parse_excel(content):
     except (zipfile.BadZipFile, KeyError, ValueError, EOFError, OSError) as error:
         raise ValueError("Excel 文件无效或已损坏，请重新下载模板填写") from error
     try:
-        if MAIN not in workbook.sheetnames:
+        main = _main_sheet(workbook)
+        if main is None:
             raise ValueError("请使用标准台账导入模板")
         records = {}
-        for number, row in rows(workbook[MAIN]):
+        for number, row in rows(main, require_name=True):
             ci = str(row.get("配置项编号") or "").strip()
             if not ci or ci in records:
                 raise ValueError(f"底账清单第{number}行配置项编号为空或重复")
@@ -115,17 +242,34 @@ def parse_excel(content):
         table_titles = {
             title: (key, columns) for key, (title, columns) in TABLES.items()
         }
+        seen = {MAIN}
         for page in workbook:
-            if page.title in {MAIN, "台账变更记录"}:
+            if page is main:
                 continue
-            if page.title not in {*table_titles, "数据库基本信息表", "数据源连接配置"}:
+            title = SHEET_ALIASES.get(_text(page.title), _text(page.title))
+            if title in {MAIN, "台账变更记录"}:
+                continue
+            if title in seen:
+                raise ValueError("台账包含重复工作表：" + page.title)
+            seen.add(title)
+            if title in IGNORED_SHEETS:
+                continue
+            if title not in {
+                *table_titles,
+                "数据库基本信息表",
+                "数据源连接配置",
+            }:
+                if _is_blank(page):
+                    continue
                 raise ValueError("不支持的工作表：" + page.title)
-            for number, row in rows(page):
+            if _is_blank(page):
+                continue
+            for number, row in rows(page, require_name=False):
                 ci = str(row.get("配置项编号") or "").strip()
                 if ci not in records:
                     raise ValueError(f"{page.title} 第{number}行未匹配到底账配置项")
                 record = records[ci]
-                if page.title == "数据源连接配置":
+                if title == "数据源连接配置":
                     record["source"].update(
                         {
                             key: source_value(key, row[label])
@@ -134,20 +278,23 @@ def parse_excel(content):
                         }
                     )
                 else:
-                    record["metadata"].update(
-                        {
-                            key: row[label]
-                            for key, label in ASSET_FIELDS.items()
-                            if row.get(label) not in (None, "")
-                        }
-                    )
+                    # 只有基础信息表和集群参数表携带资产级字段；专项表的
+                    # “运维责任人/版本”等同名列不能反向覆盖资产主档。
+                    if title in {"数据库基本信息表", "集群参数表"}:
+                        record["metadata"].update(
+                            {
+                                key: row[label]
+                                for key, label in ASSET_FIELDS.items()
+                                if row.get(label) not in (None, "")
+                            }
+                        )
                     if (
-                        page.title == "数据库基本信息表"
+                        title == "数据库基本信息表"
                         and row.get("数据库名称") is not None
                     ):
                         record["source"]["database"] = str(row["数据库名称"])
-                    if page.title in table_titles:
-                        key, columns = table_titles[page.title]
+                    if title in table_titles:
+                        key, columns = table_titles[title]
                         item = {
                             key: row[label]
                             for key, label in columns.items()

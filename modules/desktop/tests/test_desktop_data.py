@@ -537,3 +537,80 @@ def test_business_groups_backup_validates_its_encryption_key(installation, tmp_p
     backup.export(archive)
     with pytest.raises(ValueError, match="密钥不匹配"):
         backup.verify(archive)
+
+
+def test_legacy_backup_manifest_without_version_and_scopes_restores(
+    installation, tmp_path
+):
+    """v1.0.x 早期清单缺 version/scopes 时，按文件清单兼容恢复。"""
+    backup = LocalBackup(installation)
+    archive = tmp_path / "legacy-backup.zip"
+    backup.export(archive)
+
+    def change(content):
+        manifest = json.loads(content["manifest.json"])
+        manifest.pop("version", None)
+        manifest.pop("scopes", None)
+        content["manifest.json"] = json.dumps(manifest).encode()
+
+    rewrite_archive(archive, change)
+    (backup.data / "config.json").write_text("changed")
+    backup.restore(archive)
+    assert json.loads((backup.data / "config.json").read_text())["value"] == "original"
+
+
+def test_backup_from_newer_version_is_rejected_before_stopping(installation, tmp_path):
+    backup = LocalBackup(installation)
+    archive = tmp_path / "newer-backup.zip"
+    backup.export(archive)
+
+    def change(content):
+        manifest = json.loads(content["manifest.json"])
+        manifest["version"] = 2
+        content["manifest.json"] = json.dumps(manifest).encode()
+
+    rewrite_archive(archive, change)
+    stop = Mock()
+    with pytest.raises(ValueError, match="更高版本"):
+        backup.restore(archive, before_apply=stop)
+    stop.assert_not_called()
+
+
+def test_restore_accepts_legacy_sqlite_schema_then_current_app_migrates(
+    installation, tmp_path, monkeypatch
+):
+    """低版本备份里的旧 instances.db 结构应能导入，并由当前版本补齐列。"""
+    legacy_root = tmp_path / "legacy-app"
+    data = legacy_root / "data"
+    data.mkdir(parents=True)
+    (data / ".db_key").write_bytes(base64.urlsafe_b64encode(b"k" * 32))
+    with sqlite3.connect(data / "instances.db") as database:
+        database.execute(
+            "CREATE TABLE instances (id TEXT PRIMARY KEY, name TEXT NOT NULL, "
+            "db_type TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL, "
+            '"user" TEXT NOT NULL, password TEXT DEFAULT \'\', '
+            '"database" TEXT DEFAULT \'\', service_name TEXT DEFAULT \'\', '
+            "tags TEXT DEFAULT '[]', \"group\" TEXT DEFAULT 'default', "
+            "enabled INTEGER DEFAULT 1, created_at TEXT DEFAULT '', "
+            "updated_at TEXT DEFAULT '')"
+        )
+        database.execute(
+            "INSERT INTO instances VALUES('legacy','旧库','mysql','127.0.0.1',"
+            "3306,'root','','db','','[]','default',1,'2020-01-01','2020-01-01')"
+        )
+    archive = tmp_path / "legacy-schema.zip"
+    LocalBackup(legacy_root).export(archive)
+
+    LocalBackup(installation).restore(archive)
+    from modules.core import paths
+
+    monkeypatch.setattr(paths, "DB_KEY_PATH", data / ".db_key")
+    from modules.pro.instance_manager import InstanceManager
+
+    manager = InstanceManager(str(data))
+    assert manager.get_instance("legacy")["name"] == "旧库"
+    with sqlite3.connect(data / "instances.db") as database:
+        columns = {
+            row[1] for row in database.execute("PRAGMA table_info(instances)")
+        }
+    assert {"jdbc_url", "ssh_tunnel", "driver_version"} <= columns
