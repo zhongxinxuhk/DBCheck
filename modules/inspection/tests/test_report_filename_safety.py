@@ -71,3 +71,25 @@ class ReportFailureDetailTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CliReportHelpersTest(unittest.TestCase):
+    def test_cli_report_filename_is_safe(self):
+        from modules.inspection import run
+        name = run._report_filename(
+            'MySQL巡检报告', {'label': '10.60.6.216:1433/主库'},
+            '20261119_145535')
+        for character in '<>:"/\\|?*':
+            self.assertNotIn(character, name)
+        self.assertTrue(name.endswith('.docx'))
+        self.assertIn('20261119_145535', name)
+
+    def test_cli_failure_includes_engine_reason(self):
+        from modules.inspection import run
+
+        class Target:
+            last_report_error = 'OSError: [Errno 22] Invalid argument'
+
+        with self.assertRaises(RuntimeError) as caught:
+            run._raise_report_failure(Target())
+        self.assertIn('OSError', str(caught.exception))
