@@ -468,6 +468,29 @@ class ExistingSystemIntegration(unittest.TestCase):
         self.assertIn("module_name='main_gbase8a'",source)
         self.assertNotIn('CONTROLLED_COLLECTION_REQUIRED',source)
 
+    def test_gbase8a_plaintext_direct_is_explicit_and_opt_in(self):
+        """回归：Navicat 可明文直连时，DBCheck 也必须能连，但只能显式开启。"""
+        from modules.db_types.compatibility import connect_gbase8a,plaintext_allowed
+        from unittest.mock import MagicMock
+        data={'host':'10.60.25.101','port':5258,'user':'reader','password':'fixture-secret'}
+        # 默认设置下没有可信 CA 仍必须拒绝，且报错要指向可操作的开关
+        with patch('pymysql.connect') as mysql:
+            with self.assertRaises(ValueError) as caught:connect_gbase8a(dict(data))
+            mysql.assert_not_called()
+        self.assertIn('允许明文直连',str(caught.exception))
+        # 显式开启后按 Navicat 默认走明文，不能再叠加 TLS 参数
+        fake=MagicMock()
+        with patch('pymysql.connect',return_value=fake) as mysql:
+            self.assertIs(connect_gbase8a({**data,'gbase8a_allow_plaintext':1}),fake)
+        kwargs=mysql.call_args.kwargs
+        self.assertEqual((kwargs['host'],kwargs['port']),('10.60.25.101',5258))
+        self.assertNotIn('ssl',kwargs)
+        self.assertNotIn('defer_connect',kwargs)
+        for value in (0,'0','false','',None):
+            self.assertFalse(plaintext_allowed(value))
+        for value in (1,'1','true','on'):
+            self.assertTrue(plaintext_allowed(value))
+
 
 class DriverCompatibility(unittest.TestCase):
     def test_oracle_11g_initializes_thick_before_connect(self):
