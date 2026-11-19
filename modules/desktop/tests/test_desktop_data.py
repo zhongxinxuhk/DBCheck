@@ -559,6 +559,30 @@ def test_legacy_backup_manifest_without_version_and_scopes_restores(
     assert json.loads((backup.data / "config.json").read_text())["value"] == "original"
 
 
+def test_legacy_data_only_backup_preserves_current_rule_files(installation, tmp_path):
+    """旧版只备份 data 时，不应把当前自定义规则当作“缺失”删掉。"""
+    backup = LocalBackup(installation)
+    archive = tmp_path / "legacy-data-only.zip"
+    backup.export(archive)
+
+    def change(content):
+        manifest = json.loads(content["manifest.json"])
+        manifest.pop("version", None)
+        manifest.pop("scopes", None)
+        manifest["files"] = [
+            item for item in manifest["files"] if item["path"].startswith("data/")
+        ]
+        for name in list(content):
+            if name.startswith(("custom_rules/", "rule_overrides/")):
+                del content[name]
+        content["manifest.json"] = json.dumps(manifest).encode()
+
+    rewrite_archive(archive, change)
+    (backup.scopes["custom_rules"] / "test.yaml").write_text("current rule")
+    backup.restore(archive)
+    assert (backup.scopes["custom_rules"] / "test.yaml").read_text() == "current rule"
+
+
 def test_backup_from_newer_version_is_rejected_before_stopping(installation, tmp_path):
     backup = LocalBackup(installation)
     archive = tmp_path / "newer-backup.zip"
