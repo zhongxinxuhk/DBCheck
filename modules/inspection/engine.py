@@ -1411,6 +1411,9 @@ class BaseInspectionEngine:
     
     def generate_report(self, output_file, inspector_name="Jack"):
         """生成报告 - 通用逻辑！"""
+        # 最近一次报告生成失败原因。Web 层在返回空值时读取该字段，把真实异常
+        # 带进任务错误信息与巡检日志；否则只剩一句「生成报告文件失败」。
+        self.last_report_error = ''
         from modules.core.data_security import redact
         self.context = redact(self.context, mask_identity=True, preserve_network=True)
         # ── 内存监控（防止 Docker OOM）────────────────────
@@ -1459,10 +1462,12 @@ class BaseInspectionEngine:
             sanitize_document(Document(output_file), preserve_network=True).save(output_file)
             return output_file
         except MemoryError as e:
+            self.last_report_error = f'MemoryError: {e}（建议减少巡检范围或增加内存限制）'
             print(f"[ERROR] 内存不足，报告生成失败: {e}")
             print(f"[ERROR] 建议：减少巡检范围或增加 Docker 内存限制 (--memory=4g)")
             return None
         except Exception as e:
+            self.last_report_error = f'{type(e).__name__}: {e}'
             print(f"[ERROR] 生成报告失败: {e}")
             import traceback; traceback.print_exc(file=sys.stdout)
             # 打印更多诊断信息
@@ -2283,6 +2288,7 @@ class BaseInspectionEngine:
             return self._fallback_render(output_file, inspector_name)
         
         except Exception as e:
+            self.last_report_error = f'渲染上下文失败 {type(e).__name__}: {e}'
             print(f"[ERROR] 渲染上下文失败: {e}")
             import traceback; traceback.print_exc(file=sys.stdout)
             return False
@@ -3432,6 +3438,7 @@ class BaseInspectionEngine:
             doc.save(output_file)
             return 'fallback'
         except Exception as e:
+            self.last_report_error = f'动态渲染失败 {type(e).__name__}: {e}'
             print(f"[ERROR] 动态渲染失败: {e}")
             import traceback; traceback.print_exc(file=sys.stdout)
             return False
