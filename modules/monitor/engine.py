@@ -97,6 +97,67 @@ def _friendly_db_error(e):
     return '数据库连接或查询异常，请检查实例配置或查看服务端日志'
 
 
+def build_slow_source_catalog(instances, snapshots):
+    """为慢查询页生成完整数据源清单。
+
+    ``snapshots`` 是 MonitorEngine 的 ``{instance_id: slow_snapshot}``。慢查询
+    接口只把「有 SQL 行」的快照展开成表格行，因此某个库没有慢 SQL 时不会出现
+    在行列表里；数据源下拉框和「监控数据源」卡片必须独立使用本清单，才能把
+    已添加但当前无慢 SQL 的库也显示出来。
+
+    ``instances`` 为 ``None`` 表示实例列表读取失败，此时退回快照清单；传入
+    空列表则明确表示当前没有启用的数据源。
+    """
+    catalog = []
+    seen = set()
+    if instances is not None:
+        for inst in instances:
+            if not isinstance(inst, dict) or not inst.get('enabled', True):
+                continue
+            if not inst.get('host'):
+                continue
+            iid = inst.get('id')
+            if not iid or iid in seen:
+                continue
+            snap = snapshots.get(iid) or {}
+            label = "%s (%s:%s)" % (
+                inst.get('name', iid),
+                inst.get('host', '?'),
+                inst.get('port', '?'),
+            )
+            error = snap.get('error')
+            catalog.append({
+                'instance_id': iid,
+                'source': label,
+                'label': label,
+                'db_type': inst.get('db_type') or snap.get('db_type', ''),
+                'error': error,
+                'ts': snap.get('ts', 0),
+                'slow_count': 0 if error else len(snap.get('data') or []),
+                'collected': bool(snap),
+            })
+            seen.add(iid)
+        return catalog
+
+    for iid, snap in (snapshots or {}).items():
+        if not isinstance(snap, dict) or iid in seen:
+            continue
+        label = snap.get('label', iid)
+        error = snap.get('error')
+        catalog.append({
+            'instance_id': iid,
+            'source': label,
+            'label': label,
+            'db_type': snap.get('db_type', ''),
+            'error': error,
+            'ts': snap.get('ts', 0),
+            'slow_count': 0 if error else len(snap.get('data') or []),
+            'collected': True,
+        })
+        seen.add(iid)
+    return catalog
+
+
 class MonitorEngine:
     """实时监控引擎 — 全局单例"""
 

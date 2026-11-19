@@ -235,6 +235,10 @@ build/core-missing.txt
 !modules/operations/tests/
 !modules/operations/tests/*.py
 
+# 实时监控数据源清单与慢查询页回归用例
+!modules/monitor/tests/
+!modules/monitor/tests/*.py
+
 # Generic business inspection compatibility documentation
 !/docs/business-inspection-compatibility.md
 
