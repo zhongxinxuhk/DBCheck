@@ -1,9 +1,11 @@
 {
   "repository": "https://github.com/fiyo/DBCheck.git",
   "branch": "main",
-  "last_commit": "20e351f7548ed793c4afe160eb9714bc076b01b7",
+  "last_commit": "9c762e779305803409c6faf88471a6237ba45ea1",
   "deferred": {
     "modules/entrypoints/main_oracle_full.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
+    "modules/ingest/drivers.py": "20e351f7548ed793c4afe160eb9714bc076b01b7",
+    "modules/ingest/oracle_client.py": "20e351f7548ed793c4afe160eb9714bc076b01b7",
     "modules/inspection/engine.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
     "modules/jdbc_connector.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
     "modules/monitor/connection_factory.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
@@ -18,6 +20,9 @@
     "modules/pro/instance_manager.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
     "modules/pro/metrics_collector.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
     "modules/server/inspect.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
+    "modules/skill/dbcheck/scripts/i18n/__init__.py": "20e351f7548ed793c4afe160eb9714bc076b01b7",
+    "modules/skill/dbcheck/scripts/i18n/en.py": "20e351f7548ed793c4afe160eb9714bc076b01b7",
+    "modules/skill/dbcheck/scripts/i18n/zh.py": "20e351f7548ed793c4afe160eb9714bc076b01b7",
     "modules/ssh/__init__.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
     "modules/ssh/tunnel_helper.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",
     "modules/web/app.py": "9f31de19683dc0f267ef8ca06c4acf1ed8aff1d7",

@@ -418,7 +418,7 @@ def _connect_instance_raw(db_info: Dict[str, Any]):
     _host = db_info.get("host")
     _port = db_info.get("port")
     _tunnel = None
-    if should_use_db_tunnel(_ssh_info):
+    if should_use_db_tunnel(_ssh_info, db_host=_host):
         _tunnel, _host, _port = build_db_ssh_tunnel(_ssh_info, _host, _port)
     _db_info = dict(db_info)
     _db_info["host"] = _host
