@@ -11,3 +11,8 @@
 .wordmark{width:140px;height:43px;object-fit:contain}.light-mark{display:none}[data-theme=light] .dark-mark{display:none}[data-theme=light] .light-mark{display:block}
 [data-theme=light] .button.primary{color:#fff}[data-theme=light] .download-card .archive{color:#8c5b08}
 .document-layout>*{min-width:0}.release-heading{flex-wrap:wrap}.release-body pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
+
+.inspection-permission-page .article-content { min-width: 0; overflow-wrap: anywhere; }
+.permission-code { margin: 1rem 0 1.4rem; }
+.permission-code .button { margin-bottom: .5rem; }
+.permission-code pre { max-width: 100%; overflow-x: auto; overflow-wrap: normal; }

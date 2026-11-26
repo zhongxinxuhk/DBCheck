@@ -61,15 +61,20 @@ def public_release(release):
     }
 
 
-def inline_markdown(value):
+def inline_markdown(value, vendor_links=False):
     value = esc(value)
     value = re.sub(r'`([^`]+)`', r'<code>\1</code>', value)
     value = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', value)
-    # Only GitHub HTTPS links are allowed in generated release-note markup.
-    return re.sub(r'\[([^\]]+)\]\((https://github\.com/[^\s)]+)\)', r'<a href="\2">\1</a>', value)
+    hosts = r"github\.com"
+    if vendor_links:
+        hosts += r"|docs\.oracle\.com|www\.gbase\.cn|learn\.microsoft\.com|eco\.dameng\.com"
+    return re.sub(
+        rf'\[([^\]]+)\]\((https://(?:{hosts})/[^\s)]+)\)',
+        r'<a href="\2">\1</a>', value,
+    )
 
 
-def markdown(value):
+def markdown(value, *, permissions=False):
     lines = re.sub(r'<!--.*?-->', '', value, flags=re.S).splitlines()
     result = []
     in_list = False
@@ -79,7 +84,14 @@ def markdown(value):
             if in_list:
                 result.append('</ul>')
                 in_list = False
-            result.append('</code></pre>' if in_code else '<pre><code>')
+            if in_code:
+                result.append('</code></pre>')
+            elif permissions:
+                result.append('<div class="permission-code"><button type="button" class="button" data-copy-sql>复制 SQL</button><pre><code>')
+            else:
+                result.append('<pre><code>')
+            if in_code and permissions:
+                result.append('</div>')
             in_code = not in_code
             continue
         if in_code:
@@ -89,7 +101,7 @@ def markdown(value):
             if not in_list:
                 result.append('<ul>')
                 in_list = True
-            result.append('<li>'+inline_markdown(line[2:])+'</li>')
+            result.append('<li>'+inline_markdown(line[2:], permissions)+'</li>')
             continue
         if in_list:
             result.append('</ul>')
@@ -97,9 +109,12 @@ def markdown(value):
         heading = re.match(r'^(#{1,6})\s+(.+)$', line)
         if heading:
             level = min(4, max(3, len(heading[1])+1))
-            result.append(f'<h{level}>{inline_markdown(heading[2])}</h{level}>')
+            if permissions and heading[2] in PERMISSION_SECTIONS:
+                result.append(f'<h2 id="{PERMISSION_SECTIONS[heading[2]]}">{esc(heading[2])}</h2>')
+            else:
+                result.append(f'<h{level}>{inline_markdown(heading[2], permissions)}</h{level}>')
         elif line.strip():
-            result.append('<p>'+inline_markdown(line)+'</p>')
+            result.append('<p>'+inline_markdown(line, permissions)+'</p>')
     if in_list:
         result.append('</ul>')
     if in_code:
@@ -228,6 +243,25 @@ def changelog(releases):
     return f'''<div class="container"><header class="page-heading"><span class="eyebrow">Changelog</span><h1>每一步更新，<br><span class="accent">都有迹可循。</span></h1><p>来自本项目 GitHub Releases 的正式发行记录，包含功能更新、修复和安装升级信息。</p><p class="small" data-release-status>正在检查最新发行记录。</p></header><div class="document-layout"><nav class="sidebar" aria-label="版本索引" data-version-index>{sidebar}</nav><div data-changelog>{entries}</div></div></div>'''
 
 
+PERMISSION_SECTIONS = {
+    'Oracle': 'oracle', 'GBase 8a': 'gbase-8a', 'SQL Server': 'sql-server',
+    '达梦 DM8': 'dm8', '其他数据库与自定义检查项': 'custom',
+}
+
+
+def inspection_permissions():
+    source = (ROOT/'inspection-permissions.md').read_text(encoding='utf-8')
+    body = re.sub(r'^# .*$', '', source, count=1, flags=re.M)
+    navigation = ''.join(f'<a href="#{anchor}">{esc(name)}</a>'
+                         for name, anchor in PERMISSION_SECTIONS.items())
+    return (f'<div class="container inspection-permission-page"><header class="page-heading">'
+            '<a class="small" href="../">← 使用文档</a><h1>巡检专用账号与权限</h1>'
+            '<p>按数据库及检查项创建专用账号，复制授权与验证 SQL。</p></header>'
+            f'<div class="document-layout"><nav class="sidebar" aria-label="数据库索引">{navigation}</nav>'
+            f'<article class="article-content">{markdown(body, permissions=True)}</article></div></div>'
+            '<div class="section"></div>')
+
+
 def docs():
     cards = [
         ('安装与部署', '环境准备、源码安装、平台驱动与部署方式。', '/blob/main/docs/install/INSTALL_zh.md'),
@@ -238,6 +272,7 @@ def docs():
         ('插件开发', '了解插件的结构、生命周期与开发方式。', '/blob/main/docs/plugin/plugin-development-guide-v2.8.0.md'),
     ]
     cards_html = ''.join(f'<article class="doc-card"><h3>{title}</h3><p>{description}</p><a href="{REPO}{path}">阅读文档 ↗</a></article>' for title,description,path in cards)
+    cards_html += '<article class="doc-card"><h3>巡检专用账号与权限</h3><p>按数据库复制账号创建、只读授权与验证 SQL。</p><a href="inspection-permissions/">阅读文档 ↗</a></article>'
     return f'''<div class="container"><header class="page-heading"><span class="eyebrow">Documentation</span><h1>从安装到日常运维，<br><span class="accent">找到需要的说明。</span></h1><p>从快速入门开始，按你的数据库与部署环境查阅对应文档。</p></header><div class="article-content"><div class="docs-grid">{cards_html}</div><section id="quickstart"><h2>首次使用</h2><ol><li>从下载中心选择平台安装包，或按安装文档部署源码。</li><li>启动服务后访问 http://localhost:5003。</li><li>管理员账号为 admin。请按初始化文档获取安装时的实际初始密码，首次登录后可在用户中心修改。</li><li>添加数据库连接，确认驱动与权限，再选择巡检模板。</li><li>查看结果并生成报告，按需设置定时任务。</li></ol></section><section id="faq"><h2>常见问题</h2><details><summary>为什么某些数据库的巡检章节为空？</summary><p>巡检模板和可采集指标随数据库类型、版本及权限变化。请结合数据库兼容性说明检查驱动和账号权限。</p></details><details><summary>如何选择 Linux 安装包？</summary><p>x86_64 选择 x64，aarch64 选择 ARM64。v1.0.4 便携包要求 glibc 2.28 及以上，具体依赖以对应发行说明为准。</p></details><details><summary>如何启用 AI 辅助诊断？</summary><p>在 Web UI 中配置本地 Ollama 或兼容的云 API，并确认模型可用。可结合知识库文档辅助诊断。</p></details><details><summary>升级时需要保留哪些数据？</summary><p>停止服务并备份整个原目录，保留 data/、数据库密码密钥、账号、任务和自定义规则。详细步骤见对应 Release。</p></details></section><section id="project"><h2>项目来源与许可</h2><p>DBPulse 基于 fiyo（Jack Ge）创建的上游 DBCheck / RaccoonX 持续演进。本仓库使用 DBPulse 品牌，保留上游代码的版权和许可证信息。</p><p>自研部分采用 PolyForm Noncommercial 1.0.0，商业用途需取得书面商业授权。上游 DBCheck 及其修改文件采用 Apache License 2.0。</p><p><a href="{REPO}/blob/main/LICENSE-PolyForm-Noncommercial-1.0.0.txt">非商业许可</a> · <a href="{REPO}/blob/main/LICENSE-COMMERCIAL.md">商业授权说明</a> · <a href="{REPO}/blob/main/LICENSE">Apache 2.0</a> · <a href="https://github.com/fiyo/DBCheck">上游项目</a> · <a href="{REPO}/blob/main/NOTICE">NOTICE</a></p></section><section><h2>反馈与交流</h2><p>遇到安装、数据库适配或报告问题，可在 GitHub Issues 提交版本、操作系统、数据库类型和复现步骤。</p><a class="button" href="{REPO}/issues">提交问题 ↗</a></section></div></div><div class="section"></div>'''
 
 
@@ -252,17 +287,18 @@ def build(output, releases):
         ('download', '下载中心', '下载 DBPulse Windows、Linux 和 macOS 可用安装包，查看平台版本、校验文件与安装升级步骤。', download(releases)),
         ('changelog', '更新日志', '查看 DBPulse 的版本更新、新增功能、修复和安装升级说明。', changelog(releases)),
         ('docs', '使用文档', 'DBPulse 安装部署、初始化、数据库兼容性、插件和许可说明。', docs()),
+        ('docs/inspection-permissions', '巡检专用账号与权限', 'Oracle、GBase 8a、SQL Server 和达梦 DM8 的巡检账号授权与验证 SQL。', inspection_permissions()),
     ]
     for page,title,description,content in pages:
         directory = output if page == 'home' else output/page
-        directory.mkdir(exist_ok=True)
-        (directory/'index.html').write_text(shell(page,title,description,content,releases[0],'./' if page=='home' else '../'),encoding='utf-8')
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory/'index.html').write_text(shell(page,title,description,content,releases[0],'./' if page=='home' else '../' * (page.count('/') + 1)),encoding='utf-8')
     (output/'assets/releases.json').write_text(json.dumps({'releases':releases},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     (output/'404.html').write_text(shell('404','页面未找到','返回 DBPulse 官网首页。','<section class="section container"><h1>页面未找到</h1><p>你可以返回首页，或从下载中心选择安装包。</p><a class="button primary" href="/DBCheck/">返回首页 →</a></section>',releases[0],'/DBCheck/'),encoding='utf-8')
-    urls = ['','download/','changelog/','docs/']
+    urls = ['','download/','changelog/','docs/','docs/inspection-permissions/']
     (output/'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join(f'<url><loc>{SITE}/{path}</loc></url>' for path in urls)+'</urlset>',encoding='utf-8')
     (output/'robots.txt').write_text(f'User-agent: *\nAllow: /DBCheck/\nSitemap: {SITE}/sitemap.xml\n',encoding='utf-8')
-    print(f'Built 4 pages, 404 page and {len(releases)} releases into {output}')
+    print(f'Built {len(pages)} pages, 404 page and {len(releases)} releases into {output}')
 
 
 if __name__ == '__main__':

@@ -251,3 +251,20 @@ async function refreshReleases() {
   } finally { clearTimeout(timeout); }
 }
 refreshReleases();
+
+document.querySelectorAll('[data-copy-sql]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const code = button.parentElement.querySelector('code');
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      button.textContent = '已复制';
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = '已选中，请手动复制';
+    }
+  });
+});
