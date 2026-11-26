@@ -21,6 +21,7 @@ import os
 import platform
 import shutil
 import sqlite3
+from threading import RLock
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict, fields as dc_fields
@@ -366,6 +367,7 @@ class InstanceManager:
 
     def __init__(self, data_dir: str = str(paths.PRO_DATA_DIR)):
         self.data_dir = data_dir
+        self._import_lock = RLock()
         self.instances_db = os.path.join(data_dir, "instances.db")
         self.groups_db = os.path.join(data_dir, "groups.db")
         # 兼容旧版 JSON 路径（迁移时回退用）
@@ -1032,7 +1034,38 @@ class InstanceManager:
             'instances': out,
         }
 
-    def import_json(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def import_identity(data, *, include_jdbc=True):
+        def field(key):
+            return str(data.get(key) or "").strip()
+
+        return (
+            field("db_type").lower(), field("host").rstrip(".").lower(),
+            field("port"), field("user"), field("database"), field("service_name"),
+            field("sid"), bool(data.get("use_sid")), bool(data.get("sysdba")),
+            field("tenant"), field("gbase_server_name"), field("auth_source"), field("seed_nodes"),
+            field("ssh_host").lower() if data.get("ssh_tunnel") else "",
+            (field("ssh_port") or "22") if data.get("ssh_tunnel") else "",
+            field("ssh_user") if data.get("ssh_tunnel") else "",
+            field("jdbc_url") if include_jdbc else "",
+        )
+
+    def _import_matches(self, visible_ids):
+        matches = {}
+        for iid, instance in self._instances.items():
+            if visible_ids is not None and iid not in visible_ids:
+                continue
+            record = instance.to_dict()
+            record["jdbc_url"] = _decrypt_jdbc_url(record.get("jdbc_url") or "")
+            matches.setdefault(self.import_identity(record), []).append(iid)
+        return matches
+
+    def import_json(self, payload: Dict[str, Any], *, visible_ids=None) -> Dict[str, Any]:
+        with self._import_lock:
+            self._ensure_instances_fresh()
+            return self._import_json(payload, visible_ids=visible_ids)
+
+    def _import_json(self, payload: Dict[str, Any], *, visible_ids=None) -> Dict[str, Any]:
         """导入 export_json 产出的 JSON（merge 模式，同 id 覆盖更新、新数据源新增）。
 
         密码字段自动走 add_instance/update_instance 的加密链路重新加密，
@@ -1047,6 +1080,8 @@ class InstanceManager:
         valid_fields = {f.name for f in dc_fields(DatabaseInstance)}
         added = updated = skipped = failed = 0
         errors: List[str] = []
+        created_ids = []
+        matches = self._import_matches(visible_ids)
 
         # 分组先落（导入数据源时组引用才不悬空）
         existing_groups = {g.name for g in self.get_all_groups()}
@@ -1076,27 +1111,47 @@ class InstanceManager:
                     continue
                 label = data['name']
                 iid = data.get('id') or ''
-                if iid and iid in self._instances:
-                    r = self.update_instance(iid, data)
-                    if r.get('ok'):
-                        updated += 1
-                    else:
-                        failed += 1
-                        errors.append('%s 更新失败: %s' % (label, r.get('message')))
+                identity = self.import_identity(data)
+                if iid in self._instances and visible_ids is not None and iid not in visible_ids:
+                    raise ValueError('导入 ID 与现有记录冲突')
+                candidates = matches.get(identity, [])
+                if not data.get('jdbc_url'):
+                    candidates = [candidate for key, ids in matches.items()
+                                  if key[:-1] == identity[:-1] for candidate in ids]
+                if iid not in self._instances:
+                    if len(candidates) > 1:
+                        raise ValueError('存在多条相同连接，请指定准确的数据源 ID')
+                    if candidates:
+                        iid = candidates[0]
+                if iid in self._instances:
+                    data.pop('id', None)
+                    if not data.get('jdbc_url'):
+                        data.pop('jdbc_url', None)
+                    for field in ('password', 'ssh_password', 'ssh_key_password'):
+                        if data.get(field) in (None, '', '***'):
+                            data.pop(field, None)
+                    result = self.update_instance(iid, data)
+                    if not result.get('ok'):
+                        raise ValueError(result.get('message'))
+                    if not data.get('jdbc_url'):
+                        identity = (*identity[:-1], _decrypt_jdbc_url(self._instances[iid].jdbc_url or ''))
+                    for key in list(matches):
+                        if iid in matches[key] and key != identity:
+                            matches[key].remove(iid)
+                    if iid not in matches.setdefault(identity, []):
+                        matches[identity].append(iid)
+                    updated += 1
                     continue
-                inst = DatabaseInstance(**data)
-                r = self.add_instance(inst)
-                if r.get('ok'):
-                    added += 1
-                    continue
-                # id 冲突（跨机导入撞 id）：去掉 id 让引擎重新生成
-                inst.id = ''
-                r2 = self.add_instance(inst)
-                if r2.get('ok'):
-                    added += 1
-                else:
-                    failed += 1
-                    errors.append('%s 导入失败: %s' % (label, r2.get('message')))
+                data['id'] = iid
+                instance = DatabaseInstance(**data)
+                result = self.add_instance(instance)
+                if not result.get('ok'):
+                    raise ValueError(result.get('message'))
+                if visible_ids is not None:
+                    visible_ids = {*visible_ids, instance.id}
+                matches.setdefault(identity, []).append(instance.id)
+                created_ids.append(instance.id)
+                added += 1
             except Exception as e:
                 failed += 1
                 errors.append('%s 异常: %s' % (label, e))
@@ -1107,7 +1162,7 @@ class InstanceManager:
         if failed:
             msg += '，失败 %d' % failed
         return {'ok': failed == 0, 'added': added, 'updated': updated,
-                'skipped': skipped, 'failed': failed,
+                'skipped': skipped, 'failed': failed, 'created_ids': created_ids,
                 'errors': errors[:20], 'message': msg}
 
     def test_connection(self, instance_id: str) -> dict:
@@ -1915,19 +1970,26 @@ class InstanceManager:
         return report
 
     # 批量操作
-    def batch_add_from_csv(self, csv_content: str) -> Dict[str, Any]:
+    def batch_add_from_csv(self, csv_content: str, *, visible_ids=None) -> Dict[str, Any]:
+        with self._import_lock:
+            self._ensure_instances_fresh()
+            return self._batch_add_from_csv(csv_content, visible_ids=visible_ids)
+
+    def _batch_add_from_csv(self, csv_content: str, *, visible_ids=None) -> Dict[str, Any]:
         """从CSV批量导入实例"""
         import csv
         import io
 
-        added = 0
+        added = skipped = 0
+        matches = self._import_matches(visible_ids)
         errors = []
+        created_ids = []
 
         reader = csv.DictReader(io.StringIO(csv_content))
         for row in reader:
             try:
                 instance = DatabaseInstance(
-                    id=self._generate_id(row.get("name", ""), row.get("db_type", "mysql")),
+                    id="",
                     name=row.get("name", ""),
                     db_type=row.get("db_type", "mysql"),
                     host=row.get("host", ""),
@@ -1935,13 +1997,20 @@ class InstanceManager:
                     user=row.get("user", ""),
                     password=row.get("password", ""),
                     service_name=row.get("service_name", ""),
+                    database=row.get("database", ""),
                     tags=row.get("tags", "").split(","),
                     group=row.get("group", "default"),
                     description=row.get("description", "")
                 )
+                identity = self.import_identity(instance.to_dict())
+                if any(key[:-1] == identity[:-1] for key in matches):
+                    skipped += 1
+                    continue
                 result = self.add_instance(instance)
                 if result["ok"]:
                     added += 1
+                    created_ids.append(instance.id)
+                    matches[identity] = [instance.id]
                 else:
                     errors.append(f"{row.get('name', 'unknown')}: {result['message']}")
             except Exception as e:
@@ -1950,8 +2019,10 @@ class InstanceManager:
         return {
             "ok": True,
             "added": added,
+            "skipped": skipped,
+            "created_ids": created_ids,
             "errors": errors,
-            "message": f"成功导入 {added} 个实例"
+            "message": f"成功导入 {added} 个实例，跳过重复 {skipped} 个"
         }
 
 

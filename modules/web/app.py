@@ -7895,13 +7895,14 @@ def api_pro_import_instances():
             return jsonify({'ok': False, 'error': '请提供 CSV 内容'})
 
         im = get_instance_manager()
-        before = {i.get('id') for i in im.get_all_instances()}
-        result = im.batch_add_from_csv(csv_content)
+        from modules.access import filter_visible, principal_from_session, set_owner
+        principal = principal_from_session()
+        instances = im.get_all_instances()
+        visible_ids = {i.get('id') for i in filter_visible(principal, instances, 'instance')}
+        result = im.batch_add_from_csv(csv_content, visible_ids=visible_ids)
         try:
-            from modules.access import principal_from_session, set_owner
-            user = principal_from_session()
-            for iid in {i.get('id') for i in im.get_all_instances()} - before:
-                set_owner('instance', iid, user)
+            for iid in result.pop('created_ids', []):
+                set_owner('instance', iid, principal)
         except Exception as _own_err:
             print('[access] 导入数据源归属登记失败: ' + str(_own_err))
         return jsonify(result)
@@ -7953,7 +7954,6 @@ def api_pro_import_instances_json():
     try:
         import json
         from modules.pro import get_instance_manager
-        from modules.access import principal_from_session, set_owner
         data = request.get_json(silent=True) or {}
         payload = data.get('payload')
         if isinstance(payload, str):
@@ -7964,12 +7964,14 @@ def api_pro_import_instances_json():
         if not isinstance(payload, dict):
             return jsonify({'ok': False, 'error': '请提供导出文件内容'})
         im = get_instance_manager()
-        before = {i.get('id') for i in im.get_all_instances()}
-        result = im.import_json(payload)
+        from modules.access import filter_visible, principal_from_session, set_owner
+        principal = principal_from_session()
+        instances = im.get_all_instances()
+        visible_ids = {i.get('id') for i in filter_visible(principal, instances, 'instance')}
+        result = im.import_json(payload, visible_ids=visible_ids)
         try:
-            user = principal_from_session()
-            for iid in {i.get('id') for i in im.get_all_instances()} - before:
-                set_owner('instance', iid, user)
+            for iid in result.pop('created_ids', []):
+                set_owner('instance', iid, principal)
         except Exception as _own_err:
             print('[access] JSON 导入数据源归属登记失败: ' + str(_own_err))
         return jsonify(result)
@@ -8358,13 +8360,14 @@ def api_pro_datasources_import():
         data = request.get_json()
         csv_content = data.get('csv_content', '')
         im = get_instance_manager()
-        before = {i.get('id') for i in im.get_all_instances()}
-        result = im.batch_add_from_csv(csv_content)
+        from modules.access import filter_visible, principal_from_session, set_owner
+        principal = principal_from_session()
+        instances = im.get_all_instances()
+        visible_ids = {i.get('id') for i in filter_visible(principal, instances, 'instance')}
+        result = im.batch_add_from_csv(csv_content, visible_ids=visible_ids)
         try:
-            from modules.access import principal_from_session, set_owner
-            user = principal_from_session()
-            for iid in {i.get('id') for i in im.get_all_instances()} - before:
-                set_owner('instance', iid, user)
+            for iid in result.pop('created_ids', []):
+                set_owner('instance', iid, principal)
         except Exception as _own_err:
             print('[access] 导入数据源归属登记失败: ' + str(_own_err))
         return jsonify(result)
@@ -14053,6 +14056,12 @@ def main():
         print(f"[startup] 初始化 inspection.db 失败（降级继续）: {_e}")
 
     _verify_agreement_integrity()
+
+    try:
+        from modules.intelligence.workflow_store import initialize_workflows
+        initialize_workflows()
+    except Exception as error:
+        print(f"[startup] 内置工作流初始化失败: {error}")
 
     # 恢复备份后，即使没有人打开控制台，也应按时执行已启用的巡检任务。
     try:

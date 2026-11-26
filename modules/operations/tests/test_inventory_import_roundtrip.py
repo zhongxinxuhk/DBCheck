@@ -182,3 +182,52 @@ def test_gbase_connection_mode_survives_export_and_import():
     asset["source"].update(db_type="gbase8a", gbase8a_allow_plaintext=True)
     parsed = parse_excel(inventory_xlsx([asset], []).read())
     assert parsed[0]["source"]["gbase8a_allow_plaintext"] is True
+
+
+def test_identical_ledger_rows_collapse_but_conflicting_values_are_rejected():
+    workbook = Workbook()
+    page = workbook.active
+    page.title = "资产台账"
+    page.append(["配置项编号", "资产名称", "数据库类型", "数据库IP/主机", "数据库端口"])
+    row = ["CI-REPEAT", "测试数据源", "oracle", "192.0.2.5", 1521]
+    page.append(row)
+    page.append(row)
+    content = io.BytesIO()
+    workbook.save(content)
+    assert len(parse_excel(content.getvalue())) == 1
+
+    page.append([*row[:-1], 1522])
+    content = io.BytesIO()
+    workbook.save(content)
+    with pytest.raises(ValueError, match="重复且内容不同"):
+        parse_excel(content.getvalue())
+
+
+def test_datasource_duplicate_import_preserves_id_and_credentials(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+    from modules.core import paths
+    from modules.pro.instance_manager import DatabaseInstance, InstanceManager
+
+    key = tmp_path / ".db_key"
+    key.write_bytes(Fernet.generate_key())
+    monkeypatch.setattr(paths, "DB_KEY_PATH", key)
+    manager = InstanceManager(str(tmp_path))
+    original = DatabaseInstance(id="kept", name="已有", db_type="oracle",
+                                host="db.example.", port=1521, user="obs",
+                                service_name="app", password="fixture-only")
+    assert manager.add_instance(original)["ok"]
+    json_item = {
+        "id": "another-id", "name": "导入", "db_type": "oracle", "host": "DB.EXAMPLE",
+        "port": 1521, "user": "obs", "service_name": "app", "password": "***",
+    }
+    result = manager.import_json({"instances": [json_item, json_item]}, visible_ids={"kept"})
+    assert (result["added"], result["updated"]) == (0, 2)
+    assert manager.get_instance_decrypted("kept")["password"] == "fixture-only"
+    csv_result = manager.batch_add_from_csv(
+        "name,db_type,host,port,user,service_name\n重导,oracle,db.example,1521,obs,app\n",
+        visible_ids={"kept"},
+    )
+    assert (csv_result["added"], csv_result["skipped"]) == (0, 1)
+    assert len(manager.get_all_instances()) == 1
+    hidden = manager.import_json({"instances": [{**json_item, "id": "kept"}]}, visible_ids=set())
+    assert not hidden["ok"]

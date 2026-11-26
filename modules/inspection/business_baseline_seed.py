@@ -472,6 +472,36 @@ _SQLSERVER = [
 ]
 
 
+_GBASE8A += [
+    ('local_infile', "SHOW GLOBAL VARIABLES LIKE 'local_infile';",
+     '=', 'OFF', 'MEDIUM', '检查客户端本地文件导入开关，批量导入确有依赖时记录例外。',
+     'Review client-side local file loading and document approved bulk-import exceptions.'),
+]
+_DM8 += [
+    ('MONITOR_SQL_EXEC', "SELECT PARA_VALUE FROM V$DM_INI WHERE PARA_NAME = 'MONITOR_SQL_EXEC';",
+     '=', '1', 'LOW', '使用 SQL 历史诊断时建议启用执行统计；按业务负载评估采集开销。',
+     'For SQL history diagnostics, consider execution statistics and its workload overhead.'),
+]
+_ORACLE += [
+    ('remote_os_roles', "SELECT UPPER(VALUE) FROM V$PARAMETER WHERE NAME = 'remote_os_roles';",
+     '=', 'FALSE', 'HIGH', '远程客户端不得通过操作系统角色获取数据库授权。',
+     'Disable database roles asserted by remote operating systems.'),
+    ('o7_dictionary_accessibility',
+     "SELECT UPPER(VALUE) FROM V$PARAMETER WHERE NAME = 'o7_dictionary_accessibility';",
+     '=', 'FALSE', 'HIGH', '限制 ANY 权限对 SYS 数据字典的访问。',
+     'Restrict ANY privileges from accessing SYS dictionary objects.'),
+]
+_SQLSERVER += [
+    ('clr strict security',
+     "SELECT CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'clr strict security';",
+     '=', '1', 'HIGH', 'SQL Server 2017 及以上应启用 CLR 严格安全模式。',
+     'Keep CLR strict security enabled on SQL Server 2017 or later.'),
+    ('remote access',
+     "SELECT CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'remote access';",
+     '=', '0', 'LOW', '检查旧式服务器间远程存储过程调用，业务依赖须单独核对。',
+     'Review legacy remote stored procedure access and permitted exceptions.'),
+]
+
 PARAM_BASELINES = {
     'gbase8a': _GBASE8A,
     'dm8': _DM8,
