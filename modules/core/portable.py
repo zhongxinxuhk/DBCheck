@@ -96,6 +96,13 @@ def self_test():
         "psutil",
         "six",
     )
+    if sys.platform == "win32":
+        # 便携包随包分发 DM 原生驱动（dmPython + 客户端 DLL + dmssl）与 ODBC 直连模块。
+        required += ("dmPython", "dmssl", "pyodbc")
+    elif sys.platform.startswith("linux"):
+        # Linux 包同样带 dmPython；dmssl 在 Linux 上只是纯 .so 目录，不可 import。
+        # pyodbc 依赖系统的 libodbc.so.2 与 ODBC 驱动，不随包分发。
+        required += ("dmPython",)
     errors = {}
     for name in required:
         try:

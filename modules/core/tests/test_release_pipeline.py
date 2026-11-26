@@ -641,6 +641,7 @@ def test_windows_package_ships_dameng_native_driver():
     lock = (ROOT / 'build' / 'portable' / 'requirements-lock.txt').read_text(encoding='utf-8')
     excludes = next(line for line in spec.splitlines() if 'excludes=' in line)
     assert 'dmPython' not in excludes
+    assert 'pyodbc' not in excludes  # Windows 有 cp312 轮子，随包玄带 ODBC 直连
     assert "'dmPython'" in spec and "'dmssl'" in spec
     assert 'runtime-hook-dmpython.py' in spec
     assert 'libcrypto-3-x64.dll' in spec
@@ -648,6 +649,8 @@ def test_windows_package_ships_dameng_native_driver():
     assert 'sys_platform == "win32"' in lock and 'sys_platform == "linux"' in lock
     package_check = (ROOT / 'modules' / 'core' / 'package_check.py').read_text(encoding='utf-8')
     assert 'dmPython' in package_check and 'dmssl' in package_check
+    portable = (ROOT / 'modules' / 'core' / 'portable.py').read_text(encoding='utf-8')
+    assert '"dmPython", "dmssl", "pyodbc"' in portable
 
 
 def test_linux_package_ships_dameng_native_driver():
@@ -655,6 +658,7 @@ def test_linux_package_ships_dameng_native_driver():
     lock = (ROOT / 'build' / 'portable' / 'requirements-lock.txt').read_text(encoding='utf-8')
     excludes = next(line for line in spec.splitlines() if 'excludes=' in line)
     assert 'dmPython' not in excludes
+    assert 'pyodbc' in excludes  # Linux 依赖系统 libodbc.so.2，无法自包含
     assert "'dmPython'" in spec
     # 冻结时必须保留 wheel 的目录布局，否则 $ORIGIN 的 RPATH 解析不到 libdmdpi
     assert "'dmpython.libs'" in spec and "'dmssl'" in spec

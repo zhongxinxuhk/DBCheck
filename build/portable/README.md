@@ -31,6 +31,26 @@ Windows x64 二进制在 Windows 11 ARM64 上使用系统内置的 x64 仿真运
 
 微软运行方式说明见 https://learn.microsoft.com/en-us/windows/arm/apps-on-arm-x86-emulation 。
 
+## 随包依赖与一键启动
+
+包内已包含应用启动所需的全部组件，客户机无需安装 Python 或 Java：
+
+| 组件 | 位置 | 说明 |
+| --- | --- | --- |
+| Python 运行时 | `bin/<平台>/_internal/` | PyInstaller 冻结，含锁文件内全部可安装的 pip 依赖 |
+| Java 运行时 | `runtime/<平台>/jre/` | JDBC 驱动依赖，`start.sh` / `start.bat` 自动设置 `JAVA_HOME` |
+| JDBC 驱动 | `drivers/<类型>/` | DM8、Oracle、SQL Server、GBase 8a/8s、DB2、KingbaseES、HighGo、YashanDB 等 |
+| 达梦原生驱动 | `bin/<平台>/_internal/` | Windows / Linux 均随包分发 dmPython 与达梦客户端库；Linux 保留 `dmpython.libs/` 原始布局 |
+
+宿主环境仍需满足：
+
+- Linux：glibc ≥ 2.28；`libstdc++.so.6`、`libgcc_s.so.1` 由 PyInstaller 依赖分析随包收集。
+- SQL Server 的 ODBC 直连（`pyodbc`，仅 Windows 包内置）需宿主机安装 Microsoft ODBC Driver 17/18；未安装时自动退回随包 `pytds` 或 JDBC。
+- Oracle 11g 厚模式需要 Instant Client；12.1 及以上使用 `oracledb` thin 模式，无需客户端。
+- GBase 8s 使用随包 `drivers/gbase8s/` 的 JDBC 驱动（官方 `gbase8sdb` 无 Python 3.12 轮子，不打入包内）。
+
+`--portable-self-test` 会校验核心模块、达梦原生驱动、随包 Java/JVM 与共享资源目录，任一项缺失都返回非零退出码。
+
 ## 运行检查与旧版导入
 
 ```bat
