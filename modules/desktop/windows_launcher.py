@@ -22,6 +22,7 @@ from modules.desktop.local_backup import LocalBackup, RecoveryRequired
 from modules.desktop.log_output import LogOutput
 from modules.desktop.maintenance import Maintenance, CrashRecovery
 from modules.desktop.offline_update import OfflineUpdate, OfflineUpdateError
+from modules.desktop.online_update import GitHubAuthenticationRequired, GitHubUpdate, RELEASES_URL
 
 ADDRESS = "http://127.0.0.1:5003"
 # 大屏为匿名只读页，点击后无需登录即可投屏查看实例状态。
@@ -1372,7 +1373,7 @@ def main():
     if os.name != "nt":
         raise RuntimeError("此启动器仅适用于 Windows")
     import tkinter as tk
-    from tkinter import ttk, messagebox, filedialog
+    from tkinter import ttk, messagebox, filedialog, simpledialog
     from datetime import datetime
     import webbrowser
     from ctypes import wintypes as w
@@ -1429,6 +1430,7 @@ def main():
     quitting = False
     restarting_for_update = False
     pending_update = None
+    pending_online = None
     updater = OfflineUpdate(directory)
     closing = threading.Event()
     test_mode = "--desktop-self-test" in sys.argv
@@ -1468,27 +1470,65 @@ def main():
     def update_progress(message):
         events.put(("log", "[更新] " + message + "\n"))
 
+    def stage_update(prepare, *, online=False):
+        if not backend.owned_running() and backend.healthy():
+            raise OfflineUpdateError("检测到其他启动方式运行的服务，请先停止该服务后再更新")
+        prepared = prepare()
+        events.put(("update_prepared", (prepared, online)))
+
     def prepare_offline_update():
-        if busy or pending_update is not None:
+        if busy or pending_update is not None or pending_online is not None:
             return
         selected = filedialog.askopenfilename(
             parent=root,
             title="选择 DBPulse 离线更新包",
             filetypes=[("DBPulse 离线更新包", "*.zip")],
         )
-        if not selected:
+        if selected:
+            action(lambda: stage_update(lambda: updater.prepare(selected, update_progress)),
+                   "正在校验离线更新包…")
+
+    def check_online_update(token=None):
+        if busy or pending_update is not None or pending_online is not None:
             return
 
-        def prepare():
-            prepared = updater.prepare(selected, update_progress)
-            if not backend.owned_running() and backend.healthy():
-                prepared.cleanup()
-                raise OfflineUpdateError(
-                    "检测到其他启动方式运行的服务，请先停止该服务后再离线更新"
-                )
-            events.put(("update_prepared", prepared))
+        def check():
+            online = GitHubUpdate(updater, token)
+            try:
+                release = online.latest()
+            except GitHubAuthenticationRequired:
+                events.put(("online_auth_required", None))
+            else:
+                events.put(("online_release", (online, release)))
 
-        action(prepare, "正在校验离线更新包…")
+        action(check, "正在检查 GitHub 发行版…")
+
+    def show_online_release(result):
+        if quitting or closing.is_set():
+            return
+        if result is None:
+            token = simpledialog.askstring(
+                "读取 GitHub 私有发行版",
+                "本项目的 GitHub Releases 需授权访问。请输入有该仓库 Contents 读取权限的访问令牌。令牌仅用于本次检查和下载，不保存。",
+                parent=root,
+                show="*",
+            )
+            if token and token.strip():
+                check_online_update(token)
+            return
+        online, release = result
+        if release is None:
+            messagebox.showinfo("在线更新", "GitHub 上暂无高于本机版本的正式发行版。", parent=root)
+            return
+        message = (
+            "发现新的正式发行版 " + release.version + "。\n\n"
+            + release.name + f"（{release.size / (1024 * 1024):.1f} MB）\n"
+            + RELEASES_URL + "\n\n"
+            "现在下载并校验？下载期间服务继续运行，安装前还会再次确认。"
+        )
+        if messagebox.askyesno("在线更新", message, parent=root):
+            action(lambda: stage_update(lambda: online.prepare(release, update_progress), online=True),
+                   "正在下载及校验 GitHub 更新包…")
 
     start = ttk.Button(
         buttons, text="启动服务", command=start_service,
@@ -1518,6 +1558,10 @@ def main():
         buttons, text="离线更新", command=prepare_offline_update, cursor="hand2"
     )
     offline_update_button.pack(side="right")
+    online_update_button = ttk.Button(
+        buttons, text="在线更新", command=check_online_update, cursor="hand2"
+    )
+    online_update_button.pack(side="right", padx=(0, 8))
 
     def progress(message):
         events.put(("log", "[备份] " + message + "\n"))
@@ -1626,14 +1670,16 @@ def main():
     )
     settings_button.pack(side="left", padx=(8, 0))
 
-    def confirm_offline_update(prepared):
+    def confirm_update(prepared, online):
         if closing.is_set() or quitting:
             prepared.cleanup()
             return
         summary = prepared.summary()
         size = summary["bytes"] / (1024 * 1024)
+        label = "在线更新" if online else "离线更新"
+        package = "GitHub 发行包" if online else "离线包"
         message = (
-            "将使用以下离线包更新本机程序：\n\n"
+            f"将使用以下{package}更新本机程序：\n\n"
             + Path(summary["source"]).name
             + "\n版本：" + (summary["current_version"] or "未知")
             + " → " + summary["version"]
@@ -1642,9 +1688,9 @@ def main():
             "更新期间后台服务会停止，当前窗口会退出；更新助手完成文件替换后会自动重新启动。\n"
             "data 数据目录（账号、数据源、台账、授权、密钥、日志与备份）不会被覆盖。\n"
             "旧程序文件会保留在：\n" + summary["backup"] + "\n\n"
-            "确定开始离线更新？"
+            f"确定开始{label}？"
         )
-        if not messagebox.askyesno("离线更新", message, parent=root):
+        if not messagebox.askyesno(label, message, parent=root):
             prepared.cleanup()
             return
 
@@ -1654,7 +1700,7 @@ def main():
             if not was_running and backend.healthy():
                 prepared.cleanup()
                 raise OfflineUpdateError(
-                    "检测到其他启动方式运行的服务，请先停止该服务后再离线更新"
+                    "检测到其他启动方式运行的服务，请先停止该服务后再更新"
                 )
             try:
                 if was_running:
@@ -1684,7 +1730,7 @@ def main():
                         pass
                 raise
 
-        action(handoff, "正在停止服务并准备离线更新…")
+        action(handoff, f"正在停止服务并准备{label}…")
 
     def maintenance_tick():
         if not busy and not quitting:
@@ -1790,7 +1836,7 @@ def main():
         action(backend.stop)
 
     def poll():
-        nonlocal busy, quitting, restarting_for_update, pending_update
+        nonlocal busy, quitting, restarting_for_update, pending_update, pending_online
         for _ in range(100):
             try:
                 event = events.get_nowait()
@@ -1808,6 +1854,8 @@ def main():
                     show()
                 elif kind == "update_prepared":
                     pending_update = message
+                elif kind in {"online_auth_required", "online_release"}:
+                    pending_online = (message,)
                 elif kind == "update_handoff":
                     restarting_for_update = True
                     quitting = True
@@ -1828,13 +1876,19 @@ def main():
             elif isinstance(event, bool):
                 tray.running = event
 
-        if quitting and pending_update is not None:
-            pending_update.cleanup()
-            pending_update = None
-        if pending_update is not None and not busy and not quitting:
+        if quitting:
+            if pending_update is not None:
+                pending_update[0].cleanup()
+                pending_update = None
+            pending_online = None
+        if not busy and pending_update is not None:
             prepared = pending_update
             pending_update = None
-            root.after(20, lambda item=prepared: confirm_offline_update(item))
+            root.after(20, lambda item=prepared: confirm_update(*item))
+        if not busy and pending_online is not None:
+            result = pending_online[0]
+            pending_online = None
+            root.after(20, lambda item=result: show_online_release(item))
 
         tray.stoppable = backend.owned_running()
         pending = tray.stoppable and not tray.running
@@ -1856,6 +1910,7 @@ def main():
             verify_button,
             settings_button,
             offline_update_button,
+            online_update_button,
         ):
             button.configure(state="disabled" if busy else "normal")
         if not busy:

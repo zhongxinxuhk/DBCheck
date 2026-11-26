@@ -443,3 +443,97 @@ def test_helper_applies_staged_package_after_launcher_exit(tmp_path, monkeypatch
 def test_helper_requires_transaction_argument():
     assert helper_main(["dbcheck.exe"]) == 2
     assert helper_main(["dbcheck.exe", "--offline-update-helper"]) == 2
+
+
+@pytest.mark.parametrize("layout", ["standalone", "windows-only", "shared"])
+def test_github_update_downloads_compatible_release_and_stages_existing_installer(
+    tmp_path, monkeypatch, layout
+):
+    import io
+    from modules.desktop.online_update import GitHubUpdate
+
+    portable = layout != "standalone"
+    root = portable_installation(tmp_path) if portable else standalone_installation(tmp_path)
+    archive = portable_package(tmp_path) if portable else standalone_package(tmp_path)
+    if layout == "shared":
+        marker_path = root / "dbpulse-portable.json"
+        marker = json.loads(marker_path.read_text())
+        marker["required_platforms"] += ["linux-x86_64", "linux-arm64"]
+        marker_path.write_text(json.dumps(marker))
+    content = archive.read_bytes()
+    name = ("DBPulse-v1.0.7-Windows-Linux-Portable.zip" if layout == "shared"
+            else "DBPulse-v1.0.7-windows-x86_64.zip")
+    assets = [
+        {"id": 1, "name": "DBPulse-v1.0.7-linux-x86_64.zip", "state": "uploaded"},
+        {"id": 2, "name": name, "state": "uploaded",
+         "size": len(content), "digest": "sha256:" + digest(content)},
+    ]
+    payload = json.dumps({"tag_name": "v1.0.7", "assets": assets}).encode()
+    client = GitHubUpdate(OfflineUpdate(root), token="")
+    requests = []
+
+    def request(path, accept):
+        requests.append((path, accept))
+        return io.BytesIO({"/latest": payload, "/assets/2": content}[path])
+
+    monkeypatch.setattr(client, "_request", request)
+    release = client.latest()
+    prepared = client.prepare(release)
+    try:
+        assert prepared.mode == ("portable" if portable else "standalone")
+        assert prepared.version == "v1.0.7" and prepared.root.exists()
+        assert not prepared.source.exists()
+        assert (root / "data/secret.txt").read_text() == "keep this"
+        assert requests == [("/latest", "application/vnd.github+json"),
+                            ("/assets/2", "application/octet-stream")]
+    finally:
+        prepared.cleanup()
+
+
+def test_github_update_validates_checksum_file_and_rejects_corrupted_download(tmp_path, monkeypatch):
+    import io
+    from modules.desktop.online_update import GitHubUpdate
+
+    root = standalone_installation(tmp_path)
+    payload = b"invalid update ZIP"
+    name = "DBPulse-v1.0.7-windows-x86_64.zip"
+    release = {"tag_name": "v1.0.7", "assets": [
+        {"id": 3, "name": name, "size": len(payload), "state": "uploaded"},
+        {"id": 5, "name": "SHA256SUMS.txt", "state": "uploaded"},
+    ]}
+    client = GitHubUpdate(OfflineUpdate(root), token="")
+    remote = {"/latest": json.dumps(release).encode(), "/assets/3": payload,
+              "/assets/5": ("0" * 64 + "  " + name + "\n").encode()}
+    monkeypatch.setattr(client, "_request", lambda path, _: io.BytesIO(remote[path]))
+
+    with pytest.raises(OfflineUpdateError, match="SHA-256 校验不匹配"):
+        client.prepare(client.latest())
+    assert not list(client.installer.backups.glob(".download-*"))
+    assert not list(client.installer.backups.glob(".staging-*"))
+
+
+def test_github_update_does_not_downgrade_newer_local_installation(tmp_path, monkeypatch):
+    import io
+    from modules.desktop.online_update import GitHubUpdate
+
+    root = standalone_installation(tmp_path, "v1.0.17")
+    client = GitHubUpdate(OfflineUpdate(root), token="")
+    monkeypatch.setattr(client, "_request", lambda *_: io.BytesIO(b'{"tag_name":"v1.0.16"}'))
+    assert client.latest() is None
+
+
+def test_github_update_token_is_not_forwarded_to_release_asset_storage(tmp_path, monkeypatch):
+    from modules.desktop.online_update import GitHubUpdate, _GitHubRedirect
+
+    client = GitHubUpdate(OfflineUpdate(standalone_installation(tmp_path)), token="example_read_token")
+    mock = Mock()
+    monkeypatch.setattr(client, "_opener", mock)
+    client._request("/assets/123", "application/octet-stream")
+    original = mock.open.call_args.args[0]
+    assert original.get_header("Authorization") == "Bearer example_read_token"
+    redirected = _GitHubRedirect().redirect_request(
+        original, None, 302, "", {}, "https://release-assets.githubusercontent.com/asset"
+    )
+    assert not redirected.has_header("Authorization")
+    with pytest.raises(OfflineUpdateError, match="重定向地址"):
+        _GitHubRedirect().redirect_request(original, None, 302, "", {}, "https://invalid.example/asset")

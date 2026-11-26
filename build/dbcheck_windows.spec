@@ -227,9 +227,9 @@ gui_analysis = Analysis(
     [os.path.join(PROJECT_DIR, 'modules', 'desktop', 'windows_launcher.py')],
     pathex=[PROJECT_DIR], binaries=[], datas=[],
     hiddenimports=[
-        'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'psutil',
+        'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.simpledialog', 'psutil',
         'modules.system_info.license', 'modules.core.paths',
-        'modules.desktop.offline_update',
+        'modules.desktop.offline_update', 'modules.desktop.online_update',
     ],
     hookspath=[], hooksconfig={}, runtime_hooks=[os.path.join(PROJECT_DIR, 'build', 'runtime-hook-wine.py')], excludes=[], noarchive=False,
 )

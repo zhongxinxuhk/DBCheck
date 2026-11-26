@@ -1153,7 +1153,12 @@ cd dist
 dbcheck.exe
 ```
 
-### Windows 离线更新
+### Windows 在线与离线更新
+
+在状态窗口点击「在线更新」，可从 [DBCheck 的 GitHub Releases](https://github.com/zhongxinxuhk/DBCheck/releases) 检查最新正式版本。启动器按当前安装类型选择 Windows x64 安装包或跨平台便携包，下载后校验 SHA-256 和包内文件。确认安装后才会停止服务，完成后自动重启。Web 控制台的「关于」也提供同一发行版入口。
+
+访问私有仓库的发行版需有该仓库 **Contents 读取权限**的 GitHub 访问令牌。可在弹窗临时输入，或通过环境变量 `DBPULSE_GITHUB_TOKEN` 提供。启动器不会将令牌写入配置。
+
 
 在状态窗口点击“离线更新”，选择由本版本构建脚本生成的完整 Windows 离线包（ZIP，包含 `offline-update.json`）。更新会先校验版本、目标平台、文件路径、PE 架构和哈希，然后停止后台服务；当前窗口退出后，离线包内的独立更新助手会替换程序文件并自动重启。
 
