@@ -175,3 +175,10 @@ def test_duplicate_main_sheet_is_rejected_instead_of_silently_ignored():
 
     with pytest.raises(ValueError, match="重复主表"):
         parse_excel(buffer.getvalue())
+
+
+def test_gbase_connection_mode_survives_export_and_import():
+    asset = record(5258)
+    asset["source"].update(db_type="gbase8a", gbase8a_allow_plaintext=True)
+    parsed = parse_excel(inventory_xlsx([asset], []).read())
+    assert parsed[0]["source"]["gbase8a_allow_plaintext"] is True

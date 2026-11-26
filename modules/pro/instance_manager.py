@@ -879,7 +879,7 @@ class InstanceManager:
             "description": "TEXT DEFAULT ''",
             "created_at": "TEXT DEFAULT ''",
             "updated_at": "TEXT DEFAULT ''",
-            "connection_mode": "TEXT DEFAULT 'odbc'",
+            "connection_mode": "TEXT DEFAULT ''",
             "encrypt": "INTEGER DEFAULT 0",
             "trust_server_certificate": "INTEGER DEFAULT 1",
             "driver_version": "TEXT DEFAULT ''",

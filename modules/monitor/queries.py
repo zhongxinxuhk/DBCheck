@@ -231,10 +231,15 @@ WHERE st.text NOT LIKE 'CREATE STATISTICS%'
 ORDER BY qs.total_elapsed_time DESC
 """
 
+# SQL Server 2008 R2（10.50.x）的 dm_exec_sessions 没有 database_id 列——该列
+# 2012+ 才有（Microsoft Learn: applies to SQL Server 2012-2016）。原查询用
+# DB_NAME(s.database_id) 会抛 Msg 207「列名 'database_id' 无效」，整条连接采集
+# 失败，大屏节点被标红。改用 dm_exec_requests.database_id（2005+ 全版本都有）；
+# 空闲会话在该视图无对应行，退回 DB_NAME() 取监控连接当前库，避免任何版本因该列报错。
 SQLSERVER_CONNECTION_SQL = """
 SELECT TOP 50
     s.login_name AS username,
-    DB_NAME(s.database_id) AS database_name,
+    COALESCE(DB_NAME(r.database_id), DB_NAME()) AS database_name,
     COALESCE(r.command, 'idle') AS command,
     ROUND(DATEDIFF(SECOND, ISNULL(r.start_time, s.last_request_start_time), GETDATE()) / 3600.0, 1) AS duration_h,
     CASE WHEN r.blocking_session_id IS NOT NULL AND r.blocking_session_id <> 0
@@ -542,8 +547,8 @@ _DB_TYPE_ALIASES = {
 def normalize_db_type(db_type):
     """归一 db_type 为 monitor 模板键（oracle_jdbc→oracle 等）。
 
-    模板/指标 family 查找与监控引擎的连接分派（_create_connection 的
-    python 驱动分支）均使用归一后的键。
+    模板/指标 family 查找与统一连接工厂（connection_factory 的原生驱动
+    分派）均使用归一后的键。
     """
     dt = (db_type or '').strip().lower()
     if dt in _DB_TYPE_ALIASES:

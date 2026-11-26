@@ -486,6 +486,7 @@ class ExistingSystemIntegration(unittest.TestCase):
         self.assertEqual((kwargs['host'],kwargs['port']),('10.60.25.101',5258))
         self.assertNotIn('ssl',kwargs)
         self.assertNotIn('defer_connect',kwargs)
+        self.assertTrue(kwargs.get('ssl_disabled'))
         for value in (0,'0','false','',None):
             self.assertFalse(plaintext_allowed(value))
         for value in (1,'1','true','on'):

@@ -7659,7 +7659,7 @@ def api_pro_dashboard():
          **离线不压分**——连接性状态不参与评分，单独展示。
       2. 风险分布 = 只统计在线实例，且只看窗口内巡检；
          离线实例单列返回，不混进风险等级；在线但窗口内无巡检归入 uninspected。
-      3. 可用性 = 实时读采集器最新快照（30s 一轮），不作为评分因子。
+      3. 可用性使用监控大屏采样快照，待检测和已停用单列。
     """
     try:
         from modules.pro import get_instance_manager
@@ -7686,31 +7686,16 @@ def api_pro_dashboard():
         known_ids = [i.get('id') for i in instances if i.get('id')]
         known_set = set(known_ids)
 
-        collector = None
-        try:
-            from modules.pro.metrics_collector import get_collector
-            collector = get_collector()
-        except Exception:
-            collector = None
-
-        avail = {}
-        avail_ts = None
-        for iid in known_ids:
-            live = {}
-            if collector is not None:
-                try:
-                    live = collector.store.get_latest(iid) or {}
-                except Exception:
-                    live = {}
-            a = live.get('available')
-            avail[iid] = None if a is None else bool(a)
-            ts = live.get('ts')
-            if ts and (avail_ts is None or ts > avail_ts):
-                avail_ts = ts
-
-        # 只有明确 available=False 才算离线；从未采集到（None）按未知处理，不误判
-        offline_ids = {iid for iid, a in avail.items() if a is False}
-        online_ids = [iid for iid in known_ids if iid not in offline_ids]
+        from modules.monitor.screen_metrics import ONLINE_STATES, get_screen_collector
+        collector = get_screen_collector()
+        snapshot = collector.get_snapshot()
+        enabled_ids = {i['id'] for i in instances if i.get('id') and i.get('enabled', True)}
+        sampled = {iid: snapshot[iid] for iid in enabled_ids & snapshot.keys()}
+        offline_ids = {iid for iid, item in sampled.items() if item['status'] == 'down'}
+        online_ids = {iid for iid, item in sampled.items() if item['status'] in ONLINE_STATES}
+        disabled_count = len(known_set - enabled_ids)
+        pending_count = len(enabled_ids - online_ids - offline_ids)
+        avail_ts = max((sampled[iid]['ts'] for iid in online_ids | offline_ids), default=None)
 
         # ── 巡检记录 ──
         conn = sqlite3.connect(im.db_file)
@@ -7770,8 +7755,8 @@ def api_pro_dashboard():
             if iid not in known_set:
                 continue  # 未注册实例（临时巡检）不计入分布
             inspected_ids.add(iid)
-            if iid in offline_ids:
-                continue  # 离线单列展示，不混进风险等级
+            if iid not in online_ids:
+                continue
             lv = (r['risk_level'] or 'healthy').strip().lower()
             if lv not in risk_breakdown:
                 lv = 'healthy'
@@ -7825,10 +7810,12 @@ def api_pro_dashboard():
             'inspected_count': len([i for i in inspected_ids if i in known_set]),
             'online_count': len(online_ids),
             'offline_count': len(offline_instances),
+            'pending_count': pending_count,
+            'disabled_count': disabled_count,
             'offline_instances': offline_instances,
             'uninspected_count': risk_breakdown['uninspected'],
             'availability_ts': avail_ts,
-            'collector_running': bool(collector and getattr(collector, 'running', False)),
+            'collector_running': collector.running,
             'has_history': len(window_rows) > 0,
             'has_lifetime_history': len(latest_rows) > 0,
         })

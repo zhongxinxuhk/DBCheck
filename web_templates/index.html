@@ -23975,7 +23975,9 @@ async function loadHomeStats() {
           // 离线实例单列（不参与评分、不进入风险分布）
           const offline = dash.offline_instances || [];
           const instTotal0 = dash.total_instances || 0;
-          const allOffline = instTotal0 > 0 && offline.length >= instTotal0;
+          const pending = dash.pending_count || 0;
+          const disabled = dash.disabled_count || 0;
+          const allOffline = offline.length > 0 && offline.length === instTotal0 - disabled;
           let offlineHtml = '';
           if (offline.length) {
             const names = offline.map(i => i.name || i.host || '未命名').join('、');
@@ -24002,7 +24004,9 @@ async function loadHomeStats() {
           const instDone  = dash.inspected_count || 0;
           const onlineCnt = dash.online_count;
           const footLeft = periodLabel + '已巡检 ' + instDone + ' / ' + instTotal + ' 个实例'
-            + (typeof onlineCnt === 'number' && onlineCnt < instTotal ? ' · 在线 ' + onlineCnt : '');
+            + (typeof onlineCnt === 'number' ? ' · 在线 ' + onlineCnt : '')
+            + (pending ? ' · 待检测 ' + pending : '')
+            + (disabled ? ' · 已停用 ' + disabled : '');
 
           dashEl.innerHTML = `
               <div class="ov-metric-row">
@@ -24023,6 +24027,8 @@ async function loadHomeStats() {
           const instTotal = dash.total_instances || 0;
           const onlineCnt = dash.online_count;
           const offlineCnt = dash.offline_count || 0;
+          const pending = dash.pending_count || 0;
+          const disabled = dash.disabled_count || 0;
           let offlineHtml = '';
           if (offlineCnt > 0) {
             const names = (dash.offline_instances || []).map(i => i.name || i.host || '未命名').join('、');
@@ -24034,7 +24040,7 @@ async function loadHomeStats() {
           dashEl.innerHTML = `<div class="health-no-data">${periodLabel}暂无巡检数据</div>
               <div class="ov-bottom">
                 ${offlineHtml}
-                <div class="ov-foot"><span>共 ${instTotal} 个实例${typeof onlineCnt === 'number' ? ' · 在线 ' + onlineCnt : ''}</span></div>
+                <div class="ov-foot"><span>共 ${instTotal} 个实例${typeof onlineCnt === 'number' ? ' · 在线 ' + onlineCnt : ''}${pending ? ' · 待检测 ' + pending : ''}${disabled ? ' · 已停用 ' + disabled : ''}</span></div>
               </div>`;
         }
       } catch(e) {

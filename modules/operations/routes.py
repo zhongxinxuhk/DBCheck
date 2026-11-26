@@ -193,7 +193,8 @@ def inventory_collection():
     principal = actor(write=request.method == "POST")
     inventory, _, _ = resources()
     if request.method == "GET":
-        records = inventory.list(visible_ids(principal), decrypt=True)
+        include_credentials = request.args.get("include_credentials") != "0"
+        records = inventory.list(visible_ids(principal), decrypt=include_credentials)
         response = jsonify(ok=True, records=records)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -234,7 +235,9 @@ def inventory_record(iid):
     current = visible_id(principal, iid)
     inventory, _, _ = resources()
     if request.method == "GET":
-        return jsonify(ok=True, record=inventory.get(iid, decrypt=True))
+        response = jsonify(ok=True, record=inventory.get(iid, decrypt=True))
+        response.headers["Cache-Control"] = "no-store"
+        return response
     data = body()
     if request.method == "DELETE":
         inventory.delete(principal, iid, data.get("revision"))

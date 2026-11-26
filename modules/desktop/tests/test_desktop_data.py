@@ -619,8 +619,8 @@ def test_restore_accepts_legacy_sqlite_schema_then_current_app_migrates(
             "updated_at TEXT DEFAULT '')"
         )
         database.execute(
-            "INSERT INTO instances VALUES('legacy','旧库','mysql','127.0.0.1',"
-            "3306,'root','','db','','[]','default',1,'2020-01-01','2020-01-01')"
+            "INSERT INTO instances VALUES('legacy','旧库','sqlserver_jdbc','127.0.0.1',"
+            "1433,'root','','db','','[]','default',1,'2020-01-01','2020-01-01')"
         )
     archive = tmp_path / "legacy-schema.zip"
     LocalBackup(legacy_root).export(archive)
@@ -628,12 +628,14 @@ def test_restore_accepts_legacy_sqlite_schema_then_current_app_migrates(
     LocalBackup(installation).restore(archive)
     from modules.core import paths
 
-    monkeypatch.setattr(paths, "DB_KEY_PATH", data / ".db_key")
+    restored_data = installation / "data"
+    monkeypatch.setattr(paths, "DB_KEY_PATH", restored_data / ".db_key")
     from modules.pro.instance_manager import InstanceManager
 
-    manager = InstanceManager(str(data))
+    manager = InstanceManager(str(restored_data))
     assert manager.get_instance("legacy")["name"] == "旧库"
-    with sqlite3.connect(data / "instances.db") as database:
+    assert manager.get_instance("legacy")["connection_mode"] == "jdbc"
+    with sqlite3.connect(restored_data / "instances.db") as database:
         columns = {
             row[1] for row in database.execute("PRAGMA table_info(instances)")
         }

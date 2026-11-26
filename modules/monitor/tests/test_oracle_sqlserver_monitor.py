@@ -120,7 +120,7 @@ def test_oracle_connection_dispatch(monkeypatch):
 
     def connect(**kwargs):
         calls['conn'] = kwargs
-        return object()
+        return types.SimpleNamespace()
 
     fake = types.SimpleNamespace(
         SYSDBA=2, AUTH_MODE_DEFAULT=0, makedsn=makedsn, connect=connect,
@@ -136,14 +136,23 @@ def test_oracle_connection_dispatch(monkeypatch):
     assert calls['dsn'] == {'host': 'ora-db', 'port': 1521, 'service_name': 'ORCLPDB'}
     assert calls['conn']['dsn'] == 'dsn-1'
     assert calls['conn']['mode'] == 0
+    assert calls['conn']['tcp_connect_timeout'] == 15
+
+    engine._create_connection(
+        {'host': 'ora-db', 'port': 1521, 'user': 'scott',
+         'service_name': 'ORCL', 'use_sid': True},
+        'tiger', 'oracle', 15,
+    )
+    assert calls['dsn'] == {'host': 'ora-db', 'port': 1521, 'sid': 'ORCL'}
 
 
 def test_sqlserver_connection_dispatch(monkeypatch):
     captured = {}
 
-    def connect(conn_str):
+    def connect(conn_str, timeout):
         captured['conn_str'] = conn_str
-        return object()
+        captured['timeout'] = timeout
+        return types.SimpleNamespace()
 
     fake = types.SimpleNamespace(
         drivers=lambda: ['ODBC Driver 18 for SQL Server'],
@@ -155,14 +164,53 @@ def test_sqlserver_connection_dispatch(monkeypatch):
     engine._create_connection(
         {'host': 'mssql-db', 'port': 1433, 'user': 'sa',
          'database': 'master', 'db_type': 'sqlserver_jdbc'},
-        'secret', 'sqlserver', 10,
+        'secret;with}characters', 'sqlserver', 10,
     )
 
     conn_str = captured['conn_str']
     assert 'DRIVER={ODBC Driver 18 for SQL Server}' in conn_str
-    assert 'SERVER=mssql-db,1433' in conn_str
-    assert 'Database=master' in conn_str
+    assert 'SERVER={mssql-db,1433}' in conn_str
+    assert 'Database={master}' in conn_str
+    assert 'PWD={secret;with}}characters};' in conn_str
     assert 'TrustServerCertificate=yes' in conn_str
+    assert captured['timeout'] == 10
+
+
+def test_sqlserver_monitor_honors_jdbc_mode(monkeypatch):
+    source = {'id': 'ms', 'db_type': 'sqlserver_jdbc', 'connection_mode': 'jdbc'}
+    manager = types.SimpleNamespace(get_instance_decrypted=lambda iid: source)
+    monkeypatch.setattr('modules.monitor.engine.get_instance_manager', lambda: manager)
+    monkeypatch.setattr('modules.core.paths.PORTABLE_ROOT', None)
+    engine = MonitorEngine()
+    batch = []
+
+    def jdbc(inst, connector, timeout, template_key):
+        batch.append((inst, connector, template_key))
+        return {'SELECT 1': [{'value': 1}]}
+
+    monkeypatch.setattr(engine, '_jdbc_run_batch', jdbc)
+    assert engine.probe('ms', 'sqlserver_jdbc') is None
+    assert batch == [(source, 'sqlserver_jdbc', 'sqlserver')]
+
+
+def test_screen_probes_before_marking_session_error_as_down(monkeypatch):
+    collector = screen_metrics.ScreenCollector()
+    monkeypatch.setattr(screen_metrics, 'collect_extra', lambda *_: ({}, {}))
+    source = {'id': 'ora', 'db_type': 'oracle'}
+    conn = {'ora': {'error': 'ORA-00942'}}
+    engine = MonitorEngine()
+    monkeypatch.setattr(engine, 'run_query', lambda *_: [{'value': 1}])
+    snap = collector._collect_one(engine, source, conn, {})
+    assert snap['status'] == 'ok'
+    assert snap['conn_err'] == 'ORA-00942'
+
+    def refused(*_):
+        raise ConnectionRefusedError('connection refused')
+
+    monkeypatch.setattr(engine, 'run_query', refused)
+    assert collector._collect_one(engine, source, conn, {})['status'] == 'down'
+    conn['ora']['incomplete'] = True
+    assert collector._collect_one(engine, source, conn, {})['status'] == 'pending'
 
 
 def test_connection_blocked_sessions_are_counted(monkeypatch):

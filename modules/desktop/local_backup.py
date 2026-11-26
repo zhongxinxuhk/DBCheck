@@ -173,10 +173,11 @@ class LocalBackup:
             raise ValueError("请选择由 DBPulse 状态窗口导出的备份 ZIP")
         # v1.0.x 早期清单可能没有 version 字段；格式和逐文件校验保持不变时按 v1 读取。
         # 高版本备份显式拒绝，避免新版本新增的数据被旧版程序静默丢弃。
-        try:
-            version = int(manifest.get("version", FORMAT_VERSION))
-        except (TypeError, ValueError):
-            raise ValueError("备份版本信息不正确") from None
+        version = manifest.get("version", FORMAT_VERSION)
+        if isinstance(version, str) and re.fullmatch("[0-9]+", version):
+            version = int(version)
+        if type(version) is not int:
+            raise ValueError("备份版本信息不正确")
         if version > FORMAT_VERSION:
             raise ValueError("备份由更高版本的 DBPulse 创建，请先升级本程序再导入")
         if version < 1:
@@ -219,7 +220,10 @@ class LocalBackup:
             ):
                 raise ValueError("备份文件校验信息不正确")
             seen.add(name.casefold())
-            info = archive.getinfo(name)
+            try:
+                info = archive.getinfo(name)
+            except KeyError:
+                raise ValueError("备份缺少清单中的文件：" + name) from None
             if (
                 info.is_dir()
                 or info.file_size != item["size"]
@@ -261,6 +265,8 @@ class LocalBackup:
             manifest["scopes"] = [
                 scope for scope in SCOPE_NAMES if scope in scopes
             ]
+        if any(item["path"].split("/", 1)[0] not in scopes for item in manifest["files"]):
+            raise ValueError("备份包含未声明范围的文件")
         return manifest
 
     @staticmethod
@@ -299,6 +305,7 @@ class LocalBackup:
                     encrypted_tables = tables & {
                         "operations_inventory",
                         "operations_inventory_history",
+                        "operations_inventory_observed",
                         "operations_imports",
                         "operations_findings",
                         "operations_groups",
@@ -330,11 +337,17 @@ class LocalBackup:
                                 }
                                 for field in sorted(
                                     columns
-                                    & {"password", "ssh_password", "ssh_key_password"}
+                                    & {"password", "ssh_password", "ssh_key_password", "jdbc_url"}
                                 ):
                                     for (value,) in database.execute(
                                         'SELECT "' + field + '" FROM instances'
                                     ):
+                                        if field == "jdbc_url" and isinstance(value, str):
+                                            if not value.startswith("jdbc:enc:v1:"):
+                                                continue
+                                            value = value.removeprefix("jdbc:enc:v1:")
+                                            if not value.startswith(("gAAAA", "Z0FBQUF")):
+                                                raise ValueError("JDBC 密文格式无效")
                                         if isinstance(value, str) and value.startswith(
                                             ("gAAAA", "Z0FBQUF")
                                         ):
