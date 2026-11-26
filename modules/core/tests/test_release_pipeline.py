@@ -634,3 +634,16 @@ def test_staging_cleanup_waits_for_a_complete_published_release(staging_environm
     published['assets'].append(asset)
     release.stage_cleanup(published['tag_name'], 'a' * 40, github)
     assert github.deleted == ['releases/' + str(stage['id'])]
+
+
+def test_windows_package_ships_dameng_native_driver():
+    spec = (ROOT / 'build' / 'dbcheck_windows.spec').read_text(encoding='utf-8')
+    lock = (ROOT / 'build' / 'portable' / 'requirements-lock.txt').read_text(encoding='utf-8')
+    excludes = next(line for line in spec.splitlines() if 'excludes=' in line)
+    assert 'dmPython' not in excludes
+    assert "'dmPython'" in spec and "'dmssl'" in spec
+    assert 'runtime-hook-dmpython.py' in spec
+    assert 'dmpython==' in lock
+    assert 'sys_platform == "win32"' in lock
+    package_check = (ROOT / 'modules' / 'core' / 'package_check.py').read_text(encoding='utf-8')
+    assert 'dmPython' in package_check and 'dmssl' in package_check

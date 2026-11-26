@@ -56,7 +56,7 @@ def native(args):
         if args.wheels:
             command += ["--no-index", "--find-links", str(args.wheels.resolve())]
         subprocess.run(command, check=True)
-    for module in (
+    required_modules = [
         "flask",
         "gevent",
         "cryptography",
@@ -69,7 +69,12 @@ def native(args):
         "jpype",
         "jaydebeapi",
         "tzdata",
-    ):
+    ]
+    if platform.startswith("windows"):
+        # 达梦原生驱动随 Windows 包分发（PyPI 只有 win_amd64 / manylinux wheel）。
+        # 装不上必须在这里失败，否则只能在发布后才发只有 JDBC 傅底的包里发现。
+        required_modules += ["dmPython", "dmssl"]
+    for module in required_modules:
         importlib.import_module(module)
     system = platform.split("-", 1)[0]
     spec = (

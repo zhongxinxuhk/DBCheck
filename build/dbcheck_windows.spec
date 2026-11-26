@@ -39,6 +39,58 @@ from release_inputs import release_datas, dynamic_modules
 portable_build = os.environ.get('DBPULSE_PORTABLE_BUILD') == '1'
 if portable_build:
     data_dirs = ['i18n', 'modules/rag', 'modules/pro', 'modules/user_management', 'modules/config']
+
+
+def _dameng_binaries():
+    """Return the Dameng dmPython native binaries for the frozen bundle.
+
+    The PyPI ``dmpython`` Windows wheel is repackaged by delvewheel: the
+    extension ``dmPython.pyd`` sits at the site-packages root, the Dameng client
+    DLLs sit next to it as ``<name>-<hash>.dll``, and OpenSSL / VC runtimes sit
+    in the ``dmssl/`` subpackage. ``dmPython.pyd`` imports only
+    ``dmdpi-<hash>.dll`` directly; every other Dameng DLL is pulled in later by
+    that chain, so PyInstaller's automatic dependency scan is not enough here.
+    """
+    import importlib.util
+
+    found = importlib.util.find_spec('dmPython')
+    if found is None or not found.origin:
+        return []
+    root = os.path.dirname(os.path.abspath(found.origin))
+    binaries = []
+    for name in sorted(os.listdir(root)):
+        path = os.path.join(root, name)
+        if name.lower().startswith('dm') and name.lower().endswith('.dll') and os.path.isfile(path):
+            binaries.append((path, '.'))
+    ssl_dir = os.path.join(root, 'dmssl')
+    if os.path.isdir(ssl_dir):
+        for name in sorted(os.listdir(ssl_dir)):
+            path = os.path.join(ssl_dir, name)
+            if name.lower().endswith('.dll') and os.path.isfile(path):
+                binaries.append((path, 'dmssl'))
+    return binaries
+
+
+def _openssl_binaries():
+    """Ship the OpenSSL 3 runtime that ``dmssl/ssleay32.dll`` links against.
+
+    ``ssleay32.dll`` imports ``libcrypto-3-x64.dll``, which the wheel does not
+    carry. CPython 3.12 already ships the matching OpenSSL 3 DLLs, so reuse that
+    copy instead of fetching a separate build.
+    """
+    binaries = []
+    seen = set()
+    for base in (sys.base_prefix, sys.prefix, os.path.dirname(sys.executable)):
+        for name in ('libcrypto-3-x64.dll', 'libssl-3-x64.dll'):
+            path = os.path.join(base, name)
+            if name.lower() in seen or not os.path.isfile(path):
+                continue
+            seen.add(name.lower())
+            binaries.append((path, '.'))
+    return binaries
+
+
+dameng_binaries = _dameng_binaries() + _openssl_binaries()
 datas = release_datas(PROJECT_DIR, data_dirs, portable=portable_build)
 datas += collect_data_files('docxcompose')
 datas += collect_data_files('tzdata')
@@ -48,7 +100,7 @@ release_modules = dynamic_modules(PROJECT_DIR)
 a = Analysis(
     [os.path.join(PROJECT_DIR, 'web_ui.py')],
     pathex=[PROJECT_DIR],
-    binaries=[],
+    binaries=dameng_binaries,
     datas=datas,
     hiddenimports=[
         *release_modules,
@@ -66,6 +118,8 @@ a = Analysis(
         'psycopg2', 'psycopg2._psycopg',
         'oracledb',
         'pyodbc',
+        'dmPython',        # 达梦 DM8 原生驱动：Windows wheel 随包分发（见 _dameng_binaries）
+        'dmssl',           # dmPython 的 OpenSSL / VC 运行库包（delvewheel 重打包布局）
         'jaydebeapi',       # DM8 / GBase 8s JDBC 连接（DM8 巡检与测试连接现已走 jaydebeapi）
         'jpype',           # jaydebeapi 的 JVM 后端；SQL Server/DB2/HGDB/DM8 JDBC 驱动均依赖
         'redis',  # Redis / Redis Cluster 插件动态 import，需显式 hiddenimport 才能打进冻结版
@@ -115,8 +169,11 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[os.path.join(PROJECT_DIR, 'build', 'runtime-hook-wine.py')],
-    excludes=['pyodbc','dmPython','gbase8sdb','cx_Oracle'] if portable_build else [],
+    runtime_hooks=[
+        os.path.join(PROJECT_DIR, 'build', 'runtime-hook-wine.py'),
+        os.path.join(PROJECT_DIR, 'build', 'runtime-hook-dmpython.py'),
+    ],
+    excludes=['pyodbc','gbase8sdb','cx_Oracle'] if portable_build else [],
     noarchive=False,
     cipher=block_cipher,
 )

@@ -90,6 +90,11 @@ CORE_MODULES = [
     "jaydebeapi",
 ]
 
+if sys.platform == "win32":
+    # Windows 构建必须随包分发达梦原生驱动（见 build/dbcheck_windows.spec）：
+    # 缺了就只能退回 JDBC，因此把它当核心模块而不是可选驱动。
+    CORE_MODULES += ["dmPython", "dmssl"]
+
 
 def _iter_requirement_lines(path: str):
     """逐行读取 requirements，剥离注释与空行，保留 PEP 508 环境标记。"""
