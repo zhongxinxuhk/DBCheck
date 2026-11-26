@@ -91,10 +91,26 @@ _ERROR_PATTERNS = [
 def _friendly_db_error(e):
     """把驱动异常翻译成用户可读的提示；未命中已知模式时给通用提示。"""
     low = str(e).lower()
+    if '可信ca' in low:
+        return 'GBase 8a 缺少可信 CA，请配置 CA 或显式开启允许明文直连'
+    if 'ssh 监控请使用' in low:
+        return str(e)
+    if any(code in low for code in ('ora-00942', 'ora-01031', 'permission denied',
+                                     'view server state permission')):
+        return '监控系统视图不可见或采集权限不足，请检查监控账号授权'
     for keys, msg in _ERROR_PATTERNS:
         if any(k in low for k in keys):
             return msg
     return '数据库连接或查询异常，请检查实例配置或查看服务端日志'
+
+
+def _probe_sql(db_type):
+    return {
+        'oracle': 'SELECT 1 FROM DUAL',
+        'dm': 'SELECT 1 FROM DUAL',
+        'db2': 'SELECT 1 FROM SYSIBM.SYSDUMMY1',
+        'gbase': 'SELECT FIRST 1 1 FROM systables',
+    }.get(db_type, 'SELECT 1')
 
 
 def build_slow_source_catalog(instances, snapshots):
@@ -202,6 +218,7 @@ class MonitorEngine:
 
     def __init__(self):
         self._lock = threading.Lock()
+        self._collect_lock = threading.Lock()
         self._running = False
         self._thread = None
         self._interval = self.DEFAULT_INTERVAL
@@ -309,6 +326,8 @@ class MonitorEngine:
 
     def _do_collect(self):
         """执行一轮采集"""
+        if not self._collect_lock.acquire(blocking=False):
+            return
         try:
             im = get_instance_manager()
             # 使用解密后的实例：本轮采集会据此建立真实数据库连接。
@@ -320,6 +339,9 @@ class MonitorEngine:
             # 与用户手动发起的巡检无关，避免日志混流被误判为「巡检串库」。
             _log.info("===== 后台监控采集任务（独立后台线程，遍历 %d 个实例，与手动巡检无关）=====", len(instances))
             if not instances:
+                with self._lock:
+                    self._slow_queries = {}
+                    self._connections = {}
                 return
 
             # ── 超大实例规模：按实例并发采集，而非串行遍历 ──────────
@@ -356,6 +378,8 @@ class MonitorEngine:
                     }
                     new_conn[iid] = {
                         'data': [], 'error': reason,
+                        'incomplete': True,
+                        'config_updated_at': inst.get('updated_at'),
                         'ts': time.time(), 'total': 0, 'max_conn': 0,
                         'db_type': db_type, 'label': label,
                     }
@@ -365,6 +389,7 @@ class MonitorEngine:
                 label = entry['label']
                 new_slow[iid] = entry['slow']
                 cn = entry['conn']
+                cn['config_updated_at'] = inst.get('updated_at')
                 new_conn[iid] = cn
                 try:
                     _max_conn = max(0, int(cn.get('max_conn') or 0))
@@ -395,6 +420,8 @@ class MonitorEngine:
             )
         except Exception as e:
             _log.error("采集失败: %s", e)
+        finally:
+            self._collect_lock.release()
 
     def _collect_instance(self, inst):
         """采集单个实例（慢查询 + 连接），供并发调度器调用。
@@ -571,6 +598,7 @@ class MonitorEngine:
         for src in (mq.CONNECTION_TEMPLATES, mq.MAX_CONN_QUERY_SQL,
                     mq.SLOW_QUERY_TEMPLATES, mq.SLOW_QUERY_FALLBACK_TEMPLATES):
             _add(src.get(db_type))
+        _add(_probe_sql(db_type))
         # 大屏指标 SQL：family 条目为 {key: sql}，逐条带上（repl/repl8 同理）
         fam_sqls = SCREEN_SQLS.get(db_type) or {}
         for s in fam_sqls.values():
@@ -587,19 +615,16 @@ class MonitorEngine:
         *_jdbc 专属类型的连接器 id 与模板键不同（oracle_jdbc vs oracle）。
         """
         instance_id = inst.get('id')
-        cache = self._jdbc_cache.get(instance_id)
-        if cache and time.time() - cache['ts'] <= JDBC_BATCH_TTL:
-            return self._jdbc_pick(cache['res'], sql)
-
-        lock = cache['lock'] if cache else threading.Lock()
-        with lock:
-            cache = self._jdbc_cache.get(instance_id)
-            if cache and time.time() - cache['ts'] <= JDBC_BATCH_TTL:
+        signature = (db_type, template_key, inst.get('updated_at'))
+        with self._lock:
+            cache = self._jdbc_cache.setdefault(instance_id, {'lock': threading.Lock()})
+        with cache['lock']:
+            if (cache.get('signature') == signature
+                    and time.monotonic() - cache['ts'] <= JDBC_BATCH_TTL):
                 return self._jdbc_pick(cache['res'], sql)
             res = self._jdbc_run_batch(inst, db_type, timeout,
                                        template_key=template_key)
-            self._jdbc_cache[instance_id] = {'ts': time.time(), 'res': res,
-                                             'lock': lock}
+            cache.update(ts=time.monotonic(), res=res, signature=signature)
             return self._jdbc_pick(res, sql)
 
     @staticmethod
@@ -632,7 +657,12 @@ class MonitorEngine:
         sqls = self._jdbc_batch_sqls(template_key or db_type)
         # JDBC 子进程连接的是父进程隧道暴露出的本地端口：子进程本身不持有
         # SSH 凭据，直接连 127.0.0.1:<local_port> 即可，由父进程完成转发。
-        _jdb_host, _jdb_port, _ = resolve_db_endpoint(inst)
+        _jdb_host, _jdb_port, tunnel = resolve_db_endpoint(inst)
+        jdbc_url = (inst.get('jdbc_url') or '').strip()
+        if tunnel and jdbc_url:
+            raise ValueError('SSH 监控请使用主机、端口、库名或服务名配置')
+        if db_type == 'oracle_jdbc' and jdbc_url.startswith('('):
+            jdbc_url = 'jdbc:oracle:thin:@' + jdbc_url
         payload = {
             'db_type': db_type,
             'host': _jdb_host,
@@ -649,8 +679,10 @@ class MonitorEngine:
             'sid': inst.get('sid') or '',
             'use_sid': bool(inst.get('use_sid', False)),
             'sysdba': bool(inst.get('sysdba', False)),
-            'jdbc_url': inst.get('jdbc_url') or '',
+            'jdbc_url': jdbc_url,
             'ssl': bool(inst.get('ssl', False)),
+            'encrypt': bool(inst.get('encrypt', False)),
+            'trust_server_certificate': bool(inst.get('trust_server_certificate', True)),
             'driver_version': inst.get('driver_version') or '',
             'gbase_server_name': inst.get('gbase_server_name') or '',
             'queries': sqls,
@@ -732,6 +764,16 @@ class MonitorEngine:
         """公共查询入口：供大屏指标适配层（screen_metrics）等外部复用连接逻辑。"""
         return self._connect_and_query(instance_id, sql, timeout=timeout)
 
+    def probe(self, instance_id, db_type):
+        """对指标查询失败的实例验证数据库是否仍能响应只读查询。"""
+        try:
+            if not self.run_query(instance_id, _probe_sql(mq.normalize_db_type(db_type))):
+                raise RuntimeError('探活查询未返回结果')
+        except Exception as error:
+            _log.warning("实例 %s 探活失败: %s", instance_id, error)
+            return _friendly_db_error(error)
+        return None
+
     def _connect_and_query(self, instance_id, sql, timeout=None):
         """连接到指定数据源并执行 SQL，返回 list of dicts"""
         if timeout is None:
@@ -746,12 +788,22 @@ class MonitorEngine:
         # _create_connection 的 python 驱动分支按协议族分派（TDSQL-C 兼容 MySQL
         # 协议、oracle_jdbc 实例字段与 oracle 相同），与 jdbc 插件 id 无关。
         raw_type = (inst.get('db_type') or '').strip().lower()
-        from modules.core.paths import PORTABLE_ROOT
-        if PORTABLE_ROOT is not None and raw_type in ('oracle','sqlserver','dm'):
-            connector = {'oracle':'oracle_jdbc','sqlserver':'sqlserver_jdbc','dm':'dm'}[raw_type]
-            return self._jdbc_query(inst,connector,sql,timeout=timeout,template_key=raw_type)
-
         db_type = mq.normalize_db_type(raw_type)
+        from modules.core.paths import PORTABLE_ROOT
+        if db_type == 'sqlserver':
+            mode = (inst.get('connection_mode') or
+                    ('jdbc' if raw_type == 'sqlserver_jdbc' else 'odbc')).strip().lower()
+            if mode == 'auto':
+                from modules.entrypoints.main_sqlserver_dual import jdbc_unavailable_reason
+                mode = 'jdbc' if jdbc_unavailable_reason() is None else 'odbc'
+            if mode == 'jdbc' or PORTABLE_ROOT is not None:
+                return self._jdbc_query(inst, 'sqlserver_jdbc', sql, timeout=timeout,
+                                        template_key=db_type)
+        if raw_type == 'oracle' and (inst.get('jdbc_url') or '').strip().lower().startswith('jdbc:'):
+            return self._jdbc_query(inst, 'oracle_jdbc', sql, timeout=timeout, template_key=db_type)
+        if PORTABLE_ROOT is not None and raw_type in ('oracle', 'dm'):
+            connector = {'oracle': 'oracle_jdbc', 'dm': 'dm'}[raw_type]
+            return self._jdbc_query(inst, connector, sql, timeout=timeout, template_key=db_type)
 
         # *_jdbc 专属数据源：必须走 JDBC 子进程通道，绝不能被归一成
         # oracle/pg 后用 python 原生驱动直连（否则实时监控有数据、大屏判宕机）
@@ -882,16 +934,31 @@ class MonitorEngine:
             # DPY-4027: no configuration directory specified。
             svc = inst.get('service_name', '') or ''
             sid = inst.get('sid', '') or ''
-            if svc:
+            descriptor = (inst.get('jdbc_url') or '').strip()
+            if descriptor.upper().startswith('(DESCRIPTION'):
+                from modules.oracle_conn_test import _normalize_oracle_dsn
+                if _tun is not None:
+                    raise ValueError('SSH 监控请使用主机、端口、库名或服务名配置')
+                dsn = _normalize_oracle_dsn(descriptor, host, port)
+            elif inst.get('use_sid') and (svc or sid or inst.get('database')):
+                dsn = oracledb.makedsn(host=host, port=port, sid=svc or sid or inst['database'])
+            elif svc:
                 dsn = oracledb.makedsn(host=host, port=port, service_name=svc)
             elif sid:
                 dsn = oracledb.makedsn(host=host, port=port, sid=sid)
             else:
                 dsn = f"{host}:{port}/orcl"
             mode = oracledb.SYSDBA if inst.get('sysdba') else oracledb.AUTH_MODE_DEFAULT
-            return oracledb.connect(user=user, password=password, dsn=dsn, mode=mode)
+            conn = oracledb.connect(user=user, password=password, dsn=dsn, mode=mode,
+                                    tcp_connect_timeout=timeout)
+            conn.call_timeout = int(timeout * 1000)
+            return conn
 
         elif db_type in ('sqlserver', 'sqlserver_jdbc', 'mssql'):
+            from modules.db_types.compatibility import connect_sqlserver, is_loopback_endpoint
+            if _tun is not None or is_loopback_endpoint(inst):
+                return connect_sqlserver(dict(inst, host=host, port=port, password=password,
+                                              ssh_tunnel=False, _tunnel_ready=_tun is not None))
             # sqlserver_jdbc（插件标识）与 sqlserver 同为 SQL Server 线协议，
             # pyodbc/ODBC 直连（绝不走 JDBC 插件——JPype 进程内启动会与 gevent 死锁）。
             # 驱动分级探测：优先新版 ODBC Driver 17/18（支持 Encrypt），
@@ -913,17 +980,22 @@ class MonitorEngine:
                 driver, legacy = '{%s}' % drivers[-1], True
             else:
                 driver, legacy = '{ODBC Driver 17 for SQL Server}', False
+            def quote(value):
+                return '{' + str(value).replace('}', '}}') + '}'
+
             conn_str = (
                 f"DRIVER={driver};"
-                f"SERVER={host},{port};"
-                f"UID={user};PWD={password};"
+                f"SERVER={quote(f'{host},{port}')};"
+                f"UID={quote(user)};PWD={quote(password)};"
                 f"Connect Timeout={timeout};"
             )
             if not legacy:
                 conn_str += "TrustServerCertificate=yes;Encrypt=yes;"
             if inst.get('database'):
-                conn_str += f"Database={inst['database']};"
-            return pyodbc.connect(conn_str)
+                conn_str += f"Database={quote(inst['database'])};"
+            conn = pyodbc.connect(conn_str, timeout=int(timeout))
+            conn.timeout = int(timeout)
+            return conn
 
         elif db_type == 'dm':
             import dmPython

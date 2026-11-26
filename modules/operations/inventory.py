@@ -154,6 +154,7 @@ SOURCE_FIELDS = {
     "tls_ca_file": "TLS CA证书路径",
     "tls_cert_key_file": "TLS客户端证书路径",
     "tls_allow_invalid_certs": "允许无效TLS证书",
+    "gbase8a_allow_plaintext": "GBase 8a 允许明文直连",
     "encrypt": "JDBC加密",
     "trust_server_certificate": "信任服务器证书",
     "ssh_enabled": "启用SSH",
@@ -175,6 +176,7 @@ BOOLEAN_FIELDS = {
     "use_sid",
     "tls",
     "tls_allow_invalid_certs",
+    "gbase8a_allow_plaintext",
     "encrypt",
     "trust_server_certificate",
     "ssh_enabled",
@@ -636,7 +638,7 @@ class Inventory:
             stored["tags"] = json.loads(stored.get("tags") or "[]")
         else:
             stored = DatabaseInstance(
-                id=iid, name="", db_type="", host="", port=0, user=""
+                id=iid, name="", db_type="", host="", port=0, user="", connection_mode=""
             ).to_dict()
         for key, value in source_updates.items():
             if key not in BOOLEAN_FIELDS | {

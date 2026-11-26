@@ -78,6 +78,7 @@ HEADER_ALIASES = {
     "数据库密码": ("密码", "数据库口令", "口令"),
     "数据源分组": ("分组", "组名"),
     "启用数据源": ("启用", "是否启用", "启用状态"),
+    "GBase 8a 允许明文直连": ("允许明文直连", "GBase8a 允许明文直连"),
     "数据库名称": ("数据库名", "库名"),
     "节点": ("节点名称", "节点名"),
     "变更记录": ("变更引用", "变更记录引用"),
@@ -100,10 +101,11 @@ def _text(value):
     return value.strip().lstrip("\ufeff") if isinstance(value, str) else value
 
 
-def _canonical_row(values):
+def _canonical_row(values, fields):
     """兼容旧表头：仅在现行表头缺失时从旧列名补值。"""
     row = {_text(key): value for key, value in values.items() if key is not None}
-    for canonical, aliases in HEADER_ALIASES.items():
+    for canonical in fields:
+        aliases = HEADER_ALIASES.get(canonical, ())
         if row.get(canonical) not in (None, ""):
             continue
         for alias in aliases:
@@ -133,7 +135,7 @@ def _header_matches(values, require_name, require_source=False):
     return _has_header(labels, "资产名称")
 
 
-def rows(page, require_name=True, require_source=False):
+def rows(page, require_name=True, require_source=False, fields=()):
     header = None
     for number, cells in enumerate(page.iter_rows(), 1):
         values = []
@@ -153,7 +155,7 @@ def rows(page, require_name=True, require_source=False):
         if number > 10010:
             raise ValueError("单个工作表最多导入10000行")
         if any(value is not None and value != "" for value in values):
-            yield number, _canonical_row(dict(zip(header, values)))
+            yield number, _canonical_row(dict(zip(header, values)), fields)
     if header is None:
         raise ValueError(page.title + "缺少标准表头")
 
@@ -234,7 +236,9 @@ def parse_excel(content):
         if main is None:
             raise ValueError("请使用标准台账导入模板")
         records = {}
-        for number, row in rows(main, require_name=True):
+        for number, row in rows(main, fields=(
+            "配置项编号", "资产名称", *SOURCE_FIELDS.values(), *ASSET_FIELDS.values()
+        )):
             ci = str(row.get("配置项编号") or "").strip()
             if not ci or ci in records:
                 raise ValueError(f"底账清单第{number}行配置项编号为空或重复")
@@ -280,11 +284,23 @@ def parse_excel(content):
                 raise ValueError("不支持的工作表：" + page.title)
             if _is_blank(page):
                 continue
-            for number, row in rows(page, require_name=False):
+            if title == "数据源连接配置":
+                fields = SOURCE_FIELDS.values()
+            elif title == "数据库基本信息表":
+                fields = (*ASSET_FIELDS.values(), "数据库名称")
+            elif title == "集群参数表":
+                fields = (*ASSET_FIELDS.values(), *table_titles[title][1].values())
+            else:
+                fields = table_titles[title][1].values()
+            seen_rows = set()
+            for number, row in rows(page, require_name=False, fields=("配置项编号", *fields)):
                 ci = str(row.get("配置项编号") or "").strip()
                 if ci not in records:
                     raise ValueError(f"{page.title} 第{number}行未匹配到底账配置项")
                 record = records[ci]
+                if title not in table_titles and ci in seen_rows:
+                    raise ValueError(f"{page.title} 第{number}行配置项重复")
+                seen_rows.add(ci)
                 if title == "数据源连接配置":
                     record["source"].update(
                         {

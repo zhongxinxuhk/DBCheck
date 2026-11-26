@@ -103,6 +103,8 @@ def _collect(payload):
         sid=payload.get('sid') or None,
         use_sid=bool(payload.get('use_sid', False)),
         gbase_server_name=payload.get('gbase_server_name') or None,
+        encrypt=payload.get('encrypt'),
+        trust_server_certificate=payload.get('trust_server_certificate'),
         # sys 用户必须以 SYSDBA 身份登录（与插件 connect 行为一致），
         # 漏传 internal_logon 会导致 ORA-28009 / 连不上。
         properties={'internal_logon': 'sysdba'} if payload.get('sysdba') else None,

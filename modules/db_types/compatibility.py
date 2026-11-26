@@ -86,7 +86,7 @@ def readiness():
             mismatch.append(path.name+' 不含8a驱动类，禁止作为8a驱动使用')
     rows = [
         dict(db_type='gbase8a',version='GBase 8a MPP Cluster',backend='PyMySQL（MySQL协议）',
-             available=bool(pymysql),requirement='TLS证书校验，或数据库主机已验证SSH隧道；集群节点逐项采集',notes=mismatch),
+             available=bool(pymysql),requirement='可信 CA、SSH 加密隧道或显式开启明文直连；集群节点逐项采集',notes=mismatch),
         dict(db_type='dm',version='DM8',backend='dmPython / 独立进程JDBC',
              available=bool(dm or dm_jdbc and jvm),requirement='原生SSL证书目录；JDBC通过已验证SSH隧道',notes=['原生组件可加载' if dm else '原生组件不可用，使用JDBC隔离采集', 'JDBC及JVM就绪' if dm_jdbc and jvm else 'JDBC或JVM缺失']),
         dict(db_type='oracle',version='Oracle 11g',backend='python-oracledb Thick',
@@ -231,25 +231,24 @@ def plaintext_allowed(value):
 
 
 def connect_gbase8a(data):
+    from contextlib import suppress
+    import inspect
     import pymysql
     import ssl
     tunnel=None
+    connection=None
     try:
         options=dict(user=data['user'],password=data['password'],
                      connect_timeout=5,read_timeout=15,write_timeout=15,autocommit=False,local_infile=False)
         host,port,tunnel=tunnel_endpoint(data)
-        if host or is_loopback_endpoint(data):
+        if host or is_loopback_endpoint(data) or plaintext_allowed(data.get('gbase8a_allow_plaintext')):
             host = host or data.get('host') or data.get('ip')
             port = port or data['port']
-            # 隧道分支与「上游已建隧道」分支同走明文 pymysql：
-            # 传输已由 SSH 通道加密，无需再叠 TLS。
             options.update(host=host,port=int(port))
-            connection=pymysql.connect(**options)
-        elif plaintext_allowed(data.get('gbase8a_allow_plaintext')):
-            # 与 Navicat 默认一致：用户显式选择明文直连时不协商 TLS。
-            # 只有配置里明确开启才走到这里，默认路径继续强制 CA 校验。
-            print('[GBase 8a] 已启用明文直连（未使用 TLS），仅建议用于可信内网')
-            options.update(host=data.get('host') or data.get('ip'),port=int(data['port']))
+            # 新版 PyMySQL 即使未传 ssl 也可能协商 TLS。旧版没有此参数，
+            # 且在未传入 ssl 时直接使用明文。
+            if 'ssl_disabled' in inspect.signature(pymysql.Connection).parameters:
+                options['ssl_disabled'] = True
             connection=pymysql.connect(**options)
         else:
             ca=data.get('tls_ca_file')
@@ -261,7 +260,6 @@ def connect_gbase8a(data):
             options.update(host=data.get('host') or data.get('ip'),port=int(data['port']),ssl=context,defer_connect=True)
             connection=pymysql.Connection(**options)
             if not getattr(connection,'_ssl_required',False):
-                connection.close()
                 raise ValueError('当前驱动无法强制TLS，已在认证前阻断')
             connection.connect()
         # In GBase 8a, the fixture's vc1 is a virtual cluster, not a schema.
@@ -276,7 +274,13 @@ def connect_gbase8a(data):
             connection.select_db(schema)
         return TunnelConnection(connection,tunnel) if tunnel else connection
     except Exception:
-        if tunnel:tunnel.close()
+        try:
+            if connection is not None:
+                with suppress(Exception):
+                    connection.close()
+        finally:
+            if tunnel:
+                tunnel.close()
         raise
 
 

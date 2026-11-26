@@ -15,7 +15,7 @@
 - 连接数/慢查询复用 MonitorEngine 已有采集（不重复连接）；增量指标（QPS/TPS/缓存命中）
   由 ScreenCollector 周期采样差值计算
 - 单条 SQL 失败只降级该指标（None），不影响其它指标与实例状态判定；
-  仅"探针连不上"（engine 侧 error）才判 down
+  会话采集失败时单独探活，只有探活失败才判 down。
 
 输出统一模型：
     {iid: {'name','db_type','group','host','port','label','status','ts','err',
@@ -1142,16 +1142,20 @@ class ScreenCollector:
 
         # 1) 连接与会话（复用 MonitorEngine 采集结果）
         cd = conn_data.get(iid)
-        if cd and cd.get('error'):
-            # 「不支持的类型」= 该库无连接数采集模板（db2/mongodb/redis 等），
-            # 属能力缺失而非实例故障：不判 down、不作为 err 标红，
-            # conn 留空（卡片连接显示 –，第 4 行回落显示 host:port）。
+        if cd and cd.get('config_updated_at', inst.get('updated_at')) != inst.get('updated_at'):
+            cd = None
+        if not cd or cd.get('incomplete'):
+            snap['status'] = 'pending'
+            snap['stat_hint'] = (cd or {}).get('error')
+            return snap
+        if cd.get('error'):
+            error = engine.probe(iid, db_type)
+            if error:
+                snap.update(status='down', err=error, conn_err=cd['error'])
+                return snap
             if '不支持的类型' in str(cd['error']):
                 snap['status'] = 'unsupported'
-            else:
-                snap['err'] = cd['error']
-                snap['status'] = 'down'
-        elif cd:
+        else:
             snap['conn'] = {
                 'total': cd.get('total', 0), 'max_conn': cd.get('max_conn', 0),
                 'usage_pct': cd.get('usage_pct', 0),
@@ -1159,12 +1163,6 @@ class ScreenCollector:
                 'idle': (cd.get('connections') or {}).get('idle', 0),
                 'blocked': (cd.get('connections') or {}).get('blocked', 0),
             }
-        else:
-            # 引擎本轮尚未采到该实例（启动竞态/新加实例/引擎未就绪）：
-            # 不能凭空判 ok（假绿误导），也不能判 down（误触发告警），
-            # 保持 pending（连接中），等下一轮真实采集结果再落定状态；
-            # 不设 err，避免卡片右上角出现「有错误」角标。
-            snap['status'] = 'pending'
         sd = slow_data.get(iid)
         snap['slowq'] = len(sd.get('data') or []) if sd and not sd.get('error') else 0
         # 下钻明细：连接/会话 与 慢查询 逐行（复用 engine 本轮采集结果，不引入新 SQL）
@@ -1182,13 +1180,8 @@ class ScreenCollector:
         # 「不支持连接采集」，否则会误导用户以为该类型不支持。前端据此显示中性文案。
         if cd and not cd.get('error') and not cd.get('data'):
             snap['conn_no_sessions'] = True
-        if sd and sd.get('error') and not snap['err']:
-            # 慢查询模板缺失同属能力缺失，不得作为 err 标红；
-            # 但真实 SQL 失败仍要判 down（即便连接采集不支持、慢查失败是实打实的探活失败）。
-            if '不支持的类型' not in str(sd['error']):
-                snap['err'] = sd['error']
-                if snap['status'] == 'unsupported':
-                    snap['status'] = 'down'
+        if sd and sd.get('error') and '不支持的类型' not in str(sd['error']):
+            snap['err'] = sd['error']
 
         # 2) 增量与容量指标（best effort）
         try:
@@ -1210,11 +1203,10 @@ class ScreenCollector:
         except Exception as e:
             print('[screen] extra 采集失败 %s: %s' % (snap['label'], e), flush=True)
 
-        # 3) 状态判定（pending = 本轮未探活成功，不参与阈值派生，留给下一轮落定）
-        # unsupported（无采集模板的能力缺失）同样不得进入阈值派生——
-        # conn/tbs 全空会被 _derive_status 派生成 ok 假绿（OB 漏注册模板期间实测）。
-        if snap['status'] not in ('down', 'pending', 'unsupported'):
-            snap['status'] = self._derive_status(snap)
+        # 3) 对可用指标评估阈值，未覆盖的会话模板保留其状态。
+        level = self._derive_status(snap)
+        if level != 'ok' or snap['status'] != 'unsupported':
+            snap['status'] = level
         return snap
 
     def _derive_status(self, s):
@@ -1504,6 +1496,9 @@ def _build_nodes(snap):
     return nodes
 
 
+ONLINE_STATES = frozenset(('ok', 'warn', 'crit', 'unsupported'))
+
+
 def assemble_overview(nodes, collector, trend=None):
     """把节点列表装配成大屏一次请求所需的全部数据（KPI/分组/TopN/告警/趋势）。
 
@@ -1513,7 +1508,7 @@ def assemble_overview(nodes, collector, trend=None):
     trend = trend if trend is not None else (collector.get_trend() if hasattr(collector, 'get_trend') else [])
 
     total = len(nodes)
-    online = sum(1 for n in nodes if n['status'] in ('ok', 'warn', 'crit', 'unsupported'))
+    online = sum(1 for n in nodes if n['status'] in ONLINE_STATES)
     pending = sum(1 for n in nodes if n['status'] == 'pending')
     warn = sum(1 for n in nodes if n['status'] == 'warn')
     crit = sum(1 for n in nodes if n['status'] == 'crit')

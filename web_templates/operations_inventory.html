@@ -373,22 +373,66 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       .batch-submit-bar .actions{margin:0}
       @media(max-width:850px){.batch-hero{align-items:flex-start}.batch-hero-stats{width:100%}.batch-source-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}}
       @media(max-width:550px){.batch-source-grid,.batch-cluster-grid{grid-template-columns:1fr}.batch-submit-bar{margin-left:-14px;margin-right:-14px;padding:12px 14px}.batch-count{margin-left:0}}
-      .credential-value {
-        font-family: ui-monospace, monospace;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        user-select: text;
+      #message:empty { display: none; }
+      .inventory-header, .inventory-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
       }
-      .inventory-more {position:relative;}
+      .inventory-header h1 { margin: 0 0 4px; font-size: 22px; }
+      .inventory-header { margin-bottom: 18px; }
+      #inventory-panel .inventory-filters {
+        display: grid;
+        grid-template-columns: minmax(14rem, 2fr) repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        padding: 12px;
+        background: #f1f5fa;
+        border: 1px solid #e0e8f2;
+        border-radius: 8px;
+      }
+      .inventory-filters .search { min-width: 0; }
+      .inventory-actions { margin: 12px 0; }
+      .inventory-table { border: 1px solid #dce5ef; border-radius: 8px; max-height: 68vh; }
+      .inventory-table table { min-width: 880px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+      .inventory-table th { position: sticky; top: 0; z-index: 1; }
+      .inventory-table td { line-height: 1.5; }
+      .inventory-table tr:nth-child(even) td { background: #fafcff; }
+      .inventory-table tr:focus-within td, .inventory-table tr:hover td { background: #eef5ff; }
+      .inventory-table .subline { display: block; color: #52677f; font-size: 12px; }
+      .inventory-table .endpoint { font-variant-numeric: tabular-nums; }
+      .inventory-row-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+      .inventory-row-actions button { padding: 4px 8px; font-size: 12px; }
+      .inventory-table .empty-cell { padding: 32px 16px; text-align: center; color: #52677f; }
+      #inventory-panel :focus-visible, #editor :focus-visible { outline: 2px solid #195db7; outline-offset: 2px; }
+      #editor .field input:not([type="checkbox"]), #editor .field select { width: 100%; }
+      .inventory-more {position:relative;margin-left:auto;}
       .inventory-more summary {cursor:pointer;padding:8px 13px;border:1px solid #c6d3e2;border-radius:6px;}
       .inventory-more>div {position:absolute;right:0;top:100%;z-index:10;display:grid;gap:6px;background:var(--surface,#fff);padding:12px;border:1px solid #c6d3e2;border-radius:8px;min-width:190px;box-shadow:0 8px 24px #0002;}
+      @media (max-width: 1050px) {
+        #inventory-panel .inventory-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+      @media (max-width: 560px) {
+        main { padding: 12px; }
+        #inventory-panel { padding: 12px; }
+        #inventory-panel .inventory-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .inventory-filters .search { grid-column: 1 / -1; }
+      }
     </style>
   </head>
   <body>
     <main>
       <div id="message" role="status"></div>
       <section id="inventory-panel" class="card{% if batch_view %} hidden{% endif %}">
-        <div class="toolbar">
+        <header class="inventory-header">
+          <div>
+            <h1>数据库运维台账</h1>
+            <div class="muted" id="inventory-count" aria-live="polite">正在读取台账…</div>
+          </div>
+          <button id="new-record" class="primary">新增台账及数据源</button>
+        </header>
+        <div class="inventory-filters" role="group" aria-label="台账筛选">
           <input
             id="search"
             class="search"
@@ -398,17 +442,18 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             <option value="">全部数据库类型</option></select
           ><select id="cluster-filter" aria-label="筛选集群">
             <option value="">全部集群</option></select
-          ><select id="system-filter" aria-label="筛选业务系统"><option value="">全部业务系统</option></select><select id="environment-filter" aria-label="筛选运行环境"><option value="">全部运行环境</option></select><select id="owner-filter" aria-label="筛选运维责任人"><option value="">全部责任人</option></select><span class="spacer"></span
-          ><button id="new-record" class="primary">新增台账及数据源</button
-          ><button id="inspect-selected">巡检所选数据源</button><button id="report-selected">生成报告</button>
+          ><select id="system-filter" aria-label="筛选业务系统"><option value="">全部业务系统</option></select><select id="environment-filter" aria-label="筛选运行环境"><option value="">全部运行环境</option></select><select id="owner-filter" aria-label="筛选运维责任人"><option value="">全部责任人</option></select>
+        </div>
+        <div class="inventory-actions">
+          <div class="actions"><button id="inspect-selected">巡检所选数据源</button><button id="report-selected">生成报告</button></div>
           <details class="inventory-more"><summary>更多操作</summary><div>
             <button id="bulk-grouping">批量维护业务分组</button><button id="manage-groups">维护巡检分组</button><button id="inventory-history">台账变更总览</button>
             <button id="import-records">导入台账 Excel</button><button id="test-selected">批量测试连接</button><button id="export-records">导出台账 Excel</button>
           </div></details>
         </div>
-        <div class="muted" id="inventory-count"></div>
-        <div class="scroll">
+        <div class="scroll inventory-table" tabindex="0" role="region" aria-label="台账结果，列较多时可横向滚动">
           <table>
+            <colgroup><col style="width:42px"><col style="width:15%"><col style="width:16%"><col style="width:10%"><col style="width:14%"><col style="width:11%"><col style="width:12%"><col style="width:150px"></colgroup>
             <thead>
               <tr>
                 <th>
@@ -420,10 +465,10 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
                 </th>
                 <th>配置项编号 / 资产名称</th>
                 <th>数据库 / 地址</th>
-                <th>数据库账号 / 密码</th>
+                <th>数据库账号</th>
                 <th>系统归属 / 业务用途</th>
                 <th>集群 / 节点</th>
-                <th>责任人 / 运行状态</th>
+                <th>责任人 / 生命周期</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -538,7 +583,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         </div>
       </section>
     </main>
-    <dialog id="editor">
+    <dialog id="editor" aria-labelledby="editor-title">
       <form id="editor-form">
         <h2 id="editor-title">维护数据库台账</h2>
         <p class="muted">
@@ -548,6 +593,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         <div class="section">
           <h3>资产连接</h3>
           <div id="source-fields" class="grid"></div>
+          <button type="button" id="toggle-credentials" aria-pressed="false">显示凭据</button>
           <details>
             <summary>驱动、认证、TLS 与 SSH 连接选项</summary>
             <div id="advanced-fields" class="grid"></div>
@@ -673,44 +719,45 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
                 .includes(q)),
         );
       }
-      function renderRecords() {
-        const rows = filtered();
+      function updateSelection(rows = filtered()) {
+        const selected = rows.filter((record) => state.selected.has(record.id)).length;
         $("inventory-count").textContent =
-          `共 ${state.records.length} 个数据源，当前 ${rows.length} 条，已选择 ${state.selected.size} 条`;
-        $("inventory-body").innerHTML =
-          rows
-            .map((r) => {
-              const s = r.source,
-                m = r.metadata;
-              return `<tr><td><input type="checkbox" data-select="${esc(r.id)}" ${state.selected.has(r.id) ? "checked" : ""} aria-label="选择 ${esc(s.name)}"></td><td><strong>${esc(r.configuration_id)}</strong><br>${esc(s.name)}</td><td>${esc(s.db_type)}<br>${esc(s.host)}:${esc(s.port)}</td><td><div>${esc(s.user)}</div><div class="credential-value">${esc(s.password)}</div></td><td>${esc(m.system)}<br><span class="muted">${esc(m.business)}</span><br><span class="muted">环境 ${esc(m.environment || '未登记')}</span>${r.observation ? `<br><span class="muted">巡检 ${esc(String(r.observation.observed_at || "").slice(0, 10))}</span>` : ""}</td><td>${esc(clusterNames(r).join("、"))}<br><span class="muted">${esc(m.node_names)}</span></td><td>${esc(m.owner)}<br>${esc(m.lifecycle || "未登记")}</td><td class="nowrap"><button data-action="edit" data-id="${esc(r.id)}">${canWrite ? "维护" : "查看"}</button> <button data-action="history" data-id="${esc(r.id)}">变更记录</button><button data-action="report" data-id="${esc(r.id)}">报告</button>${canWrite ? ` <button class="danger" data-action="delete" data-id="${esc(r.id)}">删除</button>` : ""}</td></tr>`;
-            })
-            .join("") ||
-          '<tr><td colspan="8">暂无台账。已有数据源会自动出现在此处。</td></tr>';
-        const selected = rows.filter((r) => state.selected.has(r.id)).length;
+          `共 ${state.records.length} 个数据源 · 当前 ${rows.length} 条 · 已选择 ${state.selected.size} 条`;
         $("select-all").checked = rows.length > 0 && selected === rows.length;
         $("select-all").indeterminate = selected > 0 && selected < rows.length;
+        $("select-all").disabled = rows.length === 0;
+      }
+      function renderRecords() {
+        const rows = filtered();
+        $("inventory-body").innerHTML = rows.map((record) => {
+          const source = record.source, metadata = record.metadata;
+          const id = esc(record.id), name = esc(source.name), host = source.host || "";
+          const endpoint = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+          const date = String(record.observation?.observed_at || "").slice(0, 10);
+          const dbLabel = state.options.db_types.find((item) => item.key === source.db_type)?.name;
+          const subline = (value) => value ? `<span class="subline">${esc(value)}</span>` : "";
+          return `<tr>
+            <td><input type="checkbox" data-select="${id}" ${state.selected.has(record.id) ? "checked" : ""} aria-label="选择 ${name}"></td>
+            <td><strong>${name}</strong>${subline(record.configuration_id)}</td>
+            <td><span class="pill ${source.enabled ? "done" : ""}">${source.enabled ? "已启用" : "已停用"}</span> ${esc(dbLabel || source.db_type)}
+                <span class="subline endpoint">${esc(endpoint)}:${esc(source.port)}</span></td>
+            <td>${esc(source.user || "—")}</td>
+            <td>${esc(metadata.system || "—")}${subline(metadata.business)}${subline(metadata.environment)}${subline(date && "巡检 " + date)}</td>
+            <td>${esc(clusterNames(record).join("、") || "—")}${subline(metadata.node_names)}</td>
+            <td>${esc(metadata.owner || "—")}${subline(metadata.lifecycle)}</td>
+            <td><div class="inventory-row-actions">
+              <button data-action="edit" data-id="${id}">${canWrite ? "维护" : "查看"}</button>
+              <button data-action="history" data-id="${id}">变更记录</button>
+              <button data-action="report" data-id="${id}">报告</button>
+              ${canWrite ? `<button class="danger" data-action="delete" data-id="${id}">删除</button>` : ""}
+            </div></td>
+          </tr>`;
+        }).join("") || `<tr><td class="empty-cell" colspan="8">${state.records.length
+          ? "没有符合筛选条件的记录。" : "暂无台账。新增台账或数据源后将在这里显示。"}</td></tr>`;
+        updateSelection(rows);
       }
       async function loadRecords() {
-        state.records = (await api("/api/operations/inventory")).records;
-        const missing = state.records.filter(
-          (record) => !Object.hasOwn(record.source, "password"),
-        );
-        let cursor = 0;
-        await Promise.all(
-          Array.from({ length: Math.min(4, missing.length) }, async () => {
-            while (cursor < missing.length) {
-              const record = missing[cursor++];
-              const decrypted = await api(
-                "/api/pro/datasources/" +
-                  encodeURIComponent(record.id) +
-                  "/decrypt",
-              );
-              if (decrypted.password_decrypted === false)
-                throw new Error("数据库密码解密失败，请核对数据源密钥");
-              Object.assign(record.source, decrypted.datasource);
-            }
-          }),
-        );
+        state.records = (await api("/api/operations/inventory?include_credentials=0")).records;
         const ids = new Set(state.records.map((r) => r.id));
         state.selected = new Set(
           [...state.selected].filter((id) => ids.has(id)),
@@ -722,7 +769,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         $("type-filter").innerHTML =
           '<option value="">全部数据库类型</option>' +
           kinds.map((k) => `<option>${esc(k)}</option>`).join("");
-        $("type-filter").value = old;
+        $("type-filter").value = kinds.includes(old) ? old : "";
         const clusters = [
           ...new Set(state.records.flatMap((r) => clusterNames(r))),
         ].sort();
@@ -730,7 +777,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         $("cluster-filter").innerHTML =
           '<option value="">全部集群</option>' +
           clusters.map((c) => `<option>${esc(c)}</option>`).join("");
-        $("cluster-filter").value = oldCluster;
+        $("cluster-filter").value = clusters.includes(oldCluster) ? oldCluster : "";
         await refreshGrouping();
         renderRecords();
       }
@@ -761,8 +808,8 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
               ? `<option value="${esc(value)}" selected>${esc(value)}（当前未启用）</option>`
               : "";
           input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${existingType}${state.options.db_types.map((d) => `<option value="${esc(d.key)}" ${d.key === value ? "selected" : ""}>${esc(d.name)} · ${esc(d.key)}</option>`).join("")}</select>`;
-        } else if (scope === "source" && state.options.secrets.includes(key)) {
-          input = `<textarea id="${id}" rows="1" data-scope="${scope}" data-key="${key}" autocomplete="off" spellcheck="false" autocapitalize="none">${esc(value ?? "")}</textarea>`;
+        } else if (scope === "source" && (state.options.secrets.includes(key) || key === "jdbc_url")) {
+          input = `<input type="password" class="credential-input" id="${id}" data-scope="${scope}" data-key="${key}" autocomplete="new-password" spellcheck="false" autocapitalize="none">`;
         } else if (
           scope === "source" &&
           state.options.boolean_fields.includes(key)
@@ -771,7 +818,8 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         } else {
           let type = ["port", "ssh_port", "node_count"].includes(key)
             ? "number"
-            : ["online_date", "inventory_date"].includes(key)
+            : ["online_date", "inventory_date"].includes(key) &&
+                (!value || /^\d{4}-\d{2}-\d{2}$/.test(value))
               ? "date"
               : "text";
           const shown =
@@ -914,7 +962,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           );
           await loadRecords();
           const updated = state.records.find((item) => item.id === iid);
-          if (updated) edit(updated);
+          if (updated) await edit(updated);
         } catch (error) {
           message(error.message);
         }
@@ -960,7 +1008,11 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           );
         });
       }
-      function edit(record) {
+      async function edit(record) {
+        if (record) {
+          const url = "/api/operations/inventory/" + encodeURIComponent(record.id);
+          record = (await api(url)).record;
+        }
         state.editing = record || null;
         const source = record?.source || {
             db_type: "mysql",
@@ -992,7 +1044,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           .filter(([k]) => !main.includes(k))
           .map(([k, v]) => inputField(k, v, source[k], "source"))
           .join("");
-        for (const key of state.options.secrets) {
+        for (const key of [...state.options.secrets, "jdbc_url"]) {
           const field = $('source-' + key);
           if (field) field.value = source[key] ?? '';
         }
@@ -1001,7 +1053,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             inputField(
               k,
               v,
-              metadata[k] ||
+              metadata[k] ??
                 (k === "configuration_id" ? record?.configuration_id : ""),
               "metadata",
             ),
@@ -1029,8 +1081,16 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         $("save-record").classList.toggle("hidden", !canWrite);
         $("editor-form")
           .querySelectorAll("input,select,textarea")
-          .forEach((e) => (e.disabled = !canWrite));
-        $("editor").showModal();
+          .forEach((field) => {
+            if (field.matches('input:not([type="checkbox"]), textarea')) {
+              field.readOnly = !canWrite;
+            } else {
+              field.disabled = !canWrite;
+            }
+          });
+        $("toggle-credentials").setAttribute("aria-pressed", "false");
+        $("toggle-credentials").textContent = "显示凭据";
+        if (!$("editor").open) $("editor").showModal();
       }
       function renderTable(key) {
         const columns = state.options.tables[key][1];
@@ -1298,8 +1358,13 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       $('manage-groups').onclick = () => DBPulseTools.manageGroups(refreshGrouping);
       $('batch-manage-groups').onclick = () => DBPulseTools.manageGroups(refreshGrouping);
       $('bulk-grouping').onclick = () => DBPulseTools.bulkGrouping(state.records.filter(record=>state.selected.has(record.id)),loadRecords);
-      $('import-records').onclick = () => DBPulseTools.importInventory(loadRecords);
-      $('test-selected').onclick = () => DBPulseTools.testConnections([...state.selected], id=>edit(state.records.find(record=>record.id===id)));
+      $('import-records').onclick = () => DBPulseTools.importInventory(async () => {
+        await loadRecords();
+        if (window.parent !== window) {
+          window.parent.postMessage({type: "operations-datasource-updated"}, location.origin);
+        }
+      });
+      $('test-selected').onclick = () => DBPulseTools.testConnections([...state.selected], id=>edit(state.records.find(record=>record.id===id)).catch(error=>message(error.message)));
       $('open-findings').onclick = () => DBPulseTools.findings(showRun);
       $('cancel-run').onclick = async () => {
         try {await api('/api/operations/batches/'+state.run+'/cancel',{method:'POST',body:'{}'});message('已请求取消，正在终止运行中的巡检。',true);await showRun(state.run);}catch(error){message(error.message);}
@@ -1464,7 +1529,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         if (d.select || d.batchSource) {
           const id = d.select || d.batchSource;
           e.checked ? state.selected.add(id) : state.selected.delete(id);
-          renderRecords();
+          updateSelection();
           if (d.batchSource) {
             const card = e.closest('.batch-source-card');
             if (card) card.classList.toggle('is-selected', e.checked);
@@ -1503,9 +1568,28 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             ? state.selected.add(r.id)
             : state.selected.delete(r.id),
         );
-        renderRecords();
+        $("inventory-body").querySelectorAll("[data-select]").forEach((field) => {
+          field.checked = state.selected.has(field.dataset.select);
+        });
+        updateSelection();
       });
-      $("new-record").onclick = () => edit(null);
+      $("new-record").onclick = () => edit(null).catch((error) => message(error.message));
+      $("toggle-credentials").onclick = () => {
+        const button = $("toggle-credentials");
+        const visible = button.getAttribute("aria-pressed") !== "true";
+        $("editor").querySelectorAll(".credential-input").forEach((field) => {
+          field.type = visible ? "text" : "password";
+        });
+        button.setAttribute("aria-pressed", String(visible));
+        button.textContent = visible ? "隐藏凭据" : "显示凭据";
+      };
+      $("editor").addEventListener("close", () => {
+        $("editor").querySelectorAll(".credential-input").forEach((field) => {
+          field.value = "";
+          field.type = "password";
+        });
+        state.editing = null;
+      });
       $("editor-form").onsubmit = saveRecord;
       $("cancel-edit").onclick = () => $("editor").close();
       $("close-history").onclick = () => $("history-dialog").close();

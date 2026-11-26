@@ -21,16 +21,21 @@
 
 防刷屏约定：
 - 服务启动首轮：已处于告警的实例合并发一封「启动告警摘要」（不逐个刷屏）
-- 新实例首采只记录状态不发送；同一状态每轮静默（绝不重复发送）
+- 启动后新增实例首次有效采样若达到阈值，发送告警；同一状态不重复发送
 - 实例被删除时若处于告警，直接清状态（不发恢复）
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import threading
 import datetime
+from html import escape
 
 # 大屏状态 → 通知等级（None = 正常不通知）
-_LEVEL_RANK = {'ok': 0, 'unsupported': 0, 'warn': 1, 'crit': 2, 'down': 3}
-_LEVEL_WORD = {'warn': '警告', 'crit': '严重', 'down': '宕机'}
+_LEVEL_RANK = {'ok': 0, 'warn': 1, 'crit': 2, 'down': 3}
+_LEVEL_WORD = {'ok': '正常', 'warn': '警告', 'crit': '严重', 'down': '宕机'}
 
 
 def _cfg():
@@ -93,21 +98,21 @@ def _detail_lines(s):
     return lines
 
 
-def _render_html(inst_line, level_word, detail_lines, since_ts, recovered=False):
+def _render_html(inst_line, level_word, detail_lines, since_ts, recovery=None):
     dur = _duration(datetime.datetime.now().timestamp() - since_ts) if since_ts else ''
     rows = ''.join(
         '<tr><td style="padding:6px 12px;border:1px solid #ddd;" colspan="2">%s</td></tr>'
-        % d for d in detail_lines)
-    color = '#1a7f37' if recovered else '#c62828'
-    head = '已恢复正常' if recovered else '触发告警'
-    dur_note = ('持续异常 %s，现已恢复。' % dur) if recovered else ('发生时间: %s' % _now_str())
+        % escape(d) for d in detail_lines)
+    color = '#1a7f37' if recovery else '#c62828'
+    head = recovery or '触发告警'
+    dur_note = ('持续异常 %s' % dur) if recovery else ('发生时间: %s' % _now_str())
     return (
         '<h2 style="margin:0 0 4px;color:%s;">DBCheck 告警通知 - %s</h2>'
         '<p style="margin:0 0 12px;color:#555;">%s</p>'
         '<p style="margin:0 0 8px;font-family:Arial,sans-serif;"><b>实例</b>: %s</p>'
         '<table style="border-collapse:collapse;font-family:Arial,sans-serif;">%s</table>'
         '<p style="margin-top:12px;color:#555;">%s</p>'
-    ) % (color, level_word, head, inst_line, rows, dur_note)
+    ) % (color, escape(level_word), escape(head), escape(inst_line), rows, dur_note)
 
 
 def _duration(sec):
@@ -147,6 +152,7 @@ class AlertTracker:
         startup_alerts = []   # 首轮已处于告警的快照（合并为一封启动摘要）
         with self._lock:
             first = self._first_round
+            evaluated = False
             seen = set()
             for s in snaps:
                 iid = s.get('id')
@@ -154,19 +160,24 @@ class AlertTracker:
                     continue
                 seen.add(iid)
                 level = s.get('status')
-                rank = _LEVEL_RANK.get(level, 0)
+                if level not in _LEVEL_RANK:
+                    continue
+                evaluated = True
+                rank = _LEVEL_RANK[level]
                 alerting = rank >= max(min_rank, 1)
                 prev = self._state.get(iid)
                 if prev is None:
-                    # 首采只记录不逐个发送；首轮已告警的实例进启动摘要
                     self._state[iid] = self._mk_state(level, alerting)
-                    if first and alerting:
-                        startup_alerts.append(s)
+                    if alerting:
+                        if first:
+                            startup_alerts.append(s)
+                        else:
+                            events.append(('alert', iid, s, None))
                     continue
                 was_alert = prev['level'] != 'ok'
                 if was_alert and not alerting:
                     events.append(('recover', iid, s, prev))     # 告警 → 恢复
-                    self._state.pop(iid, None)
+                    self._state[iid] = self._mk_state(level, False)
                 elif not was_alert and alerting:
                     events.append(('alert', iid, s, None))       # 正常 → 告警
                     self._state[iid] = self._mk_state(level, True)
@@ -177,7 +188,8 @@ class AlertTracker:
             # 已删除实例：清状态（处于告警也不发恢复）
             for gone in [k for k in self._state if k not in seen]:
                 self._state.pop(gone, None)
-            self._first_round = False
+            if evaluated:
+                self._first_round = False
         for ev in events:
             threading.Thread(target=self._dispatch, args=ev, daemon=True,
                              name='alert-notify').start()
@@ -205,8 +217,6 @@ class AlertTracker:
             print('[alert] 启动摘要发送失败: %s' % e, flush=True)
 
     def _notify_startup(self, snaps):
-        from modules.notify import EmailNotifier, WebhookNotifier, _load_config
-        cfg = _load_config()
         rows = []
         for s in snaps:
             name = s.get('name') or s.get('label') or str(s.get('id'))
@@ -224,9 +234,9 @@ class AlertTracker:
         tr_rows = ''.join(
             '<tr><td style="padding:6px 12px;border:1px solid #ddd;">%s</td>'
             '<td style="padding:6px 12px;border:1px solid #ddd;">%s</td></tr>'
-            % ('%s（%s）' % (nm, ad),
+            % ('%s（%s）' % (escape(nm), escape(ad)),
                '<span style="color:#c62828;font-weight:bold;">%s</span>%s'
-               % (wd, (' — ' + dt) if dt else ''))
+               % (escape(wd), (' — ' + escape(dt)) if dt else ''))
             for nm, ad, wd, dt in rows)
         html = (
             '<h2 style="margin:0 0 4px;color:#c62828;">DBCheck 启动告警摘要</h2>'
@@ -235,20 +245,9 @@ class AlertTracker:
             '<p style="margin-top:12px;color:#555;">时间: %s</p>'
         ) % (n, tr_rows, _now_str())
 
-        ecfg = cfg.get('email') or {}
-        if ecfg.get('host') and ecfg.get('user') and ecfg.get('recipients'):
-            ok, err = EmailNotifier(ecfg).send_alert_mail(subject, html)
-            if not ok:
-                print('[alert] 启动摘要邮件发送失败: %s' % err, flush=True)
-        wcfg = cfg.get('webhook') or {}
-        if wcfg.get('url'):
-            if not WebhookNotifier(wcfg).send_markdown(subject, md):
-                print('[alert] 启动摘要 Webhook 发送失败', flush=True)
-        print('[alert] %s' % subject, flush=True)
+        self._deliver(subject, html, md)
 
     def _notify(self, kind, iid, snap, prev):
-        from modules.notify import EmailNotifier, WebhookNotifier, _load_config
-        cfg = _load_config()
         name = snap.get('name') or snap.get('label') or str(iid)
         addr = '%s:%s' % (snap.get('host') or '?', snap.get('port') or '?')
         db_type = snap.get('db_type') or ''
@@ -258,12 +257,15 @@ class AlertTracker:
 
         if kind == 'recover':
             since = prev['since'] if prev else None
-            subject = '[DBCheck][恢复] %s(%s) 已恢复正常' % (name, addr)
-            md = ('### DBCheck 恢复通知\n- **实例**: %s（%s / %s）\n- **状态**: 已恢复正常\n- **持续异常**: %s\n- **时间**: %s'
-                  % (name, db_type, addr, _duration(datetime.datetime.now().timestamp() - since) if since else '-',
+            recovery = '已恢复正常' if level == 'ok' else '已降至通知阈值以下（%s）' % word
+            if level == 'ok' and prev and prev['level'] == 'down' and snap.get('conn_err'):
+                recovery = '已恢复连接，会话指标暂不可用'
+            subject = '[DBCheck][恢复] %s(%s) %s' % (name, addr, recovery)
+            md = ('### DBCheck 恢复通知\n- **实例**: %s（%s / %s）\n- **状态**: %s\n- **持续异常**: %s\n- **时间**: %s'
+                  % (name, db_type, addr, recovery, _duration(datetime.datetime.now().timestamp() - since) if since else '-',
                      _now_str()))
             html = _render_html('%s（%s / %s）' % (name, db_type, addr), word,
-                                ['状态: 已恢复正常'], since or 0, recovered=True)
+                                [], since or 0, recovery=recovery)
         else:
             subject = '[DBCheck][%s] %s(%s) %s' % (word, name, addr, summary)
             detail = _detail_lines(snap)
@@ -275,17 +277,25 @@ class AlertTracker:
             md = '\n'.join(md_lines)
             html = _render_html('%s（%s / %s）' % (name, db_type, addr), word, detail, 0)
 
-        # 邮件（配置齐全才发）
+        self._deliver(subject, html, md)
+
+    @staticmethod
+    def _deliver(subject, html, md):
+        from modules.notify import EmailNotifier, WebhookNotifier, _load_config
+
+        cfg = _load_config()
         ecfg = cfg.get('email') or {}
         if ecfg.get('host') and ecfg.get('user') and ecfg.get('recipients'):
-            ok, err = EmailNotifier(ecfg).send_alert_mail(subject, html)
-            if not ok:
-                print('[alert] 邮件发送失败 %s: %s' % (name, err), flush=True)
-        # IM Webhook（企业微信/钉钉/自定义）
+            try:
+                ok, err = EmailNotifier(ecfg).send_alert_mail(subject, html)
+                if not ok:
+                    print('[alert] 邮件发送失败: %s' % err, flush=True)
+            except Exception as error:
+                print('[alert] 邮件发送失败: %s' % error, flush=True)
         wcfg = cfg.get('webhook') or {}
         if wcfg.get('url'):
             if not WebhookNotifier(wcfg).send_markdown(subject, md):
-                print('[alert] Webhook 发送失败 %s' % name, flush=True)
+                print('[alert] Webhook 发送失败', flush=True)
         print('[alert] %s' % subject, flush=True)
 
 
