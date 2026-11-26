@@ -197,7 +197,7 @@ a = Analysis(
         os.path.join(PROJECT_DIR, 'build', 'runtime-hook-wine.py'),
         os.path.join(PROJECT_DIR, 'build', 'runtime-hook-dmpython.py'),
     ],
-    excludes=['pyodbc','gbase8sdb','cx_Oracle'] if portable_build else [],
+    excludes=['gbase8sdb','cx_Oracle'] if portable_build else [],
     noarchive=False,
     cipher=block_cipher,
 )
