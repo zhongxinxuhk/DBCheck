@@ -240,8 +240,8 @@ def parse_excel(content):
             "配置项编号", "资产名称", *SOURCE_FIELDS.values(), *ASSET_FIELDS.values()
         )):
             ci = str(row.get("配置项编号") or "").strip()
-            if not ci or ci in records:
-                raise ValueError(f"底账清单第{number}行配置项编号为空或重复")
+            if not ci:
+                raise ValueError(f"底账清单第{number}行配置项编号为空")
             source = {
                 key: source_value(key, row[label])
                 for key, label in SOURCE_FIELDS.items()
@@ -254,7 +254,10 @@ def parse_excel(content):
                 if row.get(label) not in (None, "")
             }
             metadata["configuration_id"] = ci
-            records[ci] = {"source": source, "metadata": metadata}
+            record = {"source": source, "metadata": metadata}
+            if ci in records and records[ci] != record:
+                raise ValueError(f"底账清单第{number}行配置项编号重复且内容不同")
+            records[ci] = record
         if not records:
             raise ValueError("Excel 未填写资产记录")
         table_titles = {
@@ -354,35 +357,32 @@ class InventoryImport:
         current = inventory.list(visible)
         by_ci = {record["configuration_id"]: record for record in current}
         planned = []
-        matched_ids = set()
+        matched_ids = {}
 
-        def endpoint(source):
-            return tuple(
-                str(source.get(key) or "").strip()
-                for key in (
-                    "db_type",
-                    "host",
-                    "port",
-                    "user",
-                    "database",
-                    "service_name",
-                )
-            )
+        from modules.pro.instance_manager import InstanceManager
 
-        by_endpoint = {endpoint(record["source"]): record for record in current}
+        by_endpoint = {}
+        for record in current:
+            key = InstanceManager.import_identity(record["source"], include_jdbc=False)
+            by_endpoint.setdefault(key, []).append(record)
+
         for data in parse_excel(content):
-            existing = by_ci.get(data["metadata"]["configuration_id"])
+            ci = data["metadata"]["configuration_id"]
+            existing = by_ci.get(ci)
             validate(data, existing["source"]["db_type"] if existing else None)
-            matched = False
-            if existing is None and all(
-                data["source"].get(key) for key in ("db_type", "host", "port")
-            ):
-                existing = by_endpoint.get(endpoint(data["source"]))
-                matched = existing is not None
-            if existing and existing["id"] in matched_ids:
-                raise ValueError("Excel 多行指向同一个已有数据源，请合并重复记录")
-            if existing:
-                matched_ids.add(existing["id"])
+            complete = all(data["source"].get(key) for key in ("db_type", "host", "port"))
+            identity = InstanceManager.import_identity(data["source"], include_jdbc=False) if complete else None
+            matched = existing is None and identity in by_endpoint
+            if matched:
+                records = by_endpoint[identity]
+                if len(records) != 1:
+                    raise ValueError(f"配置项 {ci} 匹配到多个已有数据源，请核对配置项编号")
+                existing = records[0]
+            target = existing["id"] if existing else identity
+            if target is not None and target in matched_ids:
+                raise ValueError("Excel 多行指向同一个数据库连接，请合并重复记录")
+            if target is not None:
+                matched_ids[target] = ci
             if existing:
                 data["revision"] = existing["revision"]
             planned.append(

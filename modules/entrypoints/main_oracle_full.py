@@ -3139,6 +3139,8 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
     run.font.size = Pt(9)
     run.font.color.rgb = RGBColor(128, 128, 128)
 
+    from modules.inspection.permission_advice import append_permission_advice
+    append_permission_advice(doc, check_results.get('_permission_findings') or {})
     return doc
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3641,6 +3643,13 @@ def single_inspection(args):
         '_oracle_index_health': index_health_result,
         '_oracle_chapter_results': chapter_results,
     }
+
+    permission_findings = getattr(conn, 'permission_findings', {})
+    if permission_findings:
+        check_results['_permission_findings'] = permission_findings
+        context['permission_denied_count'] = sum(
+            int(item['confirmed']) for item in permission_findings.values()
+        )
 
     # ── 统一问题汇总口径 ────────────────────────────────────────────────
     # 让 docx 报告「风险与建议」、定时巡检通知「问题数」、巡检历史「问题列表」、

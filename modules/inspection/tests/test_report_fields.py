@@ -331,3 +331,27 @@ class ReportFieldsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_permission_advice_is_specific_and_keeps_ambiguous_errors_conditional():
+    from modules.inspection.permission_advice import permission_advice
+    from modules.pro.rule_engine import RuleEngine
+
+    oracle = permission_advice('oracle_jdbc', "SELECT * FROM V$SESSION WHERE id='FROM V$LOG'",
+                               'ORA-00942: table or view does not exist')
+    assert oracle['confirmed'] is False
+    assert oracle['statements'] == ['GRANT SELECT ON SYS.V_$SESSION TO DBCHECK_RO;']
+    sqlserver = permission_advice('sqlserver', 'SELECT * FROM sys.dm_exec_sessions',
+                                  'VIEW SERVER PERFORMANCE STATE permission was denied')
+    assert sqlserver['statements'] == ['GRANT VIEW SERVER PERFORMANCE STATE TO [DBCHECK_RO];']
+    dm = permission_advice('dm8', 'SELECT * FROM V$SESSIONS', '权限不足')
+    assert dm['statements'] == ['GRANT SELECT ON V$SESSIONS TO DBCHECK_RO;']
+    gbase = permission_advice('gbase8a', 'SELECT * FROM gbase.user', 'SELECT command denied')
+    assert gbase['confirmed'] and not gbase['statements']
+    assert permission_advice('oracle', 'SELECT * FROM business_table', 'ORA-00942') is None
+    assert permission_advice('gbase8a', 'SELECT 1', 'Access denied (using password: YES)') is None
+
+    rule = 'inspection_permission_denied'
+    engine = RuleEngine()
+    assert any(issue['_rule_id'] == rule for issue in engine.analyze('dm', {'permission_denied_count': 2}))
+    assert not any(issue['_rule_id'] == rule for issue in engine.analyze('dm', {'permission_denied_count': 0}))

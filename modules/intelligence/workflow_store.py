@@ -34,7 +34,7 @@ def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _init_db() -> None:
+def initialize_workflows() -> None:
     global _MIGRATED
     if _MIGRATED:
         return
@@ -150,7 +150,7 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 
 
 def list_workflows() -> List[Dict[str, Any]]:
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -164,7 +164,7 @@ def list_workflows() -> List[Dict[str, Any]]:
 
 
 def get_workflow(wf_id: int) -> Optional[Dict[str, Any]]:
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -187,7 +187,8 @@ def save_workflow(name: str, steps: List[Dict[str, Any]], edges: List[Any],
                   source: Optional[str] = None,
                   visibility: Optional[str] = None,
                   parent_id: Optional[int] = None,
-                  installed_version: Optional[str] = None) -> Dict[str, Any]:
+                  installed_version: Optional[str] = None,
+                  deduplicate_import: bool = False) -> Dict[str, Any]:
     """保存工作流。``wf_id`` 给定则幂等更新，否则新增。返回完整记录。
 
     ``description/author/version/category/tags/source/visibility/parent_id/
@@ -208,10 +209,27 @@ def save_workflow(name: str, steps: List[Dict[str, Any]], edges: List[Any],
         if str(e[0]) not in ids or str(e[1]) not in ids:
             raise ValueError(f"边 {list(e)} 引用的节点不存在")
     now = _now()
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         try:
+            if deduplicate_import:
+                conn.row_factory = sqlite3.Row
+                conn.execute("BEGIN IMMEDIATE")
+                rows = conn.execute("SELECT * FROM workflows WHERE name=? OR substr(name,1,length(?))=?",
+                                    (name, name + "（导入", name + "（导入")).fetchall()
+                names = {row["name"] for row in rows}
+                for row in rows:
+                    if row["name"] != name and not row["name"].startswith(name + "（导入"):
+                        continue
+                    existing = _row_to_dict(row)
+                    if existing["steps"] == steps and existing["edges"] == edges:
+                        return {**existing, "_reused_import": True}
+                base = name
+                index = 0
+                while name in names:
+                    index += 1
+                    name = f"{base}（导入{index}）"
             opt = {
                 "description": description,
                 "author": author,
@@ -264,7 +282,7 @@ def save_workflow(name: str, steps: List[Dict[str, Any]], edges: List[Any],
 
 
 def delete_workflow(wf_id: int) -> bool:
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         try:
@@ -300,7 +318,7 @@ def export_workflow(wf_id: int) -> Optional[Dict[str, Any]]:
 
 
 def import_workflow(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """导入一个市场载荷。同名自动加「（导入）」后缀去重。
+    """重复载荷沿用原记录。同名不同编排使用「（导入）」后缀。
 
     结构校验复用 ``save_workflow``；返回 ``{"ok", "workflow"/"error"}``。
     """
@@ -311,15 +329,11 @@ def import_workflow(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not steps:
         return {"ok": False, "error": "载荷中没有节点"}
     name = (payload.get("name") or "").strip() or "导入的工作流"
-    existing = {w["name"] for w in list_workflows()}
-    final = name
-    n = 0
-    while final in existing:
-        n += 1
-        final = "%s（导入%d）" % (name, n)
     try:
-        wf = save_workflow(name=final, steps=steps, edges=edges)
-        return {"ok": True, "workflow": wf}
+        wf = save_workflow(name=name, steps=steps, edges=edges,
+                           description=str(payload.get("description") or ""),
+                           deduplicate_import=True)
+        return {"ok": True, "reused": wf.pop("_reused_import", False), "workflow": wf}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 
@@ -469,7 +483,7 @@ def install_listing(item: Dict[str, Any]) -> Dict[str, Any]:
         "edges": item.get("edges", []),
     }
     r = import_workflow(payload)
-    if not r.get("ok"):
+    if not r.get("ok") or r.get("reused"):
         return r
     wf = r["workflow"]
     parent_id = item["id"] if isinstance(item.get("id"), int) else None
@@ -505,7 +519,7 @@ def rate_workflow(wf_id: int, score: float) -> Dict[str, Any]:
         return {"ok": False, "error": "评分需为 1–5 的数字"}
     cnt = wf["rating_count"] + 1
     avg = (wf["rating_avg"] * wf["rating_count"] + s) / cnt
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         try:
@@ -527,7 +541,7 @@ def rate_workflow(wf_id: int, score: float) -> Dict[str, Any]:
 
 def _init_autonomy() -> None:
     """确保 autonomy_runs 表存在（同时复用 workflows 的 _init_db 完成迁移门控）。"""
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         try:
@@ -740,7 +754,7 @@ def list_autonomy_runs(status: Optional[str] = None, instance_id: Optional[str] 
 
 def _init_autonomy_config() -> None:
     """确保 autonomy_config kv 表存在。"""
-    _init_db()
+    initialize_workflows()
     with _LOCK:
         conn = sqlite3.connect(_DB_PATH)
         try:

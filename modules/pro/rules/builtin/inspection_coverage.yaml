@@ -1,0 +1,30 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+rules:
+  - id: inspection_permission_denied
+    name: Inspection permission denied
+    name_zh: 巡检账号权限不足
+    category: security
+    severity: medium
+    priority: medium
+    owner: DBA
+    enabled: true
+    condition: "denied > 0"
+    params:
+      denied: "${context.permission_denied_count}"
+    message: "{denied} checks returned an explicit permission denial. Review the grants listed in the report."
+    message_zh: "{denied} 个检查项返回明确的权限拒绝。请复核报告中的补授权 SQL 并重跑受影响检查项。"
+  - id: inspection_samples_truncated
+    name: Inspection result truncated
+    name_zh: 巡检结果达到采集上限
+    category: performance
+    severity: low
+    priority: low
+    owner: DBA
+    enabled: true
+    condition: "truncated > 0"
+    params:
+      truncated: "${context.truncated_check_count}"
+    message_zh: "{truncated} 个检查项的结果达到安全返回上限。缩小时间、对象或数据源范围后再复核。"
+    message_en: "{truncated} checks reached the safe result limit. Rerun with a narrower scope."

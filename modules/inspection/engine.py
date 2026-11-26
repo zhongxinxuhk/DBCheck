@@ -725,7 +725,7 @@ class BaseInspectionEngine:
             return f'⚠️ 章节「{item_name}」：视图不存在或当前账号无权限（部分字典视图仅 SYSDBA 可查，如 registry$history），已跳过'
         if 'invalid object name' in err_lower or '42s02' in err_lower or 'does not exist' in err_lower:
             return f'⚠️ 章节「{item_name}」：所需表/视图不存在（功能未配置），已跳过'
-        if 'permission' in err_lower or 'denied' in err_lower or '42501' in err_lower:
+        if any(value in err_lower for value in ('permission', 'denied', '42501', 'ora-01031', '权限不足', '没有权限', '对象的查询权限')):
             return f'⚠️ 章节「{item_name}」：权限不足，无法查询，已跳过'
         if 'connection' in err_lower or 'communic' in err_lower:
             return f'⚠️ 章节「{item_name}」：数据库连接已断开，已跳过'
@@ -1196,6 +1196,10 @@ class BaseInspectionEngine:
             else:
                 self.context['cache_hit_ratio_pct'] = 0.0
 
+        # 将截断的真实采样计入覆盖度规则。
+        self.context['truncated_check_count'] = sum(
+            bool(state.get('truncated')) for state in self.context.get('_query_status', {}).values()
+        )
         # 容错执行结果存入 context
         self.context['_safe_errors'] = self._safe_errors if hasattr(self, '_safe_errors') else []
 
@@ -1569,6 +1573,7 @@ class BaseInspectionEngine:
         返回: {"columns": [...], "data": [...], "_error": "友好错误描述"} 
         _error 键仅在有错误时存在，渲染时用于区分"查询失败"和"无数据"
         """
+        used_sql = sql
         try:
             from modules.core.data_security import assert_readonly_sql
             from modules.core.dbapi_compat import fetch_rows
@@ -1579,7 +1584,6 @@ class BaseInspectionEngine:
                 self.context.setdefault('_query_status', {})[item_name] = {'status': 'not_applicable', 'reason': reason}
                 return {'columns': [], 'data': [], '_unavailable': reason}
             assert_readonly_sql(sql)
-            used_sql = sql
             try:
                 cursor.execute(sql)
             except Exception as exec_error:
@@ -1627,6 +1631,7 @@ class BaseInspectionEngine:
             err_str = str(e)
             friendly = self._classify_sql_error(item_name, err_str)
             self.context.setdefault('_query_status', {})[item_name] = {'status': 'error', 'reason': friendly}
+            self._record_permission_failure(item_name, used_sql or sql, e)
             print(f"[WARN] {friendly}")
             # 记录到实例字典和列表，供渲染和"巡检跳过记录"章节使用
             if not hasattr(self, '_safe_errors'):
@@ -2307,9 +2312,11 @@ class BaseInspectionEngine:
             
             results = []
             baseline_issues = []
+            baseline_sqls = {}
             for bl in baselines:
                 param_name = bl['param_name']
                 query_sql = bl['query_sql']
+                baseline_sqls[param_name] = query_sql
                 operator = bl['operator']
                 expected_value = bl['expected_value']
                 expected_value_min = bl['expected_value_min']
@@ -2409,6 +2416,7 @@ class BaseInspectionEngine:
                     })
                     
                 except Exception as e:
+                    self._record_permission_failure('基线：' + param_name, query_sql, e)
                     error_str = str(e)
                     # PG/IvorySQL: 回滚防止事务级联 abort
                     if self.db_type in ('pg', 'ivorysql', 'halodb') and self.conn:
@@ -2523,9 +2531,8 @@ class BaseInspectionEngine:
                         'col3': f'当前值={current_value}, 期望值={self._baseline_expected_display(result)}',
                         'col4': desc_zh,
                         'col5': 'HIGH' if risk_level == 'HIGH' else ('MEDIUM' if risk_level == 'MEDIUM' else 'LOW'),
-                        'fix_sql': (f"SET {param_name} = {expected_value};"
-                                    if self.db_type == 'clickhouse'
-                                    else f"-- 请调整参数 {param_name}\nALTER SYSTEM SET {param_name} = {expected_value} SCOPE=BOTH;")
+                        'fix_sql': "-- 复核实际值，参数调整按数据库版本及变更流程执行。\n"
+                                   + baseline_sqls[param_name],
                     }
                     self.context['auto_analyze'].append(issue_item)
                     baseline_issues.append(issue_item)
@@ -2795,6 +2802,27 @@ class BaseInspectionEngine:
             return '（空）' if self._lang == 'zh' else '(empty)'
         return str(ev)
 
+    def _record_permission_failure(self, item_name, sql, error):
+        from modules.inspection.permission_advice import permission_advice
+
+        advice = permission_advice(self.db_type, sql, error, version=self.context.get('version', ''))
+        if advice:
+            findings = self.context.setdefault('_permission_findings', {})
+            findings[item_name] = advice
+            self.context['permission_denied_count'] = sum(
+                int(item['confirmed']) for item in findings.values()
+            )
+
+    def _append_permission_advice(self, doc, heading):
+        from modules.inspection.permission_advice import append_permission_advice
+
+        named = self.context.get('_permission_findings') or {}
+        fallback = getattr(self.conn, 'permission_findings', {})
+        known = {tuple(advice['statements']) for advice in named.values() if advice['statements']}
+        additional = {label: advice for label, advice in fallback.items()
+                      if tuple(advice['statements']) not in known}
+        append_permission_advice(doc, {**additional, **named}, heading)
+
     def _append_chapters(self, output_file):
         """追加章节（通用逻辑）"""
         try:
@@ -2934,6 +2962,8 @@ class BaseInspectionEngine:
                 p = doc.add_paragraph(self._t(f'report.{self.db_type}_no_risk_found', default='未发现明显风险项，数据库整体运行状况良好。'))
                 for r in p.runs:
                     r.font.size = Pt(10.5); r.font.name = '微软雅黑'
+
+            self._append_permission_advice(doc, _add_heading)
 
             # ── AI 诊断分析 ────────────────────────────────
             print(f"[DEBUG] _append_chapters: 开始添加 AI 诊断章节")

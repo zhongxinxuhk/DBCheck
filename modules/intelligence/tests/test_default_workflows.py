@@ -41,6 +41,17 @@ class DefaultWorkflowTests(unittest.TestCase):
         self.assertEqual(store.list_workflows(), rows)
         self.assertEqual(len(store.market_list()), 8)
 
+    def test_reimport_reuses_identical_workflow_and_keeps_different_graph(self):
+        template = builtin_templates()[0]
+        first = store.import_workflow(template)["workflow"]
+        custom = {**template, "steps": [*template["steps"], {"id": "extra", "kind": "end"}]}
+        second = store.import_workflow(custom)["workflow"]
+
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(store.import_workflow(custom)["workflow"]["id"], second["id"])
+        self.assertEqual(store.import_workflow(template)["workflow"]["id"], first["id"])
+        self.assertEqual(len(store.list_workflows()), 9)
+
     def test_legacy_database_preserves_existing_ids_and_edits(self):
         self.path.parent.mkdir(parents=True)
         name = builtin_templates()[3]['name']

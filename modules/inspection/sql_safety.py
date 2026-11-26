@@ -293,7 +293,8 @@ class InspectionCursor:
         try:
             result = self._run_bounded(lambda: self.raw.execute(clean, *args, **kwargs))
             return self if result is self.raw else result
-        except Exception:
+        except Exception as error:
+            self.connection.record_permission_failure(sql, error)
             try:
                 if not self.connection.aborted:
                     self.connection.rollback()
@@ -420,6 +421,7 @@ class InspectionConnection:
         if self.family in {"tidb", "oceanbase", "gbase8a", "tdsqlc_mysql"}:
             self.family = "mysql"
         self.warnings = []
+        self.permission_findings = {}
         self.configured = False
         self.aborted = False
 
@@ -430,6 +432,14 @@ class InspectionConnection:
         if message not in self.warnings:
             self.warnings.append(message)
             print("[WARN] " + message)
+
+    def record_permission_failure(self, sql, error):
+        from modules.inspection.permission_advice import permission_advice
+
+        advice = permission_advice(self.kind, sql, error)
+        if advice and len(self.permission_findings) < 60:
+            label = '、'.join(advice['objects'][:4]) or '数据库查询'
+            self.permission_findings.setdefault(label, advice)
 
     def cursor(self, *args, **kwargs):
         return InspectionCursor(self.raw.cursor(*args, **kwargs), self)
