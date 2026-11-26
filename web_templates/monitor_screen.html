@@ -2,6 +2,9 @@
 SPDX-License-Identifier: Apache-2.0
 Copyright 2025-2026 fiyo (Jack Ge) <sdfiyon@gmail.com>
 Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
+SPDX-License-Identifier: Apache-2.0
+Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 -->
 <!DOCTYPE html>
 <html lang="zh">
@@ -327,6 +330,8 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
   .mcard:hover { border-color: var(--accent); }
   .mcard.s-crit { border-top-color: var(--crit); }
   .mcard.s-warn { border-top-color: var(--warn); }
+  #matrix-database { color: var(--tx); background: #152238; border: 1px solid #33465e; border-radius: 6px; padding: 4px 6px; font: inherit; }
+  #matrix-bar :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .mcard.s-pending { border-top-color: var(--down); }
   .mcard .r1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .mcard .lg { flex: none; width: 20px; height: 20px; border-radius: 5px; background: rgba(255,255,255,.92);
@@ -562,10 +567,18 @@ Author: fiyo (Jack Ge) - https://github.com/fiyo/DBCheck
     <h3><span id="h3-matrix">{{ S.matrix_title }}</span><span id="h3-topo" style="display:none">{{ S.topo_title }}</span><span class="seg" style="margin-left:auto;flex:none"><button id="vm-matrix" class="on" onclick="setViewMode('matrix')">{{ S.view_matrix }}</button><button id="vm-topo" onclick="setViewMode('topo')">{{ S.view_topo }}</button></span></h3>
     <div id="matrix-wrap">
       <div id="matrix-bar">
-        <span class="mchip c-all on" id="mf-all" onclick="setStatusFilter('all')">{{ S.f_all }} <b id="mf-n-all">0</b></span>
-        <span class="mchip c-crit" id="mf-crit" onclick="setStatusFilter('crit')"><span class="dot" style="background:var(--crit)"></span>{{ S.st_crit }} <b id="mf-n-crit">0</b></span>
-        <span class="mchip c-warn" id="mf-warn" onclick="setStatusFilter('warn')"><span class="dot" style="background:var(--warn)"></span>{{ S.st_warn }} <b id="mf-n-warn">0</b></span>
-        <span class="mchip c-ok" id="mf-ok" onclick="setStatusFilter('ok')"><span class="dot" style="background:var(--ok)"></span>{{ S.st_ok }} <b id="mf-n-ok">0</b></span>
+        <button type="button" class="mchip c-all on" id="mf-all" onclick="setStatusFilter('all')">{{ S.f_all }} <b id="mf-n-all">0</b></button>
+        <button type="button" class="mchip c-crit" id="mf-crit" onclick="setStatusFilter('crit')"><span class="dot" style="background:var(--crit)"></span>{{ S.st_crit }} <b id="mf-n-crit">0</b></button>
+        <button type="button" class="mchip c-warn" id="mf-warn" onclick="setStatusFilter('warn')"><span class="dot" style="background:var(--warn)"></span>{{ S.st_warn }} <b id="mf-n-warn">0</b></button>
+        <button type="button" class="mchip c-ok" id="mf-ok" onclick="setStatusFilter('ok')"><span class="dot" style="background:var(--ok)"></span>{{ S.st_ok }} <b id="mf-n-ok">0</b></button>
+        <button type="button" class="mchip" id="mf-pending" onclick="setStatusFilter('pending')">{{ S.st_pending }} <b id="mf-n-pending">0</b></button>
+        <select id="matrix-database" aria-label="{{ '实例数据库类型' if is_zh else 'Instance database type' }}" onchange="setStatusFilter('all')">
+          <option value="">{{ '全部数据库' if is_zh else 'All databases' }}</option>
+          <option value="oracle">Oracle</option>
+          <option value="gbase8a">GBase 8a</option>
+          <option value="sqlserver">SQL Server</option>
+          <option value="dm">{{ 'DM8 达梦' if is_zh else 'DM8' }}</option>
+        </select>
         <button class="mchip on" id="matrix-sort" onclick="toggleCritFirst()">⇅ {{ S.crit_first }}</button>
       </div>
       <div id="matrix-grid"></div>
@@ -771,7 +784,7 @@ function renderTab(tab, node, detail){
   if (tab === 'overview') return overviewHtml(node);
   if (tab === 'conn'){
     var rows = detail ? detail.conn_rows : null;
-    if (rows && rows.length) return '<div class="dcount">' + rows.length + ' ' + esc(S.dt_rows) + '</div>' + rowsTableHtml(rows);
+    if (rows && rows.length) return '<div class="dcount">' + rows.length + ' ' + esc(S.dt_rows) + '</div>' + rowsTableHtml(rows, detail?.column_labels?.conn);
     // 有真实采集错误（非能力缺失）则透出，避免一律误导为「不支持连接采集」
     var cerr = detail ? detail.conn_err : null;
     if (cerr) return '<div class="dempty err">' + esc(cerr) + '</div>';
@@ -792,7 +805,7 @@ function renderTab(tab, node, detail){
   }
   if (tab === 'slow'){
     var srows = detail ? detail.slow_rows : null;
-    if (srows && srows.length) return '<div class="dcount">' + srows.length + ' ' + esc(S.dt_rows) + '</div>' + rowsTableHtml(srows);
+    if (srows && srows.length) return '<div class="dcount">' + srows.length + ' ' + esc(S.dt_rows) + '</div>' + rowsTableHtml(srows, detail?.column_labels?.slow);
     if (st === 'pending') return '<div class="dempty">' + esc(S.dt_conn_pending) + '</div>';
     // NoSQL 类型：MongoDB 默认关闭 profiler（无慢查明细），Redis 已展示 SLOWLOG；
     // 空状态时给中性说明而非「不支持连接采集」式误导。
@@ -805,11 +818,11 @@ function renderTab(tab, node, detail){
     if (!tbs || !tbs.length) return '<div class="dempty">–</div>';
     return rowsTableHtml(tbs.map(function(t){
       return { name: t.name, total_mb: t.total_mb, free_mb: t.free_mb, free_pct: t.free_pct };
-    }));
+    }), {{ {'name':'名称','total_mb':'当前分配容量（MB）','free_mb':'当前剩余容量（MB）','free_pct':'剩余容量比例（%）'}|tojson if is_zh else '{}' }});
   }
   return '';
 }
-function rowsTableHtml(rows){
+function rowsTableHtml(rows, labels){
   if (!rows || !rows.length) return '<div class="dempty">–</div>';
   var cols = [], seen = {};
   rows.forEach(function(r){ Object.keys(r).forEach(function(k){ if (!seen[k]){ seen[k] = 1; cols.push(k); } }); });
@@ -819,7 +832,7 @@ function rowsTableHtml(rows){
     if (ai >= 0 && bi < 0) return 1; if (ai < 0 && bi >= 0) return -1; return 0;
   });
   var h = '<table class="dtable"><thead><tr>';
-  cols.forEach(function(c){ h += '<th>' + esc(c) + '</th>'; });
+  cols.forEach(function(c){ h += '<th>' + esc(labels?.[c] || c) + '</th>'; });
   h += '</tr></thead><tbody>';
   rows.forEach(function(r){
     h += '<tr>';
@@ -1086,7 +1099,7 @@ function statusColor(s){
    异常置顶网格替代连线拓扑的首屏：QPS/趋势/连接前置，点击卡片复用底部详情面板。
    拓扑连线保留为可切换视图（拓扑交互/布局逻辑不变）。 */
 var viewMode = 'matrix';           // 'matrix' | 'topo'
-var statusFilter = 'all';          // 'all' | 'crit'(含 down) | 'warn' | 'ok'(含 pending)
+var statusFilter = 'all';
 var critFirst = true;              // 排序：异常置顶
 function setViewMode(m){
   viewMode = m;
@@ -1108,9 +1121,9 @@ function setViewMode(m){
 }
 function setStatusFilter(f){
   statusFilter = f;
-  ['all', 'crit', 'warn', 'ok'].forEach(function(k){
+  ['all', 'crit', 'warn', 'ok', 'pending'].forEach(function(k){
     var el = document.getElementById('mf-' + k);
-    if (el) el.classList.toggle('on', k === f);
+    if (el){ el.classList.toggle('on', k === f); el.setAttribute('aria-pressed', String(k === f)); }
   });
   renderMatrix();
 }
@@ -1142,20 +1155,22 @@ function mSparkSvg(sp, col){
 function renderMatrix(){
   var grid = document.getElementById('matrix-grid');
   if (!grid) return;
-  var all = topoData, cnt = { all: all.length, crit: 0, warn: 0, ok: 0 };
+  var family = document.getElementById('matrix-database').value;
+  var all = family ? topoData.filter(n => coreMetricFamily(n.db_type) === family) : topoData;
+  var cnt = { all: all.length, crit: 0, warn: 0, ok: 0, pending: 0 };
   all.forEach(function(n){
     if (n.status === 'down' || n.status === 'crit') cnt.crit++;
     else if (n.status === 'warn') cnt.warn++;
-    else cnt.ok++;
+    else if (n.status === 'ok' || n.status === 'pending') cnt[n.status]++;
   });
-  ['all', 'crit', 'warn', 'ok'].forEach(function(k){
+  ['all', 'crit', 'warn', 'ok', 'pending'].forEach(function(k){
     var el = document.getElementById('mf-n-' + k);
     if (el) el.textContent = cnt[k];
   });
   var arr = all.filter(function(n){
     if (statusFilter === 'crit') return n.status === 'down' || n.status === 'crit';
     if (statusFilter === 'warn') return n.status === 'warn';
-    if (statusFilter === 'ok') return n.status === 'ok' || n.status === 'pending';
+    if (statusFilter !== 'all') return n.status === statusFilter;
     return true;
   });
   arr = arr.slice().sort(function(a, b){
@@ -1985,6 +2000,10 @@ function hitTest(mx, my){
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
   return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+function coreMetricFamily(dbType){
+  var type = String(dbType || '').replace(/_jdbc$|_full$/, '');
+  return ({dm8:'dm', mssql:'sqlserver'})[type] || type;
+}
 function overviewHtml(n){
   if (!n) return '<div class="dempty">' + esc(S.dt_loading) + '</div>';
   var st = { ok: S.st_ok, warn: S.st_warn, crit: S.st_crit, down: S.st_down,
@@ -2004,6 +2023,8 @@ function overviewHtml(n){
     [(isNoSQL(n.db_type) ? S.d_cap : S.d_tbs), n.tbs_free_pct !== null && n.tbs_free_pct !== undefined ? n.tbs_free_pct + '%' : '–'],
     [S.d_cache, fmt(n.cache_hit_pct, '%')],
   ];
+  var metricNotes = {{ metric_notes|default({})|tojson }};
+  var metricNote = metricNotes[coreMetricFamily(n.db_type)];
   var h = '';
   // 对应画布节点右上角的 ⚠ 标志：完整错误在这里展示（不截断，长句换行）
   if (n.err){
@@ -2016,6 +2037,7 @@ function overviewHtml(n){
   h += '<table>';
   rows.forEach(function(r){ h += '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>'; });
   h += '</table>';
+  if (metricNote) h += '<p style="color:' + C.tx2 + ';margin:8px 0">' + esc(metricNote) + '</p>';
   if (n.stat_hint && !n.err) h += '<div style="color:' + C.tx2 + ';margin-top:6px;font-size:12px">' + esc(n.stat_hint === 'view_server_state' ? S.hint_vss : S.hint_stat) + '</div>';
   return h;
 }

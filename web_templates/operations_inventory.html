@@ -1,6 +1,7 @@
 <!-- Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
 {% set batch_view = request.args.get("tab") == "batch" %}
+{% set embedded = request.args.get("embedded") == "1" %}
 <!doctype html>
 <html lang="zh-CN">
   <head>
@@ -419,9 +420,28 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         #inventory-panel .inventory-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .inventory-filters .search { grid-column: 1 / -1; }
       }
+      .workspace-embedded { background: transparent; }
+      .workspace-embedded main { max-width: none; padding: 0; }
+      .workspace-embedded #inventory-panel { margin-bottom: 0; }
+      .workspace-embedded .inventory-header h1 { display: none; }
+      .workspace-embedded .inventory-table { max-height: none; }
+      #editor .field[hidden] { display: none; }
+      #editor { padding: clamp(16px, 3vw, 28px); }
+      .editor-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .editor-header h1 { margin: 0; font-size: 21px; overflow-wrap: anywhere; }
+      .editor-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0; padding: 6px; border-radius: 8px; background: #f1f5fa; }
+      .editor-tabs [aria-current="true"] { background: #e2edfd; border-color: #195db7; color: #16487e; font-weight: 650; }
+      .editor-pane { border: 0; margin: 0; padding: 0; min-width: 0; }
+      .editor-pane h2 { margin: 0 0 12px; }
+      .editor-pane .grid + .grid { margin-top: 14px; }
+      .editor-credential { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+      #advanced-connection { margin-top: 16px; }
+      #advanced-connection summary { padding: 9px 0; }
+      .editor-footer { display: flex; justify-content: end; gap: 8px; margin-top: 18px; }
+      #editor-error:empty { display: none; }
     </style>
   </head>
-  <body>
+  <body{% if embedded %} class="workspace-embedded"{% endif %}>
     <main>
       <div id="message" role="status"></div>
       <section id="inventory-panel" class="card{% if batch_view %} hidden{% endif %}">
@@ -582,48 +602,47 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           </div>
         </div>
       </section>
+      <section id="editor" class="card hidden" aria-labelledby="editor-title">
+        <form id="editor-form" novalidate>
+          <header class="editor-header">
+            <h1 id="editor-title" tabindex="-1">维护数据库台账</h1>
+            <button type="button" id="cancel-edit">返回台账</button>
+          </header>
+          <nav class="editor-tabs" aria-label="台账维护分区">
+            <button type="button" data-editor-section="connection" aria-controls="editor-connection">数据源接入</button>
+            <button type="button" data-editor-section="asset" aria-controls="editor-asset">资产属性</button>
+            <button type="button" data-editor-section="specialized" aria-controls="editor-specialized">专项明细</button>
+            <button type="button" data-editor-section="observation" aria-controls="editor-observation">巡检实测</button>
+          </nav>
+          <section id="editor-connection" class="editor-pane" aria-label="数据源接入">
+            <div id="source-fields" class="grid"></div>
+            <div id="engine-fields" class="grid"></div>
+            <div class="editor-credential">
+              <button type="button" id="toggle-credentials" aria-pressed="false">显示凭据</button>
+              <span id="connection-help" class="muted"></span>
+            </div>
+            <details id="advanced-connection">
+              <summary>SSH 与高级连接选项</summary>
+              <div id="advanced-fields" class="grid"></div>
+            </details>
+          </section>
+          <section id="editor-asset" class="editor-pane hidden" aria-label="资产属性">
+            <div id="metadata-fields" class="grid"></div>
+          </section>
+          <section id="editor-specialized" class="editor-pane hidden" aria-label="专项明细">
+            <div id="table-editors"></div>
+          </section>
+          <section id="editor-observation" class="editor-pane hidden" aria-label="巡检实测">
+            <p class="muted">基础属性按巡检结果同步。表空间和账号可对比实测并补录缺项。</p>
+            <div id="observation-content"></div>
+          </section>
+          <p id="editor-error" role="alert" style="color:#b02d36;white-space:pre-wrap"></p>
+          <div class="editor-footer">
+            <button type="submit" id="save-record" class="primary">保存并同步数据源</button>
+          </div>
+        </form>
+      </section>
     </main>
-    <dialog id="editor" aria-labelledby="editor-title">
-      <form id="editor-form">
-        <h2 id="editor-title">维护数据库台账</h2>
-        <p class="muted">
-          连接信息与数据源共用一条记录。密码留空时保留已存密码，Excel
-          导出包含已登记的完整连接值。
-        </p>
-        <div class="section">
-          <h3>资产连接</h3>
-          <div id="source-fields" class="grid"></div>
-          <button type="button" id="toggle-credentials" aria-pressed="false">显示凭据</button>
-          <details>
-            <summary>驱动、认证、TLS 与 SSH 连接选项</summary>
-            <div id="advanced-fields" class="grid"></div>
-          </details>
-        </div>
-        <div class="section" id="observation-section">
-          <h3>最近巡检实测</h3>
-          <p class="muted">
-            自动同步仅覆盖版本、补丁、实例名、字符集、库大小、归档、存储模式及目标主机信息；表空间、账号、备份策略、容灾和集群属性仅作差异对照，不覆盖人工台账。可在实测表内勾选后手工补录未登记项或空大小。
-          </p>
-          <div id="observation-content"></div>
-        </div>
-        <div class="section">
-          <h3>资产与数据库基础属性</h3>
-          <div id="metadata-fields" class="grid"></div>
-        </div>
-        <div id="table-editors"></div>
-        <div
-          id="editor-error"
-          role="alert"
-          style="color: #b02d36; white-space: pre-wrap; margin: 12px 0"
-        ></div>
-        <div class="dialog-footer">
-          <button type="button" id="cancel-edit">取消</button
-          ><button type="submit" id="save-record" class="primary">
-            保存台账并同步数据源
-          </button>
-        </div>
-      </form>
-    </dialog>
     <dialog id="history-dialog">
       <h2>台账变更记录</h2>
       <div id="history-content" class="history"></div>
@@ -807,7 +826,13 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             value && !state.options.db_types.some((d) => d.key === value)
               ? `<option value="${esc(value)}" selected>${esc(value)}（当前未启用）</option>`
               : "";
-          input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${existingType}${state.options.db_types.map((d) => `<option value="${esc(d.key)}" ${d.key === value ? "selected" : ""}>${esc(d.name)} · ${esc(d.key)}</option>`).join("")}</select>`;
+          const core = (db) => /^(oracle(?:_jdbc)?|gbase8a|sqlserver(?:_jdbc)?|dm8?)$/.test(db.key);
+          const options = (types) => types.map((type) =>
+            `<option value="${esc(type.key)}" ${type.key === value ? "selected" : ""}>${esc(type.name)}</option>`
+          ).join("");
+          input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${existingType}<optgroup label="核心数据库">${options(state.options.db_types.filter(core))}</optgroup><optgroup label="其他数据库">${options(state.options.db_types.filter((db) => !core(db)))}</optgroup></select>`;
+        } else if (scope === "source" && key === "connection_mode") {
+          input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${[["", "按数据源类型"], ["jdbc", "JDBC"], ["odbc", "ODBC"], ["auto", "自动选择"]].map(([mode, title]) => `<option value="${mode}" ${mode === value ? "selected" : ""}>${title}</option>`).join("")}</select>`;
         } else if (scope === "source" && (state.options.secrets.includes(key) || key === "jdbc_url")) {
           input = `<input type="password" class="credential-input" id="${id}" data-scope="${scope}" data-key="${key}" autocomplete="new-password" spellcheck="false" autocapitalize="none">`;
         } else if (
@@ -824,7 +849,8 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
               : "text";
           const shown =
             key === "tags" ? (value || []).join(", ") : (value ?? "");
-          input = `<input id="${id}" type="${type}" data-scope="${scope}" data-key="${key}" value="${esc(shown)}" ${["name", "host", "port"].includes(key) ? "required" : ""}>`;
+          const limits = key === "port" || key === "ssh_port" ? 'min="1" max="65535"' : key === "node_count" ? 'min="1"' : "";
+          input = `<input id="${id}" type="${type}" data-scope="${scope}" data-key="${key}" value="${esc(shown)}" ${limits} ${scope === "source" && ["name", "host", "port"].includes(key) ? "required" : ""}>`;
         }
         return `<label class="field" for="${id}">${esc(label)}${input}</label>`;
       }
@@ -1008,6 +1034,60 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           );
         });
       }
+      function showEditorSection(section) {
+        $("editor").querySelectorAll("[data-editor-section]").forEach((button) => {
+          const current = button.dataset.editorSection === section;
+          button.setAttribute("aria-current", String(current));
+          $(button.getAttribute("aria-controls")).classList.toggle("hidden", !current);
+        });
+      }
+      function closeEditor() {
+        $("editor").classList.add("hidden");
+        $("inventory-panel").classList.remove("hidden");
+        $("editor").querySelectorAll(".credential-input").forEach((field) => {
+          field.value = "";
+          field.type = "password";
+        });
+        state.editing = null;
+        $("new-record").focus();
+      }
+      const databaseConnectionFields = {
+        oracle: ["service_name", "use_sid", "sysdba", "driver_version", "jdbc_url"],
+        gbase8a: ["database", "gbase8a_allow_plaintext", "tls_ca_file"],
+        sqlserver: ["database", "connection_mode", "driver_version", "encrypt", "trust_server_certificate", "jdbc_url"],
+        dm: ["driver_version"],
+      };
+      function updateConnectionFields() {
+        const type = $("source-db_type").value.replace(/_jdbc$|_full$/, "");
+        const keys = databaseConnectionFields[type === "dm8" ? "dm" : type];
+        const fields = new Set(Object.values(databaseConnectionFields).flat());
+        const engine = $("engine-fields");
+        const advanced = $("advanced-fields");
+        for (const key of fields) {
+          const input = $("source-" + key);
+          if (!input) continue;
+          const field = input.closest(".field");
+          if (keys?.includes(key)) engine.append(field);
+          else advanced.append(field);
+          field.hidden = Boolean(keys && !keys.includes(key));
+        }
+        if (keys) {
+          for (const key of keys) engine.append($("source-" + key).closest(".field"));
+        }
+        if (type === "gbase8a") {
+          $("source-database").closest(".field").firstChild.textContent = "虚拟集群（可选）";
+        } else {
+          $("source-database").closest(".field").firstChild.textContent = "数据库名称";
+        }
+        const help = {
+          oracle: "支持 Oracle 服务名或 SID。JDBC 连接串优先于地址和服务名。",
+          gbase8a: "直连默认校验 CA。可信内网可按实例开启明文连接。虚拟集群名仅在集群配置要求时填写。",
+          sqlserver: "按实例选择 JDBC 或 ODBC。JDBC 加密和证书信任设置用于该连接。",
+          dm: "DM8 自动识别版本，巡检和监控共用 JDBC 驱动登记。",
+          dm8: "DM8 自动识别版本，巡检和监控共用 JDBC 驱动登记。",
+        };
+        $("connection-help").textContent = help[type] || "密码留空时保留已存密码。";
+      }
       async function edit(record) {
         if (record) {
           const url = "/api/operations/inventory/" + encodeURIComponent(record.id);
@@ -1029,15 +1109,15 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           "port",
           "user",
           "password",
-          "database",
-          "service_name",
           "group",
+          "enabled",
         ];
         $("source-fields").innerHTML = main
           .map((k) =>
             inputField(k, state.options.source_fields[k], source[k], "source"),
           )
           .join("");
+        $("engine-fields").replaceChildren();
         $("advanced-fields").innerHTML = Object.entries(
           state.options.source_fields,
         )
@@ -1090,7 +1170,16 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           });
         $("toggle-credentials").setAttribute("aria-pressed", "false");
         $("toggle-credentials").textContent = "显示凭据";
-        if (!$("editor").open) $("editor").showModal();
+        updateConnectionFields();
+        $("advanced-connection").open = false;
+        showEditorSection(record?.observation && !$("editor").classList.contains("hidden") ? "observation" : "connection");
+        $("editor").querySelector('[data-editor-section="observation"]').hidden = !record;
+        $("inventory-panel").classList.add("hidden");
+        $("editor").classList.remove("hidden");
+        $("editor-title").focus({preventScroll:true});
+        if (window.parent !== window) {
+          window.parent.postMessage({type:"operations-editor-opened"}, location.origin);
+        }
       }
       function renderTable(key) {
         const columns = state.options.tables[key][1];
@@ -1110,6 +1199,17 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       }
       async function saveRecord(event) {
         event.preventDefault();
+        const invalid = Array.from($("editor-form").elements).find((input) => !input.validity.valid);
+        if (invalid) {
+          showEditorSection(invalid.closest(".editor-pane").id.replace("editor-", ""));
+          const details = invalid.closest("details");
+          if (details) details.open = true;
+          const label = invalid.closest(".field").firstChild.textContent;
+          $("editor-error").textContent = invalid.validity.valueMissing
+            ? "请填写" + label : "请核对" + label + "的格式或取值范围。";
+          invalid.focus({preventScroll:true});
+          return;
+        }
         const button = $("save-record");
         button.disabled = true;
         try {
@@ -1129,6 +1229,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
                   .map((v) => v.trim())
                   .filter(Boolean);
               if (input.dataset.scope === "source") {
+                if (input.closest(".field").hidden) return;
                 if (
                   state.options.secrets.includes(key) &&
                   (value === "" ||
@@ -1156,7 +1257,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
               body: JSON.stringify(data),
             },
           );
-          $("editor").close();
+          closeEditor();
           await loadRecords();
           message("台账已保存，对应数据源已同步。", true);
           if (window.parent !== window)
@@ -1545,12 +1646,15 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           updateBatchSummary();
         }
         if (d.table) state.tables[d.table][Number(d.row)][d.column] = e.value;
+        if (d.scope === "source" && d.key === "db_type") updateConnectionFields();
         if (d.scope === "source" && d.key === "db_type" && !state.editing) {
           const meta = state.options.db_types.find((m) => m.key === e.value);
           if (meta) {
             $("source-port").value = meta.port;
             $("source-user").value = meta.user;
-            $("source-database").value = meta.database;
+            $("source-database").value = e.value === "gbase8a" ? "" : (meta.database || "");
+            $("source-service_name").value = e.value.startsWith("oracle") ? (meta.database || "") : "";
+            $("source-connection_mode").value = e.value.endsWith("_jdbc") ? "jdbc" : "";
           }
         }
       });
@@ -1583,15 +1687,19 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         button.setAttribute("aria-pressed", String(visible));
         button.textContent = visible ? "隐藏凭据" : "显示凭据";
       };
-      $("editor").addEventListener("close", () => {
-        $("editor").querySelectorAll(".credential-input").forEach((field) => {
-          field.value = "";
-          field.type = "password";
-        });
-        state.editing = null;
+      $("editor").querySelectorAll("[data-editor-section]").forEach((button) => {
+        button.onclick = () => showEditorSection(button.dataset.editorSection);
       });
+      {% if embedded %}
+      new ResizeObserver(() => {
+        const height = Math.ceil(document.querySelector("main").getBoundingClientRect().height);
+        if (height && window.parent !== window) {
+          window.parent.postMessage({type:"operations-resize", height}, location.origin);
+        }
+      }).observe(document.querySelector("main"));
+      {% endif %}
       $("editor-form").onsubmit = saveRecord;
-      $("cancel-edit").onclick = () => $("editor").close();
+      $("cancel-edit").onclick = closeEditor;
       $("close-history").onclick = () => $("history-dialog").close();
       $("inventory-history").onclick = () =>
         history().catch((error) => message(error.message));

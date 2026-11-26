@@ -20,6 +20,25 @@ from modules.service_management.report import sanitize_document
 
 
 class ReportFieldsTest(unittest.TestCase):
+    def test_vendor_specific_log_and_wait_fields_include_meaning_and_units(self):
+        self.assertEqual(
+            report_field_labels('sqlserver_jdbc', 'EXEC sys.sp_readerrorlog 0, 1',
+                                ['LogDate', 'ProcessInfo']),
+            ['LogDate（错误日志记录时间）', 'ProcessInfo（写入错误日志的进程信息）'],
+        )
+        self.assertIn('微秒', report_field_labels(
+            'dm', 'SELECT * FROM V$SYSTEM_EVENT', ['SMAX_TIME'])[0])
+
+    def test_metric_labels_apply_in_vendor_views_and_leave_data_values_intact(self):
+        from modules.inspection.report_terms import metric_label
+
+        self.assertIn('客户端语句累计数', metric_label(
+            'gbase8a', 'SHOW GLOBAL STATUS', 'Variable_name', 'Questions'))
+        self.assertIn('单块读取', metric_label(
+            'oracle_jdbc', 'SELECT EVENT FROM V$SESSION', 'EVENT', 'db file sequential read'))
+        self.assertEqual(metric_label(
+            'sqlserver', 'SELECT name FROM sys.databases', 'name', 'master'), 'master')
+
     def test_network_option_preserves_addresses_and_masks_other_identities(self):
         source = {'host': '192.0.2.10', 'details': ['192.0.2.10:55432'],
                   'password': 'fixture-secret', 'username': 'fixture-user',

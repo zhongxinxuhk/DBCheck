@@ -195,6 +195,7 @@ class SQLServerDualInspector:
                 instance_name=instance_name,
                 encrypt=encrypt,
                 trust_server_certificate=trust_sc,
+                driver_version=self.ssh_info.get('driver_version', ''),
             )
         else:
             # ODBC（默认 / 兜底）

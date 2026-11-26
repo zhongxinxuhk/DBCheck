@@ -219,9 +219,15 @@ SQLSERVER_LOCKS_SQL = (
 )
 
 SQLSERVER_TBS_SQL = (
-    "SELECT TOP 10 name AS name, "
-    "ROUND(SUM(CAST(size AS BIGINT) * 8 / 1024.0), 1) AS total_mb "
-    "FROM sys.master_files GROUP BY name ORDER BY total_mb DESC"
+    "SELECT TOP 10 DB_NAME() + '/' + name AS name, "
+    "ROUND(CAST(size AS bigint) / 128.0, 1) AS total_mb, "
+    "CASE WHEN type = 0 THEN ROUND((CAST(size AS bigint) - "
+    "CAST(FILEPROPERTY(name, 'SpaceUsed') AS bigint)) / 128.0, 1) END AS free_mb, "
+    "CASE WHEN type = 0 AND growth = 0 THEN ROUND(CAST(size AS bigint) / 128.0, 1) "
+    "WHEN type = 0 AND max_size > 0 THEN "
+    "ROUND(CAST(CASE WHEN max_size < size THEN size ELSE max_size END AS bigint) / 128.0, 1) "
+    "END AS max_mb "
+    "FROM sys.database_files ORDER BY size DESC"
 )
 
 # ── DM8 达梦：V$SYSSTAT 列为 NAME/STAT_VAL，指标名 DM 专属（实测于 DM8，非 Oracle 命名）──
@@ -721,9 +727,16 @@ def collect_extra(engine, instance_id, db_type):
         }
         tbs = q('tbs')
         if tbs:
-            extras['tbs'] = [
-                {'name': _find_key(r, 'name'), 'total_mb': _num(_find_key(r, 'total_mb')),
-                 'free_mb': None, 'free_pct': None} for r in tbs]
+            extras['tbs'] = []
+            for row in tbs:
+                total = _num(_find_key(row, 'total_mb'), None)
+                free = _num(_find_key(row, 'free_mb'), None)
+                maximum = _num(_find_key(row, 'max_mb'), None)
+                extras['tbs'].append({
+                    'name': _find_key(row, 'name'), 'total_mb': total, 'free_mb': free,
+                    'free_pct': (_tbs_free_pct(total, maximum, free)
+                                 if maximum is not None and free is not None else None),
+                })
         locks = q('locks')
         if locks:
             extras['lock_waits'] = int(_num(_scalar(locks)))

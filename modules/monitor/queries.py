@@ -535,6 +535,9 @@ LIMIT 50
 # 国产 PG 系（hgdb/kingbase/uxdb/vastbase）连接走 PG 线协议，模板复用 pg。
 # 映射口径与 driver_registry.py 的 catalog 归并保持一致。
 _DB_TYPE_ALIASES = {
+    'dm8': 'dm',
+    'oracle_full': 'oracle',
+    'mssql': 'sqlserver',
     'oracle_jdbc': 'oracle',
     'sqlserver_jdbc': 'sqlserver',
     'tdsqlc_mysql': 'mysql',

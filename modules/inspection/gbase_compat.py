@@ -353,6 +353,7 @@ _GBASE_COMPATIBILITY_MARKERS = (
     'no such table', 'no such column', 'invalid column', 'invalid table',
     'syntax error', 'sql syntax', 'unknown system variable',
     'table or view does not exist', 'unknown view',
+    "this version of gbase doesn't yet support",
     '无效的列', '无效列', '列名无效', '字段无效',
     '无效的表', '无效表', '表或视图不存在', '对象不存在', '语法错误',
 )
@@ -375,6 +376,8 @@ def is_gbase_compatibility_error(error: object) -> bool:
 def optional_view_reason(sql: object, key: str = '') -> Optional[str]:
     """GBase 8a 可选视图缺失时返回“不适用”说明。"""
     upper = str(sql or '').upper()
+    if re.match(r'\s*SHOW\s+(?:GCLUSTER\s+)?NODES\b', upper):
+        return '当前 GBase 8a 版本或部署不提供集群节点查询，此项不适用'
     for view, reason in _GBASE8A_OPTIONAL_VIEW_REASONS.items():
         if view in upper:
             return reason

@@ -101,6 +101,19 @@ SSH 隧道使用系统 `known_hosts` 验证数据库主机；远端数据库连�
 
 ## 验证边界
 
+### 2026-11-26 四类客户数据库实测
+
+| 数据库 | Docker 实测版本 | 验证路径 |
+|---|---|---|
+| Oracle | Database Free 23 | 保存 JDBC 连接串并以 SYSDBA 测试连接，从数据源发起巡检、下载 Word、大屏采集会话和统计计数 |
+| GBase 8a | 8.6.2.43 Express | 明文直连，生成巡检报告并采集会话、吞吐和样例数据空间。该版本不提供 MPP 节点命令，报告标明不适用 |
+| SQL Server | SQL Server 2022 | 配置 JDBC 版本与加密选项，执行巡检和采样，读取当前数据库的数据文件容量及可用空间 |
+| 达梦 | DM8 8.1.4.6（244896） | 使用指定 JDBC 驱动实测巡检、监控、动态视图和 Word 输出。单机未初始化的作业系统按实测标明 |
+
+巡检报告保留原厂列名和指标标识。对匹配到厂商定义的内容显示中文释义与单位，对版本新增或自定义字段显示原始名称和核对说明。SQL Server 日志文件和未取得有效上限的数据文件的剩余比例保持缺失状态，避免估算出错误的容量告警。监控展示的 Oracle SQL 执行次数、GBase 8a 客户端语句数、SQL Server T-SQL 批次数和 DM8 SQL 执行次数均由对应原厂累计计数差分获得。
+
+四库测试使用隔离容器和合成数据。集群拓扑、生产证书和最小权限仍按现场配置单独验收，特别是 Oracle RAC/Data Guard、GBase 8a 9.5 MPP、SQL Server Always On 和达梦 DSC/数据守护。指标参考 [Oracle Database Reference](https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/V-SYSSTAT.html)、[GBase 8a 运维监控](https://www.gbase.cn/news/3587)、[Microsoft 性能计数器](https://learn.microsoft.com/zh-cn/sql/relational-databases/system-dynamic-management-views/sys-dm-os-performance-counters-transact-sql) 和 [达梦动态视图](https://eco.dameng.com/document/dm/zh-cn/pm/dm8-admin-manual-appendix2.html)。
+
 `python scripts/verify_service_management.py` 使用隔离目录与模拟连接，不连接实际数据库。检查类型注册、指标初始化幂等、SQL Server 版本选择、只读规则、传输参数、租户权限、加密、报告覆盖和登录入口等。组件可导入、JAR 类可加载、接口模拟回归、实库兼容验收是不同证据，驱动页面分别显示组件状态与连接待验证状态。
 
 待实库提供后逐一核对补丁号、证书、授权视图、节点角色、查询返回字段、集群范围及报告证据。极端损坏恢复能力需要实际工具、合法授权和隔离恢复验证；登记工具名称或哈希不代表已具备恢复能力。

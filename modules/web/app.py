@@ -1450,6 +1450,7 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
                     'instance_name': info.get('instance_name', '') or '',
                     'encrypt': bool(info.get('encrypt', False)),
                     'trust_server_certificate': bool(info.get('trust_server_certificate', True)),
+                    'driver_version': info.get('driver_version', ''),
                 },
             ],
             getdata_args=lambda info: ([info['ip'], int(info['port']), info['user'], info['password']],
@@ -1461,6 +1462,7 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
                                                'instance_name': info.get('instance_name', '') or '',
                                                'encrypt': bool(info.get('encrypt', False)),
                                                'trust_server_certificate': bool(info.get('trust_server_certificate', True)),
+                                               'driver_version': info.get('driver_version', ''),
                                            },
                                            'template_id': template_id,
                                            'connection_mode': info.get('connection_mode') or 'jdbc',
@@ -1761,7 +1763,7 @@ def _run_inspection_task(task_id, db_info: dict, inspector_name, template_id=Non
         #   - jdbc_url / instance_name / encrypt / trust_server_certificate: JDBC 连接参数
         if db_type == 'sqlserver_jdbc':
             for _mk in ('database', 'connection_mode', 'jdbc_url', 'instance_name',
-                        'encrypt', 'trust_server_certificate'):
+                        'encrypt', 'trust_server_certificate', 'driver_version'):
                 if _mk in db_info:
                     ssh_info[_mk] = db_info[_mk]
 
@@ -2657,6 +2659,7 @@ def test_sqlserver_jdbc_connection(host, port, user, password, database='master'
                         'instance_name': opts.get('instance_name', '') or '',
                         'encrypt': bool(opts.get('encrypt', False)),
                         'trust_server_certificate': bool(opts.get('trust_server_certificate', True)),
+                        'driver_version': opts.get('driver_version', ''),
                     },
                 )
                 ok, msg = insp.connect()
@@ -5263,9 +5266,16 @@ def plugin_logo(db_type):
 def api_start_inspection():
     try:
         data = request.json
-        db_type = data.get('db_type', 'mysql')
-        if paths.PORTABLE_ROOT is not None:
-            db_type = {'oracle':'oracle_jdbc','sqlserver':'sqlserver_jdbc'}.get(db_type,db_type)
+        def inspection_type(source):
+            kind = (source.get('db_type') or 'mysql').strip().lower()
+            kind = {'dm8': 'dm', 'oracle_full': 'oracle', 'mssql': 'sqlserver'}.get(kind, kind)
+            if paths.PORTABLE_ROOT is not None:
+                return {'oracle': 'oracle_jdbc', 'sqlserver': 'sqlserver_jdbc'}.get(kind, kind)
+            if kind == 'sqlserver' and source.get('connection_mode') in {'jdbc', 'auto'}:
+                return 'sqlserver_jdbc'
+            return kind
+
+        db_type = inspection_type(data)
         inspector_name = data.get('inspector_name', data.get('inspector', 'Jack'))
 
         # 章节可选：读取前端勾选的章节 ID 列表
@@ -5285,6 +5295,7 @@ def api_start_inspection():
             instance = im.get_instance_decrypted(datasource_id)
             if not instance:
                 return jsonify({'ok': False, 'msg': '数据源不存在'})
+            db_type = inspection_type(instance)
             # 使用数据源的连接信息
             _meta = get_db_meta(db_type)
             _default_db = _meta.default_database if _meta else 'postgres'
@@ -5406,6 +5417,10 @@ def api_start_inspection():
             _gbase_src = instance if datasource_id else data
             db_info['tls_ca_file']=_gbase_src.get('tls_ca_file','')
             db_info['gbase8a_allow_plaintext']=_gbase_src.get('gbase8a_allow_plaintext',0) or 0
+        if db_type in {'oracle', 'oracle_jdbc'}:
+            oracle_source = instance if datasource_id else data
+            db_info['jdbc_url'] = oracle_source.get('jdbc_url') or ''
+            db_info['use_sid'] = bool(oracle_source.get('use_sid'))
         from modules.operations.policy import normalize_policy
         inspection_limits = normalize_policy(data.get('inspection_limits') or {})
         inspection_timeout = data.get('inspection_timeout', JDBC_INSPECTION_TIMEOUT)
@@ -6910,8 +6925,12 @@ def monitor_screen_page():
     from flask import g
     actor = getattr(g, 'security_principal', None)
     can_manage_thresholds = bool(actor and (actor.is_admin or 'operator' in actor.roles))
+    from i18n import get_lang
+    from modules.inspection.report_terms import QPS_NOTES
+    is_zh = get_lang().startswith('zh')
     return render_template('monitor_screen.html', version=__version__, S=S,
-                           can_manage_thresholds=can_manage_thresholds)
+                           can_manage_thresholds=can_manage_thresholds,
+                           metric_notes=QPS_NOTES if is_zh else {}, is_zh=is_zh)
 
 @app.route('/api/dashboard/overview', methods=['GET'])
 def api_dashboard_overview():
@@ -6978,11 +6997,30 @@ def api_dashboard_instance(iid):
             return jsonify({'ok': False, 'msg': 'instance not found or not yet collected',
                             'iid': iid})
         node = _build_nodes({iid: snap[iid]})[0]
+        from i18n import get_lang
+        from modules.intelligence.schema_knowledge import report_field_labels
+        from modules.monitor.queries import (
+            CONNECTION_TEMPLATES, SLOW_QUERY_TEMPLATES, normalize_db_type,
+        )
+        family = normalize_db_type(node['db_type'])
+        conn_rows = snap[iid].get('conn_rows') or []
+        slow_rows = snap[iid].get('slow_rows') or []
+        labels = {}
+        if get_lang().startswith('zh'):
+            for name, rows, templates in (
+                ('conn', conn_rows, CONNECTION_TEMPLATES),
+                ('slow', slow_rows, SLOW_QUERY_TEMPLATES),
+            ):
+                columns = list(dict.fromkeys(field for row in rows for field in row))
+                labels[name] = dict(zip(columns, report_field_labels(
+                    node['db_type'], templates.get(family, ''), columns, describe_unmapped=True,
+                )))
         return jsonify({
             'ok': True, 'iid': iid,
             'info': node,
-            'conn_rows': snap[iid].get('conn_rows') or [],
-            'slow_rows': snap[iid].get('slow_rows') or [],
+            'conn_rows': conn_rows,
+            'slow_rows': slow_rows,
+            'column_labels': labels,
             'conn_err': snap[iid].get('conn_err') or '',
             'conn_no_sessions': bool(snap[iid].get('conn_no_sessions')),
         })
