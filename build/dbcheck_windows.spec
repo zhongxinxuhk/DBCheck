@@ -9,7 +9,9 @@
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import os
+import shutil
 import sys
+import tempfile
 
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
@@ -41,6 +43,16 @@ if portable_build:
     data_dirs = ['i18n', 'modules/rag', 'modules/pro', 'modules/user_management', 'modules/config']
 
 
+def _dameng_root():
+    """Return the directory holding ``dmPython.pyd``, or an empty string."""
+    import importlib.util
+
+    found = importlib.util.find_spec('dmPython')
+    if found is None or not found.origin:
+        return ''
+    return os.path.dirname(os.path.abspath(found.origin))
+
+
 def _dameng_binaries():
     """Return the Dameng dmPython native binaries for the frozen bundle.
 
@@ -51,12 +63,9 @@ def _dameng_binaries():
     ``dmdpi-<hash>.dll`` directly; every other Dameng DLL is pulled in later by
     that chain, so PyInstaller's automatic dependency scan is not enough here.
     """
-    import importlib.util
-
-    found = importlib.util.find_spec('dmPython')
-    if found is None or not found.origin:
+    root = _dameng_root()
+    if not root:
         return []
-    root = os.path.dirname(os.path.abspath(found.origin))
     binaries = []
     for name in sorted(os.listdir(root)):
         path = os.path.join(root, name)
@@ -71,22 +80,37 @@ def _dameng_binaries():
     return binaries
 
 
+def _python_dll(name):
+    for base in (sys.base_prefix, sys.prefix, os.path.dirname(sys.executable)):
+        path = os.path.join(base, name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def _openssl_binaries():
     """Ship the OpenSSL 3 runtime that ``dmssl/ssleay32.dll`` links against.
 
-    ``ssleay32.dll`` imports ``libcrypto-3-x64.dll``, which the wheel does not
-    carry. CPython 3.12 already ships the matching OpenSSL 3 DLLs, so reuse that
-    copy instead of fetching a separate build.
+    The wheel's ``ssleay32.dll`` imports ``libcrypto-3-x64.dll`` but does not
+    carry it. CPython on Windows ships the same OpenSSL 3 runtime under the
+    unsuffixed name ``libcrypto-3.dll``, so bundle that copy and add an alias
+    named exactly as the import table expects. That keeps the Dameng TLS path
+    loadable without pulling in a separate OpenSSL distribution.
     """
+    root = _dameng_root()
+    if not os.path.isfile(os.path.join(root, 'dmssl', 'ssleay32.dll')):
+        return []
     binaries = []
-    seen = set()
-    for base in (sys.base_prefix, sys.prefix, os.path.dirname(sys.executable)):
-        for name in ('libcrypto-3-x64.dll', 'libssl-3-x64.dll'):
-            path = os.path.join(base, name)
-            if name.lower() in seen or not os.path.isfile(path):
-                continue
-            seen.add(name.lower())
+    for name in ('libcrypto-3-x64.dll', 'libssl-3-x64.dll'):
+        path = _python_dll(name)
+        if path:
             binaries.append((path, '.'))
+    if not _python_dll('libcrypto-3-x64.dll'):
+        source = _python_dll('libcrypto-3.dll')
+        if source:
+            alias = os.path.join(tempfile.mkdtemp(prefix='dbpulse-openssl-'), 'libcrypto-3-x64.dll')
+            shutil.copy2(source, alias)
+            binaries.append((alias, '.'))
     return binaries
 
 
