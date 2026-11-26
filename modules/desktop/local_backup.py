@@ -270,8 +270,58 @@ class LocalBackup:
         return manifest
 
     @staticmethod
+    def _validate_scheduler_jobs(data, cipher):
+        from modules.core.local_secrets import PREFIX
+        from cryptography.fernet import InvalidToken
+
+        path = data / "scheduler_jobs.json"
+        if not path.is_file():
+            return
+        try:
+            jobs = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeError, ValueError) as error:
+            raise ValueError("备份中的定时巡检任务文件不是有效的 JSON") from error
+        if not isinstance(jobs, list):
+            raise ValueError("备份中的定时巡检任务文件应为任务列表")
+        seen = set()
+        for index, job in enumerate(jobs, 1):
+            if (
+                not isinstance(job, dict)
+                or not isinstance(job.get("id"), str)
+                or not job["id"].strip()
+                or job["id"] in seen
+                or not isinstance(job.get("cron"), dict)
+                or not isinstance(job.get("db_info"), dict)
+            ):
+                raise ValueError(f"备份中的第 {index} 个定时巡检任务配置不完整或 ID 重复")
+            seen.add(job["id"])
+
+            # The scheduler decrypts every tagged value, including nested credentials.
+            values = [job]
+            while values:
+                value = values.pop()
+                if isinstance(value, dict):
+                    values.extend(value.values())
+                elif isinstance(value, list):
+                    values.extend(value)
+                elif isinstance(value, str) and value.startswith(PREFIX):
+                    if cipher is None:
+                        raise ValueError("备份缺少定时巡检任务凭据的配套加密密钥")
+                    try:
+                        token = value[len(PREFIX):].encode("ascii")
+                        if token.startswith(b"Z0FBQUF"):
+                            token = base64.b64decode(token, validate=True)
+                        cipher.decrypt(token).decode("utf-8")
+                    except (InvalidToken, ValueError) as error:
+                        raise ValueError(f"备份中的第 {index} 个定时巡检任务凭据与密钥不匹配") from error
+
+    @staticmethod
     def _validate_data(stage):
-        key = stage / "data/.db_key"
+        from cryptography.fernet import Fernet, InvalidToken
+
+        data = stage / "data"
+        key = data / ".db_key"
+        cipher = None
         if key.is_file():
             try:
                 if (
@@ -283,9 +333,11 @@ class LocalBackup:
                     != 32
                 ):
                     raise ValueError()
-            except Exception as error:
+                cipher = Fernet(key.read_bytes().strip())
+            except (OSError, ValueError) as error:
                 raise ValueError("备份中的数据源加密密钥不正确") from error
-        for path in (stage / "data").rglob("*"):
+        LocalBackup._validate_scheduler_jobs(data, cipher)
+        for path in data.rglob("*"):
             if not path.is_file():
                 continue
             with path.open("rb") as file:
@@ -313,10 +365,7 @@ class LocalBackup:
                     }
                     if encrypted_tables and not key.is_file():
                         raise ValueError("备份缺少台账和服务记录的配套加密密钥")
-                    if key.is_file():
-                        from cryptography.fernet import Fernet, InvalidToken
-
-                        cipher = Fernet(key.read_bytes().strip())
+                    if cipher is not None:
                         try:
                             for table in sorted(encrypted_tables):
                                 for (value,) in database.execute(

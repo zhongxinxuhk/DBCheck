@@ -14054,6 +14054,12 @@ def main():
 
     _verify_agreement_integrity()
 
+    # 恢复备份后，即使没有人打开控制台，也应按时执行已启用的巡检任务。
+    try:
+        _get_scheduler()
+    except Exception as error:
+        print(f"[startup] 定时巡检调度器启动失败: {error}")
+
     from modules.service_management.scheduler import start_scheduler
     start_scheduler(app)
     from modules.clusters.service import start_cluster_monitor

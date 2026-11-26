@@ -33,6 +33,7 @@ LOG_FILE = str(paths.SCHEDULER_LOG)
 
 # 配置文件热加载：监听间隔（秒）与 mtime 读取
 _CONFIG_WATCH_INTERVAL = 30
+_INSPECTION_TIMEZONE = datetime.timezone(datetime.timedelta(hours=8))
 
 
 def _config_mtime():
@@ -965,7 +966,7 @@ class SchedulerManager:
         self.scheduler = BackgroundScheduler(
             jobstores=jobstores,
             job_defaults=job_defaults,
-            timezone=datetime.timezone(datetime.timedelta(hours=8))  # 北京时间
+            timezone=_INSPECTION_TIMEZONE  # 北京时间
         )
         self.scheduler.start()
         logger.info('调度器启动成功')
@@ -1184,9 +1185,11 @@ class SchedulerManager:
                 # 自定义 cron：支持标准 5 字段（分 时 日 月 周），并兼容 Quartz/Spring
                 # 的 6 字段（秒 分 时 日 月 周，含 '?'）与 7 字段（含年）。先规范化再交给
                 # APScheduler 校验；仍非法则抛异常，被下方 except 捕获并返回 400。
-                trigger = CronTrigger.from_crontab(_normalize_cron_expression(expr))
+                trigger = CronTrigger.from_crontab(
+                    _normalize_cron_expression(expr), timezone=self.scheduler.timezone
+                )
             else:
-                trigger = CronTrigger(**trigger_kwargs)
+                trigger = CronTrigger(timezone=self.scheduler.timezone, **trigger_kwargs)
 
             # 校验通过后再移除同 ID 的旧任务，避免非法配置挤掉已有任务
             if self.scheduler.get_job(job_id):

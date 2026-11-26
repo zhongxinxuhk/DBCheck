@@ -640,3 +640,45 @@ def test_restore_accepts_legacy_sqlite_schema_then_current_app_migrates(
             row[1] for row in database.execute("PRAGMA table_info(instances)")
         }
     assert {"jdbc_url", "ssh_tunnel", "driver_version"} <= columns
+
+
+@pytest.mark.parametrize(
+    ("problem", "message"),
+    [
+        ("invalid_json", "任务文件不是有效的 JSON"),
+        ("key_missing", "任务凭据的配套加密密钥"),
+        ("key_mismatch", "任务凭据与密钥不匹配"),
+    ],
+)
+def test_backup_checks_scheduled_inspections_before_touching_target(
+    installation, tmp_path, problem, message
+):
+    from cryptography.fernet import Fernet
+
+    source = tmp_path / "source"
+    data = source / "data"
+    data.mkdir(parents=True)
+    key = Fernet.generate_key()
+    encrypted = base64.b64encode(Fernet(key).encrypt(b"fixture-password")).decode()
+    jobs = [{
+        "id": "direct-job",
+        "enabled": False,
+        "cron": {"hour": "9"},
+        "db_info": {"db_type": "pg", "password": "enc:v1:" + encrypted},
+    }]
+    (data / "scheduler_jobs.json").write_text(
+        "{" if problem == "invalid_json" else json.dumps(jobs), encoding="utf-8"
+    )
+    if problem != "key_missing":
+        (data / ".db_key").write_bytes(Fernet.generate_key() if problem == "key_mismatch" else key)
+    archive = tmp_path / "scheduled-inspections.zip"
+    LocalBackup(source).export(archive)
+
+    backup = LocalBackup(installation)
+    before_apply = Mock()
+    with pytest.raises(ValueError, match=message):
+        backup.verify(archive)
+    with pytest.raises(ValueError, match=message):
+        backup.restore(archive, before_apply=before_apply)
+    before_apply.assert_not_called()
+    assert (backup.data / "config.json").read_text() == '{"value": "original"}'
