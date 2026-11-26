@@ -334,13 +334,15 @@ def _compose_field_description(field: str, tokens: Dict[str, str]) -> str:
     return ''.join(translated)
 
 
-def report_field_labels(db_type: str, sql: str, columns: List[str]) -> List[str]:
+def report_field_labels(db_type: str, sql: str, columns: List[str], *, describe_unmapped=False) -> List[str]:
     """读取视图说明与跨库报告字典，为原始字段名追加中文说明。
 
     支持连接查询、别名及原生采集。未登记字段先按词元表组合中文说明；
     确实无法翻译时只显示原字段名，不再输出待维护占位文案。
     """
     kb = get_knowledge()
+    from modules.inspection.report_terms import VENDOR_REFERENCES, core_family, field_description
+
     report_fields = kb.get('report_fields', {})
     common = report_fields.get('fields', {})
     tokens = report_fields.get('tokens', {})
@@ -373,11 +375,14 @@ def report_field_labels(db_type: str, sql: str, columns: List[str]) -> List[str]
         descriptions = {str(fields[field].get('desc') or '').strip()
                         for fields in scoped_fields if field in fields}
         descriptions = {d for d in descriptions if re.search(r'[\u4e00-\u9fff]', d)}
-        description = next(iter(descriptions)) if len(descriptions) == 1 else common.get(field, '')
+        description = (next(iter(descriptions)) if len(descriptions) == 1 else
+                       field_description(db_type, source_sql, text) or common.get(field, ''))
         canonical = re.sub(r'\s+', '_', text.strip('`"[]').lstrip('@')).upper()
         if not description:
             description = common.get(canonical, '')
         if not description:
             description = _compose_field_description(canonical, tokens)
+        if not description and describe_unmapped and core_family(db_type) in VENDOR_REFERENCES:
+            description = '原始结果列，含义依对应查询及厂商版本定义'
         labels.append(f'{text}（{description}）' if description else text)
     return labels

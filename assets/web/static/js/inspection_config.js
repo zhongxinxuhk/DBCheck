@@ -206,7 +206,8 @@ function applyInspectionTemplateFilters() {
     rows.forEach(row => {
         const searchText = (row.dataset.searchText || row.textContent || '').toLocaleLowerCase();
         const match = state.words.every(word => searchText.includes(word))
-            && (!state.dbType || row.dataset.dbType === state.dbType)
+            && (!state.dbType || row.dataset.dbType === state.dbType
+                || (state.dbType.startsWith('family:') && coreDatabaseFamily(row.dataset.dbType) === state.dbType.slice(7)))
             && (!state.category || row.dataset.category === state.category)
             && (!state.cycle || row.dataset.cycle === state.cycle)
             && (!state.gap || (state.gap === 'gap'
@@ -261,9 +262,14 @@ function populateInspectionTemplateFilters(templates) {
         const current = dbSelect.value;
         const dbs = [...new Set(templates.map(t => t.db_type).filter(Boolean))]
             .sort((a, b) => (dbLabels[a] || a).localeCompare(dbLabels[b] || b, 'zh-CN'));
-        dbSelect.innerHTML = `<option value="">${it('webui.inspection_filter_db_all', '全部数据库')}</option>` + dbs.map(db =>
-            `<option value="${escapeHtml(db)}">${escapeHtml(dbLabels[db] || db)}</option>`).join('');
-        dbSelect.value = dbs.includes(current) ? current : '';
+        const core = ['oracle', 'gbase8a', 'sqlserver', 'dm8'];
+        const families = core.filter(family => dbs.some(db => coreDatabaseFamily(db) === family));
+        dbSelect.innerHTML = `<option value="">${it('webui.inspection_filter_db_all', '全部数据库')}</option>`
+            + '<optgroup label="核心数据库">' + families.map(family =>
+                `<option value="family:${family}">${escapeHtml(dbLabels[family])}</option>`).join('') + '</optgroup>'
+            + '<optgroup label="数据库与驱动类型">' + dbs.map(db =>
+                `<option value="${escapeHtml(db)}">${escapeHtml(dbLabels[db] || db)}</option>`).join('') + '</optgroup>';
+        dbSelect.value = [...dbSelect.options].some(option => option.value === current) ? current : '';
     }
     if (cycleSelect) {
         const current = cycleSelect.value;

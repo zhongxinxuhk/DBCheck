@@ -97,7 +97,8 @@ def test_sqlserver_screen_metrics_parse():
             {'counter_name': 'Transactions/sec', 'cntr_value': 5},
         ],
         screen_metrics.SQLSERVER_TBS_SQL: [
-            {'name': 'biz', 'total_mb': '200'},
+            {'name': 'master/data', 'total_mb': '200', 'free_mb': '50', 'max_mb': '300'},
+            {'name': 'master/log', 'total_mb': '20'},
         ],
         screen_metrics.SQLSERVER_LOCKS_SQL: [{'n': 3}],
     })
@@ -106,8 +107,11 @@ def test_sqlserver_screen_metrics_parse():
 
     assert counters['batch_req'] == 100
     assert counters['trans'] == 25
-    assert extras['tbs'][0]['name'] == 'biz'
+    assert extras['tbs'][0]['name'] == 'master/data'
     assert extras['tbs'][0]['total_mb'] == 200
+    assert extras['tbs'][0]['free_mb'] == 50
+    assert extras['tbs'][0]['free_pct'] == 50
+    assert extras['tbs'][1]['free_pct'] is None
     assert extras['lock_waits'] == 3
 
 
@@ -144,6 +148,26 @@ def test_oracle_connection_dispatch(monkeypatch):
         'tiger', 'oracle', 15,
     )
     assert calls['dsn'] == {'host': 'ora-db', 'port': 1521, 'sid': 'ORCL'}
+
+
+def test_oracle_monitor_forwards_sysdba_to_dbapi_driver(monkeypatch):
+    from modules import jdbc_connector
+    from modules.monitor.jdbc_collect_cli import _collect
+
+    captured = {}
+
+    def connect(driver, url, properties, jars):
+        captured.update(properties)
+        return types.SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setitem(sys.modules, 'jaydebeapi', types.SimpleNamespace(connect=connect))
+    monkeypatch.setattr(jdbc_connector, 'resolve_driver_jars', lambda *a, **kw: ['fixture.jar'])
+    monkeypatch.setattr(jdbc_connector, '_start_jvm', lambda *_: None)
+    monkeypatch.setattr(jdbc_connector, '_is_jvm_started', lambda: True)
+    assert _collect(dict(db_type='oracle_jdbc', host='localhost', port=1521, user='sys',
+                         service_name='ORCL', password='fixture', sysdba=True)) == {}
+    assert captured['internal_logon'] == 'sysdba'
+    assert captured['user'] == 'sys'
 
 
 def test_sqlserver_connection_dispatch(monkeypatch):

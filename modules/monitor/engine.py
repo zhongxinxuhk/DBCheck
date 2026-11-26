@@ -93,6 +93,8 @@ def _friendly_db_error(e):
     low = str(e).lower()
     if '可信ca' in low:
         return 'GBase 8a 缺少可信 CA，请配置 CA 或显式开启允许明文直连'
+    if 'ora-28009' in low:
+        return 'Oracle SYS 账号需要启用 SYSDBA 登录'
     if 'ssh 监控请使用' in low:
         return str(e)
     if any(code in low for code in ('ora-00942', 'ora-01031', 'permission denied',
@@ -804,6 +806,10 @@ class MonitorEngine:
         if PORTABLE_ROOT is not None and raw_type in ('oracle', 'dm'):
             connector = {'oracle': 'oracle_jdbc', 'dm': 'dm'}[raw_type]
             return self._jdbc_query(inst, connector, sql, timeout=timeout, template_key=db_type)
+        if db_type == 'dm':
+            from modules.entrypoints.main_dm import _find_dm_jdbc_jar
+            if inst.get('driver_version') or _find_dm_jdbc_jar():
+                return self._jdbc_query(inst, 'dm', sql, timeout=timeout, template_key=db_type)
 
         # *_jdbc 专属数据源：必须走 JDBC 子进程通道，绝不能被归一成
         # oracle/pg 后用 python 原生驱动直连（否则实时监控有数据、大屏判宕机）

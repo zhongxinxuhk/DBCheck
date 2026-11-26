@@ -784,7 +784,7 @@ def open_jdbc_connection(
     Args:
         mode: 'jaydebeapi' | 'jpype'。
         driver_class: 覆盖注册表默认驱动类（一般不需要，注册表已对齐 jar 内真实类）。
-        properties: JPype 模式附加 JDBC 属性 dict（user/password 自动注入，显式键覆盖）。
+        properties: JDBC 属性 dict（user/password 自动注入，显式键覆盖）。
         on_error: JPype 模式建连失败回调，签名 on_error(e, ctx) -> (new_url,
             new_props) | None；返回非 None 则用新参数重试一次（如 SQL Server
             SSL 回退）。
@@ -856,9 +856,8 @@ def open_jdbc_connection(
         }
 
     try:
-        conn = jaydebeapi.connect(
-            _driver_class, _url, [user, password], _jars,
-        )
+        driver_args = {'user': user, 'password': password, **properties} if properties else [user, password]
+        conn = jaydebeapi.connect(_driver_class, _url, driver_args, _jars)
         return conn, {'driver': _basename, 'url': _url,
                       'driver_class': _driver_class, 'mode': mode}
     except Exception as e:  # noqa: BLE001

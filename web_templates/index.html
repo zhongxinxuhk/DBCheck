@@ -85,6 +85,10 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 .sysinfo-msg.is-error { color: #ef6b6b; }
 .sysinfo-msg.is-success { color: var(--accent); }
 @media (max-width: 560px) { .sysinfo-wrap { padding: 16px 14px 36px; } .sysinfo-wrap .card { padding: 18px 16px; } .sysinfo-logo-plate { flex-basis: 180px; } .sysinfo-hero-text h2 { font-size: 24px; } .sysinfo-row { grid-template-columns: 105px minmax(0, 1fr); gap: 10px; } }
+#datasource-modal-backdrop .ds-connection-grid {
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;align-items:start;
+}
+@media(max-width:580px){ #datasource-modal-backdrop .ds-connection-grid { grid-template-columns:1fr; } }
 </style>
 <style>
 /* ─── Reset & Base ─── */
@@ -7205,6 +7209,10 @@ function formatBytes(bytes) {
 
       // ─── Data Sources Page ────────────────────────
       let currentGroupFilter = '';
+      function coreDatabaseFamily(type) {
+        const name = String(type || '').toLowerCase().replace(/_jdbc$|_full$/, '');
+        return ({dm:'dm8', mssql:'sqlserver'})[name] || name;
+      }
       async function loadDataSources(groupFilter) {
         if (groupFilter !== undefined) currentGroupFilter = groupFilter || '';
         try {
@@ -7214,13 +7222,14 @@ function formatBytes(bytes) {
           const countEl = document.getElementById('datasources-count');
           await loadGroupChips();
           if (data.ok && data.datasources && data.datasources.length > 0) {
-            let list = data.datasources;
+            const family = document.getElementById('datasource-core-family')?.value;
+            let list = family ? data.datasources.filter(ds => coreDatabaseFamily(ds.db_type) === family) : data.datasources;
             if (currentGroupFilter) {
               list = list.filter(ds => (ds.group || 'default') === currentGroupFilter);
             }
             countEl.textContent = list.length;
             if (list.length === 0) {
-              listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);" data-i18n="webui.pro_datasource_group_empty">该分组暂无数据源</div>';
+              listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);" data-i18n="webui.pro_datasource_group_empty">当前筛选无数据源</div>';
               return;
             }
             listEl.innerHTML = list.map(ds => {
@@ -7381,7 +7390,7 @@ function formatBytes(bytes) {
   '<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_label_req') + ' <span style="color:var(--danger)">*</span></label><input id="ds-label" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="' + i18n('webui.pro_ds_placeholder_name') + '"></div>' +
 '</div>' +
 '<div style="font-size:12px;font-weight:600;color:var(--accent);margin:14px 0 8px;padding-left:8px;border-left:3px solid var(--accent);letter-spacing:.03em">连接信息</div>' +
-'<div style="display:grid;grid-template-columns:1.6fr 0.8fr 1fr 1fr;gap:10px 14px;align-items:start">' +
+'<div class="ds-connection-grid">' +
   '<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_host_req') + '</label><input id="ds-host" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="' + i18n('webui.pro_ds_placeholder_host') + '"></div>' +
   '<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_port_req') + '</label><input id="ds-port" type="number" value="3306" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px"></div>' +
   '<div><label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">' + i18n('webui.pro_ds_user_req') + '</label><input id="ds-user" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" placeholder="' + i18n('webui.pro_ds_placeholder_user') + '"></div>' +
@@ -7570,14 +7579,14 @@ function formatBytes(bytes) {
         var dbInput = document.getElementById('ds-database');
         if (dbInput) {
           var _ph = window.DB_PH_MAP;
-          dbInput.placeholder = _ph[dbType] || 'mysql';
+          dbInput.placeholder = dbType === 'gbase8a' ? '可选，例如 vc1' : (_ph[dbType] || 'mysql');
           // OceanBase 不预填数据库名（仅为占位提示），由用户在 DBeaver 风格界面自行填写
           if (dbType === 'oceanbase' && !dbInput.value) dbInput.value = '';
         }
         // 根据数据库类型更新 database 标签
         var dbLabel = document.getElementById('ds-database-label');
         if (dbLabel) {
-          dbLabel.textContent = (dbType === 'gbase') ? i18n('webui.pro_ds_database_gbase') : i18n('webui.pro_ds_database');
+          dbLabel.textContent = dbType === 'gbase8a' ? '虚拟集群（可选）' : (dbType === 'gbase' ? i18n('webui.pro_ds_database_gbase') : i18n('webui.pro_ds_database'));
         }
       }
 
@@ -11446,16 +11455,16 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
 
       <div class="page" id="page-monitor-screen" style="display:none">
         <div class="workspace-toolbar"><button class="btn btn-ghost" onclick="window.open('/monitor-screen', '_blank', 'noopener')">全屏窗口打开</button></div>
-        <iframe id="monitor-screen-frame" title="监控大屏" allowfullscreen style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0"></iframe>
+        <iframe id="monitor-screen-frame" title="监控大屏" allowfullscreen style="display:block;width:100%;height:calc(100dvh - 160px);min-height:360px;border:0"></iframe>
       </div>
       <div class="page" id="page-inventory" style="display:none">
         <div class="workspace-toolbar" style="display:flex;gap:8px;margin-bottom:14px">
-          <button class="btn btn-ghost" onclick="showInventoryTab('table')">资产台账</button>
-          <button class="btn btn-ghost" onclick="showInventoryTab('batch')">批量巡检</button>
-          <button class="btn btn-ghost" onclick="showInventoryTab('clusters')">集群视图</button>
+          <button class="btn btn-ghost" data-inventory-tab="table" onclick="showInventoryTab('table')">资产台账</button>
+          <button class="btn btn-ghost" data-inventory-tab="batch" onclick="showInventoryTab('batch')">批量巡检</button>
+          <button class="btn btn-ghost" data-inventory-tab="clusters" onclick="showInventoryTab('clusters')">集群视图</button>
         </div>
-        <div id="inventory-table"><iframe id="operations-frame" title="资产台账" style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0;border-radius:10px"></iframe></div>
-        <div id="inventory-batch" hidden><iframe id="batch-operations-frame" title="批量巡检" style="width:100%;height:calc(100vh - 160px);min-height:650px;border:0;border-radius:10px"></iframe></div>
+        <div id="inventory-table"><iframe id="operations-frame" title="资产台账" style="display:block;width:100%;height:460px;border:0"></iframe></div>
+        <div id="inventory-batch" hidden><iframe id="batch-operations-frame" title="批量巡检" style="display:block;width:100%;height:460px;border:0"></iframe></div>
         <div id="inventory-clusters" hidden>{% with embedded=true %}{% include 'clusters.html' %}{% endwith %}</div>
       </div>
 
@@ -11605,6 +11614,16 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
             <button class="btn btn-primary" style="padding:6px 14px;font-size:12px" onclick="showAddDatasourceModal()" data-page-node-id="Sz7f7EU39QKBq61TLPuCUG">➕ <span data-i18n="webui.datasources_add" data-page-node-id="d106HdzB5aF7yJbXxNIjtI">添加数据源</span></button>
           </div>
           <!-- 分组筛选 -->
+          <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label for="datasource-core-family">数据库类型</label>
+            <select id="datasource-core-family" class="form-input" style="width:auto" onchange="loadDataSources()">
+              <option value="">全部数据库</option>
+              <option value="oracle">Oracle</option>
+              <option value="gbase8a">GBase 8a</option>
+              <option value="sqlserver">SQL Server</option>
+              <option value="dm8">DM8 达梦</option>
+            </select>
+          </div>
           <div style="margin:12px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap" data-page-node-id="nrAOtHzHI4HB9MHAXbqRMK">
             <span style="font-size:12px;color:var(--text-muted)" data-i18n="webui.group_filter" data-page-node-id="6tw5NyAKDDXZEFlog8bWqM">分组筛选：</span>
             <span id="group-all-chip" class="group-chip active" onclick="filterByGroup('')" style="display:inline-block;padding:4px 12px;background:var(--surface2);border-radius:16px;font-size:12px;cursor:pointer;border:1px solid var(--accent)" data-i18n="webui.group_all" data-page-node-id="OfW8fLPFZAvLM0iVANzxWp">全部</span>
@@ -14432,9 +14451,15 @@ function dm8OfflineDownloadReport() {
 // ─── Page Navigation ───
 function showInventoryTab(name) {
   ['table','batch','clusters'].forEach(tab=>{document.getElementById('inventory-'+tab).hidden=tab!==name;});
+  document.querySelectorAll('[data-inventory-tab]').forEach(button => {
+    const active = button.dataset.inventoryTab === name;
+    button.classList.toggle('btn-primary', active);
+    button.classList.toggle('btn-ghost', !active);
+    button.setAttribute('aria-current', String(active));
+  });
   const id=name==='batch'?'batch-operations-frame':'operations-frame';
   if(name==='clusters') window.initClusterPage();
-  else {const frame=document.getElementById(id);if(!frame.getAttribute('src'))frame.src='/operations/inventory'+(name==='batch'?'?tab=batch':'');}
+  else {const frame=document.getElementById(id);if(!frame.getAttribute('src'))frame.src='/operations/inventory?embedded=1'+(name==='batch'?'&tab=batch':'');}
 }
 window.openReportCenter = function(context={}) {window.__reportCenterContext=context;showPage('report-center');};
 function showPage(name) {
@@ -14551,7 +14576,7 @@ function showPage(name) {
   }
   if (name === 'batch-inspection') {
     const frame = document.getElementById('batch-operations-frame');
-    if (!frame.getAttribute('src')) frame.src = '/operations/inventory?tab=batch';
+    if (!frame.getAttribute('src')) frame.src = '/operations/inventory?embedded=1&tab=batch';
   }
   if (name === 'inventory') {
     showInventoryTab(inventoryTab||'table');
@@ -30647,7 +30672,7 @@ function mkdirRemote() {
   <script src="/static/js/server_thresholds.js"></script>
   <!-- 巡检配置管理：写操作（保存/删除/创建）仅管理员可见可用 -->
   <script>window._IS_ADMIN = ({{ 'true' if user_role == 'admin' else 'false' }});</script>
-  <script src="/static/js/inspection_config.js"></script>
+  <script src="/static/js/inspection_config.js?v=2"></script>
 <!-- 底部状态栏 -->
 <div class="status-bar" id="status-bar" data-page-node-id="E0jlA1UaqTA24TltOH3TVC">
   <!-- 版本号与品牌署名已迁移至「系统配置 → 系统信息」页详细展示（署名仍保留在 UI 中，未移除） -->
@@ -31730,6 +31755,15 @@ document.addEventListener('keydown', function(e) {
 window.addEventListener('message', function(event) {
   const frames = ['operations-frame', 'batch-operations-frame'].map(id => document.getElementById(id));
   if (event.origin !== window.location.origin || !frames.some(frame => frame?.contentWindow === event.source)) return;
+  if (event.data?.type === 'operations-resize') {
+    const frame = frames.find(item => item?.contentWindow === event.source);
+    const height = event.data.height;
+    if (Number.isInteger(height) && height > 0) frame.style.height = Math.min(100000, height) + 'px';
+  }
+  if (event.data?.type === 'operations-editor-opened' && _currentPage === 'inventory') {
+    window.scrollTo(0, 0);
+    document.querySelector('.content')?.scrollTo(0, 0);
+  }
   if (event.data?.type === 'operations-open-report') {window.openReportCenter({source_ids:event.data.source_ids||[]});}
   if (event.data?.type === 'operations-open-batch') {
     window.__operationsBatchSelection = event.data.instance_ids || [];

@@ -3005,6 +3005,7 @@ class BaseInspectionEngine:
             # 延迟导入 docx 相关模块
             from docx import Document
             from modules.intelligence.schema_knowledge import report_field_labels
+            from modules.inspection.report_terms import QPS_NOTES, VENDOR_REFERENCES, core_family, metric_label
             from docx.shared import Pt, RGBColor, Inches, Cm
             from docx.enum.text import WD_ALIGN_PARAGRAPH
             from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -3273,6 +3274,21 @@ class BaseInspectionEngine:
                 doc.add_page_break()
 
             # ── 章节内容 ────────────────────────────────────
+            family = core_family(self.db_type)
+            if is_zh and family in VENDOR_REFERENCES:
+                title, *links = VENDOR_REFERENCES[family]
+                _fmt_heading('指标口径与厂商参考', level=1)
+                doc.add_paragraph(QPS_NOTES[family])
+                doc.add_paragraph('表头保留原始列名并附中文释义。配置参数、统计项和等待事件可按原名在厂商手册中检索。采集时间、大小和速率以字段标注的单位为准。')
+                doc.add_paragraph(title)
+                for link in links:
+                    doc.add_paragraph(link)
+            baseline_terms = {
+                str(row.get('param_name') or '').strip().lower(): row['description_zh']
+                for row in self.context.get('baseline_results', [])
+                if row.get('description_zh')
+            }
+            effective_sql = self.context.get('_query_sql_used', {})
             chapters = self.context.get('_chapters', [])
             if chapters:
                 for ch in chapters:
@@ -3291,6 +3307,8 @@ class BaseInspectionEngine:
                     for q in queries:
                         q_key = q.get('key', '')
                         q_desc = q.get('query_description_zh' if is_zh else 'query_description_en', '') or q.get('query_description_en' if is_zh else 'query_description_zh', '')
+                        q_desc = q_desc or q.get('query_name_zh' if is_zh else 'query_name_en', '')
+                        source_sql = effective_sql.get(q_key) or q.get('query_sql') or ''
                         q_data = self.context.get(q_key, [])
                         _q_trunc = False
                         _q_total = len(q_data) if isinstance(q_data, list) else 0
@@ -3310,8 +3328,14 @@ class BaseInspectionEngine:
                             if isinstance(q_data[0], dict):
                                 headers = list(q_data[0].keys())
                                 display_headers = report_field_labels(
-                                    self.db_type, q.get('query_sql', ''), headers
+                                    self.db_type, source_sql, headers, describe_unmapped=True
                                 ) if is_zh else headers
+                                if is_zh and family in VENDOR_REFERENCES:
+                                    q_data = [
+                                        {field: metric_label(self.db_type, source_sql, field, value, baseline_terms)
+                                         for field, value in row.items()}
+                                        for row in q_data
+                                    ]
                                 # 告警/错误日志有记录时，先把“检出问题”说清楚，
                                 # 避免读者把表格当成普通信息列表。
                                 if q_key in {'W04_outstanding_alerts', 'W04_errorlog_recent'}:
@@ -3378,7 +3402,12 @@ class BaseInspectionEngine:
                             # 数据为空：区分“查询失败”和“当前确实没有记录”。
                             # 前者是采集问题，后者是正常结论，不能都写成“数据缺失”。
                             _err = self._query_errors.get(q_key, '')
-                            if _err:
+                            state = self.context.get('_query_status', {}).get(q_key, {})
+                            if state.get('status') == 'not_applicable':
+                                reason = state.get('reason') or _err or '当前版本或部署条件未满足'
+                                _p = doc.add_paragraph(('不适用：' if is_zh else 'Not applicable: ') + reason)
+                                _color = RGBColor(90, 90, 90)
+                            elif _err:
                                 _msg = _err.replace('⚠️ 章节「', '').replace('」：', '：')
                                 _p = doc.add_paragraph(('采集失败：' + _msg) if is_zh else ('Collection failed: ' + _msg))
                                 _color = RGBColor(192, 0, 0)
@@ -3423,7 +3452,7 @@ class BaseInspectionEngine:
                         _fmt_para(_heading_key, bold=True, size=11)
                         headers = list(val[0].keys())
                         display_headers = report_field_labels(
-                            self.db_type, '', headers) if is_zh else headers
+                            self.db_type, '', headers, describe_unmapped=True) if is_zh else headers
                         is_wide = len(headers) > 6
                         font_size = 8 if is_wide else 9
                         m_rows = [[self._clean_xml_str(row_data.get(h, ''), max_len=500)
