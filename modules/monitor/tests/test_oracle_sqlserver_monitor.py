@@ -243,7 +243,7 @@ def test_connection_blocked_sessions_are_counted(monkeypatch):
     def fake_query(instance_id, sql, timeout=None):
         if sql == queries.ORACLE_CONNECTION_SQL:
             return [
-                {'username': 'u1', 'state': 'blocked'},
+                {'username': 'u1', 'state': 'blocked', 'total_connections': 103},
                 {'username': 'u2', 'state': 'ACTIVE'},
                 {'username': 'u3', 'state': 'INACTIVE'},
             ]
@@ -254,7 +254,28 @@ def test_connection_blocked_sessions_are_counted(monkeypatch):
     monkeypatch.setattr(engine, '_connect_and_query', fake_query)
     result = engine._collect_conn('ora-1', 'oracle', 'Oracle (db:1521)')
 
-    assert result['total'] == 3
+    assert result['total'] == 103
     assert result['max_conn'] == 100
     assert result['connections'] == {'active': 1, 'idle': 1, 'blocked': 1}
-    assert result['usage_pct'] == 3.0
+    assert result['usage_pct'] == 103.0
+
+def test_dm8_falls_back_to_running_samples_when_sql_history_empty(monkeypatch):
+    engine = MonitorEngine()
+    live_row = {'sql_text': 'SELECT 1', 'avg_time_s': 4}
+    results = {queries.DM_SLOW_QUERY_SQL: [], queries.DM_SLOW_QUERY_FALLBACK_SQL: [live_row]}
+    monkeypatch.setattr(engine, '_connect_and_query', lambda instance_id, sql: results[sql])
+
+    result = engine._collect_slow('dm-1', 'dm', 'DM8')
+    assert result['error'] is None
+    assert result['data'] == [{**live_row, 'sample_kind': 'running'}]
+
+
+def test_waiting_is_distinct_from_blocked_in_sqlserver_and_dm8(monkeypatch):
+    engine = MonitorEngine()
+    rows = [{'state': 'waiting'}, {'state': 'blocked'}, {'state': 'IDLE'}]
+    monkeypatch.setattr(engine, '_connect_and_query',
+                        lambda iid, sql: [{'max_conn': 100}] if sql in queries.MAX_CONN_QUERY_SQL.values() else rows)
+
+    for family in ('sqlserver', 'dm'):
+        result = engine._collect_conn('one', family, family)
+        assert result['connections'] == {'active': 1, 'idle': 1, 'blocked': 1}

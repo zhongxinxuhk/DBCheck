@@ -38,17 +38,20 @@ SELECT
     p.user AS username,
     p.db AS database_name,
     p.command AS command,
-    ROUND(p.time / 3600, 1) AS duration_h,
-    p.state,
+    p.time / 3600.0 AS duration_h,
+    CASE WHEN LOWER(p.command) = 'sleep' THEN 'idle'
+         WHEN LOWER(p.state) LIKE '%lock%' THEN 'blocked'
+         ELSE COALESCE(NULLIF(p.state, ''), 'running') END AS state,
     p.info AS current_sql,
     COALESCE(u.cnt, 0) AS user_conn_count,
-    (SELECT COUNT(*) FROM information_schema.processlist) AS total_connections
+    (SELECT COUNT(*) FROM information_schema.processlist WHERE id <> CONNECTION_ID()) AS total_connections
 FROM information_schema.processlist p
 LEFT JOIN (SELECT user, COUNT(*) AS cnt
            FROM information_schema.processlist GROUP BY user) u
        ON u.user = p.user
 WHERE p.id != CONNECTION_ID()
-ORDER BY p.time DESC
+ORDER BY CASE WHEN LOWER(p.state) LIKE '%lock%' AND LOWER(p.command) <> 'sleep' THEN 0
+              WHEN LOWER(p.command) <> 'sleep' THEN 1 ELSE 2 END, p.time DESC
 LIMIT 50
 """
 
@@ -175,13 +178,13 @@ SELECT * FROM (
 """
 
 # 降级版：11gR1 的 v$sql 无 max_elapsed_time 列（ORA-00904 invalid identifier），
-# 此时 max 列退化为 avg。
+# 无最大值时保留为空。
 ORACLE_SLOW_QUERY_FALLBACK_SQL = """
 SELECT * FROM (
   SELECT
     SUBSTR(s.sql_text, 1, 200) AS sql_text,
     ROUND(s.elapsed_time / 1000000 / NULLIF(s.executions, 0), 3) AS avg_time_s,
-    ROUND(s.elapsed_time / 1000000 / NULLIF(s.executions, 0), 3) AS max_time_s,
+    CAST(NULL AS NUMBER) AS max_time_s,
     s.executions AS exec_count,
     ROUND(s.elapsed_time / 1000000, 3) AS total_time_s,
     s.parsing_schema_name AS schema_name,
@@ -202,13 +205,17 @@ SELECT * FROM (
     s.schemaname AS database_name,
     s.machine AS host,
     s.program AS command,
-    ROUND((SYSDATE - s.logon_time) * 24, 1) AS duration_h,
+    s.last_call_et / 3600.0 AS duration_h,
     CASE WHEN s.blocking_session IS NOT NULL THEN 'blocked'
          ELSE s.status END AS state,
-    SUBSTR(s.sql_id, 1, 200) AS current_sql
+    SUBSTR(q.sql_text, 1, 200) AS current_sql,
+    COUNT(*) OVER () AS total_connections
   FROM v$session s
-  WHERE s.type != 'BACKGROUND'
-  ORDER BY (SYSDATE - s.logon_time) DESC
+  LEFT JOIN v$sql q ON q.sql_id = s.sql_id AND q.child_number = s.sql_child_number
+       AND q.address = s.sql_address
+  WHERE s.type = 'USER' AND s.sid <> SYS_CONTEXT('USERENV', 'SID')
+  ORDER BY CASE WHEN s.blocking_session IS NOT NULL THEN 0
+                WHEN s.status = 'ACTIVE' THEN 1 ELSE 2 END, s.last_call_et DESC
 ) WHERE ROWNUM <= 50
 """
 
@@ -241,17 +248,23 @@ SELECT TOP 50
     s.login_name AS username,
     COALESCE(DB_NAME(r.database_id), DB_NAME()) AS database_name,
     COALESCE(r.command, 'idle') AS command,
-    ROUND(DATEDIFF(SECOND, ISNULL(r.start_time, s.last_request_start_time), GETDATE()) / 3600.0, 1) AS duration_h,
+    DATEDIFF(SECOND, COALESCE(r.start_time, s.last_request_end_time, s.login_time), GETDATE()) / 3600.0 AS duration_h,
     CASE WHEN r.blocking_session_id IS NOT NULL AND r.blocking_session_id <> 0
          THEN 'blocked' ELSE COALESCE(r.status, 'sleeping') END AS state,
     SUBSTRING(st.text, 1, 200) AS current_sql,
     (SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE login_name = s.login_name) AS user_conn_count,
-    (SELECT COUNT(*) FROM sys.dm_exec_sessions) AS total_connections
+    COUNT(*) OVER () AS total_connections
 FROM sys.dm_exec_sessions s
-LEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id
+OUTER APPLY (
+    SELECT TOP 1 r.start_time, r.database_id, r.command, r.blocking_session_id, r.status, r.sql_handle
+    FROM sys.dm_exec_requests r
+    WHERE r.session_id = s.session_id
+    ORDER BY CASE WHEN r.blocking_session_id <> 0 THEN 0 ELSE 1 END, r.start_time
+) r
 OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) st
-WHERE s.is_user_process = 1
-ORDER BY ISNULL(r.start_time, s.last_request_start_time) ASC
+WHERE s.is_user_process = 1 AND s.session_id <> @@SPID
+ORDER BY CASE WHEN r.blocking_session_id <> 0 THEN 0
+              WHEN r.start_time IS NOT NULL THEN 1 ELSE 2 END, duration_h DESC
 """
 
 # ═══════════════════════════════════════════════════════════════
@@ -260,7 +273,7 @@ ORDER BY ISNULL(r.start_time, s.last_request_start_time) ASC
 DM_SLOW_QUERY_SQL = """
 SELECT
     SUBSTR(MAX(TOP_SQL_TEXT), 1, 200) AS sql_text,
-    ROUND(MAX(TIME_USED) / 1000000.0, 3) AS avg_time_s,
+    ROUND(AVG(TIME_USED * 1.0) / 1000000.0, 3) AS avg_time_s,
     ROUND(MAX(TIME_USED) / 1000000.0, 3) AS max_time_s,
     COUNT(*) AS exec_count,
     ROUND(SUM(TIME_USED) / 1000000.0, 3) AS total_time_s,
@@ -273,17 +286,38 @@ ORDER BY SUM(TIME_USED) DESC
 LIMIT 30
 """
 
+# SQL 历史记录需由管理员开启。没有历史记录时，使用当前执行会话补充采样。
+DM_SLOW_QUERY_FALLBACK_SQL = """
+SELECT SUBSTR(SQL_TEXT, 1, 200) AS sql_text,
+       DATEDIFF(SECOND, LAST_RECV_TIME, CURRENT_TIMESTAMP) * 1.0 AS avg_time_s,
+       CAST(NULL AS NUMBER) AS max_time_s,
+       1 AS exec_count,
+       DATEDIFF(SECOND, LAST_RECV_TIME, CURRENT_TIMESTAMP) * 1.0 AS total_time_s,
+       CURR_SCH AS schema_name,
+       SESS_ID AS digest
+FROM V$SESSIONS
+WHERE UPPER(STATE) IN ('ACTIVE', 'RUNNING', 'R', 'WAIT', 'W')
+  AND DATEDIFF(SECOND, LAST_RECV_TIME, CURRENT_TIMESTAMP) >= 1
+  AND SQL_TEXT IS NOT NULL
+ORDER BY LAST_RECV_TIME
+LIMIT 30
+"""
+
 # DM8 V$SESSIONS 实测列名（SESS_ID/CURR_SCH/APPNAME/SQL_TEXT，无 SCHEMA_NAME/PROGRAM_NAME）；
-# STATE 单字符（W=等待 R=运行 I=空闲），time 单位微秒。
+# STATE 可能是 ACTIVE/IDLE 或旧版短码；等待和阻塞含义不同。
 # 注意：不按 SES_ID() 过滤自连接——该内建在部分账号/环境下不可解析，且自连接本身
 # 也是一条真实连接，纳入计数无碍。
+DM_BLOCKED_TRANSACTIONS_SQL = "SELECT DISTINCT ID AS trx_id FROM V$TRXWAIT WHERE WAIT_FOR_ID > 0"
+
 DM_CONNECTION_SQL = """
 SELECT
+    S.TRX_ID AS trx_id,
     S.USER_NAME AS username,
     S.CURR_SCH AS database_name,
     S.APPNAME AS command,
-    ROUND(DATEDIFF(HOUR, S.LAST_RECV_TIME, CURDATE()), 1) AS duration_h,
+    DATEDIFF(SECOND, S.LAST_RECV_TIME, CURRENT_TIMESTAMP) / 3600.0 AS duration_h,
     CASE S.STATE
+        WHEN 'WAIT' THEN 'waiting'
         WHEN 'W' THEN 'waiting'
         WHEN 'R' THEN 'running'
         WHEN 'I' THEN 'idle'
@@ -409,6 +443,7 @@ SELECT
     CONCAT(ID, '_', TIME) AS digest
 FROM information_schema.PROCESSLIST
 WHERE INFO IS NOT NULL
+  AND TIME >= 1
   AND INFO NOT LIKE 'COMMIT%'
   AND INFO NOT LIKE 'ROLLBACK%'
   AND COMMAND <> 'Sleep'
@@ -430,6 +465,7 @@ SELECT
     CONCAT(ID, '_', TIME) AS digest
 FROM information_schema.PROCESSLIST
 WHERE INFO IS NOT NULL
+  AND TIME >= 1
   AND INFO NOT LIKE 'COMMIT%'
   AND INFO NOT LIKE 'ROLLBACK%'
   AND COMMAND <> 'Sleep'
@@ -603,7 +639,8 @@ SLOW_QUERY_FALLBACK_TEMPLATES = {
     'tidb': TIDB_SLOW_QUERY_FALLBACK_SQL,
     'clickhouse': CLICKHOUSE_SLOW_QUERY_FALLBACK_SQL,
     'gbase8a': GBASE8A_SLOW_QUERY_FALLBACK_SQL,
-    # Oracle 11gR1 的 v$sql 无 max_elapsed_time 列（ORA-00904），降级版以 avg 充当 max
+    'dm': DM_SLOW_QUERY_FALLBACK_SQL,
+    # Oracle 部分版本的 V$SQL 不提供单次最大耗时。
     'oracle': ORACLE_SLOW_QUERY_FALLBACK_SQL,
     # OB processlist 版 fallback：performance_schema 不可用/老版本 OB 的兜底（100% 兼容）
     'oceanbase': MYSQL_SLOW_QUERY_FALLBACK_SQL,
@@ -686,7 +723,8 @@ MAX_CONN_QUERY_SQL = {
     'pg': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
     'ivorysql': "SELECT setting::int AS max_conn FROM pg_settings WHERE name = 'max_connections'",
     'oracle': "SELECT TO_NUMBER(VALUE) AS max_conn FROM v$parameter WHERE NAME = 'sessions'",  # 会话上限；processes 只是进程上限
-    'sqlserver': "SELECT 32767 AS max_conn",
+    'sqlserver': ("SELECT COALESCE(NULLIF(CONVERT(int, value_in_use), 0), @@MAX_CONNECTIONS) "
+                  "AS max_conn FROM sys.configurations WHERE name = 'user connections'"),
     'dm': "SELECT VALUE AS max_conn FROM V$DM_INI WHERE PARA_NAME = 'MAX_SESSIONS'",
     'tidb': "SELECT @@global.max_connections AS max_conn",
     'gbase8a': "SELECT @@max_connections AS max_conn",  # 8a 用 @@ 变量，避免 GLOBAL_VARIABLES 版本差异
