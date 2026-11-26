@@ -70,10 +70,13 @@ def native(args):
         "jaydebeapi",
         "tzdata",
     ]
-    if platform.startswith("windows"):
-        # 达梦原生驱动随 Windows 包分发（PyPI 只有 win_amd64 / manylinux wheel）。
-        # 装不上必须在这里失败，否则只能在发布后才发只有 JDBC 傅底的包里发现。
-        required_modules += ["dmPython", "dmssl"]
+    if platform.startswith(("windows", "linux")):
+        # 达梦原生驱动随 Windows / Linux 包分发（PyPI 只有 win_amd64 / manylinux wheel）。
+        # 装不上必须在这里失败，否则只能在发布后才发现包里只有 JDBC 傅底。
+        required_modules.append("dmPython")
+        if platform.startswith("windows"):
+            # 只有 Windows wheel 提供可 import 的 dmssl 包；Linux 的 dmssl 只是纯 .so 目录。
+            required_modules.append("dmssl")
     for module in required_modules:
         importlib.import_module(module)
     system = platform.split("-", 1)[0]

@@ -90,10 +90,13 @@ CORE_MODULES = [
     "jaydebeapi",
 ]
 
-if sys.platform == "win32":
-    # Windows 构建必须随包分发达梦原生驱动（见 build/dbcheck_windows.spec）：
+if sys.platform in ("win32", "linux"):
+    # Windows / Linux 构建必须随包分发达梦原生驱动（见对应 spec）：
     # 缺了就只能退回 JDBC，因此把它当核心模块而不是可选驱动。
-    CORE_MODULES += ["dmPython", "dmssl"]
+    CORE_MODULES.append("dmPython")
+    if sys.platform == "win32":
+        # 只有 Windows wheel 提供可 import 的 dmssl 包。
+        CORE_MODULES.append("dmssl")
 
 
 def _iter_requirement_lines(path: str):

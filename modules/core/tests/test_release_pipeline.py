@@ -645,6 +645,19 @@ def test_windows_package_ships_dameng_native_driver():
     assert 'runtime-hook-dmpython.py' in spec
     assert 'libcrypto-3-x64.dll' in spec
     assert 'dmpython==' in lock
-    assert 'sys_platform == "win32"' in lock
+    assert 'sys_platform == "win32"' in lock and 'sys_platform == "linux"' in lock
     package_check = (ROOT / 'modules' / 'core' / 'package_check.py').read_text(encoding='utf-8')
     assert 'dmPython' in package_check and 'dmssl' in package_check
+
+
+def test_linux_package_ships_dameng_native_driver():
+    spec = (ROOT / 'build' / 'dbcheck_linux.spec').read_text(encoding='utf-8')
+    lock = (ROOT / 'build' / 'portable' / 'requirements-lock.txt').read_text(encoding='utf-8')
+    excludes = next(line for line in spec.splitlines() if 'excludes=' in line)
+    assert 'dmPython' not in excludes
+    assert "'dmPython'" in spec
+    # 冻结时必须保留 wheel 的目录布局，否则 $ORIGIN 的 RPATH 解析不到 libdmdpi
+    assert "'dmpython.libs'" in spec and "'dmssl'" in spec
+    assert 'dmpython==' in lock and 'sys_platform == "linux"' in lock
+    package_check = (ROOT / 'modules' / 'core' / 'package_check.py').read_text(encoding='utf-8')
+    assert 'startswith("linux")' in package_check
