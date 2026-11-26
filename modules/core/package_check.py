@@ -52,6 +52,11 @@ REQUIRED_MODULES = (
     "modules.inspection.sql_safety",
     "modules.intelligence.task_runner",
 )
+
+if sys.platform == "win32":
+    # 达梦 DM8 原生驱动随 Windows 包分发（PyPI dmpython wheel 自带客户端 DLL 与
+    # dmssl/ 运行库）。缺了不会报错，只会静默退回 JDBC，因此必须纳入打包自检。
+    REQUIRED_MODULES += ("dmPython", "dmssl")
 REQUIRED_ASSETS = (
     "web_templates/operations_inventory.html",
     "web_templates/service_management.html",

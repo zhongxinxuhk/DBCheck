@@ -13,6 +13,9 @@ cryptography==50.0.2
 dnspython==2.9.2
 docxtpl==0.20.2
 docxcompose==2.2.0
+# 达梦 DM8 原生驱动：PyPI 仅提供 win_amd64 / manylinux wheel，Windows 打包必须随包
+# 分发（含达梦客户端 DLL 与 dmssl/ 运行库）；无 wheel 的平台由标记跳过。
+dmpython==2.6.1 ; sys_platform == "win32"
 Babel==2.18.0
 et_xmlfile==2.0.0
 Flask==3.1.3
