@@ -39,6 +39,43 @@ from release_inputs import release_datas, dynamic_modules
 portable_build = os.environ.get('DBPULSE_PORTABLE_BUILD') == '1'
 if portable_build:
     data_dirs = ['i18n', 'modules/rag', 'modules/pro', 'modules/user_management', 'modules/config']
+
+
+def _dameng_root():
+    """Return the directory holding ``dmPython``'s shared object, or ''."""
+    import importlib.util
+
+    found = importlib.util.find_spec('dmPython')
+    if found is None or not found.origin:
+        return ''
+    return os.path.dirname(os.path.abspath(found.origin))
+
+
+def _dameng_libs():
+    """Return the Dameng dmPython shared libraries in their original layout.
+
+    The manylinux wheel keeps ``dmPython...so`` at the site-packages root with
+    an RPATH of ``$ORIGIN/dmpython.libs``; ``dmssl/libssl.so`` resolves its
+    libcrypto through ``$ORIGIN/../dmpython.libs``. PyInstaller flattens
+    binaries into ``_internal``, so the two directories must be recreated
+    verbatim or the dynamic loader cannot find ``libdmdpi-<hash>.so``.
+    """
+    root = _dameng_root()
+    if not root:
+        return []
+    binaries = []
+    for directory in ('dmpython.libs', 'dmssl'):
+        source = os.path.join(root, directory)
+        if not os.path.isdir(source):
+            continue
+        for name in sorted(os.listdir(source)):
+            path = os.path.join(source, name)
+            if os.path.isfile(path):
+                binaries.append((path, directory))
+    return binaries
+
+
+dameng_libs = _dameng_libs()
 datas = release_datas(PROJECT_DIR, data_dirs, portable=portable_build)
 datas += collect_data_files('docxcompose')
 datas += collect_data_files('tzdata')
@@ -48,7 +85,7 @@ release_modules = dynamic_modules(PROJECT_DIR)
 a = Analysis(
     [os.path.join(PROJECT_DIR, 'web_ui.py')],
     pathex=[PROJECT_DIR],
-    binaries=[],
+    binaries=dameng_libs,
     datas=datas,
     hiddenimports=[
         *release_modules,
@@ -66,6 +103,7 @@ a = Analysis(
         'psycopg2', 'psycopg2._psycopg',
         'oracledb',
         'pyodbc',
+        'dmPython',        # 达梦 DM8 原生驱动（manylinux wheel，含 dmpython.libs / dmssl）
         'jaydebeapi',       # DM8 / GBase 8s JDBC 连接（DM8 巡检与测试连接现已走 jaydebeapi）
         'jpype',           # jaydebeapi 的 JVM 后端；SQL Server/DB2/HGDB/DM8 JDBC 驱动均依赖
         'redis',  # Redis / Redis Cluster 插件动态 import，需显式 hiddenimport 才能打进冻结版
@@ -115,7 +153,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['pyodbc','dmPython','gbase8sdb','cx_Oracle'] if portable_build else [],
+    excludes=['pyodbc','gbase8sdb','cx_Oracle'] if portable_build else [],
     noarchive=False,
     cipher=block_cipher,
 )

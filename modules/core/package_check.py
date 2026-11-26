@@ -54,9 +54,12 @@ REQUIRED_MODULES = (
 )
 
 if sys.platform == "win32":
-    # 达梦 DM8 原生驱动随 Windows 包分发（PyPI dmpython wheel 自带客户端 DLL 与
-    # dmssl/ 运行库）。缺了不会报错，只会静默退回 JDBC，因此必须纳入打包自检。
+    # Windows 的 dmpython wheel 自带客户端 DLL 与可 import 的 dmssl 包。
+    # 缺了不会报错，只会静默退回 JDBC，因此必须纳入打包自检。
     REQUIRED_MODULES += ("dmPython", "dmssl")
+elif sys.platform.startswith("linux"):
+    # Linux 的 dmssl 是纯 .so 目录，不可 import；只校验扩展模块本身。
+    REQUIRED_MODULES += ("dmPython",)
 REQUIRED_ASSETS = (
     "web_templates/operations_inventory.html",
     "web_templates/service_management.html",
