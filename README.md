@@ -1158,7 +1158,12 @@ cd dist
 dbcheck.exe
 ```
 
-### Windows offline update
+### Windows online and offline updates
+
+Click **在线更新** (Online Update) in the Windows status window to check the latest stable [DBCheck GitHub release](https://github.com/zhongxinxuhk/DBCheck/releases). The launcher chooses the matching Windows x64 or portable ZIP and verifies its SHA-256 before installation. The web console links to the same release page under **About**.
+
+For a private release, provide a GitHub access token scoped to this repository with **Contents: Read**. Enter it when prompted or set `DBPULSE_GITHUB_TOKEN`. The launcher does not save the token.
+
 
 Click **Offline Update** in the status window and select a complete Windows update ZIP produced by the current build scripts (it must contain `offline-update.json`). The updater validates the version, target platform, paths, PE architecture and hashes, stops the backend, exits the launcher, replaces program files from a detached helper inside the extracted package, and restarts automatically.
 
