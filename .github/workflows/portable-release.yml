@@ -61,7 +61,7 @@ jobs:
       - name: Prepare verified drivers and bundled Java
         shell: bash
         run: |
-          python build/portable_release.py drivers --cache .portable-build/downloads
+          python build/portable_release.py drivers
           python build/portable_bundle.py runtime --platform '${{ matrix.platform }}' --cache .portable-build/downloads
       - name: Build Windows binary
         if: matrix.platform == 'windows-x86_64'
@@ -122,7 +122,7 @@ jobs:
           python build/release_pipeline.py stage-download --name portable-component-windows-x86_64 --output .portable-build/components
           python build/release_pipeline.py stage-download --name portable-component-linux-x86_64 --output .portable-build/components
           python build/release_pipeline.py stage-download --name portable-component-linux-arm64 --output .portable-build/components
-      - run: python build/portable_release.py drivers --cache .portable-build/downloads
+      - run: python build/portable_release.py drivers
       - run: python build/release_pipeline.py assemble --components .portable-build/components --output release-assets --version "$RELEASE_VERSION" --sha "$GITHUB_SHA"
       - name: Stage verified release candidates
         run: python build/release_pipeline.py stage-upload --name release-candidate --root release-assets

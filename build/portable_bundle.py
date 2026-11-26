@@ -50,6 +50,22 @@ def digest(path):
     return value.hexdigest()
 
 
+def verify_jdbc_drivers(drivers):
+    """Verify the pinned drivers before staging and again before archiving."""
+    manifest = json.loads(
+        (ROOT / "build/portable/jdbc-manifest.json").read_text(encoding="utf-8")
+    )
+    for relative, entry in manifest.items():
+        jar = drivers / relative
+        if not jar.is_file() or digest(jar) != entry["sha256"]:
+            raise ValueError("Missing or modified JDBC driver: " + relative)
+        with zipfile.ZipFile(jar) as package:
+            driver = entry.get("driver_class")
+            if driver and driver.replace(".", "/") + ".class" not in package.namelist():
+                raise ValueError("Unexpected JDBC driver class: " + relative)
+    return manifest
+
+
 def download_verified(url, archive, checksum, attempts=3):
     """Retry transport failures without publishing a partial cache artifact."""
     if archive.is_file() and digest(archive) == checksum:
@@ -148,15 +164,14 @@ def extract_runtime(archive, destination, platform):
 
 
 def validate_binary(path, platform):
-    data = path.read_bytes()
-    header = data[:64]
+    with path.open("rb") as stream:
+        header = stream.read(64)
+        pe_header = b""
+        if platform.startswith("windows-") and len(header) == 64:
+            stream.seek(int.from_bytes(header[60:64], "little"))
+            pe_header = stream.read(6)
     if platform.startswith("windows-"):
-        offset = int.from_bytes(header[60:64], "little") if len(header) >= 64 else 0
-        valid = (
-            header.startswith(b"MZ")
-            and data[offset : offset + 4] == b"PE\x00\x00"
-            and int.from_bytes(data[offset + 4 : offset + 6], "little") == 0x8664
-        )
+        valid = header.startswith(b"MZ") and pe_header == b"PE\x00\x00\x64\x86"
     elif platform.startswith("linux-"):
         machine = int.from_bytes(header[18:20], "little") if len(header) >= 20 else 0
         valid = header.startswith(b"\x7fELF") and machine == (
@@ -169,6 +184,41 @@ def validate_binary(path, platform):
         )
     if not valid:
         raise ValueError("Executable format/architecture mismatch for " + platform)
+
+
+def verify_bundled_runtime(destination, platform):
+    java = destination / "runtime" / platform / "jre"
+    internal = destination / "bin" / platform / "_internal"
+    if platform.startswith("windows-"):
+        validate_binary(java / "bin/java.exe", platform)
+        required = (
+            "python312.dll",
+            "dmPython*.pyd",
+            "dmdpi*.dll",
+            "dmssl/ssleay32.dll",
+            "dmssl/libeay32.dll",
+            "libcrypto-3-x64.dll",
+            "pyodbc*.pyd",
+        )
+        validate_binary(java / "bin/server/jvm.dll", platform)
+    elif platform.startswith("linux-"):
+        validate_binary(java / "bin/java", platform)
+        required = (
+            "libpython3.12.so*",
+            "dmPython*.so",
+            "dmpython.libs/libdmdpi*.so",
+            "dmpython.libs/libcrypto*.so*",
+            "dmssl/libssl.so",
+            "dmssl/libcrypto.so",
+        )
+        validate_binary(java / "lib/server/libjvm.so", platform)
+    else:
+        validate_binary(java / "bin/java", platform)
+        validate_binary(java / "lib/server/libjvm.dylib", platform)
+        required = ()
+    for pattern in required:
+        if not any(path.is_file() for path in internal.glob(pattern)):
+            raise ValueError(f"Missing bundled native runtime for {platform}: {pattern}")
 
 
 def stage_resources(destination, required_platforms=None):
@@ -210,18 +260,11 @@ def stage_resources(destination, required_platforms=None):
                     "__pycache__", ".DS_Store", "*.pyc", "*.db", "*.db-wal", "*.db-shm"
                 ),
             )
-    shutil.copytree(
-        ROOT / "drivers",
-        destination / "drivers",
-        symlinks=False,
-        ignore=shutil.ignore_patterns(".DS_Store", "oracle_client"),
-    )
-    # A historical 8s driver was stored under 8a. Keep it out of clean releases.
-    for jar in (destination / "drivers/gbase8a").rglob("*.jar"):
-        with zipfile.ZipFile(jar) as package:
-            valid_driver = "com/gbase/jdbc/Driver.class" in package.namelist()
-        if not valid_driver:
-            jar.unlink()
+    source_drivers = ROOT / "drivers"
+    for relative in verify_jdbc_drivers(source_drivers):
+        target = destination / "drivers" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_drivers / relative, target)
     shutil.copy2(ROOT / "modules/config/version.json", destination / "version.json")
     (destination / "offline-update.json").write_text(
         json.dumps(
@@ -347,7 +390,9 @@ def archive_bundle(destination, archive):
         or set(metadata["platforms"]) != set(required)
     ):
         raise ValueError("Release platform manifest does not match its components")
+    verify_jdbc_drivers(destination / "drivers")
     for platform in required:
+        verify_bundled_runtime(destination, platform)
         name = metadata["platforms"][platform]["executable"]
         validate_binary(destination / name, platform)
         if digest(destination / name) != metadata["platforms"][platform]["sha256"]:

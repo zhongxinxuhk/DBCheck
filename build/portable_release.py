@@ -9,18 +9,16 @@ import hashlib
 import importlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tarfile
 import urllib.request
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from modules.core.portable import platform_key
-from portable_bundle import PLATFORMS, download_verified
+from portable_bundle import PLATFORMS, download_verified, verify_jdbc_drivers
 
 
 def native(args):
@@ -124,34 +122,6 @@ def native(args):
     (output / "component.json").write_text(json.dumps(metadata, indent=2))
 
 
-def prepare_drivers(args):
-    entries = json.loads((ROOT / "build/portable/driver-downloads.json").read_text())
-    args.cache.mkdir(parents=True, exist_ok=True)
-    for entry in entries:
-        archive = args.cache / entry["filename"]
-        download_verified(entry["url"], archive, entry["sha256"])
-        destination = ROOT / "drivers" / entry["db_type"] / entry["version"]
-        destination.mkdir(parents=True, exist_ok=True)
-        if entry["archive"]:
-            with tarfile.open(archive) as package:
-                for member in package.getmembers():
-                    if member.isfile() and member.name.endswith(".jar"):
-                        (destination / Path(member.name).name).write_bytes(
-                            package.extractfile(member).read()
-                        )
-        else:
-            shutil.copy2(archive, destination / archive.name)
-        expected = {
-            "gbase8a": "com/gbase/jdbc/Driver.class",
-            "sqlserver": "com/microsoft/sqlserver/jdbc/SQLServerDriver.class",
-        }[entry["db_type"]]
-        for jar in destination.glob("*.jar"):
-            with zipfile.ZipFile(jar) as package:
-                if expected not in package.namelist():
-                    raise ValueError("Downloaded JDBC driver class mismatch")
-    print("Driver inputs verified")
-
-
 def prepare_python(args):
     mapping = {
         "windows-x86_64": "x86_64-pc-windows-msvc",
@@ -217,10 +187,7 @@ def main():
     compile.add_argument("--work", type=Path, default=ROOT / ".portable-build/work")
     compile.add_argument("--skip-install", action="store_true")
     compile.add_argument("--wheels", type=Path)
-    drivers = commands.add_parser("drivers")
-    drivers.add_argument(
-        "--cache", type=Path, default=ROOT / ".portable-build/downloads"
-    )
+    commands.add_parser("drivers", help="verify bundled JDBC files offline")
     python = commands.add_parser("python")
     python.add_argument("--platform", choices=PLATFORMS, required=True)
     python.add_argument(
@@ -233,7 +200,8 @@ def main():
     if args.command == "native":
         native(args)
     elif args.command == "drivers":
-        prepare_drivers(args)
+        drivers = verify_jdbc_drivers(ROOT / "drivers")
+        print(f"Verified {len(drivers)} bundled JDBC JARs from the checkout")
     else:
         prepare_python(args)
 
