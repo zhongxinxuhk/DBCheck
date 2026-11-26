@@ -643,6 +643,7 @@ def test_windows_package_ships_dameng_native_driver():
     assert 'dmPython' not in excludes
     assert "'dmPython'" in spec and "'dmssl'" in spec
     assert 'runtime-hook-dmpython.py' in spec
+    assert 'libcrypto-3-x64.dll' in spec
     assert 'dmpython==' in lock
     assert 'sys_platform == "win32"' in lock
     package_check = (ROOT / 'modules' / 'core' / 'package_check.py').read_text(encoding='utf-8')
