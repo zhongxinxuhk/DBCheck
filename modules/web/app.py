@@ -7087,7 +7087,7 @@ def api_monitor_slow_queries():
             get_monitor_engine,
         )
         engine = get_monitor_engine()
-        data = engine.get_slow_queries()
+        data, status = engine.get_page_snapshot(slow_queries=True)
         instances = None
         try:
             from modules.pro.instance_manager import get_instance_manager
@@ -7101,7 +7101,7 @@ def api_monitor_slow_queries():
             'ok': True,
             'items': items,
             'sources': sources,
-            'status': engine.get_status(),
+            'status': status,
         })
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
@@ -7110,55 +7110,28 @@ def api_monitor_slow_queries():
 def api_monitor_connections():
     """获取各数据源连接数据"""
     try:
-        from modules.monitor.engine import get_monitor_engine
+        from modules.monitor.engine import build_slow_source_catalog, get_monitor_engine
         engine = get_monitor_engine()
-        data = engine.get_connections()
+        data, status = engine.get_page_snapshot()
+        try:
+            from modules.pro.instance_manager import get_instance_manager
+            instances = get_instance_manager().get_all_instances(mask_password=False)
+        except Exception:
+            instances = None
         items = []
-        if data:
-            for iid, d in data.items():
-                items.append({
-                    'instance_id': iid,
-                    'source': d.get('label', iid),
-                    'label': d.get('label', iid),
-                    'db_type': d.get('db_type', ''),
-                    'error': d.get('error'),
-                    'ts': d.get('ts', 0),
-                    'total': d.get('total', 0),
-                    'max_conn': d.get('max_conn', 0),
-                    'max_connections': d.get('max_conn', 0),
-                    'usage_pct': d.get('usage_pct', 0),
-                    'connections': d.get('connections', {}),
-                    'sessions': d.get('data', []),
-                })
-        else:
-            # 监控未启动/未采集：补占位项，使前端下拉框初始即可选全部数据源
-            try:
-                from modules.pro.instance_manager import get_instance_manager
-                im = get_instance_manager()
-                for inst in im.get_all_instances(mask_password=False):
-                    if not inst.get('enabled', True):
-                        continue
-                    if not inst.get('host'):
-                        continue
-                    iid = inst.get('id')
-                    label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
-                    items.append({
-                        'instance_id': iid,
-                        'source': label,
-                        'label': label,
-                        'db_type': inst.get('db_type', ''),
-                        'error': None,
-                        'ts': 0,
-                        'total': 0,
-                        'max_conn': 0,
-                        'max_connections': 0,
-                        'usage_pct': 0,
-                        'connections': {},
-                        'sessions': [],
-                    })
-            except Exception:
-                pass
-        return jsonify({'ok': True, 'items': items, 'status': engine.get_status()})
+        for source in build_slow_source_catalog(instances, data):
+            iid = source['instance_id']
+            snapshot = data.get(iid) or {}
+            items.append({
+                **{key: value for key, value in source.items() if key != 'slow_count'},
+                'total': snapshot.get('total', 0),
+                'max_conn': snapshot.get('max_conn', 0),
+                'max_connections': snapshot.get('max_conn', 0),
+                'usage_pct': snapshot.get('usage_pct', 0),
+                'connections': snapshot.get('connections') or {},
+                'sessions': snapshot.get('data') or [],
+            })
+        return jsonify({'ok': True, 'items': items, 'status': status})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
@@ -7169,47 +7142,34 @@ def api_monitor_history():
         from modules.monitor.engine import get_monitor_engine
         engine = get_monitor_engine()
         raw_history = engine.get_conn_history()
-        # 后端格式: [{ts, instances: [{id, label, total, max_conn, db_type}]}, ...]
-        # 前端期望: [{source, history: [{timestamp, active, total, max_conn, db_type}]}, ...]
-        if not raw_history:
-            return jsonify({'ok': True, 'history': []})
-        # 获取所有数据源（按最新快照的顺序）
-        latest = raw_history[-1]
-        source_order = []
-        source_map = {}
-        for inst in latest.get('instances', []):
-            src = inst.get('label', inst.get('id', '?'))
-            if src not in source_map:
-                source_order.append(src)
-                source_map[src] = {'db_type': inst.get('db_type', ''), 'max_conn': inst.get('max_conn', 0)}
-        # 按数据源聚合
-        result = []
-        for src in source_order:
-            hist_entries = []
-            for snapshot in raw_history:
-                ts = snapshot.get('ts', 0)
-                # 在该时间戳找到对应数据源
-                found = None
-                for inst in snapshot.get('instances', []):
-                    if inst.get('label', inst.get('id', '?')) == src:
-                        found = inst
-                        break
-                if found:
-                    total = found.get('total', 0)
-                    hist_entries.append({
-                        'timestamp': ts,
-                        'active': total,
-                        'total': total,
-                        'max_conn': found.get('max_conn', 0),
-                    })
-                elif not found and hist_entries:
-                    # 数据源已消失，补 null
-                    hist_entries.append({'timestamp': ts, 'active': None, 'total': None, 'max_conn': 0})
-            result.append({
-                'source': src,
-                'db_type': source_map[src]['db_type'],
-                'history': hist_entries,
-            })
+        first_hour = request.args.get('hourly_from', type=int)
+        series = {}
+        hourly_peaks = {}
+        for snapshot in raw_history:
+            ts = snapshot['ts']
+            if first_hour is not None and ts < first_hour:
+                continue
+            for instance in snapshot['instances']:
+                iid = instance['id']
+                item = series.setdefault(iid, {'instance_id': iid, 'history': []})
+                item.update(source=instance['label'], db_type=instance['db_type'])
+                sample = {
+                    'timestamp': ts,
+                    'active': instance.get('active'),
+                    'total': instance.get('total'),
+                    'max_conn': instance.get('max_conn', 0),
+                }
+                if first_hour is None:
+                    item['history'].append(sample)
+                elif sample['total'] is not None and sample['max_conn'] > 0:
+                    hour = int((ts - first_hour) // 3600)
+                    key = (iid, hour)
+                    peak = hourly_peaks.get(key)
+                    if peak is None or sample['total'] * peak['max_conn'] > peak['total'] * sample['max_conn']:
+                        hourly_peaks[key] = sample
+        for (iid, _), sample in hourly_peaks.items():
+            series[iid]['history'].append(sample)
+        result = list(series.values())
         return jsonify({'ok': True, 'history': result})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
@@ -7265,7 +7225,9 @@ def api_monitor_config():
             if interval:
                 engine.set_interval(int(interval))
         elif action == 'trigger':
+            status = engine.get_status()
             engine.trigger_collect()
+            return jsonify({'ok': True, 'status': status})
         return jsonify({'ok': True, 'status': engine.get_status()})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})

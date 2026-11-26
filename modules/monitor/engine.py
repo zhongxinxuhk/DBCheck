@@ -194,6 +194,8 @@ def flatten_slow_queries(snapshots, sources):
         if not isinstance(snapshot, dict) or iid not in metadata:
             continue
         source = metadata[iid]
+        if source.get('error'):
+            continue
         label = source.get('source') or source.get('label') or snapshot.get('label', iid)
         for row in snapshot.get('data') or []:
             if not isinstance(row, dict):
@@ -215,7 +217,7 @@ class MonitorEngine:
 
     # ── 默认配置 ──
     DEFAULT_INTERVAL = 10  # 采集间隔（秒）
-    MAX_HISTORY = 72       # 历史记录条数（10s 一条 ≈ 2小时）
+    MAX_HISTORY = 8640     # 允许 5 秒间隔保留最近 12 小时的内存样本
     QUERY_TIMEOUT = 15     # 单次查询超时（秒）
 
     def __init__(self):
@@ -293,12 +295,20 @@ class MonitorEngine:
     def get_status(self):
         """获取监控状态"""
         with self._lock:
-            return {
-                'running': self._running,
-                'interval': self._interval,
-                'last_collect_ts': self._last_collect_ts,
-                'data_source_count': len(self._slow_queries),
-            }
+            return self._status_unlocked()
+
+    def _status_unlocked(self):
+        return {
+            'running': self._running,
+            'interval': self._interval,
+            'last_collect_ts': self._last_collect_ts,
+            'data_source_count': len(self._slow_queries),
+        }
+
+    def get_page_snapshot(self, *, slow_queries=False):
+        with self._lock:
+            data = self._slow_queries if slow_queries else self._connections
+            return dict(data), self._status_unlocked()
 
     # ═══════════════════════════════════════════════════════════
     #  手动触发采集
@@ -314,7 +324,7 @@ class MonitorEngine:
     # ═══════════════════════════════════════════════════════════
 
     def _background_loop(self):
-        while self._running:
+        while self._running and threading.current_thread() is self._thread:
             _started = time.monotonic()
             try:
                 self._do_collect()
@@ -323,7 +333,8 @@ class MonitorEngine:
             # 保持「固定周期」：单轮耗时从间隔里扣除，而不是「跑完再睡满间隔」。
             # 否则实际采样周期 = 单轮耗时 + interval，大规模下会持续漂移。
             _deadline = _started + max(1.0, float(self._interval))
-            while self._running and time.monotonic() < _deadline:
+            while (self._running and threading.current_thread() is self._thread
+                   and time.monotonic() < _deadline):
                 time.sleep(min(0.5, max(0.01, _deadline - time.monotonic())))
 
     def _do_collect(self):
@@ -344,6 +355,7 @@ class MonitorEngine:
                 with self._lock:
                     self._slow_queries = {}
                     self._connections = {}
+                    self._last_collect_ts = time.time()
                 return
 
             # ── 超大实例规模：按实例并发采集，而非串行遍历 ──────────
@@ -397,10 +409,13 @@ class MonitorEngine:
                     _max_conn = max(0, int(cn.get('max_conn') or 0))
                 except (TypeError, ValueError):
                     _max_conn = 0
+                if cn.get('error'):
+                    continue
                 conn_history_items.append({
                     'id': iid,
                     'label': label,
                     'total': cn.get('total', 0),
+                    'active': (cn.get('connections') or {}).get('active'),
                     'max_conn': _max_conn,
                     'db_type': db_type,
                 })
@@ -500,16 +515,22 @@ class MonitorEngine:
                 if rows is None and not fallback_sql:
                     return {'data': [], 'error': _friendly_db_error(e),
                             'ts': time.time(), 'db_type': db_type, 'label': label}
-        if rows is None:
+        fallback_used = False
+        # A reachable DM8 instance may have SQL execution history disabled.
+        if rows is None or (db_type == 'dm' and not rows):
             # fallback：主 SQL 失败降级，或已记忆依赖缺失直接走此路（静默）
             try:
                 rows = self._connect_and_query(instance_id, fallback_sql)
+                fallback_used = True
                 if instance_id not in self._slow_prim_skip:
                     _log.info("%s 使用 fallback 慢查询 SQL", label)
             except Exception as fb:
                 _log.warning("慢查询 fallback 亦失败 %s: %s", label, fb)
                 return {'data': [], 'error': _friendly_db_error(fb),
                         'ts': time.time(), 'db_type': db_type, 'label': label}
+
+        if db_type == 'dm' and fallback_used:
+            rows = [{**row, 'sample_kind': 'running'} for row in rows]
 
         result = {
             'data': rows,
@@ -537,6 +558,18 @@ class MonitorEngine:
                     'connections': {'active': 0, 'idle': 0, 'blocked': 0}, 'usage_pct': 0,
                     'db_type': db_type, 'label': label}
 
+        if db_type == 'dm' and any(row.get('trx_id') for row in rows):
+            try:
+                waiting = self._connect_and_query(instance_id, mq.DM_BLOCKED_TRANSACTIONS_SQL)
+            except Exception as error:
+                _log.debug("达梦事务阻塞视图不可用 %s: %s", label, error)
+            else:
+                blocked_ids = {row['trx_id'] for row in waiting}
+                rows = [
+                    {**row, 'state': 'blocked'} if row.get('trx_id') in blocked_ids else row
+                    for row in rows
+                ]
+
         # 获取最大连接数
         max_sql = mq.MAX_CONN_QUERY_SQL.get(db_type)
         max_conn = mq.MAX_CONNECTION_DEFAULTS.get(db_type, 100)
@@ -553,6 +586,11 @@ class MonitorEngine:
                 pass
 
         total = len(rows)
+        if rows:
+            try:
+                total = max(total, int(rows[0].get('total_connections') or 0))
+            except (ValueError, TypeError):
+                pass
         # 统计连接状态分布
         active = 0
         idle = 0
@@ -563,9 +601,10 @@ class MonitorEngine:
                 if 'state' in k.lower():
                     state_val = str(v).lower() if v else ''
                     break
-            if state_val in ('sleeping', 'idle', 'inactive'):
+            if state_val in ('sleep', 'sleeping', 'inactive') or (state_val or '').startswith('idle'):
                 idle += 1
-            elif state_val in ('waiting', 'wait', 'blocked', 'locked'):
+            elif state_val in ('blocked', 'locked') or (
+                    db_type not in ('sqlserver', 'dm') and state_val in ('waiting', 'wait')):
                 blocked += 1
             else:
                 active += 1
@@ -600,6 +639,8 @@ class MonitorEngine:
         for src in (mq.CONNECTION_TEMPLATES, mq.MAX_CONN_QUERY_SQL,
                     mq.SLOW_QUERY_TEMPLATES, mq.SLOW_QUERY_FALLBACK_TEMPLATES):
             _add(src.get(db_type))
+        if db_type == 'dm':
+            _add(mq.DM_BLOCKED_TRANSACTIONS_SQL)
         _add(_probe_sql(db_type))
         # 大屏指标 SQL：family 条目为 {key: sql}，逐条带上（repl/repl8 同理）
         fam_sqls = SCREEN_SQLS.get(db_type) or {}

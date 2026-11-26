@@ -12234,7 +12234,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               </div>
             </div>
           </div>
-          <p class="page-sub" style="color:var(--text-muted);margin:4px 0 0;font-size:13px" data-page-node-id="39TcLdqWWA2SbM6Hf32zIO">跨数据源 Top SQL 监控</p>
+          <p class="page-sub" style="color:var(--text-muted);margin:4px 0 0;font-size:13px" data-page-node-id="39TcLdqWWA2SbM6Hf32zIO">统计范围由数据库提供：Oracle、SQL Server 使用缓存统计，达梦优先读取 SQL 历史，历史为空时采样执行中的语句，GBase 8a 采样当前执行语句。</p>
         </div>
         <!-- 概览卡片 -->
         <div class="overview-grid" style="margin-bottom:14px" data-page-node-id="7gnNHx68VvwwBqjDwfE5u4">
@@ -12249,7 +12249,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div class="overview-card" data-page-node-id="AY75u9YZILrBB26xJrwcPI">
             <div class="card-header" data-page-node-id="tIHZ3Iuhl0OnDsZtAkDSGP">
               <div class="card-icon" style="background:linear-gradient(135deg,#f97316,#ea580c)" data-page-node-id="gN63Rs8UOeFVrRAdljxgle">⏱</div>
-              <div data-page-node-id="9ENalstqxOLJ6miewifMXO"><div class="card-title" data-page-node-id="dzqFZMEtET1V88YGqHWMIe">最近5分钟慢查询</div></div>
+              <div data-page-node-id="9ENalstqxOLJ6miewifMXO"><div class="card-title" data-page-node-id="dzqFZMEtET1V88YGqHWMIe">本次采集的 Top SQL</div></div>
             </div>
             <div class="card-count mon-count-red" id="mon-slow-overview-count" data-page-node-id="9StjEU0knPF1iSANAV7e7A">-</div>
             <div class="mon-count-sub" id="mon-slow-overview-count-sub" data-page-node-id="tNjxEpP7irI1smxnyDeAyq">-</div>
@@ -12276,12 +12276,6 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <select id="mon-slow-filter-source" onchange="renderMonitorSlowTable()" data-page-node-id="02Rh4nSlpzVjaOQHgjc8cn">
             <option value="" data-page-node-id="adOjAc48vd7xFtjUsac6NN">全部数据源</option>
           </select>
-          <select id="mon-slow-filter-range" data-page-node-id="PzrOn4tllEXEkRdoZj8waY">
-            <option value="5" data-page-node-id="MOCyCZIQVLFzsrAERMZill">最近 5 分钟</option>
-            <option value="15" data-page-node-id="A2olyPVFk7cTWrYiGB5GAq">最近 15 分钟</option>
-            <option value="30" data-page-node-id="n5K98OuFno53FiQJhaCFNv">最近 30 分钟</option>
-            <option value="60" data-page-node-id="BJfkF8kFQxKEKDn2GQQd9b">最近 1 小时</option>
-          </select>
           <select id="mon-slow-filter-sort" onchange="renderMonitorSlowTable()" data-page-node-id="ZATQEqzGMmKecW33hpDtLA">
             <option value="avg_time_s" data-page-node-id="IDuAHyZ9TtXS7f2Be7EvJE">按耗时排序</option>
             <option value="max_time_s" data-page-node-id="W2T1rW9BbN4oztbu3xSYLL">最大耗时</option>
@@ -12290,6 +12284,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           </select>
           <input type="text" id="mon-slow-search" placeholder="搜索 SQL 关键字..." oninput="renderMonitorSlowTable()" data-page-node-id="5CmIsplmhyDTUREh7zfG5s">
           <button class="mon-filter-btn" onclick="renderMonitorSlowTable()" data-page-node-id="CoGwoduxS1JiwiyyjntkC3">筛选</button>
+          <button class="mon-filter-btn" type="button" onclick="refreshMonitorSlow()">刷新</button>
           <a class="mon-export-link" onclick="exportSlowQueryCSV()" data-page-node-id="Q2zQ6gU2TAltXKiVBx3oHB">导出 CSV</a>
         </div>
         <!-- Top SQL 表格 -->
@@ -12309,7 +12304,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
               </tr>
             </thead>
             <tbody id="monitor-slow-table-body" data-page-node-id="M4jgtEBeDX4ZBPNDMcw1vf">
-              <tr data-page-node-id="SFJUc61eKLqjBxoy0UccSm"><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px" data-page-node-id="DdEB6G9MTV6hyqUpMPh9TD">当前未发现慢查询，系统运行良好</td></tr>
+              <tr data-page-node-id="SFJUc61eKLqjBxoy0UccSm"><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px" data-page-node-id="DdEB6G9MTV6hyqUpMPh9TD">等待首次采集</td></tr>
             </tbody>
           </table>
         </div>
@@ -12345,7 +12340,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div class="overview-card" data-page-node-id="8u0vEiKPwKw8ErW9LwjOGB">
             <div class="card-header" data-page-node-id="3GrYlAE5ezYR1tQcQz04FI">
               <div class="card-icon" style="background:linear-gradient(135deg,#0A2A6E,#0A2A6E)" data-page-node-id="hmnnRkGDFl3VfD2hcyctgs">🔗</div>
-              <div data-page-node-id="CYvxTFnmFfAKnxjG0vFxXq"><div class="card-title" data-page-node-id="MRiVV96m9nwZiazwDZ7ANO">总活跃连接</div></div>
+              <div data-page-node-id="CYvxTFnmFfAKnxjG0vFxXq"><div class="card-title" data-page-node-id="MRiVV96m9nwZiazwDZ7ANO">总连接数</div></div>
             </div>
             <div class="card-count mon-count-blue" id="mon-conn-overview-total" data-page-node-id="xSJRpSEDKu65VpaM6fYmJH">-</div>
             <div class="mon-count-sub" id="mon-conn-overview-total-sub" data-page-node-id="wpZNDIl3ASkHdCAoB810Vh">-</div>
@@ -12364,7 +12359,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div class="overview-card" data-page-node-id="p7AVccTrQwLFJiZHtZ2Lop">
             <div class="card-header" data-page-node-id="tZBUsDNOW3JDYaWfGcc5tS">
               <div class="card-icon" style="background:linear-gradient(135deg,#f97316,#ea580c)" data-page-node-id="ExfQLiS1UskwWpGBYPWo0d">⏳</div>
-              <div data-page-node-id="RsSC8UTZlaQeVSnZa1KIqQ"><div class="card-title" data-page-node-id="zaPoPtNsxkDxXLRSr4uh8l">最长空闲连接</div></div>
+              <div data-page-node-id="RsSC8UTZlaQeVSnZa1KIqQ"><div class="card-title" data-page-node-id="zaPoPtNsxkDxXLRSr4uh8l">最长空闲会话样本</div></div>
             </div>
             <div class="card-count mon-count-orange" id="mon-conn-overview-idle" data-page-node-id="izQEmSbK8nefQYFFAhzXUY">-</div>
             <div class="mon-count-sub" id="mon-conn-overview-idle-detail" data-page-node-id="F76JIpzXBwbe0rWl0b9LdO">-</div>
@@ -12372,10 +12367,10 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           <div class="overview-card" data-page-node-id="HLD0r2C4tBZ8uKe4u9wVCm">
             <div class="card-header" data-page-node-id="BLpvDuFh6bcEEgp2nk168s">
               <div class="card-icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)" data-page-node-id="lqU7DdZyOgsTebuQ1ESGyi">🔒</div>
-              <div data-page-node-id="mf6G5Uu6TaQ5YtkXXQhq9s"><div class="card-title" data-page-node-id="Y5uxWyEoN8FHBLfDH4LhfP">阻塞会话</div></div>
+              <div data-page-node-id="mf6G5Uu6TaQ5YtkXXQhq9s"><div class="card-title" data-page-node-id="Y5uxWyEoN8FHBLfDH4LhfP">阻塞会话样本</div></div>
             </div>
             <div class="card-count mon-count-red" id="mon-conn-overview-blocked" data-page-node-id="Ig3EoQwFG82kNI8aLSn9b1">-</div>
-            <div class="mon-count-sub" id="mon-conn-overview-blocked-detail" data-page-node-id="uijn7IAAlgP1sIO7v6vbQM">系统运行正常，无阻塞</div>
+            <div class="mon-count-sub" id="mon-conn-overview-blocked-detail" data-page-node-id="uijn7IAAlgP1sIO7v6vbQM">等待采集</div>
           </div>
         </div>
         <!-- 筛选栏 -->
@@ -12415,7 +12410,7 @@ curl -H "X-API-Key: YOUR_API_KEY" http://localhost:5003/api/v1/inspect/{task_id}
           </div>
           <!-- 右栏：活跃会话 TOP 10 -->
           <div data-page-node-id="GlMWZkAAKdXMK0JGGkcyse">
-            <h3 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)" data-page-node-id="YuiCNHy1vyUgBlDj89hTvW">当前活跃会话（TOP 10）</h3>
+            <h3 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)" data-page-node-id="YuiCNHy1vyUgBlDj89hTvW">会话明细（阻塞与活跃优先）</h3>
             <div class="table-wrap" data-page-node-id="e3J4pXqHaqVjpQ2QmPuSsZ">
               <table class="data-table mon-session-table" id="monitor-conn-session-table" data-page-node-id="dw3NvJlXJjhALVg9ursJJW">
                 <thead data-page-node-id="KGHg7817zu5suvjHd3psyf">
@@ -24599,7 +24594,6 @@ async function loadMonitorSummary() {
     else if (monitorSummary.length) { sel.value = monitorSummary[0].instance_id; monitorCurrentId = monitorSummary[0].instance_id; }
     if (monitorCurrentId) loadMonitorHistory(monitorCurrentId);
     else monitorShowFallback(i18n('webui.home_monitor_no_instance') || '暂无实例，请先在“数据源管理”中配置数据源');
-    prefillMonitorFilterSources();
   } catch (e) {
     console.error('loadMonitorSummary failed:', e);
     if (sel) sel.innerHTML = '<option value="">' + (i18n('webui.home_monitor_select_instance') || '请选择实例') + '</option>';
@@ -28646,146 +28640,125 @@ async function deleteBackupHistory(recordId) {
   let monitorAllSources = [];
   let monitorHistData = [];
   let monitorPollTimer = null;
+  let monitorPollInterval = null;
+  const monitorRequests = {};
+  const monitorManualRefresh = new Set();
 
   // ─── 通用监控状态更新 ───────────────────────────────────
-  function updateMonitorStatus(status) {
-    var startBtns = [
-      document.getElementById('monitor-start-btn'),
-      document.getElementById('monitor-start-btn-conn')
-    ];
-    var stopBtns = [
-      document.getElementById('monitor-stop-btn'),
-      document.getElementById('monitor-stop-btn-conn')
-    ];
-
-    startBtns.forEach(function(btn) {
-      if (!btn) return;
-      btn.style.display = (status === 'stopped') ? 'inline-flex' : 'none';
-    });
-    stopBtns.forEach(function(btn) {
-      if (!btn) return;
-      btn.style.display = (status === 'running') ? 'inline-flex' : 'none';
-    });
-
-    // 启动/停止倒计时
-    if (status === 'running') {
+  function syncRealtimeMonitorStatus(status) {
+    var running = !!status.running;
+    var interval = Number(status.interval) || 10;
+    for (const suffix of ['', '-conn']) {
+      document.getElementById('monitor-start-btn' + suffix).style.display = running ? 'none' : 'inline-flex';
+      document.getElementById('monitor-stop-btn' + suffix).style.display = running ? 'inline-flex' : 'none';
+      const input = document.getElementById('monitor-interval-input' + suffix);
+      if (document.activeElement !== input) input.value = interval;
+    }
+    if (running && monitorPollInterval === interval) return;
+    if (monitorPollTimer) clearInterval(monitorPollTimer);
+    if (_monCountdownInterval) clearInterval(_monCountdownInterval);
+    monitorPollTimer = null;
+    _monCountdownInterval = null;
+    monitorPollInterval = running ? interval : null;
+    if (running) {
+      monitorPollTimer = setInterval(() => {
+        if (monitorPageVisible('slow')) loadMonitorSlow();
+        if (monitorPageVisible('conn')) loadMonitorConn();
+      }, interval * 1000);
       startMonitorCountdown();
     } else {
-      if (_monCountdownInterval) clearInterval(_monCountdownInterval);
-      _monCountdownInterval = null;
       _updateCountdownDisplay();
     }
   }
 
-  // ─── 启动 / 停止 / 间隔 ───────────────────────────────────
-  async function startMonitor() {
-    try {
-      const res = await fetch('/api/monitor/config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'start'})
-      });
-      const data = await res.json();
-      if (data.ok) {
-        updateMonitorStatus('running');
-        startMonitorPolling();
-      } else {
-        toastError(data.error || '启动失败');
-      }
-    } catch(e) { toastError('启动失败: ' + e.message); }
+  function monitorPageVisible(kind) {
+    return document.getElementById('page-monitor-' + kind).style.display !== 'none';
   }
 
-  async function stopMonitor() {
-    try {
-      const res = await fetch('/api/monitor/config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'stop'})
-      });
-      const data = await res.json();
-      if (data.ok) {
-        updateMonitorStatus('stopped');
-        stopMonitorPolling();
-      } else {
-        toastError(data.error || '停止失败');
-      }
-    } catch(e) { toastError('停止失败: ' + e.message); }
+  async function fetchMonitorJSON(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error('请求失败（HTTP ' + response.status + '）');
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || '监控请求失败');
+    return data;
   }
 
-  async function setMonitorInterval() {
-    const v = parseInt(document.getElementById('monitor-interval-input').value) || 10;
-    const interval = Math.max(5, Math.min(60, v));
-    document.getElementById('monitor-interval-input').value = interval;
-    const connInput = document.getElementById('monitor-interval-input-conn');
-    if (connInput) connInput.value = interval;
-    try {
-      const res = await fetch('/api/monitor/config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'set_interval', interval: interval})
-      });
-      const data = await res.json();
-      if (!data.ok) toastError(data.error || '设置失败');
-    } catch(e) { toastError('设置失败: ' + e.message); }
+  function monitorConfig(action, extra = {}) {
+    return fetchMonitorJSON('/api/monitor/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action, ...extra})
+    });
   }
 
-  // 从连接页面触发间隔修改
+  async function changeMonitor(action, extra) {
+    try {
+      const data = await monitorConfig(action, extra);
+      syncRealtimeMonitorStatus(data.status);
+      if (monitorPageVisible('slow')) loadMonitorSlow();
+      if (monitorPageVisible('conn')) loadMonitorConn();
+    } catch (error) {
+      toastError(error.message);
+    }
+  }
+
+  function startMonitor() { return changeMonitor('start'); }
+  function stopMonitor() { return changeMonitor('stop'); }
+  function setMonitorInterval() { return setMonitorIntervalFrom(document.getElementById('monitor-interval-input')); }
   function setMonitorIntervalFrom(el) {
-    const v = parseInt(el.value) || 10;
-    const interval = Math.max(5, Math.min(60, v));
+    const interval = Math.max(5, Math.min(60, parseInt(el.value) || 10));
     el.value = interval;
-    document.getElementById('monitor-interval-input').value = interval;
+    return changeMonitor('set_interval', {interval});
+  }
+
+  // Wait for a completed round. A fixed delay can display the previous snapshot.
+  async function refreshMonitor(kind, load) {
+    if (monitorManualRefresh.has(kind)) return;
+    monitorManualRefresh.add(kind);
+    _updateCountdownDisplay();
     try {
-      fetch('/api/monitor/config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'set_interval', interval: interval})
-      }).then(function(r) { return r.json(); }).then(function(data) {
-        if (!data.ok) toastError(data.error || '设置失败');
-      }).catch(function(e) { toastError('设置失败: ' + e.message); });
-    } catch(e) { toastError('设置失败: ' + e.message); }
+      const trigger = await monitorConfig('trigger');
+      const baseline = trigger.status.last_collect_ts;
+      const deadline = Date.now() + 45000;
+      while (Date.now() < deadline) {
+        const result = await load();
+        if (result && result.status.last_collect_ts > baseline) return;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      toastError('等待监控采集超时，请查看运行日志');
+    } catch (error) {
+      toastError(error.message);
+    } finally {
+      monitorManualRefresh.delete(kind);
+      _updateCountdownDisplay();
+    }
   }
 
-  function startMonitorPolling() {
-    stopMonitorPolling();
-    const interval = (parseInt(document.getElementById('monitor-interval-input').value) || 10) * 1000;
-    loadMonitorSlow();
-    loadMonitorConn();
-    monitorPollTimer = setInterval(function() {
-      loadMonitorSlow();
-      loadMonitorConn();
-    }, interval);
-  }
-
-  function stopMonitorPolling() {
-    if (monitorPollTimer) { clearInterval(monitorPollTimer); monitorPollTimer = null; }
+  function loadMonitorPage(kind, path, render) {
+    if (monitorRequests[kind]) return monitorRequests[kind];
+    monitorRequests[kind] = fetchMonitorJSON(path).then(data => {
+      syncRealtimeMonitorStatus(data.status);
+      render(data);
+      resetMonitorCountdown();
+      return data;
+    }).catch(error => {
+      const table = document.getElementById(kind === 'slow' ? 'monitor-slow-table-body' : 'monitor-conn-session-body');
+      table.innerHTML = '<tr><td colspan="' + (kind === 'slow' ? 9 : 4) + '">监控数据加载失败：'
+        + escHtml(error.message) + '</td></tr>';
+      return null;
+    }).finally(() => { delete monitorRequests[kind]; });
+    return monitorRequests[kind];
   }
 
   // ─── 慢查询页面 ───────────────────────────────────
-  async function loadMonitorSlow() {
-    try {
-      const res = await fetch('/api/monitor/slow-queries');
-      const data = await res.json();
-      if (data.ok) {
-        monitorSlowData = data.items || [];
-        // sources 覆盖所有已启用数据源；items 只包含真实慢 SQL 行。
-        // 不能只从 items 反推数据源，否则「已接入但当前无慢查询」的库会消失。
-        if (Array.isArray(data.sources)) {
-          monitorAllSources = data.sources
-            .map(function(item) { return item && (item.source || item.label || item.instance_id); })
-            .filter(Boolean);
-        }
-        updateMonitorStatus(data.status && data.status.running ? 'running' : 'stopped');
-        renderMonitorSlowOverview();
-        renderMonitorSlowFilterSources();
-        renderMonitorSlowTable();
-        resetMonitorCountdown();
-      }
-    } catch(e) { console.error('loadMonitorSlow failed', e); }
-  }
-
-  function renderMonitorSlowBars() {
-    // 设计稿已无此图表区域，保留函数避免报错
+  function loadMonitorSlow() {
+    return loadMonitorPage('slow', '/api/monitor/slow-queries', data => {
+      monitorSlowData = data.items || [];
+      monitorAllSources = data.sources || [];
+      renderMonitorSlowOverview();
+      renderMonitorSourceFilter('mon-slow-filter-source', monitorAllSources);
+      renderMonitorSlowTable();
+    });
   }
 
   // 从数据源名称推测数据库类型；有 db_type 字段时优先用它，
@@ -28821,19 +28794,19 @@ async function deleteBackupHistory(recordId) {
       mysql:'MySQL', pg:'PostgreSQL', ivory:'IvorySQL', tidb:'TiDB',
       oracle:'Oracle', gbase8a:'GBase 8a', gbase:'GBase 8s', dm8:'DM8', sqlserver:'SQL Server', default:'DB'
     };
-    return '<span class="mon-tag mon-tag-' + type + '">' + (map[type] || 'DB') + '</span>';
+    return '<span class="mon-tag mon-tag-' + escHtml(type) + '">' + (map[type] || 'DB') + '</span>';
   }
 
   function renderMonitorSlowOverview() {
-    var sources = {};
     var totalTime = 0;
+    var totalExec = 0;
     var maxAvg = 0;
     var slowestSrc = '';
     var slowestSql = '';
 
     monitorSlowData.forEach(function(item) {
-      sources[item.source] = true;
       totalTime += parseFloat(item.total_time_s) || 0;
+      totalExec += Number(item.exec_count) || 0;
       var avg = parseFloat(item.avg_time_s) || 0;
       if (avg > maxAvg) {
         maxAvg = avg;
@@ -28841,15 +28814,7 @@ async function deleteBackupHistory(recordId) {
         slowestSql = item.sql_text || item.query_text || '-';
       }
     });
-    // sources 已覆盖全部已接入数据源；只有旧接口没有 sources 时才从行数据回填，
-    // 避免实例改名后旧 label 仍留在计数和下拉框里。
-    if (!monitorAllSources.length) {
-      monitorSlowData.forEach(function(item) { if (item.source) sources[item.source] = true; });
-      monitorConnData.forEach(function(item) { if (item.source) sources[item.source] = true; });
-    }
-    monitorAllSources.forEach(function(s) { if (s) sources[s] = true; });
-
-    var srcKeys = Object.keys(sources);
+    var srcKeys = monitorAllSources.map(source => source.source);
     var srcNames = srcKeys.join('·');
     if (srcNames.length > 28) srcNames = srcNames.substring(0, 28) + '...';
 
@@ -28857,10 +28822,9 @@ async function deleteBackupHistory(recordId) {
     document.getElementById('mon-slow-overview-sources-sub').textContent = srcNames || '-';
 
     document.getElementById('mon-slow-overview-count').textContent = monitorSlowData.length;
-    document.getElementById('mon-slow-overview-count-sub').textContent = monitorSlowData.length > 0
-      ? '最近5分钟统计' : '-';
+    document.getElementById('mon-slow-overview-count-sub').textContent = monitorCoverage(monitorAllSources);
 
-    var avgTime = monitorSlowData.length > 0 ? (totalTime / monitorSlowData.length) : 0;
+    var avgTime = totalExec > 0 ? totalTime / totalExec : 0;
     document.getElementById('mon-slow-overview-avg').textContent = avgTime > 0 ? avgTime.toFixed(1) + 's' : '-';
     document.getElementById('mon-slow-overview-avg-sub').textContent = avgTime > 0 ? '平均耗时' : '-';
 
@@ -28873,96 +28837,84 @@ async function deleteBackupHistory(recordId) {
     document.getElementById('mon-slow-overview-slowest-sub').textContent = slowDetail || '-';
   }
 
-  function renderMonitorSlowFilterSources() {
-    var sel = document.getElementById('mon-slow-filter-source');
-    var selConn = document.getElementById('mon-conn-filter-source');
-    var cur = sel ? sel.value : '';
-    var sources = {};
-    if (!monitorAllSources.length) {
-      monitorSlowData.forEach(function(item) { sources[item.source] = true; });
-      monitorConnData.forEach(function(item) { sources[item.source] = true; });
-    }
-    monitorAllSources.forEach(function(s) { if (s) sources[s] = true; });
-    var keys = Object.keys(sources).sort();
-    var opts = '<option value="">全部数据源</option>';
-    keys.forEach(function(k) {
-      var safe = escHtml(k);
-      opts += '<option value="' + safe + '">' + safe + '</option>';
+  function renderMonitorSourceFilter(id, sources) {
+    const select = document.getElementById(id);
+    const current = select.value;
+    const options = [new Option('全部数据源', '')];
+    sources.slice().sort((a, b) => a.source.localeCompare(b.source)).forEach(source => {
+      options.push(new Option(source.source, source.instance_id));
     });
-    if (sel) { sel.innerHTML = opts; if (cur && sources[cur]) sel.value = cur; }
-    if (selConn) { var curConn = selConn.value; selConn.innerHTML = opts; if (curConn && sources[curConn]) selConn.value = curConn; }
+    select.replaceChildren(...options);
+    if (sources.some(source => source.instance_id === current)) select.value = current;
   }
 
-  // 进页面即预拉取全部数据源（即使监控未启动），填充下拉框选项
-  async function prefillMonitorFilterSources() {
-    try {
-      const [r1, r2] = await Promise.all([
-        fetch('/api/monitor/slow-queries'),
-        fetch('/api/monitor/connections')
-      ]);
-      const d1 = await r1.json();
-      const d2 = await r2.json();
-      const set = {};
-      (d1.sources || []).forEach(function(it) { if (it && it.source) set[it.source] = true; });
-      (d1.items || []).forEach(function(it) { if (it.source) set[it.source] = true; });
-      (d2.items || []).forEach(function(it) { if (it.source) set[it.source] = true; });
-      monitorAllSources = Object.keys(set).sort();
-      renderMonitorSlowFilterSources();
-    } catch (e) { console.error('prefillMonitorFilterSources failed', e); }
+  function monitorCoverage(sources) {
+    const errors = sources.filter(source => source.error).length;
+    const pending = sources.filter(source => !source.collected).length;
+    const labels = [];
+    if (errors) labels.push(errors + ' 个采集失败');
+    if (pending) labels.push(pending + ' 个待采集');
+    return labels.join(' · ') || (sources.length ? sources.length + ' 个数据源已采集' : '暂无已启用的数据源');
+  }
+
+  function monitorEmptyText(sources, selected, empty) {
+    if (!sources.length) return '暂无已启用的数据源';
+    const source = sources.find(item => item.instance_id === selected);
+    if (source && source.error) return '采集失败：' + source.error;
+    if (source && !source.collected) return '等待首次采集';
+    return empty + ' · ' + monitorCoverage(sources);
+  }
+
+  function filteredMonitorSlowRows() {
+    const selected = document.getElementById('mon-slow-filter-source').value;
+    const query = document.getElementById('mon-slow-search').value.trim().toLowerCase();
+    const sortKey = document.getElementById('mon-slow-filter-sort').value;
+    return monitorSlowData.filter(row =>
+      (!selected || row.instance_id === selected) &&
+      (row.sql_text || row.query_text || '').toLowerCase().includes(query)
+    ).sort((a, b) => (parseFloat(b[sortKey]) || 0) - (parseFloat(a[sortKey]) || 0));
   }
 
   function exportSlowQueryCSV() {
-    if (monitorSlowData.length === 0) { toastError('暂无数据可导出'); return; }
-    var rows = [['数据源','SQL摘要','Schema','平均耗时(s)','最大耗时(s)','执行次数','总耗时(s)']];
-    monitorSlowData.forEach(function(item) {
+    const data = filteredMonitorSlowRows();
+    if (!data.length) { toastError('暂无数据可导出'); return; }
+    var rows = [['数据源','SQL摘要','模式（Schema）','平均耗时(s)','最大耗时(s)','执行次数','总耗时(s)']];
+    data.forEach(function(item) {
       rows.push([
-        item.source || '',
-        (item.sql_text || item.query_text || '').replace(/,/g, '，'),
-        item.schema_name || '',
-        item.avg_time_s || '',
-        item.max_time_s || '',
-        item.exec_count || '',
-        item.total_time_s || ''
+        item.source ?? '',
+        (item.sql_text || item.query_text || ''),
+        item.schema_name ?? '',
+        item.avg_time_s ?? '',
+        item.max_time_s ?? '',
+        item.exec_count ?? '',
+        item.total_time_s ?? ''
       ]);
     });
-    var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+    var csv = rows.map(row => row.map(value => {
+      const cell = String(value);
+      const safe = /^[\s]*[=+@-]/.test(cell) ? "'" + cell : cell;
+      return '"' + safe.replace(/"/g, '""') + '"';
+    }).join(',')).join('\r\n');
     var blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8'});
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url; a.download = 'slow_queries_' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
-    a.click(); URL.revokeObjectURL(url);
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   function renderMonitorSlowTable() {
     var tbody = document.getElementById('monitor-slow-table-body');
-    var data = monitorSlowData.slice();
-
-    // 筛选
-    var src = document.getElementById('mon-slow-filter-source').value;
-    if (src) data = data.filter(function(d) { return d.source === src; });
-
-    // 搜索
-    var q = document.getElementById('mon-slow-search').value.toLowerCase();
-    if (q) data = data.filter(function(d) { return (d.sql_text || d.query_text || '').toLowerCase().indexOf(q) > -1; });
-
-    // 排序
-    var sortKey = document.getElementById('mon-slow-filter-sort').value;
-    data.sort(function(a, b) { return (parseFloat(b[sortKey]) || 0) - (parseFloat(a[sortKey]) || 0); });
-
-    if (data.length === 0) {
-      var emptyText = src
-        ? '所选数据源当前未发现慢查询，系统运行良好'
-        : (monitorAllSources.length
-          ? '已接入 ' + monitorAllSources.length + ' 个数据源，当前未发现慢查询'
-          : '当前未发现慢查询，系统运行良好');
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px">' + emptyText + '</td></tr>';
+    const data = filteredMonitorSlowRows();
+    const source = document.getElementById('mon-slow-filter-source').value;
+    if (!data.length) {
+      const message = monitorEmptyText(monitorAllSources, source, '未找到匹配的 SQL 样本');
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:32px">' + escHtml(message) + '</td></tr>';
       return;
     }
 
     var html = '';
     data.forEach(function(item, i) {
       var avg = parseFloat(item.avg_time_s) || 0;
-      var maxT = parseFloat(item.max_time_s) || 0;
       var totalT = parseFloat(item.total_time_s) || 0;
       var cnt = Number(item.exec_count || 0);
       var sql = item.sql_text || item.query_text || '-';
@@ -28981,6 +28933,7 @@ async function deleteBackupHistory(recordId) {
       var timeFmt = avg >= 1 ? avg.toFixed(2) + 's' : (avg * 1000).toFixed(0) + 'ms';
       var totalFmt = totalT >= 60 ? (totalT / 60).toFixed(1) + 'm' : totalT.toFixed(1) + 's';
 
+      var sampleLabel = (item.sample_kind === 'running' || normalizeMonitorDbType(item.db_type) === 'gbase8a') ? '<span class="mon-count-sub">执行中采样</span> ' : '';
       var title = sql.length > 80 ? ' title="' + escHtml(sql) + '"' : '';
       html += '<tr>'
         + '<td>' + (i + 1) + '</td>'
@@ -28990,69 +28943,53 @@ async function deleteBackupHistory(recordId) {
         + '<td style="text-align:right;font-family:monospace">' + totalFmt + '</td>'
         + '<td style="font-size:12px">' + escHtml(item.schema_name || '-') + '</td>'
         + '<td style="font-size:12px">' + escHtml(item.user || item.username || '-') + '</td>'
-        + '<td class="mon-sql-text"' + title + '>' + escHtml(sql) + '</td>'
+        + '<td class="mon-sql-text"' + title + '>' + sampleLabel + escHtml(sql) + '</td>'
         + '<td style="text-align:center">' + sevDot + '</td>'
         + '</tr>';
     });
     tbody.innerHTML = html;
   }
 
-  async function refreshMonitorSlow() {
-    await fetch('/api/monitor/config', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'trigger'})
-    });
-    setTimeout(loadMonitorSlow, 1500);
-  }
+  function refreshMonitorSlow() { return refreshMonitor('slow', loadMonitorSlow); }
 
   // ─── 连接监控页面 ───────────────────────────────────
-  async function loadMonitorConn() {
-    try {
-      const res = await fetch('/api/monitor/connections');
-      const data = await res.json();
-      if (data.ok) {
-        monitorConnData = data.items || [];
-        updateMonitorStatus(data.status && data.status.running ? 'running' : 'stopped');
-        renderMonitorConnOverview();
-        renderMonitorConnBars();
-        renderMonitorSessions();
-        renderMonitorSlowFilterSources();
-        resetMonitorCountdown();
-      }
-    } catch(e) { console.error('loadMonitorConn failed', e); }
-    // 同时拉取热力图数据
-    try {
-      const res2 = await fetch('/api/monitor/history');
-      const data2 = await res2.json();
-      if (data2.ok) {
-        monitorHistData = data2.history || [];
+  function loadMonitorConn() {
+    return loadMonitorPage('conn', '/api/monitor/connections', data => {
+      monitorConnData = data.items || [];
+      renderMonitorConnOverview();
+      renderMonitorConnBars();
+      renderMonitorSourceFilter('mon-conn-filter-source', monitorConnData);
+      renderMonitorSessions();
+      const now = new Date();
+      now.setMinutes(0, 0, 0);
+      const hourlyFrom = Math.floor(now.getTime() / 1000) - 11 * 3600;
+      fetchMonitorJSON('/api/monitor/history?hourly_from=' + hourlyFrom).then(history => {
+        monitorHistData = history.history || [];
         renderMonitorHeatmap();
-      }
-    } catch(e) { console.error('loadMonitorHistory failed', e); }
+      }).catch(() => {
+        document.getElementById('mon-conn-heatmap').textContent = '连接历史加载失败';
+      });
+    });
   }
 
   function renderMonitorConnOverview() {
-    var totalConn = 0, totalActive = 0, totalIdle = 0, totalBlocked = 0;
+    var totalConn = 0, totalBlocked = 0;
     var highestPct = 0, highestName = '-', highestCur = 0, highestMax = 0;
     var maxIdleDur = 0, maxIdleDetail = '-';
     var blockedDetails = [];
 
     monitorConnData.forEach(function(inst) {
       var c = inst.connections || {};
-      var active = c.active || 0;
-      var idle = c.idle || 0;
+      if (!inst.collected || inst.error) return;
       var blocked = c.blocked || 0;
-      totalConn += active + idle + blocked;
-      totalActive += active;
-      totalIdle += idle;
+      totalConn += Number(inst.total) || 0;
       totalBlocked += blocked;
 
       var pct = inst.usage_pct || 0;
       if (pct > highestPct) {
         highestPct = pct;
         highestName = inst.source || '-';
-        highestCur = active + idle + blocked;
+        highestCur = inst.total;
         highestMax = inst.max_connections || 0;
       }
 
@@ -29062,20 +28999,20 @@ async function deleteBackupHistory(recordId) {
       }
 
       // 找最长空闲会话（按 duration_h）
-      var sessions = (inst.data && inst.data.data) ? inst.data.data : [];
+      var sessions = inst.sessions || [];
       sessions.forEach(function(s) {
         var state = (s.state || '').toLowerCase();
         var dur = parseFloat(s.duration_h) || 0;
-        if (dur > maxIdleDur && (state === 'idle' || state === 'sleeping' || state === 'inactive')) {
+        if (dur > maxIdleDur && monitorSessionIdle(state)) {
           maxIdleDur = dur;
           maxIdleDetail = (inst.source || '-') + ': ' + (s.username || s.user || '-');
         }
       });
     });
 
-    var srcCount = monitorConnData.length;
-    document.getElementById('mon-conn-overview-total').textContent = totalConn;
-    document.getElementById('mon-conn-overview-total-sub').textContent = srcCount + '个数据源合计';
+    const hasData = monitorConnData.some(source => source.collected && !source.error);
+    document.getElementById('mon-conn-overview-total').textContent = hasData ? totalConn : '—';
+    document.getElementById('mon-conn-overview-total-sub').textContent = monitorCoverage(monitorConnData);
 
     document.getElementById('mon-conn-overview-highest-pct').textContent = highestPct > 0 ? highestPct.toFixed(0) + '%' : '-';
     document.getElementById('mon-conn-overview-highest-name').textContent = highestPct > 0
@@ -29088,15 +29025,16 @@ async function deleteBackupHistory(recordId) {
 
     // 最长空闲：设计稿显示分钟
     if (maxIdleDur > 0) {
-      var min = Math.round(maxIdleDur * 60);
-      document.getElementById('mon-conn-overview-idle').textContent = min + 'm';
+      const seconds = Math.max(1, Math.round(maxIdleDur * 3600));
+      document.getElementById('mon-conn-overview-idle').textContent =
+        seconds < 60 ? seconds + ' 秒' : Math.floor(seconds / 60) + ' 分钟';
       document.getElementById('mon-conn-overview-idle-detail').textContent = maxIdleDetail;
     } else {
       document.getElementById('mon-conn-overview-idle').textContent = '-';
-      document.getElementById('mon-conn-overview-idle-detail').textContent = '暂无空闲连接';
+      document.getElementById('mon-conn-overview-idle-detail').textContent = hasData ? '样本中无空闲会话' : monitorCoverage(monitorConnData);
     }
 
-    document.getElementById('mon-conn-overview-blocked').textContent = totalBlocked;
+    document.getElementById('mon-conn-overview-blocked').textContent = hasData ? totalBlocked : '—';
     var blockedDetailEl = document.getElementById('mon-conn-overview-blocked-detail');
     if (totalBlocked > 0) {
       document.getElementById('mon-conn-overview-blocked').classList.add('mon-count-red');
@@ -29104,7 +29042,7 @@ async function deleteBackupHistory(recordId) {
       blockedDetailEl.className = 'mon-count-sub';
     } else {
       document.getElementById('mon-conn-overview-blocked').classList.remove('mon-count-red');
-      blockedDetailEl.textContent = '系统运行正常，无阻塞';
+      blockedDetailEl.textContent = hasData ? '样本中无阻塞' : monitorCoverage(monitorConnData);
       blockedDetailEl.className = 'mon-count-sub';
     }
   }
@@ -29120,8 +29058,8 @@ async function deleteBackupHistory(recordId) {
     var html = '';
     sorted.forEach(function(inst) {
       var pct = Math.min(100, inst.usage_pct || 0);
-      var c = inst.connections || {};
-      var total = (c.active || 0) + (c.idle || 0) + (c.blocked || 0);
+      var status = inst.error || (!inst.collected ? '待采集' : '');
+      var total = inst.total;
       var max = inst.max_connections || 0;
       var cls = 'low';
       if (pct > 80) cls = 'high';
@@ -29131,7 +29069,8 @@ async function deleteBackupHistory(recordId) {
         + '<div class="mon-conn-bar-track">'
         + '<div class="mon-conn-bar-fill ' + cls + '" style="width:' + pct.toFixed(0) + '%"></div>'
         + '</div>'
-        + '<div class="mon-conn-bar-num">' + total + '/' + max + '</div>'
+        + '<div class="mon-conn-bar-num" title="' + escHtml(status) + '">'
+        + (status ? (inst.error ? '采集失败' : status) : total + '/' + (max || '—')) + '</div>'
         + '</div>';
     });
     container.innerHTML = html;
@@ -29143,39 +29082,32 @@ async function deleteBackupHistory(recordId) {
       container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">数据采集中，请稍候...</div>';
       return;
     }
-    // monitorHistData: [{source, history: [{timestamp, active, idle, blocked, max_connections}, ...]}, ...]
-    var sources = monitorHistData.map(function(d) { return d.source; });
-    if (sources.length === 0) {
-      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无历史数据</div>';
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    const hours = Array.from({length: 12}, (_, index) => {
+      const date = new Date(now.getTime() - (11 - index) * 3600000);
+      return {key: date.getTime(), label: date.getHours().toString().padStart(2, '0') + ':00'};
+    });
+    const firstHour = hours[0].key;
+    const series = monitorHistData.filter(series =>
+      monitorConnData.some(source => source.instance_id === series.instance_id)
+    );
+    if (!series.length) {
+      container.textContent = '暂无连接历史';
       return;
     }
-    // 按小时聚合最近12小时
-    var now = new Date();
-    var hours = [];
-    for (var hi = 11; hi >= 0; hi--) {
-      var h = new Date(now.getTime() - hi * 3600000);
-      hours.push({
-        label: h.getHours().toString().padStart(2, '0') + ':00',
-        hour: h.getHours(),
-        day: h.getDate()
+    const peakBySource = new Map();
+    series.forEach(source => {
+      const peaks = new Map();
+      source.history.forEach(sample => {
+        const date = new Date(sample.timestamp * 1000);
+        date.setMinutes(0, 0, 0);
+        const key = date.getTime();
+        if (key < firstHour || sample.total == null || !(sample.max_conn > 0)) return;
+        const usage = sample.total / sample.max_conn * 100;
+        peaks.set(key, Math.max(peaks.get(key) ?? 0, usage));
       });
-    }
-
-    // 构建映射：按小时聚合使用率
-    var histMap = {};
-    monitorHistData.forEach(function(s) {
-      histMap[s.source] = {};
-      (s.history || []).forEach(function(h) {
-        var d = new Date(h.timestamp);
-        var key = d.getHours();
-        // 取该小时内最大使用率
-        var maxConn = h.max_connections || 100;
-        var total = (h.active || 0) + (h.idle || 0);
-        var usage = maxConn > 0 ? (total / maxConn * 100) : 0;
-        if (!histMap[s.source][key] || usage > histMap[s.source][key]) {
-          histMap[s.source][key] = usage;
-        }
-      });
+      peakBySource.set(source.instance_id, peaks);
     });
 
     var html = '<div class="mon-heatmap-grid">';
@@ -29185,22 +29117,26 @@ async function deleteBackupHistory(recordId) {
     hours.forEach(function(h) { html += '<div class="mon-heatmap-cell" style="background:transparent;font-size:10px;color:var(--text-muted)">' + h.label + '</div>'; });
     html += '</div>';
     // 数据行
-    sources.forEach(function(src) {
+    series.forEach(function(source) {
       html += '<div class="mon-heatmap-row">';
-      html += '<div class="mon-heatmap-label">' + escHtml(src) + '</div>';
+      html += '<div class="mon-heatmap-label">' + escHtml(source.source) + '</div>';
       hours.forEach(function(h) {
-        var usage = histMap[src] && histMap[src][h.hour] != null ? histMap[src][h.hour] : 0;
+        var usage = peakBySource.get(source.instance_id).get(h.key);
         var cls = 'h0';
         if (usage > 90) cls = 'h4';
         else if (usage > 75) cls = 'h3';
         else if (usage > 50) cls = 'h2';
         else if (usage > 20) cls = 'h1';
-        html += '<div class="mon-heatmap-cell ' + cls + '">' + (usage > 0 ? usage.toFixed(0) + '%' : '') + '</div>';
+        html += '<div class="mon-heatmap-cell ' + cls + '">' + (usage == null ? '—' : usage.toFixed(0) + '%') + '</div>';
       });
       html += '</div>';
     });
     html += '</div>';
     container.innerHTML = html;
+  }
+
+  function monitorSessionIdle(state) {
+    return state === 'inactive' || state.startsWith('idle') || state.startsWith('sleep');
   }
 
   function renderMonitorSessions() {
@@ -29211,17 +29147,23 @@ async function deleteBackupHistory(recordId) {
     var allSessions = [];
     monitorConnData.forEach(function(inst) {
       (inst.sessions || []).forEach(function(s) {
-        if (!filterSrc || inst.source === filterSrc) {
+        if (!filterSrc || inst.instance_id === filterSrc) {
           allSessions.push(Object.assign({source: inst.source, db_type: inst.db_type}, s));
         }
       });
     });
-    // 按duration排序
-    allSessions.sort(function(a, b) { return (parseFloat(b.duration_h) || 0) - (parseFloat(a.duration_h) || 0); });
+    const priority = session => {
+      const state = (session.state || '').toLowerCase();
+      if (state === 'blocked' || state === 'locked') return 0;
+      return monitorSessionIdle(state) ? 2 : 1;
+    };
+    allSessions.sort((a, b) => priority(a) - priority(b) ||
+      (parseFloat(b.duration_h) || 0) - (parseFloat(a.duration_h) || 0));
     allSessions = allSessions.slice(0, 10);
 
     if (allSessions.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:32px">暂无活跃会话</td></tr>';
+      const message = monitorEmptyText(monitorConnData, filterSrc, '暂无会话样本');
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:32px">' + escHtml(message) + '</td></tr>';
       return;
     }
 
@@ -29246,11 +29188,17 @@ async function deleteBackupHistory(recordId) {
       // 状态样式
       var state = (s.state || '').toLowerCase();
       var stateCls = '';
-      if (state.indexOf('execut') > -1 || state.indexOf('run') > -1 || state.indexOf('active') > -1) stateCls = 'mon-state-executing';
-      else if (state.indexOf('lock') > -1 || state.indexOf('wait') > -1 || state.indexOf('blocked') > -1) stateCls = 'mon-state-locked';
-      else if (state.indexOf('sleep') > -1) stateCls = 'mon-state-sleep';
-      else if (state.indexOf('idle') > -1) stateCls = 'mon-state-idle';
-      var stateHtml = '<span class="' + stateCls + '">' + escHtml(s.state || '-') + '</span>';
+      let stateLabel = s.state || '—';
+      if (monitorSessionIdle(state)) {
+        stateCls = 'mon-state-idle'; stateLabel = '空闲';
+      } else if (state === 'blocked' || state === 'locked') {
+        stateCls = 'mon-state-locked'; stateLabel = '阻塞';
+      } else if (['wait', 'waiting', 'suspended', 'runnable'].includes(state)) {
+        stateLabel = '等待';
+      } else if (['active', 'running', 'executing'].includes(state)) {
+        stateCls = 'mon-state-executing'; stateLabel = '执行中';
+      }
+      var stateHtml = '<span class="' + stateCls + '" title="' + escHtml(s.state || '') + '">' + escHtml(stateLabel) + '</span>';
 
       // 时长格式化：h → m/s
       var durH = parseFloat(s.duration_h) || 0;
@@ -29277,21 +29225,14 @@ async function deleteBackupHistory(recordId) {
     tbody.innerHTML = html;
   }
 
-  async function refreshMonitorConn() {
-    await fetch('/api/monitor/config', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'trigger'})
-    });
-    setTimeout(loadMonitorConn, 1500);
-  }
+  function refreshMonitorConn() { return refreshMonitor('conn', loadMonitorConn); }
 
   // ═══ 自动刷新倒计时 ═══
   var _monCountdownInterval = null;
   var _monCountdownSec = 10;
   function startMonitorCountdown() {
     if (_monCountdownInterval) clearInterval(_monCountdownInterval);
-    var interval = parseInt(document.getElementById('monitor-interval-input').value) || 10;
+    var interval = monitorPollInterval || 10;
     _monCountdownSec = interval;
     _updateCountdownDisplay();
     _monCountdownInterval = setInterval(function() {
@@ -29303,12 +29244,11 @@ async function deleteBackupHistory(recordId) {
     }, 1000);
   }
   function resetMonitorCountdown() {
-    var interval = parseInt(document.getElementById('monitor-interval-input').value) || 10;
-    _monCountdownSec = interval;
+    _monCountdownSec = monitorPollInterval || 10;
     _updateCountdownDisplay();
   }
   function _updateCountdownDisplay() {
-    var interval = parseInt(document.getElementById('monitor-interval-input').value) || 10;
+    var interval = monitorPollInterval || 10;
     var texts = [
       document.getElementById('mon-slow-refresh-text'),
       document.getElementById('mon-conn-refresh-text')
@@ -29317,10 +29257,10 @@ async function deleteBackupHistory(recordId) {
       document.getElementById('mon-slow-refresh-dot'),
       document.getElementById('mon-conn-refresh-dot')
     ];
-    var isRunning = document.getElementById('monitor-stop-btn') && document.getElementById('monitor-stop-btn').style.display !== 'none';
-    texts.forEach(function(el) {
+    var isRunning = monitorPollInterval != null;
+    texts.forEach(function(el, index) {
       if (!el) return;
-      el.textContent = isRunning
+      el.textContent = monitorManualRefresh.has(index === 0 ? 'slow' : 'conn') ? '正在采集…' : isRunning
         ? '自动刷新 ' + interval + 's · 下次 ' + _monCountdownSec + 's'
         : '监控已停止 · 手动刷新';
     });
