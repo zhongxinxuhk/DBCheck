@@ -39,7 +39,7 @@ Windows x64 二进制在 Windows 11 ARM64 上使用系统内置的 x64 仿真运
 | --- | --- | --- |
 | Python 运行时 | `bin/<平台>/_internal/` | PyInstaller 冻结，含锁文件内全部可安装的 pip 依赖 |
 | Java 运行时 | `runtime/<平台>/jre/` | JDBC 驱动依赖，`start.sh` / `start.bat` 自动设置 `JAVA_HOME` |
-| JDBC 驱动 | `drivers/<类型>/` | DM8、Oracle、SQL Server、GBase 8a/8s、DB2、KingbaseES、HighGo、YashanDB 等 |
+| JDBC 驱动 | `drivers/<类型>/` | 按 `build/portable/jdbc-manifest.json` 离线装包，包含 DM8、Oracle、SQL Server（含 4.0、4.2 和 6.4 旧驱动）、GBase 8a/8s、DB2、KingbaseES、HighGo、YashanDB 等 |
 | 达梦原生驱动 | `bin/<平台>/_internal/` | Windows / Linux 均随包分发 dmPython 与达梦客户端库；Linux 保留 `dmpython.libs/` 原始布局 |
 
 宿主环境仍需满足：
@@ -91,7 +91,7 @@ python build/portable_bundle.py archive \
   --directory dist/DBPulse-Portable --output dist/DBPulse-Portable.zip
 ```
 
-构建器会校验原生二进制格式及 CPU 架构、Java 下载 SHA-256、JDBC 驱动类，并拒绝把包含用户数据的目录作为干净发行包归档。手动工作流 `.github/workflows/portable-release.yml` 在各平台构建、检查后汇总为一个包。
+构建器从仓库读取锁定的 JDBC 文件，逐个校验 SHA-256，并校验核心数据库的驱动类。打包前与归档前均检查 JDBC 清单。各平台构建会核对 Java 和 JVM 架构、包内 Python、达梦原生客户端及 TLS 库，并运行冻结程序自检。构建器拒绝把包含用户数据的目录作为干净发行包归档。手动工作流 `.github/workflows/portable-release.yml` 在各平台构建、检查后汇总为一个包。
 
 运行期库来自 Python / PyInstaller 及项目依赖，Java 使用 Eclipse Temurin 11。下载来源和校验值记录在构建收据与包清单中。
 

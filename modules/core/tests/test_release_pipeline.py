@@ -81,7 +81,10 @@ def test_component_subset_can_be_complete_without_unrequested_platforms(tmp_path
         },
     }
     (destination / "dbpulse-portable.json").write_text(json.dumps(metadata))
-    bundle.archive_bundle(destination, tmp_path / "linux-arm64.zip")
+    with patch.object(bundle, "verify_jdbc_drivers"), patch.object(
+        bundle, "verify_bundled_runtime"
+    ):
+        bundle.archive_bundle(destination, tmp_path / "linux-arm64.zip")
     metadata["required_platforms"].append("windows-x86_64")
     (destination / "dbpulse-portable.json").write_text(json.dumps(metadata))
     with pytest.raises(ValueError):
@@ -166,7 +169,7 @@ def test_failed_asset_upload_leaves_release_as_draft(tmp_path):
     )
 
 
-def test_invalid_driver_is_closed_before_windows_cleanup(tmp_path):
+def test_stage_pins_jdbc_drivers_and_rejects_missing_or_modified_input(tmp_path):
     root = tmp_path / "source"
     (root / "drivers/gbase8a/legacy").mkdir(parents=True)
     (root / "modules/config").mkdir(parents=True)
@@ -176,26 +179,68 @@ def test_invalid_driver_is_closed_before_windows_cleanup(tmp_path):
         (root / "build/portable" / name).write_text("fixture")
     for name in ("LICENSE", "NOTICE"):
         (root / name).write_text("fixture")
-    with zipfile.ZipFile(root / "drivers/gbase8a/legacy/invalid.jar", "w") as archive:
+    driver_dir = root / "drivers/gbase8a/legacy"
+    with zipfile.ZipFile(driver_dir / "invalid.jar", "w") as archive:
         archive.writestr("incorrect/Driver.class", "fixture")
-    opened = []
-    real_zip = zipfile.ZipFile
-    real_unlink = Path.unlink
+    driver = driver_dir / "valid.jar"
+    with zipfile.ZipFile(driver, "w") as archive:
+        archive.writestr("com/gbase/jdbc/Driver.class", "fixture")
+    relative = "gbase8a/legacy/valid.jar"
+    manifest = {
+        relative: {
+            "sha256": bundle.digest(driver),
+            "driver_class": "com.gbase.jdbc.Driver",
+        }
+    }
+    (root / "build/portable/jdbc-manifest.json").write_text(json.dumps(manifest))
+    staged = tmp_path / "staged"
+    with patch.object(bundle, "ROOT", root):
+        bundle.stage_resources(staged, ["windows-x86_64"])
+        assert list((staged / "drivers").rglob("*.jar")) == [staged / "drivers" / relative]
+        (staged / "drivers" / relative).write_bytes(b"modified")
+        with pytest.raises(ValueError, match="Missing or modified JDBC driver"):
+            bundle.verify_jdbc_drivers(staged / "drivers")
+        driver.unlink()
+        with pytest.raises(ValueError, match="Missing or modified JDBC driver"):
+            bundle.verify_jdbc_drivers(root / "drivers")
 
-    def tracked_zip(path, *args, **kwargs):
-        archive = real_zip(path, *args, **kwargs)
-        opened.append(archive)
-        return archive
 
-    def windows_unlink(path, *args, **kwargs):
-        assert all(archive.fp is None for archive in opened)
-        return real_unlink(path, *args, **kwargs)
+def test_jdbc_manifest_covers_all_distributable_repository_jars():
+    drivers = ROOT / "drivers"
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "-z", "drivers/*.jar"], cwd=ROOT, text=True
+    )
+    discovered = {path.removeprefix("drivers/") for path in tracked.split("\0") if path}
+    # This historical 8s JAR was committed under the wrong database family.
+    discovered.discard("gbase8a/3.5.1/jdbc-3.5.1.jar")
+    assert set(bundle.verify_jdbc_drivers(drivers)) == discovered
 
-    with patch.object(bundle, "ROOT", root), patch.object(
-        zipfile, "ZipFile", tracked_zip
-    ), patch.object(Path, "unlink", windows_unlink):
-        bundle.stage_resources(tmp_path / "staged", ["windows-x86_64"])
-    assert not (tmp_path / "staged/drivers/gbase8a/legacy/invalid.jar").exists()
+
+def test_runtime_gate_rejects_missing_linux_dameng_tls_library(tmp_path):
+    platform = "linux-arm64"
+    java = tmp_path / "runtime" / platform / "jre"
+    internal = tmp_path / "bin" / platform / "_internal"
+    elf = bytearray(64)
+    elf[:4] = b"\x7fELF"
+    elf[18:20] = (183).to_bytes(2, "little")
+    for path in (java / "bin/java", java / "lib/server/libjvm.so"):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(elf)
+    for name in (
+        "libpython3.12.so.1.0",
+        "dmPython.cpython-312-aarch64-linux-gnu.so",
+        "dmpython.libs/libdmdpi-test.so",
+        "dmpython.libs/libcrypto-test.so.3",
+        "dmssl/libcrypto.so",
+        "dmssl/libssl.so",
+    ):
+        path = internal / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    bundle.verify_bundled_runtime(tmp_path, platform)
+    (internal / "dmssl/libssl.so").unlink()
+    with pytest.raises(ValueError, match="dmssl/libssl.so"):
+        bundle.verify_bundled_runtime(tmp_path, platform)
 
 
 def test_verified_download_retries_transport_and_keeps_cache_atomic(tmp_path):

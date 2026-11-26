@@ -284,3 +284,15 @@ headers, branding or NOTICE text.
   completed, merge and delete it under the same rules.
 - Never keep merged branches “for reference”, and never pile unrelated tasks onto
   one branch.
+
+## 11. 正式发行包依赖与验证 / Release Dependencies and Verification
+
+- Windows x64、Linux x64 和 Linux ARM64 的正式包，以及 Windows/Linux 合并包，解压后应能离线启动。每个架构必须随包包含应用所需的 Python 运行时和锁定依赖、Java 运行时及 JVM、已登记并获准分发的 JDBC JAR 和运行所需的原生扩展及配套 DLL/so。保留厂商许可及其要求的归属说明。
+- 更新 JDBC 后，同步更新 `build/portable/jdbc-manifest.json` 和驱动登记。构建从当前提交读取已锁定的 JAR，校验 SHA-256 及核心数据库驱动类。正式发布构建不得临时从 Maven Central 或厂商网站补下载 JDBC，也不得因下载失败、驱动缺失或校验失败而跳过该驱动。SQL Server 的历史兼容驱动和 Oracle、GBase 8a/8s、达梦的随包驱动与最新驱动一起保留。
+- Windows 和 Linux 必须随包带达梦 dmPython、达梦客户端和 TLS 共享库，保留厂商要求的目录结构。正式包须包含无需额外安装厂商客户端即可使用的连接路径，例如 SQL Server 的 pytds/JDBC、Oracle 的 Thin/JDBC 和 GBase 8a 的直连/JDBC。Oracle Instant Client 厚模式与 Microsoft ODBC 系统驱动属于厂商额外组件，若需纳入发行版，先确认具体版本的再分发与安装条款，并写明适用平台、依赖及验证方式。
+- 发版前在各目标系统和架构执行冻结程序自检，验证包内模块导入、随包 JVM、原生库和 JDBC 清单，同时执行 Windows 数据迁移到各目标平台的验证。任何一步失败都必须阻止发布。缺少构建机、实际驱动或测试环境时，在交付说明标明未验证的项目。
+
+- Each supported Windows x64, Linux x64, and Linux ARM64 release and the combined Windows/Linux bundle must launch offline after extraction. Include the Python runtime and locked runtime dependencies, a Java runtime and JVM, approved JDBC JARs, and the platform-specific native extensions and companion libraries. Preserve vendor licensing and notices.
+- Update `build/portable/jdbc-manifest.json` and driver registration when changing JDBC inputs. Build from the checked-out JARs and verify each pinned SHA-256 and the core driver classes. Release jobs must fail when JDBC inputs are missing or invalid. Preserve the supported legacy SQL Server versions along with the other bundled drivers.
+- Ship dmPython with its client and TLS libraries on Windows and Linux. Keep self-contained connection modes available. Treat vendor components such as Oracle Instant Client Thick mode and the system Microsoft ODBC driver according to their specific redistribution and installation terms.
+- Gate publication on frozen application checks on each target OS and architecture, on the bundled JVM, native driver and JDBC inventory, and on migration verification from Windows to each target. Report any verification that could not be completed.

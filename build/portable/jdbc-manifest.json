@@ -1,0 +1,141 @@
+{
+  "clickhouse/0.10.0-rc2-all/clickhouse-jdbc-0.10.0-rc2-all.jar": {
+    "sha256": "44e5ea2d05dea45c472048413579be02d02782200a6a2662a43d408a5361db91"
+  },
+  "clickhouse/slf4j-api-2.0.16.jar": {
+    "sha256": "a12578dde1ba00bd9b816d388a0b879928d00bab3c83c240f7013bf4196c579a"
+  },
+  "db2/4/db2jcc4.jar": {
+    "sha256": "04150111a29370247d162c3f05b8e938bf1314f19a63ad9a5302d88dd478e8e8"
+  },
+  "dm/11/DmJdbcDriver11.jar": {
+    "sha256": "fbc5da90f4982d7a1dcdbe4be13660c67c4fc29d06a4ba53ebca753aaaf1001e",
+    "driver_class": "dm.jdbc.driver.DmDriver"
+  },
+  "dm/6/DmJdbcDriver6.jar": {
+    "sha256": "99c7867fe409c89e8ada788ea5830398c37854207589b1d4451fb8f3195c5668",
+    "driver_class": "dm.jdbc.driver.DmDriver"
+  },
+  "dm/7/DmJdbcDriver7.jar": {
+    "sha256": "61e8ae3c9cf5901c5127af24dbbf63bd6a1c95272b4a93d507f740184ca4d9a8",
+    "driver_class": "dm.jdbc.driver.DmDriver"
+  },
+  "dm/8/DmJdbcDriver8.jar": {
+    "sha256": "35bf432bd15d722a4a67c11b0768fd4be95eee46a6f914afa60a9a5161ccfc7f",
+    "driver_class": "dm.jdbc.driver.DmDriver"
+  },
+  "gbase8a/9.5.0.7/gbase-connector-java-9.5.0.7-build1-bin.jar": {
+    "sha256": "1ffeab3c7798367eb354abf25f83c80e898c992ca068aab0dc2cca4157c17642",
+    "driver_class": "com.gbase.jdbc.Driver"
+  },
+  "gbase8s/3.6.5.21/jdbc-3.6.5.21.jar": {
+    "sha256": "021424bd9b4154a30b8ce517ab96e3f476f48c42c215254c610e292ecf1a8c75",
+    "driver_class": "com.gbasedbt.jdbc.Driver"
+  },
+  "greenplum/42.7.13/postgresql-42.7.13.jar": {
+    "sha256": "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+  },
+  "halodb/42.7.13/postgresql-42.7.13.jar": {
+    "sha256": "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+  },
+  "highgo/42.2.2/postgresql-42.2.2.jar": {
+    "sha256": "1996524026a3027853f3932e8639ef813807d1b63fe14832f410fffa4274fa70"
+  },
+  "highgo/6.2.5/HgdbJdbc-6.2.5.jar": {
+    "sha256": "189e2559967c895955a0d2d41d1a6dbdf9b4271a5ddf6bcf045fceba830b5538"
+  },
+  "highgo/HgdbJdbc-6.2.5.jar": {
+    "sha256": "189e2559967c895955a0d2d41d1a6dbdf9b4271a5ddf6bcf045fceba830b5538"
+  },
+  "ivorysql/9.0/hgdb-jdbc-v9.0.jar": {
+    "sha256": "978d26b546693194c775bc08009b0dee11e000661fb26afb64be96fbee9ce680"
+  },
+  "kingbase/9.0.0/kingbase8-9.0.0.jar": {
+    "sha256": "b8fe1903b0c52bfa45ee34fc9ec8df97acbeb9d7de28f69b19186452efb97ea4"
+  },
+  "mariadb/3.5.10/mariadb-java-client-3.5.10.jar": {
+    "sha256": "919b8c1c771d9ee3465811462f242c9543ab401e140c64988ddbf1d8abcb18b2"
+  },
+  "mongodb/3.0.8-all/mongodb-jdbc-3.0.8-all.jar": {
+    "sha256": "2b34fd526b79bac761121f4740f321369c47b2721fd3abc1e5288c7e68c8d2e0"
+  },
+  "mysql/26.7.0/mysql-connector-j-26.7.0.jar": {
+    "sha256": "69084713593a4aa8d07c383619b9639276f08bccf8faf1c562178147d389b1e1"
+  },
+  "mysql/8.0.33/mysql-connector-j-8.0.33.jar": {
+    "sha256": "e2a3b2fc726a1ac64e998585db86b30fa8bf3f706195b78bb77c5f99bf877bd9"
+  },
+  "mysql/9.7.0/mysql-connector-j-9.7.0.jar": {
+    "sha256": "0353648eaa1c91e0f4020c959abf756bc866ffd583df22ae6b6f6e0cbd43eb44"
+  },
+  "oceanbase/2.4.1/oceanbase-client-2.4.1.jar": {
+    "sha256": "0c9a1d87e6d6e1a3bef674d7ba67563e67823d1fa743d2a8974e4b6354773112"
+  },
+  "opengauss/6.0.5/opengauss-jdbc-6.0.5.jar": {
+    "sha256": "4f90e48f50740fbecc0127c3cb14a6d8c564de169587edd416de93cd2a6c700c"
+  },
+  "opengauss/6.0.5/postgresql.jar": {
+    "sha256": "c542c9b4e8af5fe8128f358491a10aa2c38a83a0689e416410cf492bf42cdb07"
+  },
+  "oracle/19.20.0.0/ojdbc8.jar": {
+    "sha256": "a66d27a14f3adee484427cc4de008af85a5c3e78e2e3285a4dba1277332978a5",
+    "driver_class": "oracle.jdbc.OracleDriver"
+  },
+  "oracle/6/ojdbc6.jar": {
+    "sha256": "e70213917b5f0d7448072836da07c709930b89dd4b0cc14a1eef814836747900",
+    "driver_class": "oracle.jdbc.OracleDriver"
+  },
+  "oracle/8/ojdbc8.jar": {
+    "sha256": "a66d27a14f3adee484427cc4de008af85a5c3e78e2e3285a4dba1277332978a5",
+    "driver_class": "oracle.jdbc.OracleDriver"
+  },
+  "postgresql/42.7.13/postgresql-42.7.13.jar": {
+    "sha256": "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93"
+  },
+  "redis/8.0.0/jedis-8.0.0.jar": {
+    "sha256": "df9e2d505ae2b577979e7ea0bc8ea6094f01f9a1deabc7c98f675122b87b3c4b"
+  },
+  "sqlserver/13.4.0.jre11/mssql-jdbc-13.4.0.jre11.jar": {
+    "sha256": "e36f5237c1267983e5b88dc2169f6b9d7e50eceec6dc1ca31018e3877e14af66",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "sqlserver/13.4.0.jre8/mssql-jdbc-13.4.0.jre8.jar": {
+    "sha256": "81b6b9860c713b53c237bd31f6d650251517818a83d93e5e99fdff250a25f8d3",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "sqlserver/4.0/sqljdbc.jar": {
+    "sha256": "802e5a37f7f2f15d3b92bc9e08a9dec4eb493e21791d21044c8f06d474920714",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "sqlserver/4.0/sqljdbc4.jar": {
+    "sha256": "6b423a4e8f11dc5357d1cfa38ee2a42bae87a83126fe3363b4464e5120d33f8c",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "sqlserver/4.2.8112/sqljdbc41.jar": {
+    "sha256": "205a88348255ea5f9f7b36459ffb2887e2ecca247b89540f1ac820f3fd8d35ad",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "sqlserver/4.2.8112/sqljdbc42.jar": {
+    "sha256": "90b90ad920555b2e9d2fccc9d3eca45eeea79b6f2d05035b63de59263d8596bb",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "sqlserver/6.4.0.jre8/mssql-jdbc-6.4.0.jre8.jar": {
+    "sha256": "c65148f691a48902735c74d1bf6963e7ac40c2e1db9c8a528399187239ecc743",
+    "driver_class": "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  },
+  "tdengine/3.9.0/taos-jdbcdriver-3.9.0.jar": {
+    "sha256": "92a497a584e6e4598b4c49fef5d22c1f3cb50baf0ad17fd5cc067ad7fcb60028"
+  },
+  "tidb/26.7.0/mysql-connector-j-26.7.0.jar": {
+    "sha256": "69084713593a4aa8d07c383619b9639276f08bccf8faf1c562178147d389b1e1"
+  },
+  "uxdb/2.1.2.3p.jre8/uxdbjdbc-2.1.2.3p.jre8.jar": {
+    "sha256": "5e80fd4ceb270033e394ed5a1d94ed99dcfd44e777896a421f9f0b102c277c4e"
+  },
+  "vastbase/6.0.5/opengauss-jdbc-6.0.5.jar": {
+    "sha256": "4f90e48f50740fbecc0127c3cb14a6d8c564de169587edd416de93cd2a6c700c"
+  },
+  "yashandb/1.9.3/yashandb-jdbc-1.9.3.jar": {
+    "sha256": "44fca3fef83ffa2f46552802965f3a621ac7db8e9e791d40a2eb7dee53f1958f"
+  }
+}

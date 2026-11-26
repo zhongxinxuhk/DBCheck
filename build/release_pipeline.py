@@ -22,7 +22,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "build"))
-from portable_bundle import stage_resources, add_component, archive_bundle, digest
+from portable_bundle import (
+    add_component,
+    archive_bundle,
+    digest,
+    stage_resources,
+    verify_bundled_runtime,
+)
 
 TARGETS = ("windows-x86_64", "linux-x86_64", "linux-arm64")
 TRANSFER_TARGETS = TARGETS
@@ -204,6 +210,7 @@ def run_check(bundle, platform, arguments, result_marker=None, timeout=360):
 
 
 def verify_component(bundle, platform, output):
+    verify_bundled_runtime(bundle, platform)
     results = {
         "platform": platform,
         "source_commit": os.environ.get("GITHUB_SHA"),
