@@ -425,20 +425,51 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       .workspace-embedded #inventory-panel { margin-bottom: 0; }
       .workspace-embedded .inventory-header h1 { display: none; }
       .workspace-embedded .inventory-table { max-height: none; }
-      #editor .field[hidden] { display: none; }
-      #editor { padding: clamp(16px, 3vw, 28px); }
-      .editor-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-      .editor-header h1 { margin: 0; font-size: 21px; overflow-wrap: anywhere; }
-      .editor-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0; padding: 6px; border-radius: 8px; background: #f1f5fa; }
-      .editor-tabs [aria-current="true"] { background: #e2edfd; border-color: #195db7; color: #16487e; font-weight: 650; }
-      .editor-pane { border: 0; margin: 0; padding: 0; min-width: 0; }
-      .editor-pane h2 { margin: 0 0 12px; }
-      .editor-pane .grid + .grid { margin-top: 14px; }
-      .editor-credential { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
-      #advanced-connection { margin-top: 16px; }
-      #advanced-connection summary { padding: 9px 0; }
-      .editor-footer { display: flex; justify-content: end; gap: 8px; margin-top: 18px; }
-      #editor-error:empty { display: none; }
+      #editor [hidden] { display: none !important; }
+      #editor { max-width: 1120px; margin-inline: auto; padding: clamp(16px, 3vw, 28px); }
+      .editor-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .editor-header h1 { margin: 0; font-size: 23px; overflow-wrap: anywhere; }
+      .editor-header p { margin: 4px 0 0; }
+      .editor-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      #editor [aria-invalid="true"] { border-color: #bd3945; }
+      .editor-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0; padding: 5px; border-radius: 8px; background: #eef3f8; }
+      .editor-tabs button { border-color: transparent; background: transparent; }
+      .editor-tabs [aria-current="true"] { background: white; border-color: #adc8ea; color: #16487e; font-weight: 650; }
+      .editor-pane { min-width: 0; }
+      .editor-pane:focus { outline: none; }
+      .connection-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(195px, 235px); gap: 18px; }
+      .connection-form, .connection-aside { min-width: 0; }
+      .editor-block { border: 1px solid #dce5ef; border-radius: 8px; padding: 15px; margin: 0 0 12px; }
+      .editor-block h2 { font-size: 15px; margin: 0 0 10px; }
+      .editor-block .muted { margin: 0 0 10px; }
+      #editor .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+      #editor .field { min-width: 0; }
+      #editor .field-title { font-weight: 600; }
+      #editor .required-indicator { color: #a72835; margin-inline-start: 4px; }
+      #editor .field-hint { color: #5a6d81; font-size: 12px; line-height: 1.45; }
+      #editor .field:has(input[type="checkbox"]) { align-self: center; align-items: start; }
+      #editor .field:has(input[type="checkbox"]) input { order: -1; flex: none; margin: 2px 0 0; }
+      .connection-aside { align-self: start; background: #f1f7fc; border-color: #d3e3ef; overflow-wrap: anywhere; }
+      .connection-aside p:last-child { margin-bottom: 0; }
+      .editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .editor-options > summary { cursor: pointer; color: #244363; font-weight: 600; }
+      .editor-options[open] > summary { margin-bottom: 12px; }
+      .editor-options .grid + .grid { margin-top: 12px; }
+      .editor-footer { display: flex; justify-content: end; gap: 8px; flex-wrap: wrap; border-top: 1px solid #e2e9f1; padding-top: 14px; margin-top: 14px; }
+      .editor-status { white-space: pre-wrap; overflow-wrap: anywhere; color: #a42d39; }
+      .editor-status[data-state="pending"] { color: #435c77; }
+      .editor-status[data-state="success"] { color: #23643e; }
+      .editor-status:empty { display: none; }
+      @media (max-width: 830px) {
+        .connection-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+        .connection-aside { grid-row: 1; }
+      }
+      @media (max-width: 515px) {
+        #editor .grid { grid-template-columns: minmax(0, 1fr); }
+        .editor-tabs { gap: 4px; }
+        .editor-tabs button { padding: 7px 8px; }
+        .editor-footer button { flex: 1 1 auto; }
+      }
     </style>
   </head>
   <body{% if embedded %} class="workspace-embedded"{% endif %}>
@@ -605,39 +636,99 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       <section id="editor" class="card hidden" aria-labelledby="editor-title">
         <form id="editor-form" novalidate>
           <header class="editor-header">
-            <h1 id="editor-title" tabindex="-1">维护数据库台账</h1>
-            <button type="button" id="cancel-edit">返回台账</button>
+            <div>
+              <h1 id="editor-title" tabindex="-1">维护数据库台账</h1>
+              <p id="editor-intro" class="muted">保存后同步到数据源管理。</p>
+            </div>
+            <div class="editor-header-actions">
+              <button type="button" id="cancel-edit">返回台账</button>
+              <button type="submit" id="save-record-top" class="primary">保存台账</button>
+            </div>
           </header>
           <nav class="editor-tabs" aria-label="台账维护分区">
-            <button type="button" data-editor-section="connection" aria-controls="editor-connection">数据源接入</button>
+            <button type="button" data-editor-section="connection" aria-controls="editor-connection">连接信息</button>
             <button type="button" data-editor-section="asset" aria-controls="editor-asset">资产属性</button>
             <button type="button" data-editor-section="specialized" aria-controls="editor-specialized">专项明细</button>
             <button type="button" data-editor-section="observation" aria-controls="editor-observation">巡检实测</button>
           </nav>
-          <section id="editor-connection" class="editor-pane" aria-label="数据源接入">
-            <div id="source-fields" class="grid"></div>
-            <div id="engine-fields" class="grid"></div>
-            <div class="editor-credential">
-              <button type="button" id="toggle-credentials" aria-pressed="false">显示凭据</button>
-              <span id="connection-help" class="muted"></span>
+          <section id="editor-connection" class="editor-pane" aria-label="连接信息">
+            <div class="connection-layout">
+              <div class="connection-form">
+                <section class="editor-block" aria-labelledby="connection-title">
+                  <h2 id="connection-title">数据库类型与名称</h2>
+                  <div id="source-fields" class="grid"></div>
+                </section>
+                <div id="connection-settings" hidden>
+                  <section class="editor-block" aria-labelledby="login-title">
+                    <h2 id="login-title">连接地址与登录</h2>
+                    <div id="login-fields" class="grid"></div>
+                    <div class="editor-actions">
+                      <button type="button" id="toggle-credentials" aria-pressed="false">显示数据库密码</button>
+                      <button type="button" id="test-draft-connection">测试连接</button>
+                    </div>
+                    <p id="connection-result" class="editor-status" role="status"></p>
+                  </section>
+                  <details id="ssh-connection" class="editor-block editor-options">
+                    <summary>SSH 跳板与主机采集</summary>
+                    <p class="muted">直连数据库可跳过。仅需经过跳板时，选择“通过 SSH 隧道连接数据库”。</p>
+                    <div id="ssh-modes" class="grid"></div>
+                    <div id="ssh-authentication" class="grid" hidden>
+                      <label class="field" for="ssh-auth-method">
+                        <span class="field-title">SSH 认证方式</span>
+                        <select id="ssh-auth-method">
+                          <option value="password">密码</option>
+                          <option value="key">私钥</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div id="ssh-fields" class="grid"></div>
+                  </details>
+                  <details id="advanced-connection" class="editor-block editor-options">
+                    <summary>驱动、加密与连接参数</summary>
+                    <div id="engine-fields" class="grid"></div>
+                  </details>
+                  <details id="source-organization" class="editor-block editor-options">
+                    <summary>分组、标签与启用状态</summary>
+                    <div id="organization-fields" class="grid"></div>
+                  </details>
+                </div>
+              </div>
+              <aside class="editor-block connection-aside" aria-labelledby="connection-hint-title">
+                <h2 id="connection-hint-title">填写提示</h2>
+                <p id="connection-help" aria-live="polite"></p>
+              </aside>
             </div>
-            <details id="advanced-connection">
-              <summary>SSH 与高级连接选项</summary>
-              <div id="advanced-fields" class="grid"></div>
-            </details>
           </section>
           <section id="editor-asset" class="editor-pane hidden" aria-label="资产属性">
-            <div id="metadata-fields" class="grid"></div>
+            <section class="editor-block">
+              <h2>归属与维护</h2>
+              <p class="muted">可先保存连接信息，之后再补录。配置项编号留空时自动生成。</p>
+              <div id="metadata-fields" class="grid"></div>
+            </section>
+            <details class="editor-block editor-options" data-asset-details>
+              <summary>部署与集群</summary>
+              <div id="cluster-fields" class="grid"></div>
+            </details>
+            <details class="editor-block editor-options" data-asset-details>
+              <summary>版本、主机与存储</summary>
+              <div id="infrastructure-fields" class="grid"></div>
+            </details>
+            <details class="editor-block editor-options" data-asset-details>
+              <summary>备份、容灾与变更</summary>
+              <div id="maintenance-fields" class="grid"></div>
+            </details>
           </section>
           <section id="editor-specialized" class="editor-pane hidden" aria-label="专项明细">
+            <p class="muted">按需登记表空间、账号权限、参数或备份策略。</p>
             <div id="table-editors"></div>
           </section>
           <section id="editor-observation" class="editor-pane hidden" aria-label="巡检实测">
             <p class="muted">基础属性按巡检结果同步。表空间和账号可对比实测并补录缺项。</p>
             <div id="observation-content"></div>
           </section>
-          <p id="editor-error" role="alert" style="color:#b02d36;white-space:pre-wrap"></p>
+          <p id="editor-error" class="editor-status" role="alert"></p>
           <div class="editor-footer">
+            <button type="button" id="editor-next">补充资产属性</button>
             <button type="submit" id="save-record" class="primary">保存并同步数据源</button>
           </div>
         </form>
@@ -703,7 +794,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         });
         const data = await response.json();
         if (!response.ok || !(data.ok || data.success))
-          throw new Error(data.error || data.msg || "请求失败");
+          throw new Error(data.error || data.msg || data.message || "请求失败");
         return data;
       }
       function clusterNames(record) {
@@ -812,15 +903,53 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         const selection=state.groupPicker?.value() || {group_ids:[],selection_filters:{}};
         state.groupPicker=DBPulseTools.scopePicker($('batch-grouping'),data,selection,()=>{state.requestKey=null;});
       }
+      const sourceHints = {
+        name: ["例如：生产订单库", ""],
+        host: ["IP 地址或域名", "填写巡检服务可达的数据库地址。"],
+        user: ["巡检专用账号", ""],
+        database: ["数据库名称", ""],
+        password: ["输入数据库密码", ""],
+        service_name: ["例如：ORCLPDB1", ""],
+        tags: ["例如：生产, 核心业务", "用逗号隔开多个标签。"],
+        ssh_host: ["跳板机 IP 或域名", ""],
+        ssh_user: ["登录跳板机的账号", ""],
+        ssh_key_file: ["巡检服务可读取的私钥路径", ""],
+        tls_ca_file: ["巡检服务可读取的 CA 文件路径", ""],
+        tls_cert_key_file: ["巡检服务可读取的客户端证书文件路径", ""],
+        driver_version: ["留空使用已登记的默认驱动", ""],
+        seed_nodes: ["例如：node1:6379,node2:6379", ""],
+        description: ["例如：业务方确认的接入信息", ""],
+      };
+      const requiredSourceFields = ["name", "db_type", "host", "port"];
+      const sourceLabels = {
+        name: "台账名称",
+        host: "数据库地址",
+        port: "端口",
+        use_sid: "使用 SID 连接",
+        sysdba: "以 SYSDBA 登录",
+        ssh_enabled: "通过 SSH 采集主机指标",
+        ssh_tunnel: "通过 SSH 隧道连接数据库",
+        ssh_password: "SSH 登录密码",
+        ssh_key_password: "SSH 私钥口令",
+        tls: "启用 TLS 加密",
+        encrypt: "启用 SQL Server 连接加密",
+        trust_server_certificate: "信任服务器证书",
+        gbase8a_allow_plaintext: "允许明文直连",
+      };
+      const fieldSuggestions = {
+        environment: ["生产", "预生产", "测试", "开发", "灾备"],
+        lifecycle: ["运行中", "建设中", "停用", "退役"],
+        deployment: ["单实例", "主备", "集群", "云数据库"],
+      };
       function inputField(key, label, value, scope) {
         const id = scope + "-" + key;
-        label =
-          {
-            password: "数据库密码",
-            ssh_password: "SSH密码",
-            ssh_key_password: "SSH私钥密码",
-          }[key] || label;
+        if (scope === "source") label = sourceLabels[key] || label;
+        const [placeholder, hint] = scope === "source"
+          ? (sourceHints[key] || ["", ""])
+          : [fieldSuggestions[key] ? "可选择或自行填写" : "", ""];
+        const required = scope === "source" && requiredSourceFields.includes(key);
         let input;
+        let choices = "";
         if (scope === "source" && key === "db_type") {
           const existingType =
             value && !state.options.db_types.some((d) => d.key === value)
@@ -830,16 +959,23 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           const options = (types) => types.map((type) =>
             `<option value="${esc(type.key)}" ${type.key === value ? "selected" : ""}>${esc(type.name)}</option>`
           ).join("");
-          input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${existingType}<optgroup label="核心数据库">${options(state.options.db_types.filter(core))}</optgroup><optgroup label="其他数据库">${options(state.options.db_types.filter((db) => !core(db)))}</optgroup></select>`;
+          input = `<select id="${id}" data-scope="${scope}" data-key="${key}" required><option value="" disabled ${value ? "" : "selected"}>请选择数据库类型</option>${existingType}<optgroup label="核心数据库">${options(state.options.db_types.filter(core))}</optgroup><optgroup label="其他数据库">${options(state.options.db_types.filter((db) => !core(db)))}</optgroup></select>`;
         } else if (scope === "source" && key === "connection_mode") {
           input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${[["", "按数据源类型"], ["jdbc", "JDBC"], ["odbc", "ODBC"], ["auto", "自动选择"]].map(([mode, title]) => `<option value="${mode}" ${mode === value ? "selected" : ""}>${title}</option>`).join("")}</select>`;
+        } else if (scope === "source" && ["connect_mode", "auth_mechanism"].includes(key)) {
+          const settings = key === "connect_mode"
+            ? [["", "默认连接"], ["standard", "标准直连"], ["srv", "DNS SRV"]]
+            : [["", "由数据库协商"], ["SCRAM-SHA-256", "SCRAM-SHA-256"], ["SCRAM-SHA-1", "SCRAM-SHA-1"]];
+          if (value && !settings.some(([option]) => option === value)) settings.push([value, value]);
+          input = `<select id="${id}" data-scope="${scope}" data-key="${key}">${settings.map(([option, title]) =>
+            `<option value="${esc(option)}" ${option === (value || "") ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
         } else if (scope === "source" && (state.options.secrets.includes(key) || key === "jdbc_url")) {
-          input = `<input type="password" class="credential-input" id="${id}" data-scope="${scope}" data-key="${key}" autocomplete="new-password" spellcheck="false" autocapitalize="none">`;
+          input = `<input type="password" class="credential-input" id="${id}" data-scope="${scope}" data-key="${key}" placeholder="${esc(placeholder)}" autocomplete="new-password" spellcheck="false" autocapitalize="none">`;
         } else if (
           scope === "source" &&
           state.options.boolean_fields.includes(key)
         ) {
-          input = `<input id="${id}" type="checkbox" data-scope="${scope}" data-key="${key}" ${value ? "checked" : ""}>`;
+          input = `<input id="${id}" type="checkbox" data-scope="${scope}" data-key="${key}" ${[true, 1, "1", "true"].includes(value) ? "checked" : ""}>`;
         } else {
           let type = ["port", "ssh_port", "node_count"].includes(key)
             ? "number"
@@ -850,9 +986,14 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           const shown =
             key === "tags" ? (value || []).join(", ") : (value ?? "");
           const limits = key === "port" || key === "ssh_port" ? 'min="1" max="65535"' : key === "node_count" ? 'min="1"' : "";
-          input = `<input id="${id}" type="${type}" data-scope="${scope}" data-key="${key}" value="${esc(shown)}" ${limits} ${scope === "source" && ["name", "host", "port"].includes(key) ? "required" : ""}>`;
+          const suggestions = scope === "metadata" ? fieldSuggestions[key]
+            : key === "group" ? [...new Set(state.records.map(record => record.source.group).filter(Boolean))] : null;
+          if (suggestions?.length) {
+            choices = `<datalist id="${id}-choices">${suggestions.map(option => `<option value="${esc(option)}"></option>`).join("")}</datalist>`;
+          }
+          input = `<input id="${id}" type="${type}" data-scope="${scope}" data-key="${key}" value="${esc(shown)}" placeholder="${esc(placeholder)}" ${limits} ${required ? "required" : ""} ${choices ? `list="${id}-choices"` : ""}>`;
         }
-        return `<label class="field" for="${id}">${esc(label)}${input}</label>`;
+        return `<label class="field" for="${id}"><span class="field-title">${esc(label)}${required ? '<span class="required-indicator" aria-hidden="true">*</span>' : ""}</span>${input}${hint ? `<span class="field-hint" id="${id}-hint">${esc(hint)}</span>` : ""}${choices}</label>`;
       }
       function renderSpecialized(obs, record) {
         const specialized = obs.specialized || {};
@@ -1035,6 +1176,9 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         });
       }
       function showEditorSection(section) {
+        $("editor-next").hidden = !canWrite || !["connection", "asset"].includes(section);
+        $("editor-next").textContent = section === "connection" ? "补充资产属性" : "补充专项明细";
+        $("editor-next").dataset.nextSection = section === "connection" ? "asset" : "specialized";
         $("editor").querySelectorAll("[data-editor-section]").forEach((button) => {
           const current = button.dataset.editorSection === section;
           button.setAttribute("aria-current", String(current));
@@ -1049,44 +1193,110 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           field.type = "password";
         });
         state.editing = null;
+        resetConnectionTest();
         $("new-record").focus();
       }
-      const databaseConnectionFields = {
-        oracle: ["service_name", "use_sid", "sysdba", "driver_version", "jdbc_url"],
-        gbase8a: ["database", "gbase8a_allow_plaintext", "tls_ca_file"],
-        sqlserver: ["database", "connection_mode", "driver_version", "encrypt", "trust_server_certificate", "jdbc_url"],
-        dm: ["driver_version"],
+      const sourceGroups = {
+        "source-fields": ["db_type", "name"],
+        "login-fields": ["host", "port", "database", "service_name", "use_sid", "user", "password"],
+        "ssh-modes": ["ssh_tunnel", "ssh_enabled"],
+        "ssh-fields": ["ssh_host", "ssh_port", "ssh_user", "ssh_password", "ssh_key_file", "ssh_key_password"],
+        "organization-fields": ["group", "tags", "description", "enabled"],
       };
+      const tlsFields = ["tls", "tls_ca_file", "tls_cert_key_file", "tls_allow_invalid_certs"];
+      const connectionProfiles = {
+        oracle: {
+          advanced: ["sysdba", "driver_version", "jdbc_url"],
+          hint: "填写 DBA 提供的服务名，例如 ORCLPDB1。只有明确要求 SID 时才切换为 SID 连接；普通巡检账号无需勾选 SYSDBA。",
+        },
+        gbase8a: {
+          advanced: ["gbase8a_allow_plaintext", "tls_ca_file"],
+          hint: "主机填写协调器地址。虚拟集群按实际配置填写。远程直连通常需可信 CA；已获准的明文连接或 SSH 隧道在相应选项中配置。",
+        },
+        sqlserver: {
+          advanced: ["connection_mode", "driver_version", "encrypt", "trust_server_certificate", "jdbc_url"],
+          hint: "填写 SQL Server 实际监听的 TCP 端口和目标库。使用 JDBC、ODBC 或自定义证书时，在高级选项设置。",
+        },
+        dm: {
+          advanced: ["driver_version"],
+          hint: "填写达梦实例地址与端口，默认 5236。使用普通巡检账号即可；需要指定驱动版本时再展开高级选项。",
+        },
+        mongodb: {
+          advanced: ["connect_mode", "auth_source", "auth_mechanism", "replica_set", ...tlsFields],
+          hint: "数据库名和认证源是不同的配置。使用副本集、DNS SRV 或 TLS 时，展开高级选项。",
+        },
+        redis: { advanced: tlsFields, hint: "账号仅在启用 ACL 时填写。" },
+        "redis-cluster": { advanced: ["seed_nodes", ...tlsFields], hint: "填写一个可达节点，其他种子节点可在高级选项补充。" },
+        oceanbase: { advanced: ["tenant"], hint: "需要租户登录时，在高级选项填入租户名。" },
+        gbase: { advanced: ["gbase_server_name"], hint: "GBase 8s 使用服务器实例名；该字段位于高级选项。" },
+        pg: { hint: "填写要巡检的数据库名，例如 postgres。地址和端口应从巡检服务所在机器可达。" },
+      };
+      function connectionFamily(type) {
+        return {postgresql: "pg", dm8: "dm", gbase8s: "gbase"}[type] || type.replace(/_jdbc$|_full$/, "");
+      }
+      function sourceField(key) {
+        return $("source-" + key).closest(".field");
+      }
       function updateConnectionFields() {
-        const type = $("source-db_type").value.replace(/_jdbc$|_full$/, "");
-        const keys = databaseConnectionFields[type === "dm8" ? "dm" : type];
-        const fields = new Set(Object.values(databaseConnectionFields).flat());
-        const engine = $("engine-fields");
-        const advanced = $("advanced-fields");
-        for (const key of fields) {
-          const input = $("source-" + key);
-          if (!input) continue;
-          const field = input.closest(".field");
-          if (keys?.includes(key)) engine.append(field);
-          else advanced.append(field);
-          field.hidden = Boolean(keys && !keys.includes(key));
+        const type = $("source-db_type").value;
+        const family = connectionFamily(type);
+        const profile = connectionProfiles[family] || {};
+        const advanced = new Set(profile.advanced || []);
+        if (type.endsWith("_jdbc")) advanced.add("driver_version");
+        $("connection-settings").hidden = !type;
+        sourceField("database").hidden = ["oracle", "dm", "redis", "redis-cluster"].includes(family);
+        sourceField("service_name").hidden = family !== "oracle";
+        sourceField("use_sid").hidden = family !== "oracle";
+        $("source-database").placeholder = family === "gbase8a" ? "按集群配置填写，可留空" : "例如：" + (family === "pg" ? "postgres" : "业务库");
+        sourceField("database").querySelector(".field-title").textContent =
+          family === "gbase8a" ? "虚拟集群（可选）" : "数据库名称";
+        const sid = family === "oracle" && $("source-use_sid").checked;
+        sourceField("service_name").querySelector(".field-title").textContent = sid ? "Oracle SID" : "Oracle 服务名";
+        $("source-service_name").placeholder = sid ? "例如：ORCL" : "例如：ORCLPDB1";
+        const useSsh = $("source-ssh_enabled").checked || $("source-ssh_tunnel").checked;
+        const useKey = $("ssh-auth-method").value === "key";
+        $("ssh-authentication").hidden = !useSsh;
+        for (const key of sourceGroups["ssh-fields"]) sourceField(key).hidden = !useSsh;
+        sourceField("ssh_password").hidden = !useSsh || useKey;
+        sourceField("ssh_key_file").hidden = !useSsh || !useKey;
+        sourceField("ssh_key_password").hidden = !useSsh || !useKey;
+        $("source-ssh_host").required = useSsh;
+        $("source-ssh_port").required = useSsh;
+        $("source-ssh_user").required = useSsh;
+        $("source-ssh_key_file").required = useSsh && useKey;
+        const engineFields = $("engine-fields");
+        engineFields.querySelectorAll("[data-key]").forEach((input) => {
+          input.closest(".field").hidden = !advanced.has(input.dataset.key);
+        });
+        if (engineFields.dataset.type !== type) {
+          for (const key of advanced) engineFields.append(sourceField(key));
+          engineFields.dataset.type = type;
         }
-        if (keys) {
-          for (const key of keys) engine.append($("source-" + key).closest(".field"));
+        if (family === "gbase8a") {
+          sourceField("tls_ca_file").hidden = $("source-gbase8a_allow_plaintext").checked || $("source-ssh_tunnel").checked;
+          sourceField("gbase8a_allow_plaintext").hidden = $("source-ssh_tunnel").checked;
+        } else if (advanced.has("tls") && !$("source-tls").checked) {
+          for (const key of tlsFields.slice(1)) sourceField(key).hidden = true;
         }
-        if (type === "gbase8a") {
-          $("source-database").closest(".field").firstChild.textContent = "虚拟集群（可选）";
-        } else {
-          $("source-database").closest(".field").firstChild.textContent = "数据库名称";
+        $("advanced-connection").hidden = !advanced.size;
+        $("connection-help").textContent = !type
+          ? "先选择数据库类型。系统会带入默认端口，并显示对应的连接参数。"
+          : profile.hint || "填写数据库地址和巡检账号。端口按实际监听值填写。";
+      }
+      function applyTypeDefaults(previousType, type) {
+        const previous = state.options.db_types.find((item) => item.key === previousType);
+        const selected = state.options.db_types.find((item) => item.key === type);
+        if (!selected) return;
+        const port = $("source-port");
+        if (!port.value || port.value === String(previous?.port ?? "")) port.value = selected.port || "";
+        const database = $("source-database");
+        const previousFamily = connectionFamily(previousType);
+        const family = connectionFamily(type);
+        if (previousFamily !== family) {
+          state.databaseDrafts.set(previousFamily, database.value);
+          database.value = state.databaseDrafts.get(family) ?? (family === "pg" ? selected.database || "postgres" : "");
         }
-        const help = {
-          oracle: "支持 Oracle 服务名或 SID。JDBC 连接串优先于地址和服务名。",
-          gbase8a: "直连默认校验 CA。可信内网可按实例开启明文连接。虚拟集群名仅在集群配置要求时填写。",
-          sqlserver: "按实例选择 JDBC 或 ODBC。JDBC 加密和证书信任设置用于该连接。",
-          dm: "DM8 自动识别版本，巡检和监控共用 JDBC 驱动登记。",
-          dm8: "DM8 自动识别版本，巡检和监控共用 JDBC 驱动登记。",
-        };
-        $("connection-help").textContent = help[type] || "密码留空时保留已存密码。";
+        if (previousType !== type) $("source-connection_mode").value = type.endsWith("_jdbc") ? "jdbc" : "";
       }
       async function edit(record) {
         if (record) {
@@ -1095,50 +1305,39 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         }
         state.editing = record || null;
         const source = record?.source || {
-            db_type: "mysql",
-            port: 3306,
-            ssh_port: 22,
-            enabled: true,
-            trust_server_certificate: true,
-          },
-          metadata = record?.metadata || {};
-        const main = [
-          "name",
-          "db_type",
-          "host",
-          "port",
-          "user",
-          "password",
-          "group",
-          "enabled",
-        ];
-        $("source-fields").innerHTML = main
-          .map((k) =>
-            inputField(k, state.options.source_fields[k], source[k], "source"),
-          )
-          .join("");
-        $("engine-fields").replaceChildren();
-        $("advanced-fields").innerHTML = Object.entries(
-          state.options.source_fields,
-        )
-          .filter(([k]) => !main.includes(k))
-          .map(([k, v]) => inputField(k, v, source[k], "source"))
-          .join("");
-        for (const key of [...state.options.secrets, "jdbc_url"]) {
-          const field = $('source-' + key);
-          if (field) field.value = source[key] ?? '';
+          db_type: "", ssh_port: 22, enabled: true, trust_server_certificate: false,
+        };
+        const metadata = record?.metadata || {};
+        const grouped = new Set(Object.values(sourceGroups).flat());
+        const advanced = Object.keys(state.options.source_fields).filter((key) => !grouped.has(key));
+        for (const [id, keys] of Object.entries({...sourceGroups, "engine-fields": advanced})) {
+          $(id).innerHTML = keys.map((key) =>
+            inputField(key, state.options.source_fields[key], source[key], "source"),
+          ).join("");
         }
-        $("metadata-fields").innerHTML = Object.entries(state.options.fields)
-          .map(([k, v]) =>
-            inputField(
-              k,
-              v,
-              metadata[k] ??
-                (k === "configuration_id" ? record?.configuration_id : ""),
-              "metadata",
-            ),
-          )
-          .join("");
+        delete $("engine-fields").dataset.type;
+        for (const key of [...state.options.secrets, "jdbc_url"]) {
+          const field = $("source-" + key);
+          field.value = source[key] ?? "";
+        }
+        $("source-password").placeholder = record ? "留空保留已存密码" : "输入巡检账号密码";
+        const assetGroups = {
+          "metadata-fields": ["configuration_id", "project_id", "system", "environment", "owner", "business", "lifecycle", "online_date", "remarks"],
+          "cluster-fields": ["deployment", "cluster_id", "cluster_type", "architecture", "node_count", "node_names", "cluster_network", "cluster_attributes"],
+          "maintenance-fields": ["backup_policy", "disaster_recovery", "baseline_version", "inventory_date", "change_reference"],
+        };
+        const groupedAssets = new Set(Object.values(assetGroups).flat());
+        assetGroups["infrastructure-fields"] = Object.keys(state.options.fields).filter((key) => !groupedAssets.has(key));
+        for (const [id, keys] of Object.entries(assetGroups)) {
+          $(id).innerHTML = keys.map((key) => inputField(
+            key, state.options.fields[key],
+            metadata[key] ?? (key === "configuration_id" ? record?.configuration_id : ""),
+            "metadata",
+          )).join("");
+        }
+        $("editor").querySelectorAll(".field-hint").forEach((hint) => {
+          $(hint.id.replace(/-hint$/, "")).setAttribute("aria-describedby", hint.id);
+        });
         state.tables = JSON.parse(JSON.stringify(metadata.tables || {}));
         $("table-editors").innerHTML = Object.entries(state.options.tables)
           .map(
@@ -1158,7 +1357,13 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           ? "维护台账 · " + record.source.name
           : "新增台账及数据源";
         $("editor-error").textContent = "";
-        $("save-record").classList.toggle("hidden", !canWrite);
+        $("editor-intro").textContent = record ? "修改后同步到数据源管理。" : "带 * 的连接字段必填，资产属性和专项明细可稍后补充。";
+        $("test-draft-connection").hidden = !canWrite;
+        $("ssh-auth-method").value = source.ssh_key_file ? "key" : "password";
+        state.databaseDrafts = new Map();
+        $("source-db_type").dataset.previousType = source.db_type;
+        resetConnectionTest();
+        for (const id of ["save-record", "save-record-top"]) $(id).hidden = !canWrite;
         $("editor-form")
           .querySelectorAll("input,select,textarea")
           .forEach((field) => {
@@ -1169,14 +1374,14 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
             }
           });
         $("toggle-credentials").setAttribute("aria-pressed", "false");
-        $("toggle-credentials").textContent = "显示凭据";
+        $("toggle-credentials").textContent = "显示数据库密码";
         updateConnectionFields();
-        $("advanced-connection").open = false;
-        showEditorSection(record?.observation && !$("editor").classList.contains("hidden") ? "observation" : "connection");
+        $("editor-form").querySelectorAll("details").forEach((detail) => { detail.open = false; });
+        showEditorSection("connection");
         $("editor").querySelector('[data-editor-section="observation"]').hidden = !record;
         $("inventory-panel").classList.add("hidden");
         $("editor").classList.remove("hidden");
-        $("editor-title").focus({preventScroll:true});
+        $(record ? "editor-title" : "source-db_type").focus({preventScroll:true});
         if (window.parent !== window) {
           window.parent.postMessage({type:"operations-editor-opened"}, location.origin);
         }
@@ -1197,48 +1402,89 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           )
           .join("");
       }
+      function validateEditor(connectionOnly = false) {
+        const invalid = [...$("editor-form").elements].find((input) =>
+          input.willValidate && !input.validity.valid && !input.closest("[hidden]") &&
+          (!connectionOnly || (input.dataset.scope === "source" && input.dataset.key !== "name"))
+        );
+        if (!invalid) return true;
+        showEditorSection(invalid.closest(".editor-pane").id.replace("editor-", ""));
+        const details = invalid.closest("details");
+        if (details) details.open = true;
+        const label = invalid.closest(".field").querySelector(".field-title").firstChild.textContent;
+        const error = "请" + (invalid.validity.valueMissing ? "填写或选择" + label : "核对" + label + "的格式或范围。");
+        const errorId = connectionOnly ? "connection-result" : "editor-error";
+        $(errorId).textContent = error;
+        invalid.setAttribute("aria-invalid", "true");
+        invalid.setAttribute("aria-errormessage", errorId);
+        invalid.focus();
+        return false;
+      }
+      function readDraft(scope, includeCredentials = false) {
+        const draft = {};
+        for (const input of $("editor-form").querySelectorAll(`[data-scope="${scope}"]`)) {
+          const key = input.dataset.key;
+          if (input.closest("[hidden]")) continue;
+          let value = input.type === "checkbox" ? input.checked : input.value;
+          if (input.type === "number" && value !== "") value = Number(value);
+          if (key === "tags") value = value.split(",").map((tag) => tag.trim()).filter(Boolean);
+          if (scope === "source" && !includeCredentials && state.options.secrets.includes(key) &&
+              (value === "" || value === state.editing?.source[key])) continue;
+          draft[key] = value;
+        }
+        if (scope === "source" && (draft.ssh_enabled || draft.ssh_tunnel) &&
+            $("ssh-auth-method").value === "password") draft.ssh_key_file = "";
+        return draft;
+      }
+      let connectionTest = null;
+      function resetConnectionTest() {
+        connectionTest?.abort();
+        connectionTest = null;
+        $("test-draft-connection").disabled = false;
+        $("connection-result").textContent = "";
+        delete $("connection-result").dataset.state;
+      }
+      async function testDraftConnection() {
+        resetConnectionTest();
+        $("editor-error").textContent = "";
+        const status = $("connection-result");
+        if (!validateEditor(true)) return;
+        const controller = new AbortController();
+        const button = $("test-draft-connection");
+        connectionTest = controller;
+        button.disabled = true;
+        status.dataset.state = "pending";
+        status.textContent = "正在测试连接…";
+        try {
+          const result = await api("/api/pro/datasources/test-connection", {
+            method: "POST", body: JSON.stringify(readDraft("source", true)), signal: controller.signal,
+          });
+          if (connectionTest === controller) {
+            status.dataset.state = "success";
+            status.textContent = "连接成功" + (result.msg || result.message ? " · " + (result.msg || result.message) : "");
+          }
+        } catch (error) {
+          if (connectionTest === controller) {
+            delete status.dataset.state;
+            status.textContent = "连接失败 · " + error.message;
+          }
+        } finally {
+          if (connectionTest === controller) {
+            connectionTest = null;
+            button.disabled = false;
+          }
+        }
+      }
       async function saveRecord(event) {
         event.preventDefault();
-        const invalid = Array.from($("editor-form").elements).find((input) => !input.validity.valid);
-        if (invalid) {
-          showEditorSection(invalid.closest(".editor-pane").id.replace("editor-", ""));
-          const details = invalid.closest("details");
-          if (details) details.open = true;
-          const label = invalid.closest(".field").firstChild.textContent;
-          $("editor-error").textContent = invalid.validity.valueMissing
-            ? "请填写" + label : "请核对" + label + "的格式或取值范围。";
-          invalid.focus({preventScroll:true});
-          return;
-        }
-        const button = $("save-record");
-        button.disabled = true;
+        $("editor-error").textContent = "";
+        if (!validateEditor()) return;
+        const saveButtons = [$("save-record"), $("save-record-top")];
+        if (saveButtons.some((button) => button.disabled)) return;
+        saveButtons.forEach((button) => { button.disabled = true; });
         try {
-          const source = {},
-            metadata = {};
-          $("editor-form")
-            .querySelectorAll("[data-scope]")
-            .forEach((input) => {
-              const key = input.dataset.key;
-              let value =
-                input.type === "checkbox" ? input.checked : input.value;
-              if (input.type === "number" && value !== "")
-                value = Number(value);
-              if (key === "tags")
-                value = value
-                  .split(",")
-                  .map((v) => v.trim())
-                  .filter(Boolean);
-              if (input.dataset.scope === "source") {
-                if (input.closest(".field").hidden) return;
-                if (
-                  state.options.secrets.includes(key) &&
-                  (value === "" ||
-                    (state.editing && value === state.editing.source[key]))
-                )
-                  return;
-                source[key] = value;
-              } else metadata[key] = value;
-            });
+          const source = readDraft("source"),
+            metadata = readDraft("metadata");
           metadata.tables = Object.fromEntries(
             Object.entries(state.tables).map(([key, rows]) => [
               key,
@@ -1268,7 +1514,7 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
         } catch (error) {
           $("editor-error").textContent = error.message;
         } finally {
-          button.disabled = false;
+          saveButtons.forEach((button) => { button.disabled = false; });
         }
       }
       async function deleteRecord(record) {
@@ -1646,20 +1892,23 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
           updateBatchSummary();
         }
         if (d.table) state.tables[d.table][Number(d.row)][d.column] = e.value;
-        if (d.scope === "source" && d.key === "db_type") updateConnectionFields();
-        if (d.scope === "source" && d.key === "db_type" && !state.editing) {
-          const meta = state.options.db_types.find((m) => m.key === e.value);
-          if (meta) {
-            $("source-port").value = meta.port;
-            $("source-user").value = meta.user;
-            $("source-database").value = e.value === "gbase8a" ? "" : (meta.database || "");
-            $("source-service_name").value = e.value.startsWith("oracle") ? (meta.database || "") : "";
-            $("source-connection_mode").value = e.value.endsWith("_jdbc") ? "jdbc" : "";
-          }
+        if (d.scope === "source" && d.key === "db_type") {
+          applyTypeDefaults(e.dataset.previousType, e.value);
+          e.dataset.previousType = e.value;
+        }
+        if (d.scope === "source" && ["db_type", "use_sid", "ssh_enabled", "ssh_tunnel", "tls", "gbase8a_allow_plaintext"].includes(d.key)) {
+          updateConnectionFields();
         }
       });
       document.addEventListener("input", (event) => {
         const d = event.target.dataset;
+        if (d.scope === "source") resetConnectionTest();
+        if (event.target.hasAttribute("aria-invalid")) {
+          const id = event.target.getAttribute("aria-errormessage");
+          event.target.removeAttribute("aria-invalid");
+          event.target.removeAttribute("aria-errormessage");
+          if (id) $(id).textContent = "";
+        }
         if (d.table)
           state.tables[d.table][Number(d.row)][d.column] = event.target.value;
       });
@@ -1681,11 +1930,20 @@ SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 -->
       $("toggle-credentials").onclick = () => {
         const button = $("toggle-credentials");
         const visible = button.getAttribute("aria-pressed") !== "true";
-        $("editor").querySelectorAll(".credential-input").forEach((field) => {
-          field.type = visible ? "text" : "password";
-        });
+        $("source-password").type = visible ? "text" : "password";
         button.setAttribute("aria-pressed", String(visible));
-        button.textContent = visible ? "隐藏凭据" : "显示凭据";
+        button.textContent = visible ? "隐藏数据库密码" : "显示数据库密码";
+      };
+      $("test-draft-connection").onclick = testDraftConnection;
+      $("ssh-auth-method").onchange = () => {
+        updateConnectionFields();
+        resetConnectionTest();
+      };
+      $("editor-next").onclick = () => {
+        const next = $("editor-next").dataset.nextSection;
+        if (next === "asset" && !validateEditor()) return;
+        showEditorSection(next);
+        $("editor").querySelector(`[data-editor-section="${next}"]`).focus();
       };
       $("editor").querySelectorAll("[data-editor-section]").forEach((button) => {
         button.onclick = () => showEditorSection(button.dataset.editorSection);
