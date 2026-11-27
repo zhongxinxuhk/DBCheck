@@ -565,16 +565,15 @@ class OperationsTest(unittest.TestCase):
         self.assertEqual(len(self.manager.get_all_instances()), 1)
 
     def test_isolated_native_worker_preserves_identity_and_skips_jdbc_preflight(self):
-        import types
         from modules import jdbc_inspection_cli as cli
-        import modules.web
+        from modules.inspection import execution
 
-        app = types.ModuleType("modules.web.app")
-        app.socketio = types.SimpleNamespace(emit=lambda *args, **kwargs: None)
-        app.tasks = {}
-        app.run_inspection_task = lambda tid, *args: app.tasks[tid].update(
-            status="done", result={"risk_count": 0}
-        )
+        received = {}
+
+        def run(task_id, task, *args, **kwargs):
+            received.update(task)
+            task.update(status='done', result={'risk_count': 0})
+
         payload = {
             "task_id": "isolated-native",
             "db_type": "mongodb",
@@ -586,18 +585,15 @@ class OperationsTest(unittest.TestCase):
                 "owner_tenant_id": 1,
             },
         }
-        with patch.dict(sys.modules, {"modules.web.app": app}), patch.object(
-            modules.web, "app", app, create=True
+        with patch.dict(sys.modules, {"modules.web.app": None}), patch.object(
+            execution, "execute_inspection", run
         ), patch("sys.stdin", io.StringIO(json.dumps(payload))), patch.object(
             cli, "_write_stdout"
-        ), patch.object(
-            cli, "_tcp_preflight"
-        ) as preflight:
-            with patch.dict(os.environ):
-                self.assertEqual(cli.main(), 0)
+        ), patch.object(cli, "_tcp_preflight") as preflight:
+            self.assertEqual(cli.main(), 0)
         preflight.assert_not_called()
-        self.assertEqual(app.tasks["isolated-native"]["datasource_id"], "native-source")
-        self.assertEqual(app.tasks["isolated-native"]["owner_user_id"], 11)
+        self.assertEqual(received["datasource_id"], "native-source")
+        self.assertEqual(received["owner_user_id"], 11)
 
     def test_two_concurrent_editors_cannot_overwrite_each_other(self):
         from concurrent.futures import ThreadPoolExecutor

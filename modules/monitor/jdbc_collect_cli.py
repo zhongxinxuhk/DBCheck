@@ -66,6 +66,14 @@ def _ensure_project_root_on_path():
 _ensure_project_root_on_path()
 
 from modules.jdbc_connector import open_jdbc_connection
+from modules.core.dbapi_compat import fetch_rows
+from modules.db_types.connection_profile import connection_profile
+from modules.ssh import prepare_db_endpoint
+
+MAX_QUERY_ROWS = 1000
+MAX_QUERY_BYTES = 512 * 1024
+MAX_CELL_CHARS = 8192
+
 
 
 def _cell(v):
@@ -74,42 +82,51 @@ def _cell(v):
     jaydebeapi 已把绝大多数 JDBC 类型转成 python 原生值；残余的 JPype
     包装对象（java.lang.String 等）统一转 str，其余不可序列化值置 None。
     """
-    if v is None or isinstance(v, (bool, int, float, str)):
+    if v is None or isinstance(v, (bool, int, float)):
         return v
     try:
-        return str(v)
+        return str(v)[:MAX_CELL_CHARS]
     except Exception:
         return None
 
 
-def _collect(payload):
-    """执行批量采集，返回 {qN: {'rows': [...], 'error': str|None}}。"""
+def _query_batch(payload, options):
+    """Collect SQL in one connection with bounded output for each query."""
     db_type = str(payload.get('db_type') or '').lower()
     queries = payload.get('queries') or []
     out = {}
 
-    conn, meta = open_jdbc_connection(
-        db_type,
-        payload.get('host'),
-        int(payload.get('port') or 0),
-        payload.get('user') or '',
-        payload.get('password') or '',
-        driver_version=payload.get('driver_version') or '',
-        jdbc_url=payload.get('jdbc_url') or None,
-        database=payload.get('database') or None,
-        service_name=payload.get('service_name') or None,
-        sid=payload.get('sid') or None,
-        use_sid=bool(payload.get('use_sid', False)),
-        gbase_server_name=payload.get('gbase_server_name') or None,
-        encrypt=payload.get('encrypt'),
-        trust_server_certificate=payload.get('trust_server_certificate'),
-        # sys 用户必须以 SYSDBA 身份登录（与插件 connect 行为一致），
-        # 漏传 internal_logon 会导致 ORA-28009 / 连不上。
-        properties={'internal_logon': 'sysdba'} if payload.get('sysdba') else None,
-    )
-    if conn is None:
-        err = (meta or {}).get('error') or 'JDBC 连接失败'
-        return {'q%d' % i: {'rows': [], 'error': err} for i in range(len(queries))}
+    if payload.get('native_sql'):
+        from modules.monitor.engine import MonitorEngine
+
+        conn = MonitorEngine()._create_connection(
+            options, options.get('password') or '', db_type, payload.get('timeout') or 15)
+    else:
+        jdbc_url = (options.get('jdbc_url') or '').strip()
+        if db_type == 'oracle_jdbc' and jdbc_url.startswith('('):
+            jdbc_url = 'jdbc:oracle:thin:@' + jdbc_url
+        conn, meta = open_jdbc_connection(
+            db_type,
+            options.get('host'),
+            int(options.get('port') or 0),
+            options.get('user') or '',
+            options.get('password') or '',
+            driver_version=options.get('driver_version') or '',
+            jdbc_url=jdbc_url or None,
+            database=options.get('database') or None,
+            service_name=options.get('service_name') or None,
+            sid=options.get('sid') or None,
+            use_sid=bool(options.get('use_sid', False)),
+            gbase_server_name=options.get('gbase_server_name') or None,
+            encrypt=options.get('encrypt'),
+            trust_server_certificate=options.get('trust_server_certificate'),
+            # sys 用户必须以 SYSDBA 身份登录（与插件 connect 行为一致），
+            # 漏传 internal_logon 会导致 ORA-28009 / 连不上。
+            properties={'internal_logon': 'sysdba'} if options.get('sysdba') else None,
+        )
+        if conn is None:
+            err = (meta or {}).get('error') or 'JDBC 连接失败'
+            return {'q%d' % i: {'rows': [], 'error': err} for i in range(len(queries))}
 
     if payload.get('inspection_safe'):
         from modules.inspection.sql_safety import guarded_connection
@@ -122,34 +139,35 @@ def _collect(payload):
                 cur = conn.cursor()
                 try:
                     cur.execute(sql)
-                    cols = None
-                    try:
-                        # 列名强制 str 并统一小写：jaydebeapi/JPype 的 description
-                        # 列名可能是 java.lang.String 包装对象（直接当 JSON dict
-                        # 键会 TypeError），且 Oracle/JDBC 驱动返回大写列名
-                        # （USERNAME/STATE...），而原生驱动路径（engine.py:612）
-                        # 已统一转小写、下游 screen_metrics/前端均按小写键取值/
-                        # 动态渲染。此处不转小写会导致 JDBC 类型明细列名大写、
-                        # 与下游约定不一致，故强制 .lower()。
-                        cols = [str(d[0]).lower() for d in (cur.description or [])]
-                    except Exception:
-                        cols = None
-                    raw = cur.fetchall()
+                    cols = [str(column[0]).lower() for column in (cur.description or ())]
+                    raw = fetch_rows(cur, MAX_QUERY_ROWS + 1, strict=True)
                 finally:
                     try:
                         cur.close()
                     except Exception:
                         pass
 
+                if len(raw) > MAX_QUERY_ROWS:
+                    raise ValueError(f'监控查询结果超过 {MAX_QUERY_ROWS} 行')
                 rows = []
-                for r in raw or []:
-                    vals = list(r.values()) if isinstance(r, dict) else list(r)
-                    rows.append({
-                        (cols[j] if cols and j < len(cols) else 'c%d' % j): _cell(v)
-                        for j, v in enumerate(vals)
-                    })
+                size = 0
+                for row in raw:
+                    values = row.values() if isinstance(row, dict) else row
+                    converted = {
+                        (cols[index] if index < len(cols) else f'c{index}'): _cell(value)
+                        for index, value in enumerate(values)
+                    }
+                    size += len(json.dumps(converted, ensure_ascii=False).encode('utf-8'))
+                    if size > MAX_QUERY_BYTES:
+                        raise ValueError('监控查询结果超过字节上限')
+                    rows.append(converted)
                 out['q%d' % i] = {'rows': rows, 'error': '; '.join(getattr(conn, 'warnings', [])[warning_count:]) or None}
             except Exception as e:  # noqa: BLE001 — 单条 SQL 失败只降级该项
+                if payload.get('native_sql'):
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                 out['q%d' % i] = {'rows': [], 'error': str(e)[:300]}
     finally:
         try:
@@ -157,6 +175,20 @@ def _collect(payload):
         except Exception:
             pass
     return out
+
+
+def _collect(payload):
+    profile = connection_profile(payload.get('source') or payload)
+    options, tunnel = prepare_db_endpoint(profile)
+    try:
+        if payload.get('nosql'):
+            from modules.monitor.native_collect import collect_native
+
+            return collect_native(options)
+        return _query_batch(payload, options)
+    finally:
+        if tunnel is not None:
+            tunnel.close()
 
 
 def main() -> int:

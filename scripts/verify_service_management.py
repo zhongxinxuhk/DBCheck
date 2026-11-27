@@ -465,8 +465,9 @@ class ExistingSystemIntegration(unittest.TestCase):
             self.assertIn('TrustServerCertificate=no;',value)
         source=(ROOT/'modules/web/app.py').read_text(encoding='utf-8-sig')
         self.assertIn("register_connection_tester('gbase8a',_ct_gbase8a)",source)
-        self.assertIn("module_name='main_gbase8a'",source)
-        self.assertNotIn('CONTROLLED_COLLECTION_REQUIRED',source)
+        execution = (ROOT/'modules/inspection/execution.py').read_text(encoding='utf-8')
+        self.assertIn("module_name='main_gbase8a'", execution)
+        self.assertNotIn('CONTROLLED_COLLECTION_REQUIRED', execution)
 
     def test_gbase8a_plaintext_direct_is_explicit_and_opt_in(self):
         """回归：Navicat 可明文直连时，DBCheck 也必须能连，但只能显式开启。"""

@@ -244,6 +244,8 @@ def connect_gbase8a(data):
         options=dict(user=data['user'],password=data['password'],
                      connect_timeout=5,read_timeout=read_timeout,
                      write_timeout=write_timeout,autocommit=False,local_infile=False)
+        if data.get('monitor_stream_results'):
+            options['cursorclass'] = pymysql.cursors.SSCursor
         host,port,tunnel=tunnel_endpoint(data)
         if host or is_loopback_endpoint(data) or plaintext_allowed(data.get('gbase8a_allow_plaintext')):
             host = host or data.get('host') or data.get('ip')
@@ -302,11 +304,13 @@ def connect_gbase8a(data):
         raise
 
 
-def connect_sqlserver(data):
+def connect_sqlserver(data, *, timeout=None):
     from modules.core.paths import PORTABLE_ROOT
     if PORTABLE_ROOT is not None:
         from modules.core.portable import open_portable_connection
         return open_portable_connection(dict(data,db_type='sqlserver'))
+    login_timeout = max(1, int(timeout or 5))
+    query_timeout = max(1, int(timeout or 15))
     tunnel=None
     try:
         host,port,tunnel=tunnel_endpoint(data)
@@ -318,7 +322,7 @@ def connect_sqlserver(data):
             import pytds
             connection=pytds.connect(server=host,port=int(port),user=data['user'],
                                      password=data['password'],database=data.get('database') or 'master',
-                                     tds_version=pytds.tds_base.TDS72,login_timeout=5,timeout=15,
+                                     tds_version=pytds.tds_base.TDS72,login_timeout=login_timeout,timeout=query_timeout,
                                      autocommit=False,use_mars=False,appname='DBPulse')
             return TunnelConnection(connection,tunnel) if tunnel else connection
         import pyodbc
@@ -328,8 +332,9 @@ def connect_sqlserver(data):
         connection=pyodbc.connect('DRIVER={ODBC Driver 18 for SQL Server};SERVER='+quote(str(data.get('host') or data.get('ip'))+','+str(int(data['port'])))+
                                   ';UID='+quote(data['user'])+';PWD='+quote(data['password'])+
                                   ';DATABASE='+quote(data.get('database') or 'master')+
-                                  ';Encrypt=yes;TrustServerCertificate=no;Connection Timeout=5;APP=DBPulse;',timeout=5,autocommit=False)
-        connection.timeout=15
+                                  f';Encrypt=yes;TrustServerCertificate=no;Connection Timeout={login_timeout};APP=DBPulse;',
+                                  timeout=login_timeout,autocommit=False)
+        connection.timeout=query_timeout
         return connection
     except Exception:
         if tunnel:tunnel.close()

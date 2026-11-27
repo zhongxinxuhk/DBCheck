@@ -11,11 +11,11 @@ import uuid
 from contextlib import contextmanager, closing
 from datetime import datetime, timezone
 
+from modules.db_types.connection_profile import BOOLEAN_FIELDS, normalize_source_fields
 from modules.pro.instance_manager import (
     DatabaseInstance,
-    _encrypt_pwd,
+    InstanceManager,
     _decrypt_pwd,
-    _encrypt_jdbc_url,
     _decrypt_jdbc_url,
     _get_fernet,
 )
@@ -171,18 +171,6 @@ SOURCE_FIELDS = {
 SECRETS = {"password", "ssh_password", "ssh_key_password"}
 # jdbc_url 可能内嵌账号口令，落盘加密；但它不是密码字段，解密函数不同。
 ENCRYPTED_FIELDS = SECRETS | {"jdbc_url"}
-BOOLEAN_FIELDS = {
-    "sysdba",
-    "use_sid",
-    "tls",
-    "tls_allow_invalid_certs",
-    "gbase8a_allow_plaintext",
-    "encrypt",
-    "trust_server_certificate",
-    "ssh_enabled",
-    "ssh_tunnel",
-    "enabled",
-}
 
 
 def now():
@@ -303,14 +291,9 @@ class Inventory:
         with self.connection() as db:
             return [self._record(db, iid, decrypt) for iid in ids]
 
-    def _refresh(self):
-        self.manager._bump_rev(self.path)
-        self.manager._load_data()
-
     def save(self, actor, data, iid=None, new_id=None):
         with self.connection(write=True) as db:
             record = self._save(actor, data, iid, new_id, db)
-        self._refresh()
         return record
 
     def record_inspection(self, actor, iid, task_id, report_path, auto_fields,
@@ -420,7 +403,6 @@ class Inventory:
                  self.seal(payload)),
             )
             self._record(db, iid)
-        self._refresh()
         return {
             "status": "applied" if changes else "unchanged",
             "task_id": task_id,
@@ -569,8 +551,6 @@ class Inventory:
                     },
                 )
             record = self._record(db, iid)
-        if changed:
-            self._refresh()
         return {
             "status": "applied" if changed else "unchanged",
             "task_id": task_id,
@@ -641,52 +621,18 @@ class Inventory:
                 id=iid, name="", db_type="", host="", port=0, user="", connection_mode=""
             ).to_dict()
         for key, value in source_updates.items():
-            if key not in BOOLEAN_FIELDS | {
-                "tags",
-                "port",
-                "ssh_port",
-            } and not isinstance(value, str):
+            if key not in BOOLEAN_FIELDS | {"tags", "port", "ssh_port"} and not isinstance(value, str):
                 raise ValueError("连接文本字段格式无效")
             if len(str(value)) > 32767:
                 raise ValueError("连接字段最多32767字符")
-            if key == "jdbc_url":
-                stored[key] = _encrypt_jdbc_url(str(value))
-            elif key in SECRETS:
-                if value:
-                    stored[key] = _encrypt_pwd(str(value))
-            else:
-                stored[key] = value
+        source_patch = {key: value for key, value in source_updates.items()
+                        if key not in SECRETS or value}
+        stored.update(InstanceManager.prepare_source_write(source_patch))
         for key in ("name", "db_type", "host"):
             if not isinstance(stored.get(key), str) or not stored[key].strip():
                 raise ValueError("资产名称、数据库类型和主机地址必填")
             stored[key] = stored[key].strip()
-        stored["db_type"] = {
-            "postgresql": "pg",
-            "dm8": "dm",
-            "oracle_full": "oracle",
-        }.get(stored["db_type"].lower(), stored["db_type"].lower())
-        for key in ("port", "ssh_port"):
-            try:
-                value = stored.get(key, 22)
-                if isinstance(value, bool) or (
-                    isinstance(value, float) and not value.is_integer()
-                ):
-                    raise ValueError()
-                stored[key] = int(value)
-                if not 1 <= stored[key] <= 65535:
-                    raise ValueError()
-            except (TypeError, ValueError):
-                raise ValueError("端口须为1到65535的整数")
-        for key in BOOLEAN_FIELDS:
-            if key not in source_updates:
-                stored[key] = bool(stored.get(key))
-            if stored.get(key) not in (True, False, 0, 1):
-                raise ValueError("连接开关须为布尔值")
-            stored[key] = bool(stored.get(key))
-        if not isinstance(stored.get("tags"), list) or any(
-            not isinstance(t, str) for t in stored["tags"]
-        ):
-            raise ValueError("标签须为列表")
+        stored = normalize_source_fields(stored)
         if not old:
             duplicate = db.execute(
                 "SELECT id FROM instances WHERE db_type=? AND host=? AND port=? "
@@ -781,7 +727,6 @@ class Inventory:
                     self.seal({"before": old}),
                 ),
             )
-        self._refresh()
 
     def history(self, actor, ids=None):
         with self.connection() as db:

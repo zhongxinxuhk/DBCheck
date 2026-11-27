@@ -163,3 +163,33 @@ def test_scheduler_uses_latest_ledger_connection(isolated_paths, monkeypatch, fa
     assert manager.get_instance('scheduled-8a')['gbase8a_allow_plaintext'] == 0
     scheduler._run_inspection('test-job', job, 'DBA', False)
     spawn.assert_called_once()
+
+
+def test_connection_profile_preserves_gbase_fields_and_discards_internal_overrides(monkeypatch):
+    from modules.db_types.connection_profile import connection_profile, inspection_profile
+    from modules.ssh import prepare_db_endpoint
+
+    source = {
+        'db_type': 'gbase8a', 'host': 'cluster.example', 'port': '5258',
+        'user': 'observer', 'password': 'fixture', 'database': 'vc1',
+        'ssh_host': 'jump.example', 'ssh_tunnel': '1', 'tls_ca_file': '/certs/ca.pem',
+        'gbase8a_allow_plaintext': 'false', '_tunnel_ready': True,
+    }
+    tunnel = object()
+    seen = []
+
+    def open_tunnel(profile, **_):
+        seen.append(profile)
+        return tunnel, '127.0.0.1', 12345
+
+    monkeypatch.setattr('modules.ssh.open_db_tunnel', open_tunnel)
+    profiles = [connection_profile(source), inspection_profile(source, 'gbase8a')]
+    for profile in profiles:
+        assert '_tunnel_ready' not in profile
+        endpoint, owned = prepare_db_endpoint(profile)
+        assert owned is tunnel
+        assert (endpoint['host'], endpoint['ip'], endpoint['port']) == ('127.0.0.1', '127.0.0.1', 12345)
+        assert endpoint['database'] == 'vc1'
+        assert endpoint['tls_ca_file'] == '/certs/ca.pem'
+        assert endpoint['gbase8a_allow_plaintext'] is False
+    assert seen[0] == seen[1]

@@ -26,6 +26,15 @@ def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str)
 
 
+def default_service_store():
+    from modules.core import paths
+    from modules.pro.instance_manager import _get_fernet
+
+    _get_fernet()
+    return ServiceStore(paths.DATA_DIR / 'service_management' / 'services.db',
+                        paths.DB_KEY_PATH.read_bytes())
+
+
 class ServiceStore:
     def __init__(self, path, key):
         self.path = Path(path)
