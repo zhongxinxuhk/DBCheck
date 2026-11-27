@@ -305,13 +305,22 @@ def test_sqlserver_monitor_honors_jdbc_mode(monkeypatch):
     assert batch == [(source, 'sqlserver_jdbc', 'sqlserver')]
 
 
+def test_jdbc_batch_includes_postgres_legacy_and_screen_queries():
+    from modules.monitor.queries import PG_SLOW_QUERY_LEGACY_SQL
+
+    batch = MonitorEngine._jdbc_batch_sqls('pg')
+    assert PG_SLOW_QUERY_LEGACY_SQL in batch
+    assert set(screen_metrics.screen_sqls('pg').values()) <= set(batch)
+    assert len(batch) == len(set(batch))
+
+
 def test_screen_probes_before_marking_session_error_as_down(monkeypatch):
     collector = screen_metrics.ScreenCollector()
-    monkeypatch.setattr(screen_metrics, 'collect_extra', lambda *_: ({}, {}))
+    monkeypatch.setattr(screen_metrics, 'collect_extra', lambda *_, **kw: ({}, {}))
     source = {'id': 'ora', 'db_type': 'oracle'}
     conn = {'ora': {'error': 'ORA-00942'}}
     engine = MonitorEngine()
-    monkeypatch.setattr(engine, 'run_query', lambda *_: [{'value': 1}])
+    monkeypatch.setattr(engine, 'run_snapshot_query', lambda *_: [{'value': 1}])
     snap = collector._collect_one(engine, source, conn, {})
     assert snap['status'] == 'ok'
     assert snap['conn_err'] == 'ORA-00942'
@@ -319,7 +328,7 @@ def test_screen_probes_before_marking_session_error_as_down(monkeypatch):
     def refused(*_):
         raise ConnectionRefusedError('connection refused')
 
-    monkeypatch.setattr(engine, 'run_query', refused)
+    monkeypatch.setattr(engine, 'run_snapshot_query', refused)
     assert collector._collect_one(engine, source, conn, {})['status'] == 'down'
     conn['ora']['incomplete'] = True
     assert collector._collect_one(engine, source, conn, {})['status'] == 'pending'

@@ -1446,6 +1446,10 @@ class InstanceManager:
         inst = self._instances.get(instance_id)
         if not inst:
             return None
+        return self._decrypt_instance(inst)
+
+    @staticmethod
+    def _decrypt_instance(inst):
         if isinstance(inst, dict):
             d = inst.copy()
         else:
@@ -1480,13 +1484,8 @@ class InstanceManager:
             List[Dict]: 实例字典列表，密码字段为明文。
         """
         self._ensure_instances_fresh()
-        result = []
-        for instance_id in list(self._instances):
-            value = self.get_instance_decrypted(instance_id)
-            if value is not None:
-                result.append(value)
-        return result
-
+        instances = list(self._instances.values())
+        return [self._decrypt_instance(inst) for inst in instances]
 
     def get_instances_by_group(self, group: str) -> List[DatabaseInstance]:
         """按分组获取实例"""

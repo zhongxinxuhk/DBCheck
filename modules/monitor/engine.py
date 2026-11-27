@@ -25,13 +25,14 @@ import threading
 import json
 import logging
 from collections import deque
+from functools import partial
 from modules.pro.instance_manager import get_instance_manager
 from modules.core.paths import PROJECT_ROOT
-from modules.core.parallel import run_bounded, round_budget
+from modules.core.parallel import RoundExecutor, round_budget
 from modules.core.runtime_tuning import get as _tuning_get
 from modules.ssh import resolve_db_endpoint
 import modules.monitor.queries as mq
-from modules.monitor.screen_metrics import SCREEN_SQLS
+from modules.monitor.screen_metrics import screen_sqls
 
 # 监控专属 logger：经 loghub 汇聚到「运行日志」页（category=monitor），且默认不写
 # 共享控制台（由 MonitorConsoleFilter 过滤），从根上避免污染巡检 / 控制台输出。
@@ -45,6 +46,7 @@ _log = logging.getLogger('dbcheck.monitor')
 # 一次跑完该实例全部采集 SQL（连接/慢查/性能计数/容量），结果缓存供本轮复用。
 JDBC_BATCH_DB_TYPES = frozenset(('gbase', 'db2', 'clickhouse'))
 JDBC_BATCH_TTL = 12.0        # 批量结果缓存时长（s），略短于采样间隔 15s
+SLOW_FALLBACK_RECHECK = 300  # 依赖可能在运行中被安装或修复
 JDBC_BATCH_TIMEOUT = 90      # 子进程硬超时（含 JVM 冷启动 4~10s）
 
 # ── JDBC 专属数据源（*_jdbc）─────────────────────────────────
@@ -232,6 +234,7 @@ class MonitorEngine:
         self._running = False
         self._thread = None
         self._interval = self.DEFAULT_INTERVAL
+        self._executor = RoundExecutor('monitor')
         # 当前慢查询数据: {instance_id: {'data': [...], 'error': str, 'ts': float, 'db_type': str, 'label': str}}
         self._slow_queries = {}
         # 当前连接数据: {instance_id: {'data': [...], 'error': str, 'ts': float, 'total': int, 'max_conn': int, 'db_type': str, 'label': str}}
@@ -244,7 +247,7 @@ class MonitorEngine:
         self._jdbc_cache = {}
         # 慢查询主 SQL 依赖缺失记忆（如 pg_stat_statements 扩展未安装）:
         # 这些实例每轮直接走 fallback，不再重复刷错误日志
-        self._slow_prim_skip = set()
+        self._slow_prim_skip = {}
 
     # ═══════════════════════════════════════════════════════════
     #  启停控制
@@ -292,6 +295,11 @@ class MonitorEngine:
         """获取当前连接数据"""
         with self._lock:
             return dict(self._connections)
+
+    def get_collection_snapshots(self):
+        """Return session and slow-query results published in the same round."""
+        with self._lock:
+            return dict(self._connections), dict(self._slow_queries)
 
     def get_conn_history(self):
         """获取连接数历史"""
@@ -349,11 +357,14 @@ class MonitorEngine:
             return
         try:
             im = get_instance_manager()
-            # 使用解密后的实例：本轮采集会据此建立真实数据库连接。
-            # 虽然 _collect_slow / _collect_conn 内部还会各自调用 get_instance_decrypted()，
-            # 但此处统一取明文，避免后续维护者误以为 mask_password=False 就是明文密码。
+            # 本轮 SQL 与结果标签使用同一份已解密配置。
             all_instances = im.get_all_instances_decrypted()
             instances = [i for i in all_instances if i.get('enabled', True)]
+            with self._lock:
+                self._slow_prim_skip = {
+                    inst['id']: self._slow_prim_skip[inst['id']] for inst in instances
+                    if inst['id'] in self._slow_prim_skip
+                }
             # 明确标识：后台监控采集是独立后台任务，遍历全部已保存实例，
             # 与用户手动发起的巡检无关，避免日志混流被误判为「巡检串库」。
             _log.info("===== 后台监控采集任务（独立后台线程，遍历 %d 个实例，与手动巡检无关）=====", len(instances))
@@ -371,10 +382,10 @@ class MonitorEngine:
             workers = int(_tuning_get('monitor', 'max_workers'))
             item_timeout = float(_tuning_get('monitor', 'instance_timeout'))
             budget = round_budget(len(instances), workers, item_timeout)
-            _t0 = time.time()
-            results, errors, timed_out = run_bounded(
+            _t0 = time.monotonic()
+            results, errors, timed_out = self._executor.run(
                 instances, self._collect_instance, workers=workers,
-                round_timeout=budget, name='monitor',
+                round_timeout=budget, key=lambda inst: inst['id'],
             )
 
             new_slow = {}
@@ -439,9 +450,9 @@ class MonitorEngine:
                 })
 
             _log.info(
-                "监控采集完成：%d/%d 实例，并发 %d，耗时 %.2fs%s",
-                len(conn_history_items), len(instances), workers, ts - _t0,
-                ('，超时 %d 个（下一轮重试）' % len(timed_out)) if timed_out else '',
+                "监控采集：会话成功 %d/%d，采集线程异常 %d，未完成 %d，并发 %d，耗时 %.2fs",
+                len(conn_history_items), len(instances), len(errors), len(timed_out),
+                workers, time.monotonic() - _t0,
             )
         except Exception as e:
             _log.error("采集失败: %s", e)
@@ -457,8 +468,10 @@ class MonitorEngine:
         db_type = mq.normalize_db_type(inst.get('db_type', ''))
         label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
 
+        query = partial(self.run_snapshot_query, inst)
         try:
-            slow = self._collect_slow(iid, db_type, label)
+            slow = self._collect_slow(
+                iid, db_type, label, query=query, revision=inst.get('updated_at'))
         except Exception as e:
             _log.warning("慢查询采集失败 %s: %s", label, e)
             slow = {
@@ -467,7 +480,7 @@ class MonitorEngine:
             }
 
         try:
-            conn = self._collect_conn(iid, db_type, label)
+            conn = self._collect_conn(iid, db_type, label, query=query)
         except Exception as e:
             _log.warning("连接采集失败 %s: %s", label, e)
             conn = {
@@ -483,7 +496,8 @@ class MonitorEngine:
     #  采集实现
     # ═══════════════════════════════════════════════════════════
 
-    def _collect_slow(self, instance_id, db_type, label):
+    def _collect_slow(self, instance_id, db_type, label, *, query=None, revision=None):
+        query = query or partial(self._connect_and_query, instance_id)
         sql = mq.SLOW_QUERY_TEMPLATES.get(db_type)
         if not sql:
             return {'data': [], 'error': f'不支持的类型: {db_type}',
@@ -496,15 +510,18 @@ class MonitorEngine:
                       if db_type in ('postgresql', 'pg', 'ivorysql', 'hgdb')
                       else None)
         rows = None
-        if instance_id not in self._slow_prim_skip:
+        with self._lock:
+            cache_key, expires = self._slow_prim_skip.get(instance_id, (None, 0))
+        skip_primary = cache_key == (db_type, revision) and time.monotonic() < expires
+        if not skip_primary:
             try:
-                rows = self._connect_and_query(instance_id, sql)
+                rows = query(sql)
             except Exception as e:
                 low = str(e).lower()
                 if legacy_sql and any(marker in low for marker in (
                         'mean_exec_time', 'max_exec_time', 'total_exec_time')):
                     try:
-                        rows = self._connect_and_query(instance_id, legacy_sql)
+                        rows = query(legacy_sql)
                         _log.info("%s 使用 PostgreSQL 13 以下慢查询 SQL", label)
                     except Exception as legacy_error:
                         _log.warning("慢查询兼容 SQL 失败 %s: %s", label, legacy_error)
@@ -515,7 +532,9 @@ class MonitorEngine:
                 dep_missing = ('does not exist' in low or "doesn't exist" in low
                                or 'ora-00904' in low or 'invalid identifier' in low)
                 if rows is None and fallback_sql and dep_missing:
-                    self._slow_prim_skip.add(instance_id)
+                    with self._lock:
+                        self._slow_prim_skip[instance_id] = (
+                            (db_type, revision), time.monotonic() + SLOW_FALLBACK_RECHECK)
                     _log.info("%s 慢查询主 SQL 依赖缺失（%s），后续轮次直接使用 fallback",
                               label, str(e).splitlines()[0][:100])
                 elif rows is None:
@@ -528,9 +547,9 @@ class MonitorEngine:
         if rows is None or (db_type == 'dm' and not rows):
             # fallback：主 SQL 失败降级，或已记忆依赖缺失直接走此路（静默）
             try:
-                rows = self._connect_and_query(instance_id, fallback_sql)
+                rows = query(fallback_sql)
                 fallback_used = True
-                if instance_id not in self._slow_prim_skip:
+                if not skip_primary:
                     _log.info("%s 使用 fallback 慢查询 SQL", label)
             except Exception as fb:
                 _log.warning("慢查询 fallback 亦失败 %s: %s", label, fb)
@@ -549,7 +568,8 @@ class MonitorEngine:
         }
         return result
 
-    def _collect_conn(self, instance_id, db_type, label):
+    def _collect_conn(self, instance_id, db_type, label, *, query=None):
+        query = query or partial(self._connect_and_query, instance_id)
         conn_sql = mq.CONNECTION_TEMPLATES.get(db_type)
         if not conn_sql:
             return {'data': [], 'error': f'不支持的类型: {db_type}',
@@ -558,7 +578,7 @@ class MonitorEngine:
                     'db_type': db_type, 'label': label}
 
         try:
-            rows = self._connect_and_query(instance_id, conn_sql)
+            rows = query(conn_sql)
         except Exception as e:
             _log.warning("连接 SQL 失败 %s: %s", label, e)
             return {'data': [], 'error': _friendly_db_error(e),
@@ -568,7 +588,7 @@ class MonitorEngine:
 
         if db_type == 'dm' and any(row.get('trx_id') for row in rows):
             try:
-                waiting = self._connect_and_query(instance_id, mq.DM_BLOCKED_TRANSACTIONS_SQL)
+                waiting = query(mq.DM_BLOCKED_TRANSACTIONS_SQL)
             except Exception as error:
                 _log.debug("达梦事务阻塞视图不可用 %s: %s", label, error)
             else:
@@ -583,7 +603,7 @@ class MonitorEngine:
         max_conn = mq.MAX_CONNECTION_DEFAULTS.get(db_type, 100)
         if max_sql:
             try:
-                max_rows = self._connect_and_query(instance_id, max_sql)
+                max_rows = query(max_sql)
                 if max_rows and max_rows[0]:
                     val = list(max_rows[0].values())[0]
                     try:
@@ -649,10 +669,11 @@ class MonitorEngine:
             _add(src.get(db_type))
         if db_type == 'dm':
             _add(mq.DM_BLOCKED_TRANSACTIONS_SQL)
+        if db_type in ('postgresql', 'pg', 'ivorysql', 'hgdb'):
+            _add(mq.PG_SLOW_QUERY_LEGACY_SQL)
         _add(_probe_sql(db_type))
         # 大屏指标 SQL：family 条目为 {key: sql}，逐条带上（repl/repl8 同理）
-        fam_sqls = SCREEN_SQLS.get(db_type) or {}
-        for s in fam_sqls.values():
+        for s in screen_sqls(db_type).values():
             _add(s)
         return sqls
 
@@ -811,10 +832,11 @@ class MonitorEngine:
         """公共查询入口：供大屏指标适配层（screen_metrics）等外部复用连接逻辑。"""
         return self._connect_and_query(instance_id, sql, timeout=timeout)
 
-    def probe(self, instance_id, db_type):
+    def probe(self, instance_id, db_type, *, query=None):
         """对指标查询失败的实例验证数据库是否仍能响应只读查询。"""
+        query = query or partial(self.run_query, instance_id)
         try:
-            if not self.run_query(instance_id, _probe_sql(mq.normalize_db_type(db_type))):
+            if not query(_probe_sql(mq.normalize_db_type(db_type))):
                 raise RuntimeError('探活查询未返回结果')
         except Exception as error:
             _log.warning("实例 %s 探活失败: %s", instance_id, error)
@@ -823,15 +845,18 @@ class MonitorEngine:
 
     def _connect_and_query(self, instance_id, sql, timeout=None):
         """连接到指定数据源并执行 SQL，返回 list of dicts"""
-        if timeout is None:
-            timeout = self.QUERY_TIMEOUT
-
         im = get_instance_manager()
         inst = im.get_instance_decrypted(instance_id)
         if not inst:
             raise ValueError(f"实例 {instance_id} 不存在")
+        return self.run_snapshot_query(inst, sql, timeout=timeout)
+
+    def run_snapshot_query(self, inst, sql, timeout=None):
+        """使用调用方持有的服务端连接配置执行本轮 SQL。"""
         if not inst.get('enabled', True):
-            raise ValueError(f"实例 {instance_id} 已停用")
+            raise ValueError(f"实例 {inst.get('id')} 已停用")
+        if timeout is None:
+            timeout = self.QUERY_TIMEOUT
 
         # 归一到模板键（oracle_jdbc→oracle、tdsqlc_mysql→mysql 等）再分派：
         # _create_connection 的 python 驱动分支按协议族分派（TDSQL-C 兼容 MySQL
