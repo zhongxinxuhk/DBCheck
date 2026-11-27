@@ -238,8 +238,12 @@ def connect_gbase8a(data):
     tunnel=None
     connection=None
     try:
+        # 巡检默认 15 秒；GBase 8a 容量类专项查询可显式传入更长预算。
+        read_timeout=int(data.get('read_timeout') or 15)
+        write_timeout=int(data.get('write_timeout') or read_timeout)
         options=dict(user=data['user'],password=data['password'],
-                     connect_timeout=5,read_timeout=15,write_timeout=15,autocommit=False,local_infile=False)
+                     connect_timeout=5,read_timeout=read_timeout,
+                     write_timeout=write_timeout,autocommit=False,local_infile=False)
         host,port,tunnel=tunnel_endpoint(data)
         if host or is_loopback_endpoint(data) or plaintext_allowed(data.get('gbase8a_allow_plaintext')):
             host = host or data.get('host') or data.get('ip')
