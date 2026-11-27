@@ -5339,7 +5339,7 @@ def api_dashboard_overview():
     """大屏聚合数据：KPI + 分组 + TopN + 告警 + 拓扑节点，一次请求全部返回。"""
     try:
         from modules.monitor.screen_metrics import get_screen_collector, build_overview
-        return jsonify(build_overview(get_screen_collector()))
+        return jsonify(build_overview(get_screen_collector(), request.args.get('group')))
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
@@ -5358,7 +5358,7 @@ def api_dashboard_host_series():
     """
     try:
         from modules.monitor.screen_metrics import (
-            get_screen_collector, _read_host_series,
+            get_screen_collector, _read_host_series, filter_group_snapshot,
         )
         try:
             limit = int(request.args.get('limit', '60'))
@@ -5366,14 +5366,13 @@ def api_dashboard_host_series():
             limit = 60
         limit = max(1, min(240, limit))
 
+        snap = filter_group_snapshot(get_screen_collector().get_snapshot(), request.args.get('group'))
         ids_arg = (request.args.get('ids') or '').strip()
+        iids = list(snap)
         if ids_arg:
-            iids = [x.strip() for x in ids_arg.split(',') if x.strip()]
-            names = {}
-        else:
-            snap = (get_screen_collector().get_snapshot() or {})
-            iids = list(snap.keys())
-            names = {iid: (snap[iid].get('name') or iid) for iid in iids}
+            wanted = {value.strip() for value in ids_arg.split(',')}
+            iids = [iid for iid in iids if iid in wanted]
+        names = {iid: snap[iid].get('name') or iid for iid in iids}
 
         series = {}
         for iid in iids:
@@ -5465,7 +5464,7 @@ def api_dashboard_history_overview():
         span = float(request.args.get('span', 3600))
         from_ts = float(request.args.get('from', to_ts - span))
         at_ts = float(request.args.get('at', to_ts))
-        ov = build_history_overview(from_ts, to_ts, at_ts)
+        ov = build_history_overview(from_ts, to_ts, at_ts, request.args.get('group'))
         ov['history'] = True
         ov['at'] = at_ts
         ov['from'] = from_ts

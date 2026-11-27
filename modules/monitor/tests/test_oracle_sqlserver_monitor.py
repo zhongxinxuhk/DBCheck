@@ -323,7 +323,8 @@ def test_screen_probes_before_marking_session_error_as_down(monkeypatch):
     engine = MonitorEngine()
     monkeypatch.setattr(engine, 'run_snapshot_query', lambda *_: [{'value': 1}])
     snap = collector._collect_one(engine, source, conn, {})
-    assert snap['status'] == 'ok'
+    assert snap['status'] == 'warn'
+    assert collector._collect_one(engine, source, {'ora': {'data': []}}, {})['status'] == 'ok'
     assert snap['conn_err'] == 'ORA-00942'
 
     def refused(*_):

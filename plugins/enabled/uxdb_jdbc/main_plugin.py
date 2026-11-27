@@ -412,10 +412,8 @@ class UxdbJdbcInspector(BaseInspectionEngine):
         """从 inspection.db 加载本插件模板章节，并把每个 query_sql 执行结果
         存入 context[query_key]（与已采集键同键时跳过，避免重复执行）。
         """
-        db_path = os.path.join(_PROJECT_ROOT, 'data', 'inspection.db')
-        if not os.path.exists(db_path):
-            self.context['_chapters'] = []
-            return
+        from modules.inspection.dal import require_template_db
+        db_path = require_template_db()
         import sqlite3
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
@@ -519,11 +517,14 @@ class UxdbJdbcInspector(BaseInspectionEngine):
             }})
 
         # 报告章节（从 inspection.db 加载并执行模板 query）
+        from modules.inspection.dal import InspectionTemplateUnavailableError
+
         try:
             self._load_chapters_from_db()
-        except Exception as e:
-            print(f"[UXDB] 加载章节失败: {e}")
-            self.context['_chapters'] = []
+        except InspectionTemplateUnavailableError:
+            raise
+        except Exception as error:
+            raise InspectionTemplateUnavailableError(f'加载巡检 SQL 模板失败: {error}') from error
 
         # 慢查询深度分析（uxdb 无独立分析器时降级为 None）
         try:

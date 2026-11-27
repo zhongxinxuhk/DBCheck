@@ -16,6 +16,10 @@ Db2 JDBC 巡检插件 —— 通过 JPype + db2jcc4.jar + 共享 jdbc_jvm 连接
 - 智能分析接入铁律：get_task_config() 必须返回 'smart_analyze': 'smart_analyze_db2'。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 import sys
 import json
@@ -559,10 +563,8 @@ class Db2JdbcInspector(BaseInspectionEngine):
         """从 inspection.db 加载本插件模板章节，并把每个 query_sql 执行结果
         存入 context[query_key]（与 _collect_* 同键时跳过，避免重复执行）。
         """
-        db_path = os.path.join(_PROJECT_ROOT, 'data', 'inspection.db')
-        if not os.path.exists(db_path):
-            self.context['_chapters'] = []
-            return
+        from modules.inspection.dal import require_template_db
+        db_path = require_template_db()
         import sqlite3
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
@@ -679,11 +681,14 @@ class Db2JdbcInspector(BaseInspectionEngine):
             }})
 
         # 报告章节（从 inspection.db 加载并执行模板 query）
+        from modules.inspection.dal import InspectionTemplateUnavailableError
+
         try:
             self._load_chapters_from_db()
-        except Exception as e:
-            print(f"[DB2] 加载章节失败: {e}")
-            self.context['_chapters'] = []
+        except InspectionTemplateUnavailableError:
+            raise
+        except Exception as error:
+            raise InspectionTemplateUnavailableError(f'加载巡检 SQL 模板失败: {error}') from error
 
         # 慢查询深度分析
         try:
