@@ -1103,7 +1103,7 @@ EN = {
     "report.oracle_ch6": "Chapter 6: Performance and Activity",
     "report.oracle_ch7": "Chapter 7: Risk and Recommendations",
     "report.oracle_ch8": "Chapter 8: AI Diagnostic Recommendations",
-    "report.no_risk_found_oracle": "✅ No significant risks found. Database is running normally.",
+    "report.no_risk_found_oracle": "No findings were recorded. Review the collection scope and assessment evidence.",
     "report.detected_oracle": "A total of {t} risk(s)/suggestion(s) detected, including {h} high-risk item(s).",
 
     # ── Oracle Report Common ───────────────────────────────────────────────────

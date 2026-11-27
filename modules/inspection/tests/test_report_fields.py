@@ -236,6 +236,10 @@ class ReportFieldsTest(unittest.TestCase):
                          patch('modules.inspection.dal.get_queries_by_chapter', return_value=[query]):
                         self.assertEqual(engine.generate_report(str(output)), str(output))
                     doc = Document(output)
+                    self.assertTrue(any(p.style.name == 'Heading 1' and p.text == '巡检结论与处置优先级'
+                                        for p in doc.paragraphs))
+                    self.assertTrue(any(p.style.name == 'Heading 2' and p.text == '总体判定与采集覆盖'
+                                        for p in doc.paragraphs))
                     headers = [c.text for c in doc.tables[-1].rows[0].cells]
                     self.assertEqual(headers, report_field_labels(db_type, '', list(row)))
                     self.assertTrue(all(re.search(r'[\u4e00-\u9fff]', h) for h in headers))

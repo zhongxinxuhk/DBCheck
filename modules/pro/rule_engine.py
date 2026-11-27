@@ -21,6 +21,7 @@ DBCheck Pro 插件规则引擎
 
 import os
 import ast
+import math
 import re
 import yaml
 from typing import Dict, List, Any, Optional, Tuple
@@ -499,41 +500,13 @@ class RuleEngine:
         """
         rule_id = rule.get('id', '')
         condition = rule.get('condition', '')
-        params_raw = rule.get('params', {})
 
         if not condition:
             return None
 
-        # 解析 params（支持 ${context.xxx} 引用）
-        resolved_params = {}
-        for k, v in params_raw.items():
-            resolved_params[k] = _resolve_param(v, context)
-
-        # 计算额外变量（如连接数使用率 conn_pct 等）
-        extra = {}
-        try:
-            # 自动计算连接数使用率 conn_pct：
-            # 当有 max_conn 且存在表示"已用连接"的参数（max_used 或 cur_conn）时计算
-            if 'max_conn' in resolved_params:
-                mc = resolved_params['max_conn']
-                mu = resolved_params.get('max_used', resolved_params.get('cur_conn', None))
-                if mu is not None and mc and mc > 0:
-                    extra['conn_pct'] = mu / mc * 100
-        except Exception:
-            pass
-
-        # 执行条件表达式。
-        # 命名空间优先级：阈值基线 < 规则 params < 自动派生量（extra）。
-        # 这样规则可以写 `tbs_usage_pct > db_tbs_usage_alert_pct`，
-        # 而规则自身的 params 若显式给了同名变量，仍以规则为准。
-        #
-        # 实例级基线的入口：调用方把实例标识放进 context['_instance_id']，
-        # 这里透传给 load_thresholds，让「自己跟自己比」的阈值覆盖全局值。
-        # 取不到（CLI 裸跑、未注册端点）就退回全局阈值，行为与改前一致。
-        _iid = context.get('_instance_id')
-        _thresholds = load_thresholds(instance_id=_iid)
-        ok, err = _safe_eval(condition, context,
-                             {**_thresholds, **resolved_params, **extra})
+        resolved_params, extra = _rule_inputs(rule, context)
+        thresholds = load_thresholds(instance_id=context.get('_instance_id'))
+        ok, _ = _safe_eval(condition, context, {**thresholds, **resolved_params, **extra})
 
         if not ok:
             return None
@@ -697,6 +670,80 @@ class RuleEngine:
 # ── 便捷函数（供 analyzer.py 调用）─────────────────────────
 
 _cache: Optional[RuleEngine] = None
+
+def _rule_inputs(rule, context):
+    params_raw = rule.get('params', {})
+    resolved_params = {}
+    for k, v in params_raw.items():
+        resolved_params[k] = _resolve_param(v, context)
+
+    # 计算额外变量（如连接数使用率 conn_pct 等）
+    extra = {}
+    try:
+        # 自动计算连接数使用率 conn_pct：
+        # 当有 max_conn 且存在表示"已用连接"的参数（max_used 或 cur_conn）时计算
+        if 'max_conn' in resolved_params:
+            mc = resolved_params['max_conn']
+            mu = resolved_params.get('max_used', resolved_params.get('cur_conn', None))
+            if mu is not None and mc and mc > 0:
+                extra['conn_pct'] = mu / mc * 100
+    except Exception:
+        pass
+    return resolved_params, extra
+
+
+def report_rule_evidence(rule, context, thresholds):
+    """Evaluate recorded inputs with the same condition used by the risk engine."""
+    condition = rule.get('condition')
+    if not condition:
+        return None
+    raw = rule.get('params', {})
+    expression = re.compile(r"\$\{context\.([a-zA-Z_]\w*)(?:\[\d+\]|\.[a-zA-Z_]\w*)*\}")
+    keys = {}
+    for name, value in raw.items():
+        match = expression.fullmatch(value) if isinstance(value, str) else None
+        if match:
+            keys[name] = match[1]
+    if not keys:
+        return None
+    values, derived = _rule_inputs(rule, context)
+    triggered, error = _safe_eval(condition, context, {**thresholds, **values, **derived})
+    status = {**(context.get('_metric_status') or {}), **(context.get('_query_status') or {})}
+    complete = all(
+        values[name] not in (None, '', '[REDACTED]', '[MASKED]')
+        and (not isinstance(values[name], float) or math.isfinite(values[name]))
+        and (values[name] not in ([], {}) or status.get(key, {}).get('status') == 'collected')
+        and status.get(key, {}).get('status') not in {
+            'error', 'timeout', 'unavailable', 'not_applicable', 'failed', 'disabled', 'skipped', 'partial'
+        }
+        and not status.get(key, {}).get('truncated')
+        for name, key in keys.items()
+    )
+    complete = complete and not any(
+        isinstance(value, str) and '${' in value and name not in keys
+        for name, value in raw.items()
+    )
+    inputs = {**thresholds, **values, **derived}
+    for divisor in re.findall(r"/\s*([A-Za-z_]\w*)", condition):
+        value = inputs.get(divisor)
+        if isinstance(value, (int, float)) and value == 0:
+            complete = False
+    scope = set(re.findall(r"\b[A-Za-z_]\w*\b", condition))
+    severity = rule.get('severity', 'medium')
+    return {
+        'keys': set(keys.values()),
+        'state': {'high': 'critical', 'critical': 'critical', 'medium': 'warning'}.get(severity, 'notice'),
+        'triggered': triggered and complete and not error,
+        'assessed': complete and not error,
+        'title': rule.get('name_zh') or rule.get('name') or rule.get('id'),
+        'title_en': rule.get('name_en') or rule.get('name') or rule.get('id'),
+        'category': rule.get('category'),
+        'condition': condition,
+        'inputs': {name: value for name, value in {**values, **derived}.items()
+                   if name in scope and isinstance(value, (int, float, bool))},
+        'thresholds': {name: thresholds[name] for name in sorted(scope & thresholds.keys() - values.keys())},
+    }
+
 
 # ── 规则取数层（metrics）──────────────────────────────────────────────────
 # 规则 params 引用的 context 键与巡检模板 query_key 是两套命名，历史上大量规则

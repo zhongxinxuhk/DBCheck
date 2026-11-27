@@ -1264,7 +1264,7 @@ ZI = {
     "report.oracle_ch6": "第6章 性能与活动",
     "report.oracle_ch7": "第7章 风险与建议",
     "report.oracle_ch8": "第8章 AI 诊断建议",
-    "report.no_risk_found_oracle": "未发现明显风险项，数据库整体运行正常。",
+    "report.no_risk_found_oracle": "本次未记录风险项。请结合采集范围和判定依据复核。",
     "report.detected_oracle": "\n共检测到 {t} 项风险/建议，其中高风险 {h} 项。",
 
     # ── Oracle 报告通用 ──────────────────────────────────────────────────────
