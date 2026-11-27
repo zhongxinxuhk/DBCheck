@@ -50,6 +50,7 @@ A Star helps more database engineers discover the project and is one of the simp
 
 ## 🌐 Project Links
 
+* **Website** [DBPulse](https://zhongxinxuhk.github.io/DBCheck/)
 * **Repository:** https://github.com/zhongxinxuhk/DBCheck
 * **Releases:** https://github.com/zhongxinxuhk/DBCheck/releases
 * **Container image:** `ghcr.io/zhongxinxuhk/dbpulse`

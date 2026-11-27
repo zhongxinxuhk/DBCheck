@@ -1,0 +1,54 @@
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
+name: Deploy DBPulse website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'assets/web/dbpulse_logo_horizontal.png'
+      - 'assets/web/dbcheck_logo_icon.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dbpulse-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/configure-pages@v6.0.0
+      - name: Stage the static website
+        run: |
+          install -D -m 644 site/index.html "$RUNNER_TEMP/dbpulse-site/index.html"
+          install -D -m 644 site/styles.css "$RUNNER_TEMP/dbpulse-site/styles.css"
+          install -D -m 644 assets/web/dbpulse_logo_horizontal.png "$RUNNER_TEMP/dbpulse-site/dbpulse-logo.png"
+          install -D -m 644 assets/web/dbcheck_logo_icon.png "$RUNNER_TEMP/dbpulse-site/favicon.png"
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: ${{ runner.temp }}/dbpulse-site
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5.0.1
