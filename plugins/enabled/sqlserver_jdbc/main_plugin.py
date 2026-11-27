@@ -366,9 +366,7 @@ class MssqlJdbcInspector(BaseInspectionEngine):
             )
             self.conn_cfg = cfg
 
-            # SSL 回退钩子：encrypt=false 时若错误与 TLS/encrypt 相关，自动
-            # 启用 encrypt=true;trustServerCertificate=true 再试一次（兼容
-            # 服务器强制加密场景）。经统一层 on_error 回调注入。
+            # 对生成的连接串启用 TLS 重试，保留用户的证书校验设置。
             def _ssl_retry(e, ctx):
                 err = str(e).lower()
                 _ssl_keywords = (
@@ -376,9 +374,8 @@ class MssqlJdbcInspector(BaseInspectionEngine):
                     'trustservercertificate', 'certificate', 'handshake',
                     'unexpected_message', 'did not return a response',
                 )
-                if (not cfg.encrypt) and any(k in err for k in _ssl_keywords):
+                if not cfg.encrypt and not cfg.jdbc_url and any(k in err for k in _ssl_keywords):
                     cfg.encrypt = True
-                    cfg.trust_server_certificate = True
                     self._used_encrypt_fallback = True
                     print(f"[MSSQL-JDBC] 首次连接因 TLS/encrypt 失败，尝试启用 TLS 回退")
                     return cfg.build_jdbc_url(), cfg.build_properties()

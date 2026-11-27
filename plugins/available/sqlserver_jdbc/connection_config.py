@@ -63,8 +63,8 @@ class MssqlJdbcConnectionConfig:
           3. 否则 → jdbc:sqlserver://{host}:{port};databaseName={database};...
 
         安全/兼容性要点：
-          - encrypt=false 时**不附加** trustServerCertificate，避免 mssql-jdbc
-            在旧版/强制加密服务器上进入异常 SSL 握手分支而报 unexpected_message。
+          - encrypt=false 时仍透传显式启用的 trustServerCertificate，以支持
+            SQL Server 强制 TLS 的场景。未启用信任时使用驱动的默认校验设置。
           - encrypt=true 时附加 trustServerCertificate + sslProtocol=TLS，兼容
             自签证书；TLS 版本交由 JVM 协商（见 modules/jdbc_connector._jvm_tls_args），
             以兼容仅支持 TLS 1.0 的老旧 SQL Server。

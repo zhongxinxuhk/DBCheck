@@ -385,9 +385,8 @@ def build_jdbc_url(
             return f'jdbc:oracle:thin:@{host}:{_port}:{target}'
         return _tpl.format(host=host, port=_port, service=target)
 
-    # SQL Server：encrypt=false 时省略 trustServerCertificate（部分驱动/服务器在
-    # 强制加密场景下带 false 会走异常 SSL 分支报 unexpected_message）；命名实例
-    # 不带端口，由 SQL Browser 解析（instance_name 经 extra 传入）。
+    # SQL Server：服务器可以强制 TLS，即使客户端未主动请求加密。
+    # 命名实例不带端口，由 SQL Browser 解析。
     if db_type == 'sqlserver_jdbc':
         _instance = extra.get('instance_name') or ''
         _host_part = f'{host};instanceName={_instance}' if _instance else f'{host}:{_port}'
@@ -401,6 +400,8 @@ def build_jdbc_url(
             _url += f';encrypt=true;trustServerCertificate={_trust};sslProtocol=TLS'
         else:
             _url += ';encrypt=false'
+            if trust_server_certificate:
+                _url += ';trustServerCertificate=true'
         # 专属扩展段（loginTimeout/applicationName/认证方式）由统一层拼接，
         # 与插件 MssqlJdbcConnectionConfig 原行为逐字节一致。
         _lt = int(extra.get('login_timeout_s') or 0)

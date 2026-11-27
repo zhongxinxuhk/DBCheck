@@ -275,6 +275,19 @@ def test_sqlserver_connection_dispatch(monkeypatch):
     assert captured['timeout'] == 10
 
 
+@pytest.mark.parametrize(('encrypt', 'trust', 'expected'), [
+    (False, True, ';encrypt=false;trustServerCertificate=true;'),
+    (False, False, ';encrypt=false;loginTimeout='),
+    (True, False, ';encrypt=true;trustServerCertificate=false;'),
+])
+def test_sqlserver_jdbc_keeps_certificate_setting(encrypt, trust, expected):
+    from modules.jdbc_connector import build_jdbc_url
+
+    url = build_jdbc_url('sqlserver_jdbc', 'sql-db', encrypt=encrypt,
+                         trust_server_certificate=trust)
+    assert expected in url
+
+
 def test_sqlserver_monitor_honors_jdbc_mode(monkeypatch):
     source = {'id': 'ms', 'db_type': 'sqlserver_jdbc', 'connection_mode': 'jdbc'}
     manager = types.SimpleNamespace(get_instance_decrypted=lambda iid: source)
