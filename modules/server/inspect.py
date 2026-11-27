@@ -10,6 +10,10 @@ server_inspect.py — 独立服务器巡检模块
 新增检查项：Top 进程、内核版本、系统负载、inode、打开文件描述符。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 from modules.core.paths import PROJECT_ROOT
 import os
 import json
@@ -692,7 +696,8 @@ def load_server_thresholds(db_path=None):
     """
     import os, sqlite3
     if db_path is None:
-        db_path = os.path.join(str(PROJECT_ROOT), 'data', 'inspection.db')
+        from modules.inspection.dal import require_template_db
+        db_path = require_template_db()
     defaults = {
         'cpu_warning_pct': 70,      'cpu_critical_pct': 90,
         'cpu_warning_penalty': 10,  'cpu_critical_penalty': 20,

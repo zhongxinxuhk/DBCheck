@@ -865,12 +865,19 @@ class MssqlJdbcInspector(BaseInspectionEngine):
 
     def _load_chapters_from_db(self):
         """Collect enabled queries from the selected template and chapter scope."""
-        from modules.inspection.dal import get_chapters_by_template, get_queries_by_chapter
+        from modules.inspection.dal import (
+            InspectionTemplateUnavailableError, get_chapters_by_template,
+            get_queries_by_chapter, require_template_db,
+        )
         from modules.inspection import sqlserver_compat
+        db_path = require_template_db()
         template_id = self.get_template_id()
-        chapters = get_chapters_by_template(template_id, chapter_ids=self.chapter_ids) if template_id else []
+        chapters = get_chapters_by_template(
+            template_id, db_path=db_path, chapter_ids=self.chapter_ids) if template_id else []
+        if not chapters:
+            raise InspectionTemplateUnavailableError('巡检模板或所选章节没有可执行的查询')
         for chapter in chapters:
-            chapter['queries'] = get_queries_by_chapter(chapter['id'])
+            chapter['queries'] = get_queries_by_chapter(chapter['id'], db_path=db_path)
             for query in chapter['queries']:
                 if query.get('enabled'):
                     key = query['query_key']
@@ -965,11 +972,7 @@ class MssqlJdbcInspector(BaseInspectionEngine):
         self.context['basic_info'] = build(self)
 
         # 报告章节（从 inspection.db 加载并执行模板 query）
-        try:
-            self._load_chapters_from_db()
-        except Exception as e:
-            print(f"[MSSQL-JDBC] 加载章节失败: {e}")
-            self.context['_chapters'] = []
+        self._load_chapters_from_db()
 
         # 慢查询深度分析（复用通用分析器，DB type 走 'sqlserver_jdbc'）
         try:

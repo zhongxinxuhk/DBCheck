@@ -33,13 +33,21 @@ from typing import List, Dict, Optional, Any
 from modules.inspection.config_baseline import _get_default_baselines
 
 
-# 数据库文件路径：统一由中央路径模块 modules/core/paths.py 解析
-# - 开发态：<项目根>/data/inspection.db
-# - PyInstaller one-folder 打包态：<exe 同级>/_internal/data/inspection.db
-# 注意：不要再用 sys.executable 自行推导 <exe>/data/，打包产物中该目录并不存在
-# （spec 中 data/ 属于运行时目录、不随包分发），会导致 sqlite3 报
-# "unable to open database file"，且与插件侧的路径解析结果不一致。
+# Frozen deployments keep writable data next to the executable.
 DEFAULT_DB_PATH = str(INSPECTION_DB)
+
+class InspectionTemplateUnavailableError(RuntimeError):
+    """The inspection cannot load its required SQL templates."""
+
+
+def require_template_db():
+    from modules.core import paths
+
+    path = paths.resolve(paths.INSPECTION_DB, paths.PROJECT_ROOT / 'data' / 'inspection.db')
+    if not path.is_file():
+        raise InspectionTemplateUnavailableError(f'巡检模板库不存在: {path}')
+    return str(path)
+
 
 # 数据库初始化标记（避免每次连接都检查）
 _db_initialized = False

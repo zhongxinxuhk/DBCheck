@@ -193,6 +193,15 @@ class HistoryStore:
             rows = c.execute(sql, args).fetchall()
         return [dict(r) for r in rows]
 
+    def groups_in_range(self, from_ts, to_ts):
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT COALESCE(NULLIF(grp, ''), 'default') AS group_name "
+                "FROM samples WHERE ts BETWEEN ? AND ? ORDER BY group_name",
+                (from_ts, to_ts),
+            ).fetchall()
+        return [row[0] for row in rows]
+
     def range_info(self):
         with self._conn() as c:
             row = c.execute(

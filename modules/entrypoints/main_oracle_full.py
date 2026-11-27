@@ -365,7 +365,8 @@ def get_enabled_oracle_chapters(template_id):
     并通过 ORACLE_CHAPTER_TO_CHECK 映射为代码检查项名称"""
     try:
         import sqlite3
-        _db_path = os.path.join(str(PROJECT_ROOT), 'data', 'inspection.db')
+        from modules.inspection.dal import require_template_db
+        _db_path = require_template_db()
         if not os.path.exists(_db_path) or template_id is None:
             return None
         _conn = sqlite3.connect(_db_path)
@@ -398,11 +399,14 @@ def load_oracle_chapter_structure(template_id, version_text=''):
 
     格式: [{chapter_number, chapter_title_zh, queries: [{query_key, query_sql, query_description_zh}]}]
     """
+    if template_id is None:
+        return []
+    from modules.inspection.dal import InspectionTemplateUnavailableError, require_template_db
+
+    _conn = None
     try:
         import sqlite3
-        _db_path = os.path.join(str(PROJECT_ROOT), 'data', 'inspection.db')
-        if not os.path.exists(_db_path) or template_id is None:
-            return []
+        _db_path = require_template_db()
         _conn = sqlite3.connect(_db_path)
         _cur = _conn.cursor()
         _cur.execute(
@@ -439,11 +443,16 @@ def load_oracle_chapter_structure(template_id, version_text=''):
                     'chapter_title_zh': ch_title,
                     'queries': queries,
                 })
-        _conn.close()
+        if not chapters:
+            raise InspectionTemplateUnavailableError('巡检模板没有可执行的查询')
         return chapters
-    except Exception as e:
-        print(f"[WARN] 加载 Oracle 章节结构失败: {e}")
-        return []
+    except InspectionTemplateUnavailableError:
+        raise
+    except Exception as error:
+        raise InspectionTemplateUnavailableError(f'加载 Oracle 巡检模板失败: {error}') from error
+    finally:
+        if _conn is not None:
+            _conn.close()
 
 def execute_oracle_chapter_queries(conn, chapters):
     """执行所有章节的查询，返回 chapter_results

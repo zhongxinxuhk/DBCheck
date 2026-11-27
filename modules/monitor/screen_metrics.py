@@ -1082,9 +1082,16 @@ class ScreenCollector:
         # ── 本轮趋势点（汇总已提交快照）──
         ts = time.time()
         with self._lock:
-            total_qps = sum((s.get('qps') or 0) for s in self._snap.values())
-            total_tps = sum((s.get('tps') or 0) for s in self._snap.values())
-            self._trend.append({'ts': ts, 'qps': round(total_qps, 1), 'tps': round(total_tps, 1)})
+            by_group = {}
+            for sample in self._snap.values():
+                metrics = by_group.setdefault(sample.get('group') or 'default', [0, 0])
+                metrics[0] += sample.get('qps') or 0
+                metrics[1] += sample.get('tps') or 0
+            self._trend.append({
+                'ts': ts, 'qps': round(sum(pair[0] for pair in by_group.values()), 1),
+                'tps': round(sum(pair[1] for pair in by_group.values()), 1),
+                'by_group': by_group,
+            })
 
         # 告警状态机评估（锁外）：状态迁移时经通知配置发邮件/IM（异步发送）
         try:
@@ -1246,6 +1253,8 @@ class ScreenCollector:
 
         # 3) 对可用指标评估阈值，未覆盖的会话模板保留其状态。
         level = self._derive_status(snap)
+        if level == 'ok' and (snap.get('conn_err') or snap.get('err')):
+            level = 'warn'
         if level != 'ok' or snap['status'] != 'unsupported':
             snap['status'] = level
         return snap
@@ -1373,9 +1382,15 @@ class ScreenCollector:
                 out[iid] = d
             return out
 
-    def get_trend(self):
+    def get_trend(self, group=None):
         with self._lock:
-            return list(self._trend)
+            if group:
+                trend = []
+                for sample in self._trend:
+                    qps, tps = sample['by_group'].get(group, (0, 0))
+                    trend.append({'ts': sample['ts'], 'qps': round(qps, 1), 'tps': round(tps, 1)})
+                return trend
+            return [{key: sample[key] for key in ('ts', 'qps', 'tps')} for sample in self._trend]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1397,7 +1412,8 @@ def _topn(items, key, n=10):
 _HOST_KEYS = ('host_cpu', 'host_cpu_iowait', 'host_mem', 'host_swap_pct',
               'host_load1', 'host_load5', 'host_load15',
               'host_disk_read_mb_s', 'host_disk_write_mb_s', 'host_disk_await_ms',
-              'host_collector_source', 'host_error')
+              'host_collector_source', 'host_error', 'host_services_count',
+              'host_services_running', 'host_services_abnormal')
 
 
 def _ts_to_epoch(raw):
@@ -1522,8 +1538,8 @@ def _build_nodes(snap):
                 worst_tbs = fp
         nodes.append({
             'id': iid, 'name': s['name'], 'db_type': s['db_type'],
-            'group': s['group'], 'host': s['host'], 'port': s['port'],
-            'label': s['label'], 'status': s['status'], 'err': s.get('err'),
+            'group': s.get('group') or 'default', 'host': s['host'], 'port': s['port'],
+            'label': s['label'], 'status': s['status'], 'err': s.get('err') or s.get('conn_err'),
             'conn': s.get('conn'), 'slowq': s.get('slowq', 0),
             'qps': s.get('qps'), 'tps': s.get('tps'),
             'cache_hit_pct': s.get('cache_hit_pct'),
@@ -1669,12 +1685,20 @@ def assemble_overview(nodes, collector, trend=None):
     }
 
 
-def build_overview(collector):
-    """把采样器快照装配成大屏一次请求所需的全部数据（实时）。"""
+def filter_group_snapshot(snapshot, group):
+    if not group:
+        return snapshot
+    return {iid: sample for iid, sample in snapshot.items()
+            if (sample.get('group') or 'default') == group}
+
+
+def build_overview(collector, group=None):
+    """Build KPIs, alerts, trends and topology from the same group scope."""
     snap = collector.get_snapshot()
-    nodes = _build_nodes(snap)
-    overview = assemble_overview(nodes, collector)
+    nodes = _build_nodes(filter_group_snapshot(snap, group))
+    overview = assemble_overview(nodes, collector, trend=collector.get_trend(group) if group else None)
     overview['thresholds'] = collector.get_thresholds()
+    overview['all_groups'] = sorted({sample.get('group') or 'default' for sample in snap.values()})
     return overview
 
 
@@ -1699,7 +1723,7 @@ def _node_from_history_sample(s):
         spark = []
     return {
         'id': s['iid'], 'name': s['iid'], 'db_type': s.get('db_type'),
-        'group': s.get('grp'), 'host': '', 'port': '', 'label': s['iid'],
+        'group': s.get('grp') or 'default', 'host': '', 'port': '', 'label': s['iid'],
         'status': s.get('status'), 'err': None,
         'conn': conn, 'slowq': s.get('slowq', 0),
         'qps': s.get('qps'), 'tps': s.get('tps'),
@@ -1711,7 +1735,7 @@ def _node_from_history_sample(s):
     }
 
 
-def build_history_overview(from_ts, to_ts, at_ts):
+def build_history_overview(from_ts, to_ts, at_ts, group=None):
     """历史回放：在 [from_ts, to_ts] 内，按 at_ts 时间点（取 ≤at 的最新样本，
     若无则取区间内最早样本）重建各实例状态，装配为与实时同构的 overview。"""
     hs = history_store.get_history_store()
@@ -1729,17 +1753,17 @@ def build_history_overview(from_ts, to_ts, at_ts):
     chosen = []
     for iid in set(list(best.keys()) + list(earliest.keys())):
         chosen.append(best.get(iid) or earliest.get(iid))
-    nodes = [_node_from_history_sample(c) for c in chosen if c]
+    nodes = [_node_from_history_sample(sample) for sample in chosen
+             if not group or (sample.get('grp') or 'default') == group]
 
-    # 身份字段（name/label/host/port/group/ssh）属敏感白名单之外，不入历史库；
-    # 回放时从实时快照按 iid 关联补全，保证拓扑分组/卡片命名与实时一致。
+    # 身份字段从实时快照补全，分组沿用采样时保存的值。
     collector = get_screen_collector()
     live = collector.get_snapshot() if collector else {}
     for n in nodes:
         s0 = live.get(n['id'])
         if not s0:
             continue   # 实例已删除：回退为 iid 展示
-        for k in ('name', 'label', 'host', 'port', 'group', 'ssh'):
+        for k in ('name', 'label', 'host', 'port', 'ssh'):
             v = s0.get(k)
             if v not in (None, ''):
                 n[k] = v
@@ -1747,11 +1771,15 @@ def build_history_overview(from_ts, to_ts, at_ts):
     # 历史趋势：按 ts 桶聚合全实例 qps 之和
     agg = {}
     for s in samples:
+        if group and (s.get('grp') or 'default') != group:
+            continue
         k = round(s['ts'])
         agg[k] = agg.get(k, 0) + (s.get('qps') or 0)
     trend = [{'ts': t, 'qps': round(agg[t], 1)} for t in sorted(agg)]
 
-    return assemble_overview(nodes, collector, trend=trend)
+    overview = assemble_overview(nodes, collector, trend=trend)
+    overview['all_groups'] = hs.groups_in_range(from_ts, to_ts)
+    return overview
 
 # ═══════════════════════════════════════════════════════════
 #  全局单例

@@ -57,10 +57,11 @@ CONNECT_TIMEOUT = 3            # 连接超时（秒）
 # JVM 类型（oracle_jdbc / uxdb_jdbc）：依赖 JPype 在进程内启动 JVM。
 # 这类连接**绝不能在 gevent monkey-patch 的主进程内执行**（会冻结 hub → 整个界面卡死），
 # 必须隔离到干净子进程（modules/jdbc_metrics_cli.py）执行，与测试连接/巡检同源。
-JVM_METRICS_DB_TYPES = ('oracle_jdbc', 'uxdb_jdbc')
+JVM_METRICS_DB_TYPES = ('oracle_jdbc', 'uxdb', 'uxdb_jdbc')
+SQLSERVER_TYPES = frozenset({'sqlserver', 'sqlserver_jdbc', 'mssql'})
 from modules.core.paths import PORTABLE_ROOT
 if PORTABLE_ROOT is not None:
-    JVM_METRICS_DB_TYPES += ('oracle','sqlserver','dm')
+    JVM_METRICS_DB_TYPES += ('oracle', 'dm')
 
 # 子进程采集硬超时（秒）。Oracle thin 驱动连接不可达主机可能阻塞较久，超时就丢本轮。
 METRICS_SUBPROC_TIMEOUT = 50
@@ -98,7 +99,7 @@ COUNTER_KEYS = {
                   'mssql_batch_requests', 'mssql_transactions'},
     'mssql':   {'io_read_count', 'io_write_count', 'io_read_bytes', 'io_write_bytes',
                 'mssql_batch_requests', 'mssql_transactions'},
-    # sqlserver_jdbc 与 sqlserver 同协议同指标口径（pyodbc 直连，见 _connect）
+    # sqlserver_jdbc 与 sqlserver 同协议同指标口径（连接策略见 _connect）
     'sqlserver_jdbc': {'io_read_count', 'io_write_count', 'io_read_bytes', 'io_write_bytes',
                        'mssql_batch_requests', 'mssql_transactions'},
     # MongoDB 计数器（来自 serverStatus）：opcounters / 连接 / 网络 / 全局锁
@@ -396,10 +397,37 @@ class MetricsCollector:
         self._cooldown = {}    # instance_id -> 退避截止时间戳
         self._lock = threading.Lock()
 
+    @staticmethod
+    def _jdbc_metrics_driver(inst, db_type):
+        if db_type in SQLSERVER_TYPES:
+            return monitor_jdbc_driver(inst, 'sqlserver')
+        if db_type in POSTGRESQL_TYPES:
+            return monitor_jdbc_driver(inst, 'pg')
+        return None
+
     # ── 连接 ──
     def _connect(self, inst: dict):
         """返回底层 DBAPI 连接；不支持深采的类型返回 None。"""
         db_type = str(inst.get('db_type') or '').lower()
+
+        driver = self._jdbc_metrics_driver(inst, db_type)
+        if driver:
+            from modules.monitor.jdbc_collect_cli import open_monitor_jdbc
+            from modules.ssh import prepare_db_endpoint
+
+            options, tunnel = prepare_db_endpoint(connection_profile(inst))
+            try:
+                conn, metadata = open_monitor_jdbc(driver, options)
+                if conn is None:
+                    raise ValueError(metadata.get('error') or 'JDBC 连接失败')
+                if tunnel is not None:
+                    from modules.db_types.compatibility import TunnelConnection
+                    return TunnelConnection(conn, tunnel)
+                return conn
+            except BaseException:
+                if tunnel is not None:
+                    tunnel.close()
+                raise
 
         # SSH 隧道：本采集器此前只把 SSH 用于「主机指标」（_resolve_ssh），
         # 数据库连接始终按 host/port 直连。于是「经 SSH 隧道」的实例在实时
@@ -438,18 +466,6 @@ class MetricsCollector:
                                    password=password, database=db_name,
                                    connect_timeout=CONNECT_TIMEOUT,
                                    read_timeout=t, write_timeout=t)
-        if db_type in POSTGRESQL_TYPES and monitor_jdbc_driver(inst, 'pg'):
-            from modules.jdbc_connector import open_jdbc_connection
-
-            conn, metadata = open_jdbc_connection(
-                'pg', host, port, user, password,
-                database=inst.get('database') or POSTGRESQL_DEFAULT_DATABASE,
-                driver_version=inst['driver_version'],
-                jdbc_url=inst.get('jdbc_url'),
-            )
-            if conn is None:
-                raise ValueError(metadata.get('error') or 'PostgreSQL JDBC 连接失败')
-            return conn
         if db_type in ('postgresql', 'pg', 'ivorysql', 'kingbase', 'halodb', 'vastbase'):
             import psycopg2
             dbname = inst.get('database') or (
@@ -459,7 +475,7 @@ class MetricsCollector:
                                     password=password, dbname=dbname,
                                     connect_timeout=CONNECT_TIMEOUT,
                                     options="-c statement_timeout=%d" % (t * 1000))
-        if PORTABLE_ROOT is not None and db_type in ('oracle','sqlserver','dm'):
+        if PORTABLE_ROOT is not None and db_type in ('oracle', 'dm'):
             from modules.core.portable import open_portable_connection
             return open_portable_connection(inst)
         if db_type == 'oracle_jdbc':
@@ -1374,6 +1390,43 @@ class MetricsCollector:
             self._rhs_sh_src = src
         return src
 
+    @staticmethod
+    def _run_host_script(client, command, script, timeout=12):
+        stdin, stdout, _ = client.exec_command(command, timeout=timeout)
+        channel = stdout.channel
+        try:
+            stdin.write(script)
+            stdin.flush()
+            channel.shutdown_write()
+            out, err = bytearray(), bytearray()
+            deadline = time.monotonic() + timeout
+            while True:
+                if time.monotonic() >= deadline:
+                    return _host_unavailable('远端宿主采集超时')
+                if channel.recv_ready():
+                    out.extend(channel.recv(4096))
+                    if len(out) > 256 * 1024:
+                        return _host_unavailable('远端宿主采集输出超限')
+                elif channel.recv_stderr_ready():
+                    chunk = channel.recv_stderr(4096)
+                    if len(err) < 1024:
+                        err.extend(chunk[:1024 - len(err)])
+                elif channel.exit_status_ready():
+                    break
+                else:
+                    time.sleep(0.025)
+
+            if channel.recv_exit_status() != 0 or not out:
+                error = err.decode('utf-8', errors='replace').strip()
+                return _host_unavailable(error[:200] or '远端宿主脚本未产出数据')
+            try:
+                data = json.loads(out.decode('utf-8-sig'))
+            except (ValueError, UnicodeError):
+                return _host_unavailable('远端宿主脚本输出非有效 JSON')
+            return data if isinstance(data, dict) else _host_unavailable('远端宿主脚本未返回 JSON 对象')
+        finally:
+            channel.close()
+
     def _collect_host_via_ssh(self, ssh: dict, inst: dict = None, max_retries: int = 2) -> dict:
         """SSH 到目标机，内联执行远端采集脚本，解析 JSON 返回。
 
@@ -1455,59 +1508,22 @@ class MetricsCollector:
                 )
                 # 按 ebpf_flag 选择要经 stdin 喂给远端的脚本（bootstrap 已按同标志选解释器）。
                 script_to_run = py_src if (ebpf_flag == '1') else sh_src
-                stdin, stdout, stderr = client.exec_command(bootstrap, timeout=20)
+                host = self._run_host_script(client, bootstrap, script_to_run)
+                if host.get('host_collector_source') not in (None, 'unavailable'):
+                    return host
+
+                from pathlib import Path
                 try:
-                    stdin.write(script_to_run)
-                except Exception:
-                    pass
-                try:
-                    # 关键：关闭写端，远端脚本才会读到 EOF 并结束。
-                    # 不要用 stdin.close()——部分 paramiko 版本 close() 不会 shutdown_write，
-                    # 导致远端 sh -s 永远读不到 EOF 而挂起 / 无输出（本 bug 的真实诱因之一）。
-                    stdin.channel.shutdown_write()
-                except Exception:
-                    pass
-                raw = b''
-                err = b''
-                ch = stdout.channel
-                try:
-                    ch.settimeout(12)
-                except Exception:
-                    pass
-                # 先收 stdout（直到 EOF）
-                try:
-                    while True:
-                        chunk = ch.recv(4096)
-                        if not chunk:
-                            break
-                        raw += chunk
-                except Exception:
-                    pass
-                # 再收 stderr（独立通道，带超时），拿到远端真实报错而非瞎猜
-                try:
-                    stderr.channel.settimeout(5)
-                    while True:
-                        e = stderr.channel.recv(4096)
-                        if not e:
-                            break
-                        err += e
-                except Exception:
-                    pass
-                raw = raw.decode('utf-8', errors='ignore').strip()
-                err_txt = err.decode('utf-8', errors='ignore').strip()
-                if not raw:
-                    print(f"[metrics] SSH 远端 {ssh['host']} 无任何 stdout 输出（远端脚本未产出 JSON）", flush=True)
-                    if err_txt:
-                        return _host_unavailable('远端脚本执行失败: ' + err_txt[:200])
-                    return _host_unavailable('远端脚本未产出任何 JSON（bash/sh 缺失或脚本未执行）')
-                try:
-                    data = json.loads(raw)
-                except Exception:
-                    detail = raw[:80]
-                    if err_txt:
-                        detail += ' | stderr: ' + err_txt[:80]
-                    return _host_unavailable('远端输出非合法 JSON: %s' % detail)
-                return data if isinstance(data, dict) else _host_unavailable('远端输出非 JSON 对象')
+                    windows_script = Path(__file__).with_name('remote_host_windows.ps1').read_text(encoding='ascii')
+                except OSError:
+                    return host
+                command = ('powershell.exe -NoLogo -NoProfile -NonInteractive -Command '
+                           '"[scriptblock]::Create([Console]::In.ReadToEnd()).Invoke()"')
+                windows = self._run_host_script(client, command, windows_script, timeout=15)
+                if windows.get('host_collector_source') == 'powershell':
+                    return windows
+                reason = windows.get('host_error') or '未返回 Windows 指标'
+                return _host_unavailable(f"{host.get('host_error') or 'POSIX 采集不可用'}；PowerShell: {reason}")
             except Exception as e:
                 last_err = e
                 msg = str(e)
@@ -1697,7 +1713,7 @@ class MetricsCollector:
 
         tunneled = bool(inst.get('ssh_tunnel'))
         isolated = (tunneled or db_type in JVM_METRICS_DB_TYPES
-                    or (db_type in POSTGRESQL_TYPES and monitor_jdbc_driver(inst, 'pg')))
+                    or self._jdbc_metrics_driver(inst, db_type))
         snapshot.update(available=False, latency_ms=None)
         if not tunneled:
             host, port, _ = resolve_db_endpoint(inst)

@@ -90,6 +90,33 @@ def _cell(v):
         return None
 
 
+def open_monitor_jdbc(db_type, options):
+    """Open the configured JDBC route from an isolated monitor worker."""
+    jdbc_url = (options.get('jdbc_url') or '').strip()
+    if db_type == 'oracle_jdbc' and jdbc_url.startswith('('):
+        jdbc_url = 'jdbc:oracle:thin:@' + jdbc_url
+    return open_jdbc_connection(
+        db_type,
+        options.get('host'),
+        int(options.get('port') or 0),
+        options.get('user') or '',
+        options.get('password') or '',
+        driver_version=options.get('driver_version') or '',
+        jdbc_url=jdbc_url or None,
+        database=options.get('database') or None,
+        service_name=options.get('service_name') or None,
+        sid=options.get('sid') or None,
+        instance_name=options.get('instance_name') if not options.get('_tunnel_ready') else None,
+        use_sid=bool(options.get('use_sid', False)),
+        gbase_server_name=options.get('gbase_server_name') or None,
+        encrypt=options.get('encrypt'),
+        trust_server_certificate=options.get('trust_server_certificate'),
+        # sys 用户必须以 SYSDBA 身份登录（与插件 connect 行为一致），
+        # 漏传 internal_logon 会导致 ORA-28009 / 连不上。
+        properties={'internal_logon': 'sysdba'} if options.get('sysdba') else None,
+    )
+
+
 def _query_batch(payload, options):
     """Collect SQL in one connection with bounded output for each query."""
     db_type = str(payload.get('db_type') or '').lower()
@@ -102,28 +129,7 @@ def _query_batch(payload, options):
         conn = MonitorEngine()._create_connection(
             options, options.get('password') or '', db_type, payload.get('timeout') or 15)
     else:
-        jdbc_url = (options.get('jdbc_url') or '').strip()
-        if db_type == 'oracle_jdbc' and jdbc_url.startswith('('):
-            jdbc_url = 'jdbc:oracle:thin:@' + jdbc_url
-        conn, meta = open_jdbc_connection(
-            db_type,
-            options.get('host'),
-            int(options.get('port') or 0),
-            options.get('user') or '',
-            options.get('password') or '',
-            driver_version=options.get('driver_version') or '',
-            jdbc_url=jdbc_url or None,
-            database=options.get('database') or None,
-            service_name=options.get('service_name') or None,
-            sid=options.get('sid') or None,
-            use_sid=bool(options.get('use_sid', False)),
-            gbase_server_name=options.get('gbase_server_name') or None,
-            encrypt=options.get('encrypt'),
-            trust_server_certificate=options.get('trust_server_certificate'),
-            # sys 用户必须以 SYSDBA 身份登录（与插件 connect 行为一致），
-            # 漏传 internal_logon 会导致 ORA-28009 / 连不上。
-            properties={'internal_logon': 'sysdba'} if options.get('sysdba') else None,
-        )
+        conn, meta = open_monitor_jdbc(db_type, options)
         if conn is None:
             err = (meta or {}).get('error') or 'JDBC 连接失败'
             return {'q%d' % i: {'rows': [], 'error': err} for i in range(len(queries))}

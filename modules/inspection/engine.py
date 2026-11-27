@@ -24,6 +24,7 @@
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 from modules.core.paths import PROJECT_ROOT
+from modules.inspection.dal import InspectionTemplateUnavailableError, require_template_db
 import os
 import sys
 import sqlite3
@@ -760,9 +761,10 @@ class BaseInspectionEngine:
             match = re.search(r'(\d+)\.\d+|(?:Oracle.*?)(\d+)g', version, re.I)
             if match:
                 major = int(match.group(1) or match.group(2))
-        template = get_default_template(self.db_type, db_version_major=major)
+        db_path = require_template_db()
+        template = get_default_template(self.db_type, db_path=db_path, db_version_major=major)
         if not template:
-            rows = get_templates_by_db_type(self.db_type, include_family=True)
+            rows = get_templates_by_db_type(self.db_type, db_path=db_path, include_family=True)
             template = rows[0] if rows else None
         return template['id'] if template else None
 
@@ -967,7 +969,7 @@ class BaseInspectionEngine:
         if _iid:
             print(f"[INFO] 实例基线绑定: {_iid}")
 
-        if self._template_id is None:
+        if self._template_id is None and not sql_templates:
             self._template_id = self.get_template_id()
 
         from modules.inspection.sql_safety import guarded_connection
@@ -976,13 +978,11 @@ class BaseInspectionEngine:
         # 2. 加载 SQL 模板（从 inspection.db 或内置）
         sql_dict = {}  # {query_key: sql_text}
         cfg = None     # 兼容 configparser（仅当 sql_templates 非空时使用）
+        conn_db = None
         try:
             if not sql_templates or sql_templates == '':
                 # 从 inspection.db 加载查询，直接用 dict 存储，避免 configparser 解析问题
-                _db_path = os.path.join(str(PROJECT_ROOT), 'data', 'inspection.db')
-                if not os.path.exists(_db_path):
-                    print(self._t(f'{self.db_type}_sql_template_fail', default='dm8_sql_template_fail').format(e="inspection.db 不存在"))
-                    return self.context
+                _db_path = require_template_db()
 
                 import sqlite3
                 conn_db = sqlite3.connect(_db_path)
@@ -1058,15 +1058,19 @@ class BaseInspectionEngine:
                             except Exception:
                                 pass
                         sql_dict[name] = sql_clean
-                conn_db.close()
             else:
                 # 兼容模式：外部传入 INI 字符串时用 configparser
                 cfg = configparser.RawConfigParser()
                 cfg.read_string(sql_templates)
-        except Exception as e:
-            print(self._t(f'{self.db_type}_sql_template_fail', default='dm8_sql_template_fail').format(e=e))
-            import traceback; traceback.print_exc()
-            return self.context
+        except InspectionTemplateUnavailableError:
+            raise
+        except Exception as error:
+            raise InspectionTemplateUnavailableError(f'加载巡检 SQL 模板失败: {error}') from error
+        finally:
+            if conn_db is not None:
+                conn_db.close()
+        if not (cfg.sections() if cfg is not None else sql_dict):
+            raise InspectionTemplateUnavailableError('巡检模板或所选章节没有可执行的查询')
 
         # 2.5 子类 SQL 定制钩子（如 TiDB 覆盖 MySQL 不兼容的查询）
         self._customize_queries(sql_dict)
@@ -1486,7 +1490,7 @@ class BaseInspectionEngine:
     def _load_chapters_from_db(self):
         """从 inspection.db 加载章节结构"""
         try:
-            _db_path = os.path.join(str(PROJECT_ROOT), 'data', 'inspection.db')
+            _db_path = require_template_db()
             if not os.path.exists(_db_path):
                 return []
             

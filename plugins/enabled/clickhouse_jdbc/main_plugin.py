@@ -660,10 +660,8 @@ class ClickHouseJdbcInspector(BaseInspectionEngine):
         """从 inspection.db 加载本插件模板章节，并把每个 query_sql 执行结果
         存入 context[query_key]（与 _collect_* 同键时跳过，避免重复执行）。
         """
-        db_path = os.path.join(_PROJECT_ROOT, 'data', 'inspection.db')
-        if not os.path.exists(db_path):
-            self.context['_chapters'] = []
-            return
+        from modules.inspection.dal import require_template_db
+        db_path = require_template_db()
         import sqlite3
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
@@ -794,11 +792,14 @@ class ClickHouseJdbcInspector(BaseInspectionEngine):
             }})
 
         # 报告章节（从 inspection.db 加载并执行模板 query）
+        from modules.inspection.dal import InspectionTemplateUnavailableError
+
         try:
             self._load_chapters_from_db()
-        except Exception as e:
-            print(f"[ClickHouse] 加载章节失败: {e}")
-            self.context['_chapters'] = []
+        except InspectionTemplateUnavailableError:
+            raise
+        except Exception as error:
+            raise InspectionTemplateUnavailableError(f'加载巡检 SQL 模板失败: {error}') from error
 
         # 基线检查（ClickHouse 基线已注册到 inspection.db）
         try:

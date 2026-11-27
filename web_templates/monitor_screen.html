@@ -527,6 +527,9 @@ Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
     <div class="kpi acc"><div class="v" id="k-tps">–</div><div class="l">{{ S.k_tps }}</div></div>
     <span id="hist-badge">{{ S.hist_ns }}</span>
   </div>
+  <select id="dashboard-group" aria-label="{{ '数据源分组' if is_zh else 'Data source group' }}" onchange="setDashboardGroup(this.value)">
+    <option value="">{{ '全部分组' if is_zh else 'All groups' }}</option>
+  </select>
   <div id="clock">--:--:--</div>
   <div id="freshness" class="fresh" title="">–</div>
   <button id="btn-fs" onclick="toggleFs()">{{ S.btn_fs }}</button>
@@ -2051,6 +2054,7 @@ function setKpi(id, v){ document.getElementById(id).textContent = v; }
 
 /* ── 宿主资源面板 ── */
 function hostSrcMeta(src){
+  if (src === 'powershell') return {txt:'Windows', fg:'#60a5fa'};
   if (src === 'ebpf')        return { txt: S.host_src_ebpf,        fg: '#00C8A0' };
   if (src === 'psutil')      return { txt: S.host_src_psutil,      fg: '#38BDF8' };
   if (src === 'shell')       return { txt: S.host_src_shell,       fg: '#38BDF8' };
@@ -2091,6 +2095,39 @@ function hostVal(v){
    量纲不同，走独立右轴自适应，否则会被压成贴底直线。 */
 var HOST_SERIES_POINTS = 60;      // 30s 采样 × 60 点 ≈ 30 分钟（与 QPS 趋势 TREND_POINTS 同口径）
 var HOST_SERIES_RETRY_MS = 60000; // 历史回填兜底重试间隔
+var dashboardGroup = '';
+var overviewRevision = 0;
+
+function groupQuery() {
+  return dashboardGroup ? '&group=' + encodeURIComponent(dashboardGroup) : '';
+}
+
+function setDashboardGroup(group) {
+  dashboardGroup = group;
+  overviewRevision++;
+  closeDetail();
+  renderHostList([]);
+  hostSeries = {};
+  hostSeriesLastFetch = 0;
+  if (historyMode) loadHistory();
+  else {
+    poll();
+    fetchHostSeries(true);
+  }
+}
+
+function renderGroupOptions(groups) {
+  var select = document.getElementById('dashboard-group');
+  var choices = Array.from(new Set((groups || []).concat(dashboardGroup ? [dashboardGroup] : [])));
+  var current = Array.from(select.options).slice(1).map(function(option){ return option.value; });
+  if (JSON.stringify(current) !== JSON.stringify(choices)) {
+    while (select.options.length > 1) select.remove(1);
+    choices.forEach(function(group){ select.add(new Option(group, group)); });
+  }
+  select.value = dashboardGroup;
+}
+
+var hostSeriesRequest = 0;
 var hostSeriesLastFetch = 0;      // 上次发起回填的时刻（成功/失败都记，避免失败时每轮打接口）
 var hostSeries = {};              // { iid: [{ts,cpu,mem,swap,load1}] } 时间升序，ts 恒为 epoch 秒
 var hostRowEls = {};              // { iid: {row,nameEl,valEls,badgeEl,sparkEl,chart} } DOM 复用
@@ -2157,11 +2194,13 @@ function mergeHostPoint(node, ts){
 async function fetchHostSeries(force){
   if (!force && Date.now() - hostSeriesLastFetch < HOST_SERIES_RETRY_MS) return;
   hostSeriesLastFetch = Date.now();
+  var requestId = ++hostSeriesRequest;
+  var group = dashboardGroup;
   try {
-    var r = await fetch('/api/dashboard/host-series?limit=' + HOST_SERIES_POINTS);
+    var r = await fetch('/api/dashboard/host-series?limit=' + HOST_SERIES_POINTS + groupQuery());
     if (!r.ok) return;
     var d = await r.json();
-    if (!d || d.ok !== true) return;
+    if (!d || d.ok !== true || requestId !== hostSeriesRequest || dashboardGroup !== group || historyMode) return;
     var s = d.series || {};
     Object.keys(s).forEach(function(iid){
       var pts = (s[iid] || {}).points || [];
@@ -2176,7 +2215,12 @@ async function fetchHostSeries(force){
         return t > 0 ? { ts: t, cpu: p.cpu, mem: p.mem,
                          swap: p.swap, load1: p.load1 } : null;
       }).filter(function(p){ return p !== null; });
-      if (clean.length) hostSeries[iid] = clean.slice(-HOST_SERIES_POINTS);
+      if (clean.length) {
+        var points = new Map(clean.map(function(point){ return [point.ts, point]; }));
+        (hostSeries[iid] || []).forEach(function(point){ points.set(point.ts, point); });
+        hostSeries[iid] = Array.from(points.values()).sort(function(a,b){ return a.ts - b.ts; })
+          .slice(-HOST_SERIES_POINTS);
+      }
     });
     if (lastNodes.length) renderHostList(lastNodes);  // 回填后立即重绘，不必等下一轮轮询
   } catch (e) { /* 回填失败不阻塞实时渲染，60s 后由兜底逻辑重试 */ }
@@ -2312,6 +2356,11 @@ function renderHostList(nodes){
     // unavailable 时把具体原因放进悬浮提示（如「未配置 SSH：实例主机 X 非本机…」）
     var title = (h.host_collector_source === 'unavailable' && h.host_error)
       ? (S.host_src_unavailable + '：' + h.host_error) : m.txt;
+    if (h.host_collector_source === 'powershell' && h.host_services_count != null) {
+      title += ' · ' + {{ ('服务运行' if is_zh else 'Services running') | tojson }} + ': '
+        + (h.host_services_running || 0) + '/' + h.host_services_count + ' · '
+        + {{ ('异常' if is_zh else 'Abnormal') | tojson }} + ': ' + (h.host_services_abnormal || 0);
+    }
     if (slot.badgeEl){
       slot.badgeEl.textContent = m.txt;
       slot.badgeEl.style.color = m.fg;
@@ -2333,6 +2382,7 @@ function renderHostList(nodes){
 }
 
 function refresh(data){
+  renderGroupOptions(data.all_groups);
   var k = data.kpis || {};
   setKpi('k-online', (k.online || 0) + ' / ' + (k.total || 0));
   setKpi('k-warn', k.warn || 0);
@@ -2473,15 +2523,17 @@ function layoutCharts(){
 
 async function poll(){
   if (historyMode) return;   // 历史回放模式下停止实时轮询（退出时再恢复）
+  var revision = ++overviewRevision;
   try {
-    var r = await fetch('/api/dashboard/overview');
+    var r = await fetch('/api/dashboard/overview?' + groupQuery().slice(1));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     var data = await r.json();
     if (!data || data.ok !== true) throw new Error('bad payload');
+    if (revision !== overviewRevision || historyMode) return;
     hideError();
     refresh(data);
   } catch (e) {
-    showError(S.fetch_error);
+    if (revision === overviewRevision && !historyMode) showError(S.fetch_error);
   }
 }
 
@@ -2620,9 +2672,10 @@ function updateHistRangeLabel(){
 }
 
 function loadHistory(){
-  var url = '/api/dashboard/history/overview?from=' + histFrom + '&to=' + histTo + '&at=' + histAt;
+  var revision = ++overviewRevision;
+  var url = '/api/dashboard/history/overview?from=' + histFrom + '&to=' + histTo + '&at=' + histAt + groupQuery();
   fetch(url).then(function(r){ return r.json(); }).then(function(d){
-    if (!d || d.ok !== true) return;
+    if (!d || d.ok !== true || revision !== overviewRevision || !historyMode) return;
     refresh(d);                            // 复用实时渲染管线
   }).catch(function(){});
 }
