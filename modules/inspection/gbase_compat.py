@@ -341,9 +341,23 @@ def gbase8s_query_candidates(
     return [item for item in candidates if item]
 
 
+_GBASE8A_SYSTEM_SCHEMAS = "'information_schema','gbase','gclusterdb','performance_schema'"
+
+
 def adapt_gbase8a_sql(sql: object, version_text: object = '', key: str = '') -> str:
-    """GBase 8a 目前不需要版本号改写；保留入口供运行时统一调用。"""
-    return str(sql or '').strip().rstrip(';').strip()
+    """GBase 8a 版本无关的轻量改写；保留入口供运行时统一调用。"""
+    text = str(sql or '').strip().rstrip(';').strip()
+    # W06 汇总各库数据量时如果不排除系统库，会把 gbase/gclusterdb 的
+    # 内部表一起扫进来；老模板同样需要在运行时补上这个过滤条件。
+    if key == 'W06_schema_space' and 'TABLE_SCHEMA NOT IN' not in text.upper():
+        clause = 'TABLE_SCHEMA NOT IN (%s)' % _GBASE8A_SYSTEM_SCHEMAS
+        if re.search(r'\bWHERE\b', text, re.I):
+            text = re.sub(r'\bGROUP\s+BY\b', 'AND ' + clause + ' GROUP BY',
+                          text, count=1, flags=re.I)
+        else:
+            text = re.sub(r'\bGROUP\s+BY\b', 'WHERE ' + clause + ' GROUP BY',
+                          text, count=1, flags=re.I)
+    return text
 
 
 # ── 错误分类与“不适用”说明 ─────────────────────────────────────────────

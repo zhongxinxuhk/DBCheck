@@ -1021,6 +1021,7 @@ SELECT TABLE_SCHEMA, COUNT(*) AS table_count,
        SUM(TABLE_ROWS) AS total_rows,
        ROUND(SUM(DATA_LENGTH)/1024/1024, 2) AS data_mb
 FROM information_schema.TABLES
+WHERE TABLE_SCHEMA NOT IN ('information_schema','gbase','gclusterdb','performance_schema')
 GROUP BY TABLE_SCHEMA
 ORDER BY data_mb DESC"""),
     'W11': ('W11_schema_storage', '逻辑存储空间使用情况（按库汇总数据/索引占用）', """
