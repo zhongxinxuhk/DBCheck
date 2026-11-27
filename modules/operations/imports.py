@@ -478,5 +478,4 @@ class InventoryImport:
             for iid in created:
                 unown(iid)
             raise
-        inventory._refresh()
         return result

@@ -50,6 +50,7 @@ docker pull ghcr.io/zhongxinxuhk/dbpulse:latest
 
 ## 🌐 项目链接
 
+* **项目官网** [DBPulse](https://zhongxinxuhk.github.io/DBCheck/)
 * **仓库：** https://github.com/zhongxinxuhk/DBCheck
 * **发行版：** https://github.com/zhongxinxuhk/DBCheck/releases
 * **容器镜像：** `ghcr.io/zhongxinxuhk/dbpulse`

@@ -860,7 +860,6 @@ def inventory_grouping():
                 iid=iid,
                 db=db,
             )
-    inventory._refresh()
     return jsonify(ok=True, updated=len(set(ids)))
 
 
