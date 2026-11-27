@@ -174,6 +174,52 @@ Every Single Pull
 
 ---
 
+# 🏗️ System Architecture
+
+DBPulse runs as a modular monolith. The Web application handles access control and dispatches inspections for registered database types and monitoring queries to isolated processes.
+
+```mermaid
+flowchart TB
+    WEB["Web console and Flask API<br/>Access control · Data sources · Inventory · Inspection · Monitoring"]
+    SOURCE["Data source management and inventory"]
+    STORE[("instances.db<br/>Source records · Inventory · Transactional configuration revision")]
+    CHECK["Connection test"]
+    SCHED["APScheduler<br/>Cron · Run now · Cancel"]
+    JOBS[("scheduler_jobs.json")]
+    PROFILE["Shared connection profile<br/>Endpoint · Driver options · TLS policy · SSH forwarding"]
+    INSPECT["Isolated inspection process<br/>Inspection service · Rules · Word reports"]
+    MON["MonitorEngine and dashboard<br/>Configuration snapshots · Bounded concurrency"]
+    COLLECT["Isolated monitoring workers<br/>Native SQL · JDBC · MongoDB and Redis"]
+    TARGET[("Managed databases")]
+    REPORTS[("Word reports and inspection history")]
+    METRICS[("Monitoring history")]
+
+    WEB --> SOURCE
+    SOURCE <--> STORE
+    WEB --> CHECK
+    WEB -->|"Run manually"| PROFILE
+    WEB --> SCHED
+    SCHED <--> JOBS
+    SCHED -->|"Resolve source at execution time"| PROFILE
+    WEB -->|"Read monitoring snapshots"| MON
+    SOURCE -->|"Load saved connection settings"| PROFILE
+    CHECK -->|"Resolve driver options"| PROFILE
+    MON -->|"Resolve each round's configuration snapshot"| PROFILE
+    PROFILE -->|"Connection test"| TARGET
+    PROFILE -->|"Inspection"| INSPECT
+    PROFILE -->|"Monitoring"| COLLECT
+    INSPECT --> TARGET
+    COLLECT --> TARGET
+    INSPECT --> REPORTS
+    INSPECT -->|"Write eligible observations"| SOURCE
+    COLLECT -->|"Return samples"| MON
+    MON --> METRICS
+```
+
+Data source management and inventory share the same instance record. A source write and its configuration revision commit together. The monitoring dashboard reuses the engine's session and slow-query snapshots, and workers enforce a hard deadline and SQL result limits.
+
+---
+
 # 🗄️ Supported Databases
 
 DBPulse currently supports **22 database and data systems**.
@@ -360,37 +406,38 @@ DBPulse provides configuration-driven database inspection.
 
 The inspection engine collects database metadata, configuration, performance information, resource usage and security-related information, then evaluates them against inspection rules.
 
-Typical workflow:
+## Business Workflow
 
-```text
-Database
-   │
-   ├── Connection
-   │
-   ├── Metadata
-   │
-   ├── Configuration
-   │
-   ├── Performance
-   │
-   ├── Sessions
-   │
-   ├── Locks
-   │
-   ├── Storage
-   │
-   ├── Security
-   │
-   └── SQL
-          ↓
-    Inspection Engine
-          ↓
-     Risk Analysis
-          ↓
-    Recommendations
-          ↓
-      Word Report
+```mermaid
+flowchart TB
+    REGISTER["Register or update a data source<br/>Set credentials, TLS and SSH options"]
+    TEST["Test saved connection settings"]
+    PASS{"Connection test passed?"}
+    FIX["Review the connection error and update settings"]
+    CHOICE{"How will the inspection start?"}
+    MANUAL["Start a manual inspection"]
+    CRON["Bind a data source to a Cron job<br/>Wait for the scheduled time or run now"]
+    RESOLVE["Load the current data source configuration"]
+    INSPECT["Isolated inspection<br/>Collect · Evaluate rules · Generate report"]
+    SUCCESS{"Inspection completed?"}
+    FAIL["Record the failure and show the error"]
+    REPORT["Save the Word report and inspection history"]
+    SYNC["Write eligible observations to inventory<br/>Check source binding, task owner and permissions"]
+    MON["Monitor enabled data sources continuously<br/>Refresh dashboard from bounded worker results"]
+
+    REGISTER --> TEST --> PASS
+    PASS -->|"No"| FIX --> REGISTER
+    PASS -->|"Yes"| CHOICE
+    CHOICE -->|"Manual"| MANUAL --> RESOLVE
+    CHOICE -->|"Scheduled"| CRON --> RESOLVE
+    RESOLVE --> INSPECT --> SUCCESS
+    SUCCESS -->|"No"| FAIL
+    SUCCESS -->|"Yes"| REPORT --> SYNC
+    REGISTER -->|"Source enabled"| MON
 ```
+
+Monitoring runs on its own cadence. Scheduled jobs resolve their bound source when they start, so updates to saved connection settings apply to subsequent runs.
+
 
 ---
 
