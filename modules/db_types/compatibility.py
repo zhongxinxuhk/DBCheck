@@ -262,13 +262,27 @@ def connect_gbase8a(data):
             if not getattr(connection,'_ssl_required',False):
                 raise ValueError('当前驱动无法强制TLS，已在认证前阻断')
             connection.connect()
-        # In GBase 8a, the fixture's vc1 is a virtual cluster, not a schema.
+        # The legacy database field carries the optional virtual cluster for GBase 8a.
         vc = str(data.get('virtual_cluster') or data.get('database') or '').strip()
         if vc:
             if not re.fullmatch(r'[A-Za-z0-9_]+', vc):
                 raise ValueError('GBase 8a 虚拟集群名仅支持字母、数字和下划线')
-            with connection.cursor() as cur:
-                cur.execute('USE VC ' + vc)
+            try:
+                with connection.cursor() as cur:
+                    cur.execute('USE VC ' + vc)
+            except pymysql.MySQLError as error:
+                if error.args[:1] == (1816,):
+                    raise ValueError(
+                        f'GBase 8a 不识别虚拟集群 \'{vc}\'（错误 1816）。'
+                        '请在数据源或手动巡检表单中填写实际的虚拟集群名称；'
+                        '使用账号默认范围时可留空。'
+                    ) from error
+                if error.args[:1] == (1064,):
+                    raise ValueError(
+                        'GBase 8a 拒绝了切换虚拟集群的命令（错误 1064）。'
+                        '如果实例没有虚拟集群，请将虚拟集群字段留空。'
+                    ) from error
+                raise
         schema = data.get('schema')
         if schema:
             connection.select_db(schema)

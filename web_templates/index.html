@@ -7486,6 +7486,7 @@ function formatBytes(bytes) {
       function onDsDbTypeChange() {
         const sel = document.getElementById('ds-db-type');
         const dbType = sel.value;
+        const typeChanged = dbType !== _currentDbType;
         const opt = sel.options[sel.selectedIndex];
         // 优先从 data 属性读取（插件类型），其次用硬编码映射
         const defaultPort = opt?.getAttribute('data-port') || '';
@@ -7494,7 +7495,7 @@ function formatBytes(bytes) {
         const userMap = window.USER_MAP;
         document.getElementById('ds-port').value = (defaultPort && parseInt(defaultPort)) || portMap[dbType] || 3306;
         const userEl = document.getElementById('ds-user');
-        if (dbType !== _currentDbType || !userEl.value) {
+        if (typeChanged || !userEl.value) {
           // redis/redis-cluster 用户名默认空（仅 ACL 场景需要），不能用 || 回退到 root
           if (dbType === 'redis' || dbType === 'redis-cluster') {
             userEl.value = defaultUser || '';
@@ -7579,7 +7580,8 @@ function formatBytes(bytes) {
         var dbInput = document.getElementById('ds-database');
         if (dbInput) {
           var _ph = window.DB_PH_MAP;
-          dbInput.placeholder = dbType === 'gbase8a' ? '可选，例如 vc1' : (_ph[dbType] || 'mysql');
+          dbInput.placeholder = dbType === 'gbase8a' ? '留空使用账号默认范围' : (_ph[dbType] || 'mysql');
+          if (dbType === 'gbase8a' && typeChanged) dbInput.value = '';
           // OceanBase 不预填数据库名（仅为占位提示），由用户在 DBeaver 风格界面自行填写
           if (dbType === 'oceanbase' && !dbInput.value) dbInput.value = '';
         }
@@ -9142,7 +9144,7 @@ function wfCloseRunDrawer() {
               <input type="text" id="f-tenant" placeholder="例如 sys / test" data-page-node-id="Ep3hJG4EwiAk3bP5mEKL0D" />
             </div>
             <div class="field full" id="f-database-wrap" style="display:none" data-page-node-id="kQtvZhHP6pUMmBBnxAuNGN">
-              <label data-page-node-id="aGsL3vAk0UWpUdbegHafY4"><span data-i18n="webui.label_database" data-page-node-id="zNBZjquzf8SOcHKggsRjY8">连接数据库</span> <span class="opt" data-i18n="webui.label_database_opt" data-page-node-id="QUjvT3JDscEbEhkV6igLPV">PostgreSQL</span></label>
+              <label data-page-node-id="aGsL3vAk0UWpUdbegHafY4"><span data-i18n="webui.label_database" data-page-node-id="zNBZjquzf8SOcHKggsRjY8">连接数据库</span> <span class="opt" data-i18n="webui.label_database_opt" data-page-node-id="QUjvT3JDscEbEhkV6igLPV">PostgreSQL</span><span id="f-gbase8a-vc-label" hidden>虚拟集群（可选）</span></label>
               <input type="text" id="f-database" data-i18n="webui.placeholder_database" placeholder="默认 postgres" data-page-node-id="wvwEZxCzkJAfN0CUvdkTq1" />
             </div>
             <div class="field full" id="f-service-wrap" style="display:none" data-page-node-id="WXVnFvcnK28R0rV86KusLd">
@@ -15487,6 +15489,9 @@ async function onDatasourceChange() {
         document.getElementById('f-database').value = ds.database || 'sysmaster';
       }
       if (ds.db_type === 'gbase8a') {
+        const clusterField = document.getElementById('f-database');
+        clusterField.value = ds.database || '';
+        clusterField.readOnly = true;
         document.getElementById('f-gbase8a-ca').value = ds.tls_ca_file || '';
         document.getElementById('f-gbase8a-plaintext').checked = !!ds.gbase8a_allow_plaintext;
       }
@@ -15557,6 +15562,7 @@ function resetFormFromDatasource() {
     if (el) el.value = '';
   });
   document.getElementById('f-password').placeholder = '数据库密码';
+  document.getElementById('f-database').readOnly = false;
   document.getElementById('f-encrypt').checked = false;
   document.getElementById('f-trust-server-cert').checked = true;
   _inspSshPassword = '';
@@ -15573,6 +15579,7 @@ async function selectDbType(type, skipReload) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  document.getElementById('f-database').readOnly = false;
   // 密码不保留，让用户重新输入
   const pwdEl = document.getElementById('f-password');
   if (pwdEl) { pwdEl.value = ''; pwdEl.placeholder = '数据库密码'; }
@@ -15674,14 +15681,18 @@ async function selectDbType(type, skipReload) {
   const dbPlaceholderMap = Object.assign({}, defaultDbMap, { oceanbase: 'oceanbase' });
   var fDbEl = document.getElementById('f-database');
   if (fDbEl) {
-    fDbEl.placeholder = '默认 ' + (dbPlaceholderMap[type] || '');
+    fDbEl.placeholder = type === 'gbase8a' ? '留空使用账号默认范围' : '默认 ' + (dbPlaceholderMap[type] || '');
     if (defaultDbMap[type]) fDbEl.value = defaultDbMap[type];
   }
   // 更新数据库标签（去掉静态写死的 PostgreSQL）
+  const showVirtualCluster = type === 'gbase8a';
+  document.getElementById('f-gbase8a-vc-label').hidden = !showVirtualCluster;
+  document.querySelector('#f-database-wrap [data-i18n="webui.label_database"]').hidden = showVirtualCluster;
   var dbOptLabel = document.querySelector('#f-database-wrap .opt');
   if (dbOptLabel) {
     var labelMap = window.LABEL_MAP;
     dbOptLabel.textContent = labelMap[type] || '';
+    dbOptLabel.hidden = showVirtualCluster;
   }
 }
 
