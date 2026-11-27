@@ -143,6 +143,8 @@ def build_slow_source_catalog(instances, snapshots):
             if not iid or iid in seen:
                 continue
             snap = snapshots.get(iid) or {}
+            if snap.get('config_updated_at', inst.get('updated_at')) != inst.get('updated_at'):
+                snap = {}
             label = "%s (%s:%s)" % (
                 inst.get('name', iid),
                 inst.get('host', '?'),
@@ -198,7 +200,7 @@ def flatten_slow_queries(snapshots, sources):
         if not isinstance(snapshot, dict) or iid not in metadata:
             continue
         source = metadata[iid]
-        if source.get('error'):
+        if source.get('error') or source.get('collected') is False:
             continue
         label = source.get('source') or source.get('label') or snapshot.get('label', iid)
         for row in snapshot.get('data') or []:
@@ -392,6 +394,7 @@ class MonitorEngine:
                     label = f"{inst.get('name', iid)} ({inst.get('host', '?')}:{inst.get('port', '?')})"
                     new_slow[iid] = {
                         'data': [], 'error': reason,
+                        'config_updated_at': inst.get('updated_at'),
                         'ts': time.time(), 'db_type': db_type, 'label': label,
                     }
                     new_conn[iid] = {
@@ -405,6 +408,7 @@ class MonitorEngine:
 
                 db_type = entry['db_type']
                 label = entry['label']
+                entry['slow']['config_updated_at'] = inst.get('updated_at')
                 new_slow[iid] = entry['slow']
                 cn = entry['conn']
                 cn['config_updated_at'] = inst.get('updated_at')
@@ -826,6 +830,8 @@ class MonitorEngine:
         inst = im.get_instance_decrypted(instance_id)
         if not inst:
             raise ValueError(f"实例 {instance_id} 不存在")
+        if not inst.get('enabled', True):
+            raise ValueError(f"实例 {instance_id} 已停用")
 
         # 归一到模板键（oracle_jdbc→oracle、tdsqlc_mysql→mysql 等）再分派：
         # _create_connection 的 python 驱动分支按协议族分派（TDSQL-C 兼容 MySQL

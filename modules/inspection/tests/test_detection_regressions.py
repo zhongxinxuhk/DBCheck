@@ -10,6 +10,7 @@
 """
 
 import unittest
+from unittest.mock import patch
 
 from modules.inspection.analyzer import collect_issues
 from modules.intelligence.inspection_runner import _score
@@ -72,11 +73,13 @@ class DetectionRegressionTests(unittest.TestCase):
     def test_rule_fix_params_format_message(self):
         engine = RuleEngine()
         rules = {rule.get('id'): rule for rule in engine.get_enabled_rules('oracle')}
-        issue = engine._run_rule(
-            rules['oracle_sga_cache_hit_low'],
-            'oracle',
-            {'library_cache_hit_ratio': 74.42, '_lang': 'zh'},
-        )
+        with patch('modules.pro.rule_engine.load_thresholds',
+                   return_value={'db_oracle_buf_cache_warn_min_pct': 95.0}):
+            issue = engine._run_rule(
+                rules['oracle_sga_cache_hit_low'],
+                'oracle',
+                {'library_cache_hit_ratio': 74.42, '_lang': 'zh'},
+            )
         self.assertIsNotNone(issue)
         self.assertEqual(issue['col3'], '库缓存命中率 74.4%，SQL 重复解析开销大')
         self.assertNotIn('{', issue['col3'])

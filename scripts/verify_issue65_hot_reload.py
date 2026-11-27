@@ -16,6 +16,11 @@
 运行：python scripts/verify_issue65_hot_reload.py
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
+
 import json
 import os
 import sys
@@ -96,7 +101,7 @@ try:
     captured = {}
     orig_core = sch._run_inspection_core
 
-    def _capture(job_id, db_info, inspector_name, notify_on_done, handle=None):
+    def _capture(job_id, db_info, inspector_name, notify_on_done, handle=None, job_options=None):
         captured.update({'job_id': job_id, 'db_info': db_info,
                          'inspector_name': inspector_name,
                          'notify_on_done': notify_on_done})

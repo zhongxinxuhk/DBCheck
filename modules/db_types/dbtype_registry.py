@@ -9,6 +9,11 @@
 ``config_baseline`` 等主程序模块进行"读元数据 + 查表"，从而消除 ``elif`` 链与
 前端硬编码字典。本模块不依赖 ``web_ui``（避免循环导入），仅按需 ``import plugin_loader``。
 """
+
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import json
 import os
 from dataclasses import dataclass
@@ -142,6 +147,19 @@ def invalidate_cache() -> None:
     """在插件启用/禁用后调用，使缓存失效。"""
     global _ALL_CACHE
     _ALL_CACHE = None
+
+
+def inspection_type(source):
+    """Resolve the inspection driver from a saved or manually entered connection."""
+    from modules.core import paths
+
+    kind = (source.get('db_type') or 'mysql').strip().lower()
+    kind = {'dm8': 'dm', 'oracle_full': 'oracle', 'mssql': 'sqlserver'}.get(kind, kind)
+    if paths.PORTABLE_ROOT is not None:
+        return {'oracle': 'oracle_jdbc', 'sqlserver': 'sqlserver_jdbc'}.get(kind, kind)
+    if kind == 'sqlserver' and source.get('connection_mode') in {'jdbc', 'auto'}:
+        return 'sqlserver_jdbc'
+    return kind
 
 
 def get_db_meta(db_type: str) -> Optional[DBTypeMeta]:

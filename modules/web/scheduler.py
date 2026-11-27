@@ -17,7 +17,7 @@ DBCheck 定时调度模块
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 from modules.core.paths import PROJECT_ROOT
-import os, sys, json, datetime, threading, logging, time, signal
+import os, sys, json, datetime, threading, logging, time, signal, uuid
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -26,6 +26,7 @@ SCRIPT_DIR = str(PROJECT_ROOT)
 from modules.core import paths
 from modules.core import local_secrets
 from pathlib import Path
+from functools import wraps
 paths.ensure_migrated()
 
 CONFIG_FILE = str(paths.SCHEDULER_JOBS)
@@ -99,16 +100,11 @@ _INSPECTION_WATCHDOG_GRACE = int(_tuning_get('inspection', 'watchdog_grace'))
 _inspection_semaphore = threading.Semaphore(_INSPECTION_MAX_CONCURRENT)
 _inspection_jvm_semaphore = threading.Semaphore(_INSPECTION_JVM_CONCURRENT)
 
-# 会拉起 JVM/JDBC 驱动的巡检类型：单独一个执行名额池
-_JVM_ISOLATED_DB_TYPES = frozenset({
-    'hgdb', 'db2', 'sqlserver_jdbc', 'oracle_jdbc', 'gbase', 'clickhouse',
-})
-
-
 def _inspection_gate(db_info):
-    """按数据库类型返回执行名额池：JVM 类独占一池，其余共用原生池。"""
-    db_type = str((db_info or {}).get('db_type') or '').strip().lower()
-    if db_type in _JVM_ISOLATED_DB_TYPES:
+    """JDBC 巡检与原生巡检使用独立的执行名额。"""
+    from modules.jdbc_inspection_cli import JVM_INSPECTION_DB_TYPES
+
+    if db_info.get('db_type') in JVM_INSPECTION_DB_TYPES:
         return _inspection_jvm_semaphore
     return _inspection_semaphore
 
@@ -166,10 +162,12 @@ _running_lock = threading.Lock()
 
 def _register_run(job_id):
     """登记一次正在执行的巡检，返回句柄"""
-    handle = _RunHandle(job_id)
     with _running_lock:
+        if job_id in _running_jobs:
+            return None
+        handle = _RunHandle(job_id)
         _running_jobs[job_id] = handle
-    return handle
+        return handle
 
 
 def _unregister_run(job_id):
@@ -192,6 +190,18 @@ def running_snapshot():
             for jid, h in _running_jobs.items()
         }
 
+
+
+_job_config_lock = threading.RLock()
+
+
+def _lock_job_config(method):
+    @wraps(method)
+    def locked(*args, **kwargs):
+        with _job_config_lock:
+            return method(*args, **kwargs)
+
+    return locked
 
 
 def _load_jobs():
@@ -220,6 +230,7 @@ def _save_jobs(jobs):
         os.replace(tmp, CONFIG_FILE)
     except Exception as e:
         logger.error('保存任务配置失败: %s', e)
+        raise
 
 
 def migrate_job_secrets():
@@ -340,15 +351,12 @@ def _kill_tree(proc):
             pass
 
 
-def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None):
-    """在干净子进程中执行 JVM 插件类型（hgdb / db2 / sqlserver_jdbc / oracle_jdbc）
-    的定时巡检，规避「进程内 JVM 与 gevent hub 死锁导致整个界面卡死」。
+def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None, job_options=None):
+    """复用手动巡检的隔离子进程入口。
 
     复用 ``modules/jdbc_inspection_cli.py``：该 CLI 在未被 gevent monkey-patch 的
     子进程里调用 ``app.run_inspection_task``，主进程（调度器线程）只负责 spawn、
     读取 stdout 结束行（__DBCHECK_INSP_DONE__）并取回 ``report_path`` 供通知使用。
-
-    本函数假定 ``db_info['db_type']`` 已在调用方确认属于 JVM 类型。
 
     中止支持（#64）：子进程句柄登记到 handle.proc，用户取消时由取消方调用
     _kill_tree 直接终止进程树；本函数读 stdout 时会因管道关闭而结束，感知到
@@ -356,38 +364,31 @@ def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None):
     """
     import subprocess as _sp
     from modules.jdbc_inspection_cli import (
-        JVM_INSPECTION_DB_TYPES, RESULT_PREFIX, DONE_PREFIX,
+        JVM_INSPECTION_DB_TYPES, DONE_PREFIX,
     )
 
-    db_type = db_info.get('db_type')
-    if db_type not in JVM_INSPECTION_DB_TYPES:
-        # 非 JVM 插件类型走原进程内路径（进程内无上下文可回传）
-        return _run_plugin_inspection(db_info, inspector_name, None), None
-
-    # 构造 jdbc_inspection_cli 期望的 db_info 字段（ip/port/user/password/database/name）
-    mapped = {
-        'ip': db_info.get('host') or db_info.get('ip') or '',
-        'port': int(db_info.get('port') or 0),
-        'user': db_info.get('user') or '',
-        'password': db_info.get('password') or '',
-        'database': db_info.get('database') or '',
-        'name': db_info.get('label') or db_info.get('name') or db_type or 'unknown',
-        'inspector_name': inspector_name,
-    }
-    for _k in ('connection_mode', 'jdbc_url', 'instance_name',
-               'encrypt', 'trust_server_certificate',
-               'ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_file',
-               'ssh_key_password', 'ssh_tunnel'):
-        if _k in db_info and db_info[_k] is not None:
-            mapped[_k] = db_info[_k]
-
+    db_type = db_info['db_type']
+    mapped = dict(db_info)
+    mapped.update(
+        ip=db_info.get('host') or db_info.get('ip') or '',
+        port=int(db_info.get('port') or 0),
+        name=db_info.get('label') or db_info.get('name') or db_type,
+        inspector_name=inspector_name,
+    )
+    job_options = job_options or {}
     payload = {
-        'task_id': 'sched-%s-%s' % (db_type, datetime.datetime.now().strftime('%Y%m%d%H%M%S')),
+        'task_id': 'sched-' + uuid.uuid4().hex,
         'db_type': db_type,
         'db_info': mapped,
         'inspector_name': inspector_name,
-        'template_id': None,
+        'template_id': job_options.get('template_id'),
         'chapter_ids': None,
+        'isolate_process': db_type not in JVM_INSPECTION_DB_TYPES,
+        'task_metadata': {
+            'datasource_id': db_info.get('datasource_id'),
+            'owner_user_id': job_options.get('owner_user_id'),
+            'owner_tenant_id': job_options.get('owner_tenant_id'),
+        },
     }
     raw = json.dumps(payload, ensure_ascii=True)
 
@@ -528,7 +529,37 @@ def _on_watchdog_timeout(job_id, db_type, state, guard, handle, gate):
     t.start()
 
 
-def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None):
+def _inspection_job_options(config):
+    return {key: config[key] for key in
+            ('template_id', 'owner_user_id', 'owner_tenant_id') if config.get(key) is not None}
+
+
+def _resolve_inspection_source(db_info, job_options=None):
+    from modules.db_types.dbtype_registry import inspection_type
+
+    datasource_id = db_info.get('datasource_id')
+    if datasource_id:
+        from modules.pro import get_instance_manager
+
+        owner = (job_options or {}).get('owner_user_id')
+        if owner is not None:
+            from modules.access import get_owner, get_principal, visible_to
+
+            actor = get_principal(owner)
+            if (actor is None or actor.tenant_id != job_options.get('owner_tenant_id')
+                    or not visible_to(actor, get_owner('instance', datasource_id))):
+                raise ValueError('任务归属用户已失效或无权访问数据源')
+        source = get_instance_manager().get_instance_decrypted(datasource_id)
+        if source is None:
+            raise ValueError('数据源不存在: ' + datasource_id)
+        if not source.get('enabled', True):
+            raise ValueError('数据源已停用: ' + datasource_id)
+        db_info = dict(source, datasource_id=datasource_id,
+                       label=source.get('name') or source.get('host'))
+    return dict(db_info, db_type=inspection_type(db_info))
+
+
+def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None, job_options=None):
     """
     并发巡检排除机制入口（在独立线程中运行）。
 
@@ -543,7 +574,14 @@ def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None
     中止支持（#64）：排队等待名额期间改为分段获取，收到取消信号立即退出；
     执行阶段由 _run_inspection_core 在阶段边界检查信号并抛出 InspectionCancelled。
     """
-    db_type = str((db_info or {}).get('db_type') or 'unknown')
+    try:
+        db_info = _resolve_inspection_source(db_info, job_options)
+    except Exception as error:
+        logger.error('[%s] 获取巡检数据源失败: %s', job_id, error)
+        if notify_on_done:
+            _send_notifications(job_id, db_info, None, error=str(error))
+        return
+    db_type = db_info['db_type']
     gate = _inspection_gate(db_info)
 
     # 排队等待：分段获取信号量，期间可被取消
@@ -585,7 +623,7 @@ def _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=None
     try:
         if handle is not None:
             handle.stage = 'running'
-        _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle)
+        _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle, job_options)
     except InspectionCancelled as ce:
         logger.info('[%s] 巡检已中止: %s', job_id, ce)
     finally:
@@ -606,7 +644,7 @@ def _check_cancelled(job_id, handle, stage):
         raise InspectionCancelled('在「%s」阶段被中止' % stage)
 
 
-def _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle=None):
+def _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle=None, job_options=None):
     """
     执行巡检并发送通知（在独立线程中运行）
 
@@ -622,24 +660,6 @@ def _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle
         run_oracle_full, run_dm, run_sqlserver, run_tidb,
         run_ivorysql, run_yashandb, run_gbase, run_kingbase
     )
-    from modules.notify import EmailNotifier, WebhookNotifier
-
-    # 如果指定了 datasource_id，从 Pro 模块获取完整连接信息（解密密码）
-    if db_info.get('datasource_id'):
-        try:
-            from modules.pro import get_instance_manager
-            im = get_instance_manager()
-            ds = im.get_instance_decrypted(db_info['datasource_id'])
-            if ds:
-                db_info = ds.copy()
-                db_info['label'] = db_info.get('name', db_info.get('host', ''))
-            else:
-                raise ValueError('数据源不存在: ' + db_info['datasource_id'])
-        except ImportError:
-            raise ValueError('Pro 模块未安装，无法使用数据源')
-        except Exception as e:
-            raise ValueError('获取数据源失败: ' + str(e))
-
     db_type = db_info.get('db_type', 'mysql')
     logger.info('[%s] 定时巡检开始: %s %s:%s', job_id, db_type,
                 db_info.get('host'), db_info.get('port'))
@@ -691,15 +711,13 @@ def _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle
             'kingbase': run_kingbase,
         }
 
-        # 分派优先级：JVM/JDBC 类型一律子进程隔离（最高优先级）。
-        # 背景：内置类型引擎 connect() 已统一走 JDBC（jaydebeapi/JVM），若在主进程
-        # （调度器线程，与 gevent hub 同进程）内启动 JVM，会与 hub 死锁 → 定时巡检
-        # 触发即整个界面卡死/HTTP 无响应（2026-08-20 实测：23:45 定时 ivorysql 巡检
-        # 触发后服务僵死）。与插件类型（hgdb/db2）同根因，统一走
-        # jdbc_inspection_cli 干净子进程，主进程只 spawn + 读 report_path。
+        # 已登记类型复用手动巡检执行链。JDBC 驱动在子进程里启动 JVM，
+        # 原生类型也沿用同一套连接参数、报告模板和台账关联。
+        from modules.db_types.dbtype_registry import get_db_meta
         from modules.jdbc_inspection_cli import JVM_INSPECTION_DB_TYPES
-        if db_type in JVM_INSPECTION_DB_TYPES:
-            _sub_ret = _run_plugin_inspection_subprocess(db_info, inspector_name, handle=handle)
+        if db_type in JVM_INSPECTION_DB_TYPES or get_db_meta(db_type) is not None:
+            _sub_ret = _run_plugin_inspection_subprocess(
+                db_info, inspector_name, handle=handle, job_options=job_options)
             if isinstance(_sub_ret, (tuple, list)):
                 report_file = _sub_ret[0] if _sub_ret else None
                 if len(_sub_ret) > 1:
@@ -719,7 +737,7 @@ def _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle
                 if isinstance(_aa, list):
                     notification_issues = [it for it in _aa if isinstance(it, dict)]
         elif db_type in runner_map:
-            # 非 JVM 内置类型（oracle=oracledb / sqlserver=pyodbc 原生驱动）主进程安全
+            # 兼容旧配置中仍能由内置运行器处理的未登记类型。
             # 中止检查点：原生驱动线程无法强杀，此处为调用前最后一道闸
             _check_cancelled(job_id, handle, '数据库采集')
             _runner_ret = runner_map[db_type](db_info, inspector_name, ssh_info)
@@ -730,7 +748,7 @@ def _run_inspection_core(job_id, db_info, inspector_name, notify_on_done, handle
             else:
                 report_file = _runner_ret
         else:
-            # 其余插件类型：JVM 依赖型已在上面拦截，此处仅原生驱动插件
+            # 兼容仍使用旧加载器的未登记插件。
             _check_cancelled(job_id, handle, '插件采集')
             report_file = _run_plugin_inspection(db_info, inspector_name, ssh_info)
 
@@ -1021,6 +1039,7 @@ class SchedulerManager:
         except Exception:
             return False
 
+    @_lock_job_config
     def reload_from_disk(self):
         """从配置文件整体重载任务配置。
 
@@ -1058,7 +1077,7 @@ class SchedulerManager:
         logger.info('调度配置已重载，受影响任务 %d 个', affected)
         return affected
     
-    def _job_func(self, job_id, db_info, inspector_name, notify_on_done):
+    def _job_func(self, job_id, db_info, inspector_name, notify_on_done, job_options=None):
         """任务执行函数（包装器）
 
         每次执行登记 _RunHandle，供「中止当前执行」使用（#64）。
@@ -1079,30 +1098,30 @@ class SchedulerManager:
                         db_info = _cfg.get('db_info', db_info)
                         inspector_name = _cfg.get('inspector_name', inspector_name)
                         notify_on_done = _cfg.get('notify_on_done', notify_on_done)
+                        job_options = _inspection_job_options(_cfg)
                         break
         except Exception as e:
             logger.warning('[%s] 配置热加载自检失败，按原配置继续: %s', job_id, e)
         # 防重复触发：已有执行句柄说明该任务正在跑，本次直接跳过
-        existing = get_run_handle(job_id)
-        if existing is not None:
+        handle = _register_run(job_id)
+        if handle is None:
             logger.info('[%s] 任务正在执行中，跳过本次触发（不重复启动巡检）', job_id)
             return
-        # 登记执行句柄：取消信号 + JVM 子进程句柄回填
-        handle = _register_run(job_id)
         # 在独立线程中运行，避免阻塞调度器
         t = threading.Thread(
             target=self._run_inspection_tracked,
-            args=(job_id, db_info, inspector_name, notify_on_done, handle),
+            args=(job_id, db_info, inspector_name, notify_on_done, handle, job_options),
             daemon=True
         )
         handle.thread = t
         t.start()
 
     @staticmethod
-    def _run_inspection_tracked(job_id, db_info, inspector_name, notify_on_done, handle):
+    def _run_inspection_tracked(job_id, db_info, inspector_name, notify_on_done, handle, job_options=None):
         """带登记的巡检执行包装：无论成功/失败/中止都从登记表摘除"""
         try:
-            _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=handle)
+            _run_inspection(job_id, db_info, inspector_name, notify_on_done, handle=handle,
+                            job_options=job_options)
         finally:
             _unregister_run(job_id)
     
@@ -1141,7 +1160,8 @@ class SchedulerManager:
         except Exception as e:
             logger.warning('清理孤儿定时任务失败: %s', e)
 
-    def add_job(self, config, restore=False):
+    @_lock_job_config
+    def add_job(self, config, restore=False, create_only=False):
         """
         添加定时任务
         
@@ -1162,9 +1182,6 @@ class SchedulerManager:
         job_id = config.get('id')
         if not job_id:
             return False
-
-        # 任务是否启用：禁用任务仅持久化配置，不加入调度器
-        enabled = config.get('enabled', True)
 
         # 构建 CronTrigger
         cron = config.get('cron', {})
@@ -1191,57 +1208,48 @@ class SchedulerManager:
             else:
                 trigger = CronTrigger(timezone=self.scheduler.timezone, **trigger_kwargs)
 
-            # 校验通过后再移除同 ID 的旧任务，避免非法配置挤掉已有任务
-            if self.scheduler.get_job(job_id):
-                self.scheduler.remove_job(job_id)
-
-            if enabled:
-                # ⚠️ APScheduler 3.x 的 job 主键参数是 id=，不是 job_id=。
-                # 传 job_id= 会被并入 **trigger_args 而静默丢弃（trigger 已是对象，
-                # _create_trigger 直接返回，trigger_args 根本不参与构造），
-                # 结果每个任务都拿到一个随机 UUID 作为真实 id：
-                #   · get_job(job_id) 永远 None → remove_job 从不执行 → 旧任务残留、
-                #     改配置不生效、禁用后仍按旧时间触发；
-                #   · replace_existing=True 因 id 每次都不同而变成"新增"；
-                #   · list_jobs 的 running 状态永远匹配不上。
-                # 历史 bug（#65）：定时任务「改了配置不生效」「禁用了还在跑」由此而来。
-                self.scheduler.add_job(
-                    func=self._job_func,
-                    trigger=trigger,
-                    id=job_id,
-                    args=[job_id, config['db_info'], config.get('inspector_name', 'DBCheck'),
-                          config.get('notify_on_done', True)],
-                    name=config.get('name', job_id),
-                    replace_existing=True
-                )
-                # 防御：确认任务确实以 job_id 注册成功（防止将来再次出现参数名写错而静默失效）
-                if not self.scheduler.get_job(job_id):
-                    logger.error('定时任务 %s 注册失败：调度器中未找到该 job_id', job_id)
-                    return False
-                logger.info('添加定时任务: %s (%s)', job_id, config.get('name', ''))
-            else:
-                logger.info('定时任务 %s 已禁用，仅保存配置', job_id)
-            
-            # 持久化（非恢复模式才保存）
+            previous_configs = None
             if not restore:
-                jobs = _load_jobs()
-                # 替换或追加
-                existing_idx = next((i for i, j in enumerate(jobs) if j['id'] == job_id), -1)
-                if existing_idx >= 0:
-                    jobs[existing_idx] = config
-                else:
+                previous_configs = _load_jobs()
+                existing = any(job['id'] == job_id for job in previous_configs)
+                if create_only and existing:
+                    return False
+                jobs = [config if job['id'] == job_id else job for job in previous_configs]
+                if not existing:
                     jobs.append(config)
                 _save_jobs(jobs)
 
-            # 清理历史遗留的孤儿 job（见 _prune_orphan_jobs 说明）。
-            # 必须在持久化之后执行：否则新任务尚未写入配置，会被当成孤儿误删。
+            try:
+                self._apply_schedule(config, trigger)
+            except Exception:
+                if previous_configs is not None:
+                    _save_jobs(previous_configs)
+                raise
             self._prune_orphan_jobs(extra_keep=job_id)
-
             return True
         except Exception as e:
             logger.error('添加任务失败 %s: %s', job_id, e)
             return False
-    
+
+    def _apply_schedule(self, config, trigger):
+        job_id = config['id']
+        if config.get('enabled', True):
+            self.scheduler.add_job(
+                func=self._job_func,
+                trigger=trigger,
+                id=job_id,
+                args=[job_id, config['db_info'], config.get('inspector_name', 'DBCheck'),
+                      config.get('notify_on_done', True), _inspection_job_options(config)],
+                name=config.get('name', job_id),
+                replace_existing=True,
+            )
+            logger.info('添加定时任务: %s (%s)', job_id, config.get('name', ''))
+        else:
+            if self.scheduler.get_job(job_id):
+                self.scheduler.remove_job(job_id)
+            logger.info('定时任务 %s 已禁用，仅保存配置', job_id)
+
+    @_lock_job_config
     def update_job(self, job_id, config):
         """
         更新已存在的定时任务配置
@@ -1270,12 +1278,14 @@ class SchedulerManager:
         old_db = old.get('db_info', {}) or {}
         new_db = dict(cfg.get('db_info', {}) or {})
         new_pwd = new_db.get('password')
-        if (not new_pwd or new_pwd == '***') and old_db.get('password'):
+        if (not new_db.get('datasource_id') and (not new_pwd or new_pwd == '***')
+                and old_db.get('password')):
             new_db['password'] = old_db['password']
         cfg['db_info'] = new_db
 
         return self.add_job(cfg)
 
+    @_lock_job_config
     def remove_job(self, job_id):
         """
         移除定时任务
@@ -1284,18 +1294,14 @@ class SchedulerManager:
             bool: 是否移除成功
         """
         try:
-            # 先尝试从调度器移除（任务可能已过期或被禁用）
+            jobs = _load_jobs()
+            remaining = [job for job in jobs if job['id'] != job_id]
+            if len(remaining) != len(jobs):
+                _save_jobs(remaining)
             if self.scheduler.get_job(job_id):
                 self.scheduler.remove_job(job_id)
-                logger.info('从调度器移除任务: %s', job_id)
-            
-            # 无论调度器里有没有，都从 JSON 里删除（避免遗留）
-            jobs = _load_jobs()
-            original_count = len(jobs)
-            jobs = [j for j in jobs if j['id'] != job_id]
-            if len(jobs) < original_count:
-                _save_jobs(jobs)
-                logger.info('从 JSON 删除任务: %s', job_id)
+            if len(remaining) != len(jobs):
+                logger.info('已删除定时任务: %s', job_id)
                 return True
             return False
         except Exception as e:
@@ -1324,9 +1330,10 @@ class SchedulerManager:
                 job_cfg['executing_started_at'] = _ex.get('started_at')
                 job_cfg['executing_stage'] = _ex.get('stage')
             # 隐藏敏感信息
-            if 'password' in job_cfg.get('db_info', {}):
-                job_cfg['db_info'] = dict(job_cfg['db_info'])
-                job_cfg['db_info']['password'] = '***'
+            job_cfg['db_info'] = dict(job_cfg.get('db_info') or {})
+            for field in ('password', 'ssh_password', 'ssh_key_password', 'jdbc_url'):
+                if job_cfg['db_info'].get(field):
+                    job_cfg['db_info'][field] = '***'
             # 如果使用了数据源，获取数据源名称用于显示
             if job_cfg.get('db_info', {}).get('datasource_id'):
                 ds_id = job_cfg['db_info']['datasource_id']
@@ -1345,6 +1352,7 @@ class SchedulerManager:
             result.append(job_cfg)
         return result
     
+    @_lock_job_config
     def toggle_job(self, job_id, enabled):
         """
         启用/禁用任务
@@ -1353,17 +1361,13 @@ class SchedulerManager:
             job_id: 任务ID
             enabled: True=启用, False=禁用
         """
+        if not enabled:
+            return self._disable_job(job_id)
         jobs = _load_jobs()
         for job_cfg in jobs:
             if job_cfg['id'] == job_id:
                 job_cfg['enabled'] = enabled
-                _save_jobs(jobs)
-                if enabled:
-                    self.add_job(job_cfg)
-                else:
-                    if self.scheduler.get_job(job_id):
-                        self.scheduler.remove_job(job_id)
-                return True
+                return self.add_job(job_cfg)
         return False
     
     def run_job_now(self, job_id):
@@ -1380,11 +1384,13 @@ class SchedulerManager:
                     job_id,
                     job_cfg['db_info'],
                     job_cfg.get('inspector_name', 'DBCheck'),
-                    job_cfg.get('notify_on_done', True)
+                    job_cfg.get('notify_on_done', True),
+                    _inspection_job_options(job_cfg),
                 )
                 return True
         return False
 
+    @_lock_job_config
     def _disable_job(self, job_id):
         """把任务置为禁用并从调度器摘除（持久化 enabled=false）。
 

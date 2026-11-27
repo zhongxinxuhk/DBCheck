@@ -97,3 +97,69 @@ def test_instance_manager_persists_plaintext_flag(isolated_paths):
     instance = reopened.get_instance_decrypted('gbase8a-plain')
     assert instance is not None
     assert int(instance['gbase8a_allow_plaintext']) == 1
+
+
+def test_scheduler_uses_latest_ledger_connection(isolated_paths, monkeypatch, fake_pymysql):
+    import json
+    import subprocess
+    from io import BytesIO
+
+    import modules.pro as pro
+    from modules.access import Principal
+    from modules.jdbc_inspection_cli import DONE_PREFIX
+    from modules.operations.inventory import Inventory
+    from modules.web import scheduler
+
+    manager = InstanceManager(str(isolated_paths))
+    assert manager.add_instance(DatabaseInstance(
+        id='scheduled-8a', name='集群', db_type='gbase8a', **_data()
+    ))['ok']
+    stale_manager = InstanceManager(str(isolated_paths))
+    stale_manager.get_instance('scheduled-8a')
+    inventory = Inventory(manager)
+    actor = Principal(id=2, tenant_id=1, roles=['operator'])
+    before = inventory.get('scheduled-8a')
+    updated = inventory.save(actor, {
+        'revision': before['revision'],
+        'source': {'gbase8a_allow_plaintext': True},
+    }, iid='scheduled-8a')
+    inventory.save(actor, {
+        'revision': updated['revision'],
+        'metadata': {'project_id': 'P1'},
+    }, iid='scheduled-8a')
+    assert manager.get_instance('scheduled-8a')['updated_at'] == updated['source']['updated_at']
+
+    # A data-source edit from another manager must preserve the latest ledger settings.
+    assert stale_manager.update_instance('scheduled-8a', {'name': '集群生产'})['ok']
+    monkeypatch.setattr(pro, 'get_instance_manager', lambda: manager)
+    assert scheduler._inspection_gate({'db_type': 'mysql'}) is scheduler._inspection_jvm_semaphore
+
+    proc = MagicMock()
+    proc.stdout = BytesIO((DONE_PREFIX + json.dumps({
+        'status': 'done', 'report_path': 'test.docx',
+    }) + '\n').encode())
+    proc.wait.return_value = 0
+    proc.poll.return_value = 0
+    spawn = MagicMock(return_value=proc)
+    monkeypatch.setattr(subprocess, 'Popen', spawn)
+    job = {'datasource_id': 'scheduled-8a'}
+    scheduler._run_inspection('test-job', job, 'DBA', False, job_options={'template_id': 42})
+
+    payload = json.loads(proc.stdin.write.call_args.args[0])
+    assert payload['db_type'] == 'gbase8a'
+    assert payload['isolate_process'] is True
+    assert payload['template_id'] == 42
+    assert payload['task_metadata']['datasource_id'] == 'scheduled-8a'
+    options = payload['db_info']
+    assert options['name'] == '集群生产'
+    assert options['ip'] == options['host'] == _data()['host']
+    assert options['gbase8a_allow_plaintext'] == 1
+    connect_gbase8a(options)
+    assert 'ssl' not in fake_pymysql.connect.call_args.kwargs
+
+    assert manager.update_instance('scheduled-8a', {
+        'enabled': False, 'gbase8a_allow_plaintext': 'false',
+    })['ok']
+    assert manager.get_instance('scheduled-8a')['gbase8a_allow_plaintext'] == 0
+    scheduler._run_inspection('test-job', job, 'DBA', False)
+    spawn.assert_called_once()

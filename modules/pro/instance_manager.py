@@ -382,20 +382,28 @@ class InstanceManager:
         self._instances: Dict[str, DatabaseInstance] = {}
         self._groups: Dict[str, InstanceGroup] = {}
         # 跨进程缓存失效依据：revision 戳文件（instances.db.rev / groups.db.rev）
-        # 每次本进程或通过本类写库都会使 rev +1，读取时比对即可感知外部进程（Web 端）
+        # 每次本进程或通过本类写库都会更新 rev，读取时比对即可感知外部进程（Web 端）
         # 的数据源改动。相比 mtime / 内容哈希 / SQLite data_version，rev 戳不受同秒写入、
         # 文件大小不变、SQLite 页复用、跨连接版本同步等边界影响，最可靠。
         self._instances_rev = 0
         self._groups_rev = 0
         # 低版本备份/升级前的库可能缺列，先补齐再加载，避免 SELECT/ORDER BY 失败。
+        has_instances_table = False
         if os.path.exists(self.instances_db):
             try:
                 with sqlite3.connect(self.instances_db) as instances:
+                    has_instances_table = instances.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='instances'"
+                    ).fetchone() is not None
                     self._ensure_instance_columns(instances)
             except sqlite3.Error as error:
                 # 修复失败不阻断启动；_load_data 仍会按原有兼容路径尝试读取。
                 print(f"[InstanceManager] 旧库列迁移跳过: {error}")
         self._load_data()
+        if not has_instances_table:
+            self._save_data()
+        elif not os.path.exists(self.groups_db):
+            self._save_groups()
 
         # 初始化数据库
         self._init_database()
@@ -435,7 +443,6 @@ class InstanceManager:
             return 0
         if changed:
             self._bump_rev(self.instances_db)
-            self._instances_rev = self._read_rev(self.instances_db)
             print(f"[InstanceManager] 已将 {changed} 条历史 jdbc_url 迁移为加密存储")
         return changed
 
@@ -482,6 +489,9 @@ class InstanceManager:
 
     def _load_data(self):
         """加载数据（优先从 SQLite，回退到 JSON 兼容旧数据）"""
+        instances_rev = self._read_rev(self.instances_db)
+        groups_rev = self._read_rev(self.groups_db)
+        loaded_from_sqlite = False
         # ── 加载实例 ──
         if os.path.exists(self.instances_db):
             try:
@@ -520,13 +530,14 @@ class InstanceManager:
                 # 整体替换（而非增量 merge）：反映 DB 中的「删除」——增量写法会让已删除
                 # 实例永久残留在内存，导致跨进程缓存失效后仍返回旧快照。
                 self._instances = loaded
+                loaded_from_sqlite = True
             except Exception:
                 pass
 
         # JSON 回退（兼容旧数据）
         # 注意：一旦从 instances.db 成功加载，立即把 instances.json 重命名为 .bak，
         # 防止 DB 损坏时旧数据回流，导致已删除实例"复活"。
-        if not self._instances and os.path.exists(self.instances_file):
+        if not loaded_from_sqlite and not self._instances and os.path.exists(self.instances_file):
             try:
                 with open(self.instances_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -540,7 +551,7 @@ class InstanceManager:
                         self._instances[inst.id] = inst
             except Exception:
                 pass
-        elif self._instances and os.path.exists(self.instances_file):
+        elif loaded_from_sqlite and os.path.exists(self.instances_file):
             # 已从 instances.db 成功加载，把旧 JSON 文件重命名为 .bak，避免回流
             try:
                 bak_file = self.instances_file + '.bak'
@@ -586,8 +597,9 @@ class InstanceManager:
             self._groups["test"] = InstanceGroup("test", "测试环境", "#639922")
 
         # ── 跨进程缓存失效依据：读取 rev 戳 ──
-        self._instances_rev = self._read_rev(self.instances_db)
-        self._groups_rev = self._read_rev(self.groups_db)
+        if loaded_from_sqlite or not os.path.exists(self.instances_db):
+            self._instances_rev = instances_rev
+        self._groups_rev = groups_rev
 
     # ── 跨进程缓存失效机制 ──────────────────────────────────
     @staticmethod
@@ -598,7 +610,7 @@ class InstanceManager:
     def _read_rev(db_path):
         """读取 revision 戳文件（instances.db.rev / groups.db.rev）。
 
-        每次本类写库都会使该值 +1，用于跨进程（Web / MCP 独立进程）感知数据源变更。
+        每次本类写库都会更新该值，用于跨进程（Web / MCP 独立进程）感知数据源变更。
         文件不存在或损坏返回 0。
         """
         try:
@@ -611,16 +623,20 @@ class InstanceManager:
         return 0
 
     def _bump_rev(self, db_path):
-        """原子地使 revision 戳 +1（写临时文件后 os.replace）。"""
+        """Atomically publish a unique revision after a committed write."""
+        from uuid import uuid4
+
+        p = self._rev_path(db_path)
+        revision = uuid4().int
+        tmp = f'{p}.{revision}.tmp'
         try:
-            p = self._rev_path(db_path)
-            v = self._read_rev(db_path) + 1
-            tmp = p + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                f.write(str(v))
+                f.write(str(revision))
             os.replace(tmp, p)
-        except Exception as e:
+        except OSError as e:
             print(f"[InstanceManager] 更新 revision 戳失败: {e}")
+            if os.path.exists(tmp):
+                os.unlink(tmp)
 
     def _ensure_instances_fresh(self):
         """惰性失效：若 instances.db 的 rev 戳被外部进程（Web 端改名 / 改类型 / 增删）
@@ -635,176 +651,50 @@ class InstanceManager:
         if cur != self._groups_rev:
             self._load_data()
 
-    def _save_data(self):
-        """保存数据到 SQLite（失败直接抛异常，不静默吞掉）"""
-        # ── 保存实例到 instances.db ──
-        conn = None
-        try:
-            conn = sqlite3.connect(self.instances_db)
-            c = conn.cursor()
-            # 迁移：为旧表添加 database 列
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "database" TEXT DEFAULT \'\'')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 gbase_server_name 列
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "gbase_server_name" TEXT DEFAULT \'\'')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 tenant 列（OceanBase 租户）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "tenant" TEXT DEFAULT \'\'')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 MongoDB 专用连接配置列
-            for col, coltype in (
-                ('connect_mode', 'TEXT'),
-                ('auth_source', 'TEXT'),
-                ('auth_mechanism', 'TEXT'),
-                ('replica_set', 'TEXT'),
-                ('tls', 'INTEGER'),
-                ('tls_ca_file', 'TEXT'),
-                ('tls_cert_key_file', 'TEXT'),
-                ('tls_allow_invalid_certs', 'INTEGER'),
-            ):
-                try:
-                    c.execute(f'ALTER TABLE instances ADD COLUMN "{col}" {coltype} DEFAULT \'\'')
-                except Exception:
-                    pass
-            # 迁移：为旧表添加 connection_mode 列（SQL Server 双轨路由）
-            # 默认 'odbc'，保证存量实例迁移后行为完全不变（向后兼容铁律）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "connection_mode" TEXT DEFAULT \'odbc\'')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 SQL Server JDBC TLS 参数列
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "encrypt" INTEGER DEFAULT 0')
-            except Exception:
-                pass
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "trust_server_certificate" INTEGER DEFAULT 1')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 driver_version 列（JDBC 驱动版本选择）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "driver_version" TEXT DEFAULT \'\'')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 use_sid 列（Oracle SID 格式连接开关）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "use_sid" INTEGER DEFAULT 0')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 ssh_key_password 列（SSH 私钥文件密码）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "ssh_key_password" TEXT DEFAULT \'\'')
-            except Exception:
-                pass
-            # 迁移：GBase 8a 明文直连开关（默认 0 = 直连继续强制 TLS CA 校验）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "gbase8a_allow_plaintext" INTEGER DEFAULT 0')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 jdbc_url 列（JDBC 完整连接串，Oracle JDBC 等优先于
-            # host/port/service_name；缺失会导致监控采集回退用车段字段重建 URL，
-            # 触发 issue #58 —— 大屏误报 Oracle 宕机）
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "jdbc_url" TEXT DEFAULT \'\'')
-            except Exception:
-                pass
-            # 迁移：为旧表添加 ssh_tunnel 列（是否经 SSH 隧道连接数据库）
-            # 默认 0 = 关闭：SSH 默认只承担系统信息采集，需要隧道连库时由用户显式开启。
-            try:
-                c.execute('ALTER TABLE instances ADD COLUMN "ssh_tunnel" INTEGER DEFAULT 0')
-            except Exception:
-                pass
-            # 确保表存在
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS instances (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL, db_type TEXT NOT NULL, host TEXT NOT NULL,
-                    port INTEGER NOT NULL, "user" TEXT NOT NULL,                 password TEXT DEFAULT '',
-                    "database" TEXT DEFAULT '',
-                    service_name TEXT DEFAULT '', gbase_server_name TEXT DEFAULT '', tenant TEXT DEFAULT '', sysdba INTEGER DEFAULT 0,
-                    connect_mode TEXT DEFAULT '', auth_source TEXT DEFAULT '', auth_mechanism TEXT DEFAULT '', replica_set TEXT DEFAULT '',
-                    tls INTEGER DEFAULT 0, tls_ca_file TEXT DEFAULT '', tls_cert_key_file TEXT DEFAULT '', tls_allow_invalid_certs INTEGER DEFAULT 0,
-                    gbase8a_allow_plaintext INTEGER DEFAULT 0,
-                    ssh_host TEXT DEFAULT '', ssh_port INTEGER DEFAULT 22,
-                    ssh_user TEXT DEFAULT '', ssh_password TEXT DEFAULT '',
-                    ssh_key_file TEXT DEFAULT '', ssh_key_password TEXT DEFAULT '', ssh_enabled INTEGER DEFAULT 0,
-                    ssh_tunnel INTEGER DEFAULT 0,
-                    tags TEXT DEFAULT '[]', "group" TEXT DEFAULT 'default',
-                    enabled INTEGER DEFAULT 1, description TEXT DEFAULT '',
-                    created_at TEXT DEFAULT '', updated_at TEXT DEFAULT '',
-                    connection_mode TEXT DEFAULT 'odbc',
-                    encrypt INTEGER DEFAULT 0,
-                    trust_server_certificate INTEGER DEFAULT 1,
-                    driver_version TEXT DEFAULT '', use_sid INTEGER DEFAULT 0,
-                    jdbc_url TEXT DEFAULT ''
-                )
-            """)
-            self._ensure_instance_columns(conn)
-            c.execute("DELETE FROM instances")
-            for inst in self._instances.values():
-                d = inst.to_dict() if not isinstance(inst, dict) else inst
-                c.execute("""
-                    INSERT OR REPLACE INTO instances
-                    (id, name, db_type, host, port, "user", password, "database", service_name, gbase_server_name, tenant, sysdba,
-                     connect_mode, auth_source, auth_mechanism, replica_set, tls, tls_ca_file, tls_cert_key_file, tls_allow_invalid_certs,
-                     gbase8a_allow_plaintext,
-                     ssh_host, ssh_port, ssh_user, ssh_password, ssh_key_file, ssh_key_password, ssh_enabled, ssh_tunnel,
-                     tags, "group", enabled, description, created_at, updated_at, connection_mode,
-                     encrypt, trust_server_certificate, use_sid, driver_version, jdbc_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    d.get("id", ""), d.get("name", ""), d.get("db_type", ""),
-                    d.get("host", ""), d.get("port", 0), d.get("user", ""),
-                    d.get("password", ""), d.get("database", ""), d.get("service_name", ""),
-                    d.get("gbase_server_name", ""), d.get("tenant", ""),
-                    1 if d.get("sysdba") else 0,
-                    d.get("connect_mode", ""),
-                    d.get("auth_source", ""),
-                    d.get("auth_mechanism", ""),
-                    d.get("replica_set", ""),
-                    1 if d.get("tls") else 0,
-                    d.get("tls_ca_file", ""),
-                    d.get("tls_cert_key_file", ""),
-                    1 if d.get("tls_allow_invalid_certs") else 0,
-                    1 if d.get("gbase8a_allow_plaintext") else 0,
-                    d.get("ssh_host", ""), d.get("ssh_port", 22),
-                    d.get("ssh_user", ""), d.get("ssh_password", ""),
-                    d.get("ssh_key_file", ""), d.get("ssh_key_password", ""), 1 if d.get("ssh_enabled") else 0,
-                    1 if d.get("ssh_tunnel", False) else 0,
-                    json.dumps(d.get("tags", []), ensure_ascii=False),
-                    d.get("group", "default"), 1 if d.get("enabled", True) else 0,
-                    d.get("description", ""), d.get("created_at", ""), d.get("updated_at", ""),
-                    # 空值归一化，避免存量空字符串导致路由拿到无效模式。
-                    # sqlserver_jdbc 类型语义即 JDBC，缺省必须归一为 'jdbc'，
-                    # 否则会被固化成 'odbc'，测试连接时错误走到 pyodbc 报错。
-                    (d.get("connection_mode")
-                     or ("jdbc" if d.get("db_type") == "sqlserver_jdbc" else "odbc")),
-                    1 if d.get("encrypt") else 0,
-                    1 if d.get("trust_server_certificate") else 0,
-                    1 if d.get("use_sid") else 0,
-                    d.get("driver_version", ""),
-                    _encrypt_jdbc_url(d.get("jdbc_url", "") or "")
-                ))
-            conn.commit()
-        except Exception as e:
-            print(f"[InstanceManager] 保存 instances.db 失败: {e}")
-            raise
-        finally:
-            if conn:
-                conn.close()
+    @staticmethod
+    def _instance_db_values(values):
+        values = dict(values)
+        if 'tags' in values:
+            values['tags'] = json.dumps(values['tags'], ensure_ascii=False)
+        if 'jdbc_url' in values:
+            values['jdbc_url'] = _encrypt_jdbc_url(values['jdbc_url'] or '')
+        return values
 
-        # ── 保存分组到 groups.db ──
-        conn = None
-        try:
-            conn = sqlite3.connect(self.groups_db)
-            c = conn.cursor()
-            c.execute("""
+    def _ensure_instances_table(self, conn):
+        conn.execute("CREATE TABLE IF NOT EXISTS instances (id TEXT PRIMARY KEY)")
+        self._ensure_instance_columns(conn)
+
+    def _insert_instance(self, conn, instance, *, migrate=False):
+        from modules.db_types.compatibility import plaintext_allowed
+
+        values = instance.to_dict()
+        values['gbase8a_allow_plaintext'] = plaintext_allowed(values['gbase8a_allow_plaintext'])
+        values['connection_mode'] = values['connection_mode'] or (
+            'jdbc' if values['db_type'] == 'sqlserver_jdbc' else 'odbc'
+        )
+        values = self._instance_db_values(values)
+        columns = ', '.join(f'"{name}"' for name in values)
+        placeholders = ', '.join('?' for _ in values)
+        verb = 'INSERT OR IGNORE' if migrate else 'INSERT'
+        conn.execute(f'{verb} INTO instances ({columns}) VALUES ({placeholders})',
+                     tuple(values.values()))
+
+    def _save_data(self):
+        """Bootstrap SQLite from the legacy in-memory data when needed."""
+        from contextlib import closing
+
+        with closing(sqlite3.connect(self.instances_db, timeout=30)) as conn, conn:
+            self._ensure_instances_table(conn)
+            for instance in self._instances.values():
+                self._insert_instance(conn, instance, migrate=True)
+        self._bump_rev(self.instances_db)
+        self._save_groups()
+
+    def _save_groups(self):
+        from contextlib import closing
+
+        with closing(sqlite3.connect(self.groups_db, timeout=30)) as conn, conn:
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS groups (
                     name TEXT PRIMARY KEY,
                     description TEXT DEFAULT '',
@@ -812,27 +702,12 @@ class InstanceManager:
                     created_at TEXT DEFAULT ''
                 )
             """)
-            c.execute("DELETE FROM groups")
-            for grp in self._groups.values():
-                d = grp.to_dict() if not isinstance(grp, dict) else grp
-                c.execute("""
-                    INSERT OR REPLACE INTO groups (name, description, color, created_at)
-                    VALUES (?, ?, ?, ?)
-                """, (d.get("name", ""), d.get("description", ""),
-                      d.get("color", "#378ADD"), d.get("created_at", "")))
-            conn.commit()
-        except Exception as e:
-            print(f"[InstanceManager] 保存 groups.db 失败: {e}")
-            raise
-        finally:
-            if conn:
-                conn.close()
-
-        # 本进程刚写库，原子推高 rev 戳并同步本进程记录，避免下次读取误判为外部变更而重复 reload
-        self._bump_rev(self.instances_db)
+            for group in self._groups.values():
+                conn.execute("""
+                    INSERT OR IGNORE INTO groups (name, description, color, created_at)
+                    VALUES (:name, :description, :color, :created_at)
+                """, group.to_dict())
         self._bump_rev(self.groups_db)
-        self._instances_rev = self._read_rev(self.instances_db)
-        self._groups_rev = self._read_rev(self.groups_db)
 
     def _ensure_instance_columns(self, conn):
         """为旧版备份/升级前的 instances 表补齐当前版本需要的列。
@@ -866,6 +741,7 @@ class InstanceManager:
             "tls_ca_file": "TEXT DEFAULT ''",
             "tls_cert_key_file": "TEXT DEFAULT ''",
             "tls_allow_invalid_certs": "INTEGER DEFAULT 0",
+            "seed_nodes": "TEXT DEFAULT ''",
             "gbase8a_allow_plaintext": "INTEGER DEFAULT 0",
             "ssh_host": "TEXT DEFAULT ''",
             "ssh_port": "INTEGER DEFAULT 22",
@@ -1361,9 +1237,11 @@ class InstanceManager:
 
             elif db_type == 'gbase8a':
                 from modules.entrypoints.main_gbase8a import GBase8aInspector
-                options=inst.to_dict()
-                options['ssh_password']=_decrypt_pwd(inst.ssh_password) if inst.ssh_password else ''
-                checker=GBase8aInspector(inst.host,inst.port,inst.user,password,inst.database,options)
+                options = self.get_instance_decrypted(instance_id)
+                if options is None:
+                    return {'ok': False, 'message': '实例不存在'}
+                checker = GBase8aInspector(options['host'], options['port'], options['user'],
+                                           options['password'], options.get('database'), options)
                 ok,version=checker.connect()
                 if checker.conn:checker.conn.close()
                 return {'ok':ok,'message':version}
@@ -1460,6 +1338,7 @@ class InstanceManager:
         """添加实例（密码自动加密）"""
         if not instance.id:
             instance.id = self._generate_id(instance.name, instance.db_type)
+        self._ensure_instances_fresh()
         if instance.id in self._instances:
             return {"ok": False, "message": "实例ID已存在"}
         if paths.PORTABLE_ROOT is not None:
@@ -1474,73 +1353,62 @@ class InstanceManager:
             instance.ssh_password = _encrypt_pwd(instance.ssh_password)
         if instance.ssh_key_password:
             instance.ssh_key_password = _encrypt_pwd(instance.ssh_key_password)
-        self._instances[instance.id] = instance
-        self._save_data()
+        from contextlib import closing
+
+        try:
+            with closing(sqlite3.connect(self.instances_db, timeout=30)) as conn, conn:
+                self._insert_instance(conn, instance)
+        except sqlite3.IntegrityError:
+            return {"ok": False, "message": "实例ID已存在"}
+        self._bump_rev(self.instances_db)
         return {"ok": True, "message": "实例添加成功", "instance_id": instance.id}
 
     def update_instance(self, instance_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """更新实例（密码变更时自动加密）"""
-        if instance_id not in self._instances:
-            return {"ok": False, "message": "实例不存在"}
-        instance = self._instances[instance_id]
+        from contextlib import closing
+        from modules.db_types.compatibility import plaintext_allowed
+
+        updates = {key: value for key, value in updates.items()
+                   if key in DatabaseInstance.__dataclass_fields__
+                   and key not in ('id', 'created_at', 'updated_at') and value is not None
+                   and (value != '' or key in ('ssh_host', 'ssh_user', 'ssh_key_file',
+                                                'tls_ca_file', 'tls_cert_key_file'))}
+        if 'gbase8a_allow_plaintext' in updates:
+            updates['gbase8a_allow_plaintext'] = plaintext_allowed(updates['gbase8a_allow_plaintext'])
         if paths.PORTABLE_ROOT is not None:
             from modules.core.portable import preserve_file_reference
-            updates = dict(updates)
-            for field in ('ssh_key_file','tls_ca_file','tls_cert_key_file'):
+            for field in ('ssh_key_file', 'tls_ca_file', 'tls_cert_key_file'):
                 if updates.get(field):
-                    updates[field] = preserve_file_reference(updates[field],field)
-        for key, value in updates.items():
-            if hasattr(instance, key):
-                # 空值跳过，保留原值（密码字段除外：空密码不保存）
-                if value is None:
-                    continue
-                if isinstance(value, str) and value == '' and key not in ('ssh_host', 'ssh_user', 'ssh_key_file'):
-                    continue
-                # 密码字段自动加密
-                if key in ('password', 'ssh_password', 'ssh_key_password') and value:
-                    value = _encrypt_pwd(value)
-                setattr(instance, key, value)
-        instance.updated_at = datetime.now().isoformat()
-        self._save_data()
+                    updates[field] = preserve_file_reference(updates[field], field)
+        for key in ('password', 'ssh_password', 'ssh_key_password'):
+            if updates.get(key):
+                updates[key] = _encrypt_pwd(updates[key])
+        updates['updated_at'] = datetime.now().isoformat()
+        values = self._instance_db_values(updates)
+        assignments = ', '.join(f'"{key}"=?' for key in values)
+        with closing(sqlite3.connect(self.instances_db, timeout=30)) as conn, conn:
+            result = conn.execute(f'UPDATE instances SET {assignments} WHERE id=?',
+                                  (*values.values(), instance_id))
+            if not result.rowcount:
+                return {"ok": False, "message": "实例不存在"}
+        self._bump_rev(self.instances_db)
         return {"ok": True, "message": "实例更新成功"}
 
     def delete_instance(self, instance_id: str) -> Dict[str, Any]:
         """删除实例，同时清理巡检历史和趋势数据；失败回滚，不静默部分成功"""
-        if instance_id not in self._instances:
-            return {"ok": False, "message": "实例不存在"}
+        from contextlib import closing
 
-        # 先备份，便于回滚
-        deleted_inst = self._instances[instance_id]
-
-        # 删除关联的巡检历史和趋势数据
-        hist_conn = None
-        try:
-            hist_conn = sqlite3.connect(self.db_file)
-            cursor = hist_conn.cursor()
-            cursor.execute("DELETE FROM inspection_history WHERE instance_id = ?", (instance_id,))
-            cursor.execute("DELETE FROM instance_trend WHERE instance_id = ?", (instance_id,))
-            hist_conn.commit()
-        except Exception as e:
-            print(f"[InstanceManager] 删除历史数据失败: {e}")
-            if hist_conn:
-                try: hist_conn.close()
-                except Exception: pass
-            raise RuntimeError(f"删除历史数据失败: {e}")
-        finally:
-            if hist_conn:
-                try: hist_conn.close()
-                except Exception: pass
-
-        # 从内存删除，并持久化到 DB
-        del self._instances[instance_id]
-        try:
-            self._save_data()
-        except Exception as e:
-            # 回滚：把实例加回内存（DB 写入失败，内存必须与 DB 一致）
-            self._instances[instance_id] = deleted_inst
-            print(f"[InstanceManager] 删除实例持久化失败，已回滚: {e}")
-            raise RuntimeError(f"删除实例持久化失败: {e}")
-
+        with closing(sqlite3.connect(self.instances_db, timeout=30)) as conn, conn:
+            conn.execute("ATTACH DATABASE ? AS history", (self.db_file,))
+            result = conn.execute("DELETE FROM instances WHERE id=?", (instance_id,))
+            if not result.rowcount:
+                return {"ok": False, "message": "实例不存在"}
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                            "AND name='operations_inventory'").fetchone():
+                conn.execute("DELETE FROM operations_inventory WHERE instance_id=?", (instance_id,))
+            conn.execute("DELETE FROM history.inspection_history WHERE instance_id=?", (instance_id,))
+            conn.execute("DELETE FROM history.instance_trend WHERE instance_id=?", (instance_id,))
+        self._bump_rev(self.instances_db)
         return {"ok": True, "message": "实例及历史数据删除成功"}
 
     def get_all_instances(self, mask_password: bool = True) -> List[Dict]:
@@ -1643,11 +1511,16 @@ class InstanceManager:
     # 分组管理
     def add_group(self, group: InstanceGroup) -> Dict[str, Any]:
         """添加分组"""
-        if group.name in self._groups:
-            return {"ok": False, "message": "分组已存在"}
+        from contextlib import closing
 
-        self._groups[group.name] = group
-        self._save_data()
+        with closing(sqlite3.connect(self.groups_db, timeout=30)) as conn, conn:
+            result = conn.execute("""
+                INSERT OR IGNORE INTO groups (name, description, color, created_at)
+                VALUES (:name, :description, :color, :created_at)
+            """, group.to_dict())
+            if not result.rowcount:
+                return {"ok": False, "message": "分组已存在"}
+        self._bump_rev(self.groups_db)
         return {"ok": True, "message": "分组添加成功"}
 
     def delete_group(self, group_name: str) -> Dict[str, Any]:
@@ -1655,14 +1528,17 @@ class InstanceManager:
         if group_name == "default":
             return {"ok": False, "message": "默认分组不能删除"}
 
+        self._ensure_groups_fresh()
         if group_name in self._groups:
-            # 将该分组的实例移到默认分组
-            for inst in self._instances.values():
-                if inst.group == group_name:
-                    inst.group = "default"
+            from contextlib import closing
 
-            del self._groups[group_name]
-            self._save_data()
+            with closing(sqlite3.connect(self.instances_db, timeout=30)) as conn, conn:
+                conn.execute("ATTACH DATABASE ? AS group_store", (self.groups_db,))
+                conn.execute('UPDATE instances SET "group"=?, updated_at=? WHERE "group"=?',
+                             ('default', datetime.now().isoformat(), group_name))
+                conn.execute('DELETE FROM group_store.groups WHERE name=?', (group_name,))
+            self._bump_rev(self.instances_db)
+            self._bump_rev(self.groups_db)
             return {"ok": True, "message": "分组删除成功"}
 
         return {"ok": False, "message": "分组不存在"}
