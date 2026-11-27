@@ -108,3 +108,27 @@ def test_gbase8a_connection_marks_existing_tunnel(monkeypatch):
     assert captured['port'] == 43210
     assert captured['_tunnel_ready'] is True
     assert captured['ssh_tunnel'] is False
+
+
+def test_background_queries_share_config_snapshot(monkeypatch):
+    engine = MonitorEngine()
+    source = {'id': 'gbase', 'db_type': 'gbase8a', 'host': 'db', 'updated_at': 'v1'}
+    calls = []
+
+    def query(config, sql):
+        calls.append((config, sql))
+        return []
+
+    monkeypatch.setattr(engine, 'run_snapshot_query', query)
+    monkeypatch.setattr('modules.monitor.engine.get_instance_manager',
+                        lambda: (_ for _ in ()).throw(AssertionError('per-query source reload')))
+    result = engine._collect_instance(source)
+
+    assert [sql for _, sql in calls] == [
+        queries.SLOW_QUERY_TEMPLATES['gbase8a'],
+        queries.CONNECTION_TEMPLATES['gbase8a'],
+        queries.MAX_CONN_QUERY_SQL['gbase8a'],
+    ]
+    assert all(config is source for config, _ in calls)
+    assert result['slow']['error'] is None
+    assert result['conn']['error'] is None

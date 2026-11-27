@@ -36,13 +36,19 @@ import time
 import json
 import os
 import threading
+import logging
 from datetime import datetime
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+
+from modules.core.parallel import RoundExecutor, round_budget
+from modules.core.runtime_tuning import get as tuning_get
 
 from modules.monitor.queries import normalize_db_type
 from modules.monitor import history_store  # 历史回放存储层（P2-4，仅非敏感白名单字段落库）
 from modules.monitor.native_collect import NATIVE_DB_TYPES, collect_native
+
+_log = logging.getLogger('dbcheck.monitor')
 
 # ═══════════════════════════════════════════════════════════
 #  db_type → family 归并
@@ -490,13 +496,8 @@ def _sanitize_rows(data, limit=_DRILL_MAX_ROWS):
 #  单实例采集：额外指标（QPS/TPS/缓存/容量/复制/锁）
 # ═══════════════════════════════════════════════════════════
 
-def collect_extra(engine, instance_id, db_type):
-    """采集 engine 之外的增量/容量/复制指标，返回 (counters, extras)。
-
-    counters: 累计量（供差值计算 QPS/TPS/命中率），结构随 family
-    extras:   即时指标 {'tbs': [...], 'repl_lag_s': int|None, 'lock_waits': int|None}
-    任一 SQL 失败对应项为 None，不影响其它项。
-    """
+def screen_sqls(db_type):
+    """Return the SQL used by the screen for the source's database type."""
     fam = db_family(db_type)
     sqls = SCREEN_SQLS.get(fam) if fam else None
     if sqls and normalize_db_type(db_type) == 'oceanbase':
@@ -509,6 +510,18 @@ def collect_extra(engine, instance_id, db_type):
         sqls = dict(sqls, stat=GBASE8A_STAT_SQL, tbs=GBASE8A_TBS_SQL)
         sqls.pop('repl', None)
         sqls.pop('repl8', None)
+    return sqls or {}
+
+
+def collect_extra(engine, instance_id, db_type, *, query=None):
+    """采集 engine 之外的增量/容量/复制指标，返回 (counters, extras)。
+
+    counters: 累计量（供差值计算 QPS/TPS/命中率），结构随 family
+    extras:   即时指标 {'tbs': [...], 'repl_lag_s': int|None, 'lock_waits': int|None}
+    任一 SQL 失败对应项为 None，不影响其它项。
+    """
+    fam = db_family(db_type)
+    sqls = screen_sqls(db_type)
     counters, extras = {}, {'tbs': None, 'repl_lag_s': None, 'lock_waits': None,
                             # RAC / ADG 身份与配对（仅 oracle family 填充，其余保持 None）
                             'role': None, 'db_unique_name': None, 'db_name': None,
@@ -518,11 +531,13 @@ def collect_extra(engine, instance_id, db_type):
     if not sqls:
         return counters, extras
 
+    query = query or partial(engine.run_query, instance_id)
+
     def q(key):
         if key not in sqls:
             return None
         try:
-            return engine.run_query(instance_id, sqls[key])
+            return query(sqls[key])
         except Exception as e:
             # stat（性能计数）查询失败不再静默：分类为权限提示码，
             # 由大屏前端转成可读文案（SQL Server 缺 VIEW SERVER STATE 最常见）。
@@ -858,6 +873,8 @@ class ScreenCollector:
 
     def __init__(self):
         self._lock = threading.Lock()
+        self._executor = RoundExecutor('screen')
+        self._round_lock = threading.Lock()
         self._running = False
         self._thread = None
         self._snap = {}      # iid → 快照 dict
@@ -962,9 +979,8 @@ class ScreenCollector:
             # 容量参数以 data/runtime_tuning.json / DBPULSE_MONITOR_* 为准；
             # 类属性仅作默认值，实例属性在此覆盖。
             try:
-                from modules.core.runtime_tuning import get as _tg
-                self.INTERVAL = int(_tg('monitor', 'screen_interval'))
-                self.MAX_WORKERS = int(_tg('monitor', 'screen_workers'))
+                self.INTERVAL = int(tuning_get('monitor', 'screen_interval'))
+                self.MAX_WORKERS = int(tuning_get('monitor', 'screen_workers'))
             except Exception:
                 pass
             self._running = True
@@ -983,19 +999,20 @@ class ScreenCollector:
         return self._running
 
     def _loop(self):
-        # 启动先采一轮（首采样只有 counters，无速率），再进入周期循环
-        while True:
-            t0 = time.time()
+        current = threading.current_thread()
+        while self._running and current is self._thread:
+            started = time.monotonic()
             try:
-                self._round()
-            except Exception as e:
-                print('[screen] 采集轮失败: %s' % e, flush=True)
-            dt = self.INTERVAL - (time.time() - t0)
-            end = time.time() + max(dt, 1)
-            while time.time() < end:
-                if not self._running:
-                    return
-                time.sleep(0.5)
+                with self._round_lock:
+                    if not self._running or current is not self._thread:
+                        return
+                    self._round()
+            except Exception:
+                _log.exception('大屏采集轮失败')
+            deadline = max(started + self.INTERVAL, time.monotonic() + 1)
+            while (self._running and current is self._thread
+                   and time.monotonic() < deadline):
+                time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
 
     # ── 单轮采集 ──
     def _round(self):
@@ -1011,16 +1028,7 @@ class ScreenCollector:
             print('[screen] 实例列表获取失败: %s' % e, flush=True)
             return
 
-        conn_data = {}
-        slow_data = {}
-        try:
-            conn_data = engine.get_connections()
-        except Exception:
-            pass
-        try:
-            slow_data = engine.get_slow_queries()
-        except Exception:
-            pass
+        conn_data, slow_data = engine.get_collection_snapshots()
 
         cur_ids = set(i['id'] for i in instances)
 
@@ -1035,28 +1043,40 @@ class ScreenCollector:
             ts0 = time.time()
             for inst in instances:
                 iid = inst['id']
-                if iid not in self._snap:
+                current = self._snap.get(iid)
+                if current is None or current.get('config_updated_at') != inst.get('updated_at'):
                     self._snap[iid] = self._pending_snap(inst, ts0)
+                    self._prev.pop(iid, None)
+                    self._spark.pop(iid, None)
 
         # ── 增量采集：每个实例一完成即写入快照（先快的后慢的，随轮询渐进显现）──
         def do_one(inst):
             return self._collect_one(engine, inst, conn_data, slow_data)
 
-        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as pool:
-            futures = {pool.submit(do_one, inst): inst for inst in instances}
-            for fut in as_completed(futures):
-                inst = futures[fut]
+        def publish(index, snap, error):
+            if error is not None:
+                snap = self._pending_snap(
+                    instances[index], time.time(), err='采集线程异常: %s' % error)
+            self._commit_snap(snap)
+            if snap.get('status') != 'pending':
                 try:
-                    snap = fut.result()
-                except Exception as e:
-                    snap = self._pending_snap(inst, time.time(), err='采集线程异常: %s' % e)
-                self._commit_snap(snap)
-                # 历史回放：白名单投影后异步落库（pending 占位无真实指标，跳过；不阻塞采集热路径）
-                if snap.get('status') != 'pending':
-                    try:
-                        history_store.get_history_store().write_snap(snap)
-                    except Exception as e:
-                        print('[screen] history write failed: %s' % e, flush=True)
+                    history_store.get_history_store().write_snap(snap)
+                except Exception as error:
+                    print('[screen] history write failed: %s' % error, flush=True)
+
+        budget = round_budget(len(instances), self.MAX_WORKERS,
+                              tuning_get('monitor', 'instance_timeout'))
+        started = time.monotonic()
+        results, errors, timed_out = self._executor.run(
+            instances, do_one, workers=self.MAX_WORKERS, round_timeout=budget,
+            key=lambda inst: inst['id'], on_done=publish,
+        )
+        for index in timed_out:
+            snap = self._pending_snap(instances[index], time.time(), err='采集超时')
+            self._commit_snap(snap)
+        _log.info('大屏采集：返回 %d/%d，采集线程异常 %d，未完成 %d，并发 %d，耗时 %.2fs',
+                  len(results), len(instances), len(errors), len(timed_out),
+                  self.MAX_WORKERS, time.monotonic() - started)
 
         # ── 本轮趋势点（汇总已提交快照）──
         ts = time.time()
@@ -1162,8 +1182,9 @@ class ScreenCollector:
             snap['status'] = 'pending'
             snap['stat_hint'] = (cd or {}).get('error')
             return snap
+        query = partial(engine.run_snapshot_query, inst)
         if cd.get('error'):
-            error = engine.probe(iid, db_type)
+            error = engine.probe(iid, db_type, query=query)
             if error:
                 snap.update(status='down', err=error, conn_err=cd['error'])
                 return snap
@@ -1201,7 +1222,7 @@ class ScreenCollector:
 
         # 2) 增量与容量指标（best effort）
         try:
-            counters, extras = collect_extra(engine, iid, db_type)
+            counters, extras = collect_extra(engine, iid, db_type, query=query)
             snap['counters'] = counters
             snap['tbs'] = extras.get('tbs')
             snap['repl_lag_s'] = extras.get('repl_lag_s')
@@ -1250,6 +1271,7 @@ class ScreenCollector:
         iid = inst['id']
         db_type = (inst.get('db_type') or '').lower()
         return {
+            'config_updated_at': inst.get('updated_at'),
             'id': iid,
             'name': inst.get('name', iid),
             'db_type': db_type,
@@ -1276,7 +1298,7 @@ class ScreenCollector:
 
     def _commit_snap(self, snap):
         """单实例快照增量提交：计算速率（有 prev 时）+ 写入 _snap/_prev/_spark。
-        由 _round 的 as_completed 循环逐条调用，做到「谁先采完谁先显示」。
+        由 _round 按实例完成顺序逐条调用，做到「谁先采完谁先显示」。
 
         速率防噪三层（#63 Oracle QPS 偶发冲高）：
         ① 采样身份一致性——计数器是实例级口径，RAC / 负载均衡下两次采样

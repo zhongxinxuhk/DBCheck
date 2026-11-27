@@ -1,86 +1,86 @@
 # Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 
-"""有界并发工具：按实例并发执行采集函数，避免单个慢实例阻塞整轮。
+"""后台采集的有界并发、整轮截止时间与部分结果。"""
 
-设计目标（超大实例规模下的监控采集）：
-- 并发度可配置，默认 8，线程池按轮创建、轮结束即回收；
-- 单个实例抛异常不影响其它实例；
-- 整轮有截止时间，超时后取消未完成项并返回已完成部分（部分结果优于整轮失败）；
-- 不依赖 gevent，纯标准库，可在后台线程与测试中直接复用。
-"""
-
-
+from collections import deque
 import time
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 
-def run_bounded(items, func, workers=8, round_timeout=None, name='bounded'):
-    """并发执行 ``func(item)``，返回 ``(results, errors, timed_out)``。
+class RoundExecutor:
+    """Run rounds with a bounded number of active tasks, including older rounds."""
 
-    Args:
-        items: 可迭代对象，元素会原样传给 ``func``。
-        func: 单元素处理函数。
-        workers: 并发线程数；<=1 时退化为顺序执行（行为与旧实现一致）。
-        round_timeout: 整轮超时（秒）。到点仍未完成的元素记为超时，已完成的照常返回。
-        name: 线程名前缀，便于排查。
+    def __init__(self, name, max_workers=64):
+        self._max_workers = max_workers
+        self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=name)
+        self._active = {}
 
-    Returns:
-        results:   ``{index: value}``，index 为元素在 items 中的下标。
-        errors:    ``{index: Exception}``，单元素异常。
-        timed_out: ``[index, ...]``，超时未完成的元素下标。
+    def close(self):
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
-    Notes:
-        超时后线程池以 ``shutdown(wait=False)`` 回收，卡在数据库调用里的线程会在
-        其调用返回后自然结束；不会阻塞调用方，也不会让整轮采集无限等待。
-    """
-    items = list(items)
-    results, errors, timed_out = {}, {}, []
-    if not items:
-        return results, errors, timed_out
+    def run(self, items, func, workers, round_timeout=None, *, key=None, on_done=None):
+        """Return indexed successes, failures, and unfinished items.
 
-    try:
-        workers = max(1, min(int(workers or 1), len(items)))
-    except (TypeError, ValueError):
-        workers = 1
-
-    if workers == 1:
-        for idx, item in enumerate(items):
-            try:
-                results[idx] = func(item)
-            except Exception as exc:          # 单个实例失败不影响整轮
-                errors[idx] = exc
-        return results, errors, timed_out
-
-    pool = ThreadPoolExecutor(max_workers=workers,
-                              thread_name_prefix='%s-%d' % (name, workers))
-    futures = {pool.submit(func, item): idx for idx, item in enumerate(items)}
-    pending = set(futures)
-    deadline = None if not round_timeout else time.monotonic() + max(0.0, float(round_timeout))
-    try:
-        while pending:
-            timeout = None
-            if deadline is not None:
-                timeout = max(0.0, deadline - time.monotonic())
-                if timeout <= 0:
-                    break
-            done, pending = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+        A single coordinator runs successive rounds. Work still executing after
+        a deadline keeps its slot. The next round skips that source while the
+        previous call is active, and can schedule other sources in free slots.
+        """
+        items = list(items)
+        results, errors = {}, {}
+        try:
+            workers = max(1, min(int(workers or 1), self._max_workers))
+        except (TypeError, ValueError):
+            workers = 1
+        deadline = (time.monotonic() + max(0.0, float(round_timeout))
+                    if round_timeout else None)
+        self._active = {future: item_key for future, item_key in self._active.items()
+                        if not future.done()}
+        older_keys = set(self._active.values())
+        pending = deque(
+            (idx, item, key(item) if key else idx) for idx, item in enumerate(items)
+        )
+        current = {}
+        while pending or current:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            while pending and len(self._active) < workers:
+                idx, item, item_key = pending.popleft()
+                if item_key in older_keys:
+                    continue
+                future = self._pool.submit(func, item)
+                self._active[future] = item_key
+                current[future] = idx
+            if not self._active or (not pending and not current):
+                break
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            done, _ = wait(self._active, timeout=remaining, return_when=FIRST_COMPLETED)
             if not done:
                 break
-            for fut in done:
-                idx = futures[fut]
+            for future in done:
+                self._active.pop(future)
+                if future not in current:
+                    continue
+                idx = current.pop(future)
                 try:
-                    results[idx] = fut.result()
-                except Exception as exc:
-                    errors[idx] = exc
-        if pending:
-            timed_out = sorted(futures[fut] for fut in pending)
-    finally:
-        for fut in pending:
-            fut.cancel()
-        pool.shutdown(wait=False, cancel_futures=True)
+                    results[idx] = future.result()
+                except Exception as error:
+                    errors[idx] = error
+                if on_done is not None:
+                    on_done(idx, results.get(idx), errors.get(idx))
+        for future in current:
+            future.cancel()
+        timed_out = sorted(set(range(len(items))) - results.keys() - errors.keys())
+        return results, errors, timed_out
 
-    return results, errors, timed_out
+
+def run_bounded(items, func, workers=8, round_timeout=None, name='bounded'):
+    """Run a one-off round. Timed calls return partial results at the deadline."""
+    executor = RoundExecutor(name)
+    try:
+        return executor.run(items, func, workers, round_timeout)
+    finally:
+        executor.close()
 
 
 def round_budget(count, workers, item_timeout, minimum=5.0):

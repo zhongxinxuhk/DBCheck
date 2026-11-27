@@ -8,7 +8,7 @@ import threading
 import time
 import unittest
 
-from modules.core.parallel import run_bounded, round_budget
+from modules.core.parallel import RoundExecutor, run_bounded, round_budget
 
 
 class RunBoundedTest(unittest.TestCase):
@@ -74,6 +74,36 @@ class RunBoundedTest(unittest.TestCase):
         self.assertEqual(results.get(0), 0)
         self.assertEqual(timed_out, [1])
         self.assertEqual(errors, {})
+
+
+    def test_single_worker_deadline_preserves_capacity_across_rounds(self):
+        executor = RoundExecutor('monitor-test')
+        release = threading.Event()
+        entered = threading.Event()
+
+        def stalled(_):
+            entered.set()
+            release.wait(3)
+
+        try:
+            _, _, pending = executor.run(['slow'], stalled, 1, 0.2, key=str)
+            self.assertTrue(entered.is_set())
+            self.assertEqual(pending, [0])
+            self.assertFalse(release.is_set())
+            results, errors, pending = executor.run(
+                ['fast'], str, 1, 0.05, key=str)
+            self.assertEqual((results, errors, pending), ({}, {}, [0]))
+            seen = []
+            results, errors, pending = executor.run(
+                ['slow', 'fast'], str, 2, 0.2, key=str,
+                on_done=lambda *result: seen.append(result))
+            self.assertEqual(results, {1: 'fast'})
+            self.assertEqual(errors, {})
+            self.assertEqual(pending, [0])
+            self.assertEqual(seen, [(1, 'fast', None)])
+        finally:
+            release.set()
+            executor.close()
 
 
 class RoundBudgetTest(unittest.TestCase):
