@@ -2100,11 +2100,14 @@ def _docx_table(doc, headers, rows, header_bg='336699', *, lang='zh'):
     if lang.startswith('zh'):
         from modules.intelligence.schema_knowledge import report_field_labels
         headers = report_field_labels('oracle', '', headers)
+    from docx.oxml import OxmlElement
+
     tbl = doc.add_table(rows=1, cols=len(headers))
     tbl.style = 'Table Grid'
     tbl.alignment = WD_ALIGN_PARAGRAPH.CENTER
     tbl.autofit = True  # 根据窗口自动调整表格宽度
     # 表头
+    tbl.rows[0]._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
     hdr_cells = tbl.rows[0].cells
     for i, h in enumerate(headers):
         hdr_cells[i].text = h
@@ -2117,7 +2120,9 @@ def _docx_table(doc, headers, rows, header_bg='336699', *, lang='zh'):
             pass
     # 数据行（容错：列数不足时填充空白，多于 header 时截断）
     for ri, row in enumerate(rows):
-        cells = tbl.add_row().cells
+        word_row = tbl.add_row()
+        word_row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
+        cells = word_row.cells
         for ci in range(len(headers)):
             cell_val = row[ci] if ci < len(row) else None
             if cell_val is not None:
@@ -2233,7 +2238,7 @@ def build_unified_chapters(check_results, chapter_results, has_template, os_data
                 columns = [str(c) for c in qr.get('columns', [])]
                 data = [[str(d) if d is not None else '' for d in row] for row in qr.get('data', [])]
                 error = qr.get('error')
-                subsections.append({'title': subs_title, 'columns': columns, 'data': data, 'error': error})
+                subsections.append({'title': subs_title, 'key': qr.get('query_key'), 'columns': columns, 'data': data, 'error': error})
             unified.append({
                 'chapter_title': ch['chapter_title_zh'],
                 'chapter_number': ch.get('chapter_number', 0),
@@ -2267,7 +2272,7 @@ def build_unified_chapters(check_results, chapter_results, has_template, os_data
                     data = raw_rows
                 data = [[str(d) if d is not None else '' for d in row] for row in data]
                 subs_title = _ORACLE_SUBTITLE_MAP.get(col_key, sub_key)
-                subsections.append({'title': subs_title, 'columns': columns, 'data': data})
+                subsections.append({'title': subs_title, 'key': sub_key, 'columns': columns, 'data': data})
             if subsections:
                 unified.append({'chapter_title': ch_name, 'chapter_number': 0, 'subsections': subsections})
 
@@ -2337,7 +2342,7 @@ def extract_risks_from_unified(unified_chapters):
 #                    报告生成（Word）
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_word_report(db_info, os_data, check_results, db_version, ai_advice='', inspector='', lang='zh', desensitize=False, config_baseline_result=None, index_health_result=None, host='', health_status='', chapter_results=None, external_risk_items=None):
+def build_word_report(db_info, os_data, check_results, db_version, ai_advice='', inspector='', lang='zh', desensitize=False, config_baseline_result=None, index_health_result=None, host='', health_status='', chapter_results=None, external_risk_items=None, inspection_context=None):
     """构建完整 Word 巡检报告（纯 python-docx，无模板依赖）"""
     if not _HAS_DOCX:
         return None
@@ -2359,6 +2364,16 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
         except Exception:
             pass
 
+    from modules.inspection.report_insights import build_rule_index
+    from modules.inspection.report_layout import format_inspection_report, metric_reading
+    from modules.service_management.report import sanitize_document
+
+    reading_context = dict(inspection_context or {})
+    query_status = dict(reading_context.get('_query_status') or {})
+    reading_context['_query_status'] = query_status
+    if check_results.get('_collection_warnings'):
+        reading_context['collection_status'] = 'incomplete'
+    rule_index, _ = build_rule_index('oracle', reading_context)
     doc = Document()
 
     # ── 页面设置 ────────────────────────────────────────────────────────────
@@ -2380,7 +2395,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
         logo_run.add_picture(logo_path, width=Cm(3.5))
 
     # 报告标题
-    title_p = doc.add_paragraph()
+    title_p = doc.add_paragraph(style='Title')
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run(_t('report.oracle_title'))
     title_run.font.size = Pt(28)
@@ -2499,7 +2514,6 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
         for _run in _note_p.runs:
             _run.font.size = Pt(9)
             _run.font.color.rgb = RGBColor(90, 90, 90)
-        doc.add_page_break()
     except Exception as _bi_err:
         print('[WARN] 核心属性表渲染失败: %s' % _bi_err)
 
@@ -2737,6 +2751,16 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
             columns = subs.get('columns', [])
             data = subs.get('data', [])
             error = subs.get('error')
+            key = subs.get('key') or subs_title or ch_title
+            state = query_status.get(key, {})
+            if error:
+                state = {'status': 'error', 'reason': error}
+            elif not state and data:
+                state = {'status': 'collected'}
+            if state:
+                query_status[key] = state
+            metric_reading(doc, key, subs_title or ch_title, data, state, rule_index.get(key, ()), lang,
+                           issues=external_risk_items or ())
             _render_chapter_table(doc, columns, data, error=error)
 
     # ── 风险与建议 ─────────────────────────────────────────────────────────
@@ -2757,6 +2781,7 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
                 'col4': str(x.get('col4', '') or ''),
                 'col5': str(x.get('col5', '') or _t('report.risk_dba')),
                 'fix_sql': str(x.get('fix_sql', '') or ''),
+                '_rule_id': x.get('_rule_id', ''),
             })
     elif has_template:
         # ── 模板驱动模式：从统一章节数据中提取风险 ──────────────────────────
@@ -2828,15 +2853,6 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
         risk_table_data = [(str(i+1), x['col1'], x['col2'], x['col3'], x['col4'], x['col5']) for i, x in enumerate(risk_items)]
         _docx_table(doc, [_t('report.col_seq'), _t('report.col_risk_item'), _t('report.col_level'), _t('report.col_desc'), _t('report.col_severity'), _t('report.col_owner')], risk_table_data, lang=lang)
         doc.add_paragraph()
-        # 23.2 修复SQL速查
-        fix_sqls = [(x['col1'], x['fix_sql']) for x in risk_items if x['fix_sql']]
-        if fix_sqls:
-            _add_subsection(_t('report.oracle_risk_fix_chapter'))
-            for fname, sql in fix_sqls:
-                p = doc.add_paragraph()
-                p.add_run(f'【{fname}】').bold = True
-                doc.add_paragraph(sql, style='List Bullet')
-            doc.add_paragraph()
     else:
         # 即使无高风险，也汇总各项巡检结论
         _add_subsection(_t('report.oracle_risk_summary_chapter'))
@@ -3150,7 +3166,8 @@ def build_word_report(db_info, os_data, check_results, db_version, ai_advice='',
 
     from modules.inspection.permission_advice import append_permission_advice
     append_permission_advice(doc, check_results.get('_permission_findings') or {})
-    return doc
+    format_inspection_report(doc, 'oracle', reading_context, risk_items, lang)
+    return sanitize_document(doc, preserve_network=True)
 
 # ═══════════════════════════════════════════════════════════════════════════
 #                    主入口
@@ -3698,7 +3715,7 @@ def single_inspection(args):
                               index_health_result=index_health_result,
                               host=args.host, health_status='',
                               chapter_results=chapter_results,
-                              external_risk_items=_unified_issues)
+                              external_risk_items=_unified_issues, inspection_context=context)
 
     # ── 6. 保存报告 ────────────────────────────────────────────────────────
     print(f"\n[{GREEN}6/6{RESET}] {_t('oracle_log_save_report')}")
@@ -4431,7 +4448,9 @@ def getData(host, port, user, password, **kwargs):
                                       config_baseline_result=cb_result,
                                       index_health_result=ih_result,
                                       host=getattr(self._args, 'host', ''), health_status=self._context.get('health_status', ''),
-                                      chapter_results=chapter_results if has_template else None)
+                                      chapter_results=chapter_results if has_template else None,
+                                      external_risk_items=self._context.get('auto_analyze'),
+                                      inspection_context=self._context)
             if docx:
                 docx.save(output_file)
                 return output_file

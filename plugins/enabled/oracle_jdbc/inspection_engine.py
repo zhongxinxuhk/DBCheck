@@ -815,6 +815,15 @@ class BaseInspectionEngine:
             if success:
                 self._append_chapters(output_file)
             
+            from docx import Document
+            from modules.inspection.analyzer import collect_issues
+            from modules.inspection.report_layout import format_inspection_report
+            from modules.service_management.report import sanitize_document
+
+            doc = Document(output_file)
+            format_inspection_report(doc, self.db_type, self.context,
+                                     collect_issues(self.db_type, self.context), self._lang)
+            sanitize_document(doc, preserve_network=True).save(output_file)
             return output_file
         except Exception as e:
             print(f"[ERROR] 生成报告失败: {e}")
@@ -1317,6 +1326,7 @@ class BaseInspectionEngine:
                         'query_key': q_key,
                         'query_name_zh': name_zh,
                         'query_name_en': name_en,
+                        'enabled': bool(q.get('enabled', True)),
                         'query_description_zh': desc_zh,
                         'query_description_en': desc_en,
                     })
@@ -1604,7 +1614,7 @@ class BaseInspectionEngine:
                     sub_heading_idx += 1
                     title_text = f'{chapter_num}.{sub_heading_idx} {title_text}'
 
-                p = doc.add_paragraph()
+                p = doc.add_paragraph(style=f'Heading {min(6, level + 2)}')
                 r = p.add_run(title_text)
                 r.font.name = '微软雅黑'
                 r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
@@ -1907,7 +1917,9 @@ class BaseInspectionEngine:
                                 run.font.size = Pt(9); run.font.name = '微软雅黑'
                 doc.add_paragraph()
             else:
-                p = doc.add_paragraph(self._t(f'report.{self.db_type}_no_risk_found', default='未发现明显风险项，数据库整体运行状况良好。'))
+                p = doc.add_paragraph('本次没有记入的问题。请结合报告开头的判定范围与采集状态阅读。'
+                                      if self._lang.startswith('zh') else
+                                      'No findings were recorded. Consult the assessed scope and collection status at the start of the report.')
                 for r in p.runs:
                     r.font.size = Pt(10.5); r.font.name = '微软雅黑'
 
@@ -1962,6 +1974,11 @@ class BaseInspectionEngine:
             from docx.oxml.ns import qn
             from docx.oxml import parse_xml
             
+            from modules.inspection.report_insights import build_rule_index
+            from modules.inspection.report_layout import metric_reading
+
+            rule_index, _ = build_rule_index(self.db_type, self.context)
+            query_status = self.context.get('_query_status') or {}
             doc = Document()
             
             def _set_cell_bg(cell, hex_color):
@@ -2010,7 +2027,7 @@ class BaseInspectionEngine:
             title_text = f'{db_type_display} 数据库健康巡检报告' if is_zh else f'{db_type_display} Database Health Inspection Report'
             subtitle_text = 'Database Health Inspection Report' if is_zh else ''
             
-            title_para = doc.add_paragraph()
+            title_para = doc.add_paragraph(style='Title')
             title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             title_run = title_para.add_run(title_text)
             title_run.font.size = Pt(28)
@@ -2097,6 +2114,15 @@ class BaseInspectionEngine:
                         else:
                             _fmt_heading(f'{sub_num} {q_key}', level=2)
 
+                        state = dict(query_status.get(q_key, {}))
+                        if self._query_errors.get(q_key) and not state.get('status'):
+                            state.update(status='error', reason=self._query_errors[q_key])
+                        if q.get('enabled') is False and not state:
+                            state['status'] = 'disabled'
+                        metric_reading(doc, q_key, q_desc, self.context.get(q_key), state,
+                                       rule_index.get(q_key, ()), self._lang,
+                                       issues=self.context.get('auto_analyze') or ())
+
                         if q_data and isinstance(q_data, list) and len(q_data) > 0:
                             if isinstance(q_data[0], dict):
                                 headers = list(q_data[0].keys())
@@ -2170,7 +2196,10 @@ class BaseInspectionEngine:
                         continue
                     val = self.context.get(key)
                     if val and isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
-                        _fmt_para(key, bold=True, size=11)
+                        _fmt_heading(key, level=2)
+                        metric_reading(doc, key, key, val, query_status.get(key, {}),
+                                       rule_index.get(key, ()), self._lang,
+                                       issues=self.context.get('auto_analyze') or ())
                         headers = list(val[0].keys())
                         qt = doc.add_table(rows=1+len(val), cols=len(headers), style='Table Grid')
                         qt.autofit = True  # 根据窗口自动调整表格宽度

@@ -1467,7 +1467,13 @@ class BaseInspectionEngine:
                 )
             from docx import Document
             from modules.service_management.report import sanitize_document
-            sanitize_document(Document(output_file), preserve_network=True).save(output_file)
+            from modules.inspection.analyzer import collect_issues
+            from modules.inspection.report_layout import format_inspection_report
+
+            doc = Document(output_file)
+            format_inspection_report(doc, self.db_type, self.context,
+                                     collect_issues(self.db_type, self.context), self._lang)
+            sanitize_document(doc, preserve_network=True).save(output_file)
             return output_file
         except MemoryError as e:
             self.last_report_error = f'MemoryError: {e}（建议减少巡检范围或增加内存限制）'
@@ -2231,6 +2237,7 @@ class BaseInspectionEngine:
                         'query_sql': sql,
                         'query_name_zh': name_zh,
                         'query_name_en': name_en,
+                        'enabled': bool(q.get('enabled', True)),
                         'query_description_zh': desc_zh,
                         'query_description_en': desc_en,
                     })
@@ -2616,7 +2623,7 @@ class BaseInspectionEngine:
                     sub_heading_idx += 1
                     title_text = f'{chapter_num}.{sub_heading_idx} {title_text}'
 
-                p = doc.add_paragraph()
+                p = doc.add_paragraph(style=f'Heading {min(6, level + 2)}')
                 r = p.add_run(title_text)
                 r.font.name = '微软雅黑'
                 r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
@@ -2963,7 +2970,9 @@ class BaseInspectionEngine:
                                        font_size_pt=9)
                 doc.add_paragraph()
             else:
-                p = doc.add_paragraph(self._t(f'report.{self.db_type}_no_risk_found', default='未发现明显风险项，数据库整体运行状况良好。'))
+                p = doc.add_paragraph('本次没有记入的问题。请结合报告开头的判定范围与采集状态阅读。'
+                                      if self._lang.startswith('zh') else
+                                      'No findings were recorded. Consult the assessed scope and collection status at the start of the report.')
                 for r in p.runs:
                     r.font.size = Pt(10.5); r.font.name = '微软雅黑'
 
@@ -3046,6 +3055,11 @@ class BaseInspectionEngine:
             from docx.oxml.ns import qn
             from docx.oxml import parse_xml
             
+            from modules.inspection.report_insights import build_rule_index
+            from modules.inspection.report_layout import metric_reading
+
+            rule_index, _ = build_rule_index(self.db_type, self.context)
+            query_status = self.context.get('_query_status') or {}
             doc = Document()
             
             # 这些查询始终以横向表格渲染（不转置为「字段:值」卡片），避免宽表行转列后页数爆炸。
@@ -3206,7 +3220,7 @@ class BaseInspectionEngine:
             title_text = f'{db_type_display} 数据库健康巡检报告' if is_zh else f'{db_type_display} Database Health Inspection Report'
             subtitle_text = 'Database Health Inspection Report' if is_zh else ''
             
-            title_para = doc.add_paragraph()
+            title_para = doc.add_paragraph(style='Title')
             title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             title_run = title_para.add_run(title_text)
             title_run.font.size = Pt(28)
@@ -3305,7 +3319,6 @@ class BaseInspectionEngine:
                     _bi_rows(_bi, 'zh' if is_zh else 'en'),
                     header=True, header_bg='336699', font_size_pt=9.5,
                     cell_styler=_bi_styler, col_widths=[4.2, 11.8])
-                doc.add_page_break()
 
             # ── 章节内容 ────────────────────────────────────
             family = core_family(self.db_type)
@@ -3357,6 +3370,15 @@ class BaseInspectionEngine:
                             _fmt_heading(f'{sub_num} {q_desc}', level=2)
                         else:
                             _fmt_heading(f'{sub_num} {q_key}', level=2)
+
+                        state = dict(query_status.get(q_key, {}))
+                        if self._query_errors.get(q_key) and not state.get('status'):
+                            state.update(status='error', reason=self._query_errors[q_key])
+                        if q.get('enabled') is False and not state:
+                            state['status'] = 'disabled'
+                        metric_reading(doc, q_key, q_desc, self.context.get(q_key), state,
+                                       rule_index.get(q_key, ()), self._lang,
+                                       issues=self.context.get('auto_analyze') or ())
 
                         if q_data and isinstance(q_data, list) and len(q_data) > 0:
                             if isinstance(q_data[0], dict):
@@ -3441,8 +3463,8 @@ class BaseInspectionEngine:
                                 reason = state.get('reason') or _err or '当前版本或部署条件未满足'
                                 _p = doc.add_paragraph(('不适用：' if is_zh else 'Not applicable: ') + reason)
                                 _color = RGBColor(90, 90, 90)
-                            elif _err:
-                                _msg = _err.replace('⚠️ 章节「', '').replace('」：', '：')
+                            elif _err or state.get('status') in {'error', 'timeout', 'unavailable'}:
+                                _msg = (_err or state.get('reason') or '未取得结果').replace('⚠️ 章节「', '').replace('」：', '：')
                                 _p = doc.add_paragraph(('采集失败：' + _msg) if is_zh else ('Collection failed: ' + _msg))
                                 _color = RGBColor(192, 0, 0)
                             else:
@@ -3452,14 +3474,17 @@ class BaseInspectionEngine:
                                     'W05_backup_job_7d', 'W05_backup_history_7d',
                                     'W05_backupset',
                                 }
-                                if q_key in _backup_empty_keys:
+                                if q_key in _backup_empty_keys and state.get('status') == 'collected':
                                     _p = doc.add_paragraph(
                                         '检出问题：未发现备份记录' if is_zh
                                         else 'Problem detected: no backup records found')
                                     _color = RGBColor(192, 0, 0)
+                                elif state.get('status') == 'collected':
+                                    _p = doc.add_paragraph('查询完成，返回 0 条记录' if is_zh else 'Query completed with zero rows')
+                                    _color = RGBColor(90, 90, 90)
                                 else:
-                                    _p = doc.add_paragraph('未检出' if is_zh else 'Not detected')
-                                    _color = RGBColor(0, 128, 0)
+                                    _p = doc.add_paragraph('本次无可判定结果' if is_zh else 'No assessable result')
+                                    _color = RGBColor(90, 90, 90)
                             for _r in _p.runs:
                                 _r.font.size = Pt(10); _r.font.name = '微软雅黑'
                                 _r._element.rPr.rFonts.set(qn('w:eastAsia'), '微软雅黑')
@@ -3483,7 +3508,10 @@ class BaseInspectionEngine:
                     val = self.context.get(key)
                     if val and isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
                         _heading_key = _mongo_section_title(key) if key.startswith('mongodb_') else key
-                        _fmt_para(_heading_key, bold=True, size=11)
+                        _fmt_heading(_heading_key, level=2)
+                        metric_reading(doc, key, _heading_key, val, query_status.get(key, {}),
+                                       rule_index.get(key, ()), self._lang,
+                                       issues=self.context.get('auto_analyze') or ())
                         headers = list(val[0].keys())
                         display_headers = report_field_labels(
                             self.db_type, '', headers, describe_unmapped=True) if is_zh else headers
@@ -3617,7 +3645,8 @@ def _docx_build_grid_table(doc, headers, rows, *, header=True,
                 color='FFFFFF' if header_white else None,
                 size_pt=font_size_pt, align=header_align, east_asia=east_asia,
                 max_len=cell_max_len))
-        tbl._tbl.append(parse_xml(f'<w:tr {nsdecls("w")}>{"".join(tcs)}</w:tr>'))
+        tbl._tbl.append(parse_xml(
+            f'<w:tr {nsdecls("w")}><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>{"".join(tcs)}</w:tr>'))
 
     for i, row in enumerate(rows):
         tcs = []
@@ -3629,7 +3658,8 @@ def _docx_build_grid_table(doc, headers, rows, *, header=True,
                 if ov:
                     sty.update(ov)
             tcs.append(_docx_tc_xml(val, east_asia=east_asia, max_len=cell_max_len, **sty))
-        tbl._tbl.append(parse_xml(f'<w:tr {nsdecls("w")}>{"".join(tcs)}</w:tr>'))
+        tbl._tbl.append(parse_xml(
+            f'<w:tr {nsdecls("w")}><w:trPr><w:cantSplit/></w:trPr>{"".join(tcs)}</w:tr>'))
 
     if col_widths:
         _docx_set_table_widths(tbl, col_widths, Cm)
