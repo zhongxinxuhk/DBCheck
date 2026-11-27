@@ -174,6 +174,52 @@ Stars 与 Forks 指上游 DBCheck 仓库的数据。容器镜像拉取量变动�
 
 ---
 
+# 🏗️ 系统架构
+
+DBPulse 采用模块化单体架构。Web 应用负责访问控制和任务调度，已登记库型的巡检与监控查询在独立进程中执行。
+
+```mermaid
+flowchart TB
+    WEB["Web 控制台与 Flask API<br/>权限 · 数据源 · 台账 · 巡检 · 监控"]
+    SOURCE["数据源管理与运维台账"]
+    STORE[("instances.db<br/>实例记录 · 台账 · 事务内配置版本")]
+    CHECK["测试连接"]
+    SCHED["APScheduler<br/>Cron · 立即执行 · 取消"]
+    JOBS[("scheduler_jobs.json")]
+    PROFILE["共享连接配置<br/>端点 · 驱动参数 · TLS 策略 · SSH 转发"]
+    INSPECT["巡检隔离进程<br/>巡检服务 · 规则分析 · Word 报告"]
+    MON["MonitorEngine 与监控大屏<br/>配置快照 · 有界并发"]
+    COLLECT["监控隔离进程<br/>原生 SQL · JDBC · MongoDB 和 Redis"]
+    TARGET[("受管数据库")]
+    REPORTS[("Word 报告与巡检历史")]
+    METRICS[("监控历史")]
+
+    WEB --> SOURCE
+    SOURCE <--> STORE
+    WEB --> CHECK
+    WEB -->|"手动巡检"| PROFILE
+    WEB --> SCHED
+    SCHED <--> JOBS
+    SCHED -->|"执行时解析数据源"| PROFILE
+    WEB -->|"读取监控快照"| MON
+    SOURCE -->|"加载已保存的连接配置"| PROFILE
+    CHECK -->|"解析驱动参数"| PROFILE
+    MON -->|"解析本轮配置快照"| PROFILE
+    PROFILE -->|"测试连接"| TARGET
+    PROFILE -->|"巡检"| INSPECT
+    PROFILE -->|"监控"| COLLECT
+    INSPECT --> TARGET
+    COLLECT --> TARGET
+    INSPECT --> REPORTS
+    INSPECT -->|"回填符合条件的实测结果"| SOURCE
+    COLLECT -->|"返回采样结果"| MON
+    MON --> METRICS
+```
+
+数据源管理与运维台账共用同一条实例记录，数据源写入和配置版本在同一个事务中提交。监控大屏复用监控引擎的会话和慢查询快照，采集进程执行硬超时和 SQL 结果限额。
+
+---
+
 # 🗄️ 支持的数据库
 
 DBPulse 目前支持 **22 种数据库与数据系统**。
@@ -356,37 +402,38 @@ DBPulse 提供配置驱动的数据库巡检。
 
 巡检引擎采集数据库元数据、配置、性能信息、资源使用与安全相关信息，并依据巡检规则进行评估。
 
-典型流程：
+## 业务流程
 
-```text
-数据库
-   │
-   ├── 连接
-   │
-   ├── 元数据
-   │
-   ├── 配置
-   │
-   ├── 性能
-   │
-   ├── 会话
-   │
-   ├── 锁
-   │
-   ├── 存储
-   │
-   ├── 安全
-   │
-   └── SQL
-          ↓
-     巡检引擎
-          ↓
-     风险分析
-          ↓
-      优化建议
-          ↓
-     Word 报告
+```mermaid
+flowchart TB
+    REGISTER["登记或更新数据源<br/>设置凭据、TLS 和 SSH"]
+    TEST["测试已保存的连接配置"]
+    PASS{"连接测试通过？"}
+    FIX["查看连接错误并更新配置"]
+    CHOICE{"选择巡检方式"}
+    MANUAL["发起手动巡检"]
+    CRON["为数据源配置 Cron 任务<br/>等待到点或立即执行"]
+    RESOLVE["加载当前数据源配置"]
+    INSPECT["隔离巡检<br/>采集 · 规则分析 · 生成报告"]
+    SUCCESS{"巡检完成？"}
+    FAIL["记录失败并展示错误"]
+    REPORT["保存 Word 报告和巡检历史"]
+    SYNC["回填符合条件的实测结果<br/>检查数据源绑定、任务归属与权限"]
+    MON["持续监控已启用的数据源<br/>按采样周期更新大屏"]
+
+    REGISTER --> TEST --> PASS
+    PASS -->|"否"| FIX --> REGISTER
+    PASS -->|"是"| CHOICE
+    CHOICE -->|"手动"| MANUAL --> RESOLVE
+    CHOICE -->|"定时"| CRON --> RESOLVE
+    RESOLVE --> INSPECT --> SUCCESS
+    SUCCESS -->|"否"| FAIL
+    SUCCESS -->|"是"| REPORT --> SYNC
+    REGISTER -->|"数据源已启用"| MON
 ```
+
+监控按自身采样周期运行。定时任务每次启动时解析绑定的数据源，连接设置更新后，后续任务会读取新配置。
+
 
 ---
 
