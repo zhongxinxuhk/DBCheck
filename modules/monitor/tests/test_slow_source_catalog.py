@@ -121,3 +121,16 @@ def test_flatten_ignores_stale_or_empty_snapshots():
 
 def test_catalog_tolerates_missing_snapshots():
     assert build_slow_source_catalog(None, None) == []
+
+
+def test_stale_snapshot_does_not_supply_sql_rows_for_updated_source():
+    changed = dict(instance('gbase-1', '新连接', 'gbase8a'), updated_at='revision-2')
+    snapshots = {
+        'gbase-1': dict(snapshot('旧连接', 'gbase8a'), config_updated_at='revision-1'),
+    }
+
+    catalog = build_slow_source_catalog([changed], snapshots)
+
+    assert catalog[0]['collected'] is False
+    assert catalog[0]['slow_count'] == 0
+    assert flatten_slow_queries(snapshots, catalog) == []

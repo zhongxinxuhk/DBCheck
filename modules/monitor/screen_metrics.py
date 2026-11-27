@@ -1105,6 +1105,7 @@ class ScreenCollector:
         iid = inst['id']
         db_type = (inst.get('db_type') or '').lower()
         snap = {
+            'config_updated_at': inst.get('updated_at'),
             'id': iid,  # 告警状态机按 id 跟踪实例（update() 无 id 的快照会被跳过）
             'name': inst.get('name', iid),
             'db_type': db_type,
@@ -1177,6 +1178,8 @@ class ScreenCollector:
                 'blocked': (cd.get('connections') or {}).get('blocked', 0),
             }
         sd = slow_data.get(iid)
+        if sd and sd.get('config_updated_at', inst.get('updated_at')) != inst.get('updated_at'):
+            sd = None
         snap['slowq'] = len(sd.get('data') or []) if sd and not sd.get('error') else 0
         # 下钻明细：连接/会话 与 慢查询 逐行（复用 engine 本轮采集结果，不引入新 SQL）
         snap['conn_rows'] = _sanitize_rows(cd.get('data') if (cd and not cd.get('error')) else None)
@@ -1298,8 +1301,11 @@ class ScreenCollector:
             if prev and snap.get('counters'):
                 cur_id = (snap.get('instance_number'), snap.get('db_unique_name'))
                 prev_id = (prev.get('inum'), prev.get('dbname'))
-                id_mismatch = (cur_id[0] is not None and prev_id[0] is not None
-                               and cur_id[0] != prev_id[0])
+                id_mismatch = (
+                    snap.get('config_updated_at') != prev.get('config_updated_at')
+                    or any(cur is not None and old is not None and cur != old
+                           for cur, old in zip(cur_id, prev_id))
+                )
                 dt = ts - prev['ts']
                 dt_valid = dt >= self.INTERVAL * self.DT_MIN_RATIO
                 if id_mismatch:
@@ -1323,6 +1329,7 @@ class ScreenCollector:
                         b = snap['counters']['hit_base']
                         snap['cache_hit_pct'] = round(h / b * 100, 1) if b else None
             self._prev[iid] = {'ts': ts, 'counters': dict(snap.get('counters') or {}),
+                               'config_updated_at': snap.get('config_updated_at'),
                                'inum': snap.get('instance_number'),
                                'dbname': snap.get('db_unique_name')}
             self._snap[iid] = {k: v for k, v in snap.items() if k != 'counters'}

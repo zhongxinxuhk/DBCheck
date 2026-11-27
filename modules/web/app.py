@@ -5265,14 +5265,7 @@ def plugin_logo(db_type):
 def api_start_inspection():
     try:
         data = request.json
-        def inspection_type(source):
-            kind = (source.get('db_type') or 'mysql').strip().lower()
-            kind = {'dm8': 'dm', 'oracle_full': 'oracle', 'mssql': 'sqlserver'}.get(kind, kind)
-            if paths.PORTABLE_ROOT is not None:
-                return {'oracle': 'oracle_jdbc', 'sqlserver': 'sqlserver_jdbc'}.get(kind, kind)
-            if kind == 'sqlserver' and source.get('connection_mode') in {'jdbc', 'auto'}:
-                return 'sqlserver_jdbc'
-            return kind
+        from modules.db_types.dbtype_registry import inspection_type
 
         db_type = inspection_type(data)
         inspector_name = data.get('inspector_name', data.get('inspector', 'Jack'))
@@ -5294,6 +5287,8 @@ def api_start_inspection():
             instance = im.get_instance_decrypted(datasource_id)
             if not instance:
                 return jsonify({'ok': False, 'msg': '数据源不存在'})
+            if not instance.get('enabled', True):
+                return jsonify({'ok': False, 'msg': '数据源已停用'}), 400
             db_type = inspection_type(instance)
             # 使用数据源的连接信息
             _meta = get_db_meta(db_type)
@@ -5392,7 +5387,7 @@ def api_start_inspection():
                 if db_type == 'oracle_jdbc':
                     db_info['use_sid'] = bool(data.get('use_sid', False))
 
-        if datasource_id and instance.get('ssh_enabled'):
+        if datasource_id and (instance.get('ssh_enabled') or instance.get('ssh_tunnel')):
             for field in ('ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password','ssh_tunnel'):
                 if instance.get(field) is not None:db_info[field]=instance[field]
 
@@ -6523,12 +6518,33 @@ def api_task_status(task_id):
 # 定时调度 API
 # ══════════════════════════════════════════════════════════════
 
+def _scheduler_job_visible(job):
+    from modules.access import get_owner, visible_to
+
+    principal = g.security_principal
+    if job.get('owner_user_id') is not None:
+        return visible_to(principal, dict(job, scope='private'))
+    datasource_id = (job.get('db_info') or {}).get('datasource_id')
+    if datasource_id:
+        owner = get_owner('instance', datasource_id)
+        if owner is not None:
+            return visible_to(principal, owner)
+    return principal.is_admin and principal.tenant_id == 1
+
+
+def _scheduler_job_error(scheduler, job_id):
+    if not any(job['id'] == job_id and _scheduler_job_visible(job)
+               for job in scheduler.list_jobs()):
+        return jsonify(ok=False, error='任务不存在或无权访问'), 404
+    return None
+
+
 @app.route('/api/scheduler/jobs', methods=['GET'])
 def api_scheduler_list():
-    """列出所有定时任务"""
+    """列出当前用户可访问的定时任务。"""
     try:
         sm = _get_scheduler()
-        return jsonify({'ok': True, 'jobs': sm.list_jobs()})
+        return jsonify(ok=True, jobs=[job for job in sm.list_jobs() if _scheduler_job_visible(job)])
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -6550,49 +6566,65 @@ def _default_inspector_name():
 
 def _build_scheduler_job_cfg(data, job_id):
     """根据请求数据构建定时任务配置（不含 enabled，由调用方决定启用状态）"""
-    datasource_id = data.get('datasource_id')
-    if datasource_id:
-        return {
-            'id': job_id,
-            'name': data.get('name', '定时巡检'),
-            'inspector_name': (data.get('inspector_name') or '').strip() or _default_inspector_name(),
-            'notify_on_done': bool(data.get('notify_on_done', True)),
-            'cron': data.get('cron', {}),
-            'template_id': data.get('template_id') or None,
-            'db_info': {
-                'datasource_id': datasource_id,
-                'label': data.get('label', datasource_id),
-            }
-        }
-    return {
+    job = {
         'id': job_id,
+        'owner_user_id': g.security_principal.id,
+        'owner_tenant_id': g.security_principal.tenant_id,
         'name': data.get('name', '定时巡检'),
-        'db_type': data.get('db_type', 'mysql'),
         'inspector_name': (data.get('inspector_name') or '').strip() or _default_inspector_name(),
         'notify_on_done': bool(data.get('notify_on_done', True)),
         'cron': data.get('cron', {}),
         'template_id': data.get('template_id') or None,
-        'db_info': {
-            'label': data.get('label', ''),
-            'db_type': data.get('db_type', 'mysql'),
-            'host': data.get('host', ''),
-            'port': int(data.get('port', 0) or 3306),
-            'user': data.get('user', ''),
-            'password': data.get('password', ''),
-            'database': data.get('database', ''),
-            'service_name': data.get('service_name', None),
-            'sid': data.get('sid', None),
-            'sysdba': bool(data.get('sysdba', False)),
-            'ssh_host': data.get('ssh_host', None),
-            'ssh_port': int(data.get('ssh_port', 22) or 22),
-            'ssh_user': data.get('ssh_user', None),
-            'ssh_password': data.get('ssh_password', ''),
-            'ssh_key_file': data.get('ssh_key_file', ''),
-            # JDBC 驱动管理：驱动版本与 Oracle SID 模式（前端 saveJob 已透传，此前被丢弃）
-            'driver_version': data.get('driver_version') or None,
-            'use_sid': bool(data.get('use_sid', False)),
-        }
     }
+    datasource_id = data.get('datasource_id')
+    if datasource_id:
+        job['db_info'] = {'datasource_id': datasource_id, 'label': data.get('label', datasource_id)}
+        return job
+    job['db_type'] = data.get('db_type', 'mysql')
+    job['db_info'] = {
+        'label': data.get('label', ''),
+        'db_type': data.get('db_type', 'mysql'),
+        'host': data.get('host', ''),
+        'port': int(data.get('port', 0) or 3306),
+        'user': data.get('user', ''),
+        'password': data.get('password', ''),
+        'database': data.get('database', ''),
+        'service_name': data.get('service_name', None),
+        'sid': data.get('sid', None),
+        'sysdba': bool(data.get('sysdba', False)),
+        'ssh_host': data.get('ssh_host', None),
+        'ssh_port': int(data.get('ssh_port', 22) or 22),
+        'ssh_user': data.get('ssh_user', None),
+        'ssh_password': data.get('ssh_password', ''),
+        'ssh_key_file': data.get('ssh_key_file', ''),
+        # JDBC 驱动管理：驱动版本与 Oracle SID 模式（前端 saveJob 已透传，此前被丢弃）
+        'driver_version': data.get('driver_version') or None,
+        'use_sid': _as_bool_flag(data.get('use_sid', False)),
+        'tls_ca_file': data.get('tls_ca_file') or '',
+        'gbase8a_allow_plaintext': _as_bool_flag(data.get('gbase8a_allow_plaintext')),
+        'ssh_tunnel': _as_bool_flag(data.get('ssh_tunnel')),
+        'ssh_key_password': data.get('ssh_key_password') or '',
+        'jdbc_url': data.get('jdbc_url') or '',
+        'connection_mode': data.get('connection_mode') or '',
+        'encrypt': _as_bool_flag(data.get('encrypt')),
+        'trust_server_certificate': _as_bool_flag(data.get('trust_server_certificate', True)),
+    }
+    return job
+
+
+def _scheduler_source_error(datasource_id):
+    from modules.access import assert_visible
+    from modules.pro import get_instance_manager
+
+    allowed, error = assert_visible(g.security_principal, 'instance', datasource_id)
+    if not allowed:
+        return jsonify(ok=False, **error), 403
+    source = get_instance_manager().get_instance(datasource_id)
+    if source is None:
+        return jsonify(ok=False, error='数据源不存在'), 404
+    if not source.get('enabled', True):
+        return jsonify(ok=False, error='数据源已停用'), 400
+    return None
 
 
 @app.route('/api/scheduler/jobs', methods=['POST'])
@@ -6612,16 +6644,17 @@ def api_scheduler_add():
         # 如果指定了数据源，检查 Pro 模块是否可用
         datasource_id = data.get('datasource_id')
         if datasource_id:
-            try:
-                from modules.pro import get_instance_manager
-            except ImportError:
-                return jsonify({'ok': False, 'error': '使用数据源需要安装 Pro 模块，请先安装 Pro 版本'}), 400
+            error = _scheduler_source_error(datasource_id)
+            if error is not None:
+                return error
 
         job_cfg = _build_scheduler_job_cfg(data, job_id)
         job_cfg['enabled'] = True
 
         sm = _get_scheduler()
-        success = sm.add_job(job_cfg)
+        if any(job['id'] == job_id for job in sm.list_jobs()):
+            return jsonify(ok=False, error='任务编号已存在'), 409
+        success = sm.add_job(job_cfg, create_only=True)
         if success:
             return jsonify({'ok': True, 'job_id': job_id, 'msg': 'Task added successfully'})
         else:
@@ -6647,13 +6680,15 @@ def api_scheduler_update(job_id):
         # 如果指定了数据源，检查 Pro 模块是否可用
         datasource_id = data.get('datasource_id')
         if datasource_id:
-            try:
-                from modules.pro import get_instance_manager
-            except ImportError:
-                return jsonify({'ok': False, 'error': '使用数据源需要安装 Pro 模块，请先安装 Pro 版本'}), 400
+            error = _scheduler_source_error(datasource_id)
+            if error is not None:
+                return error
 
         job_cfg = _build_scheduler_job_cfg(data, job_id)
         sm = _get_scheduler()
+        error = _scheduler_job_error(sm, job_id)
+        if error is not None:
+            return error
         if sm.update_job(job_id, job_cfg):
             return jsonify({'ok': True, 'job_id': job_id, 'msg': 'Task updated successfully'})
         return jsonify({'ok': False, 'error': 'Task not found or invalid cron expression'}), 404
@@ -6668,6 +6703,9 @@ def api_scheduler_delete(job_id):
     """删除定时任务"""
     try:
         sm = _get_scheduler()
+        error = _scheduler_job_error(sm, job_id)
+        if error is not None:
+            return error
         success = sm.remove_job(job_id)
         return jsonify({'ok': success, 'msg': 'Task deleted' if success else 'Task not found'})
     except Exception as e:
@@ -6681,8 +6719,12 @@ def api_scheduler_toggle(job_id):
         data = request.json
         enabled = bool(data.get('enabled', True))
         sm = _get_scheduler()
-        sm.toggle_job(job_id, enabled)
-        return jsonify({'ok': True, 'enabled': enabled})
+        error = _scheduler_job_error(sm, job_id)
+        if error is not None:
+            return error
+        if not sm.toggle_job(job_id, enabled):
+            return jsonify(ok=False, error='更新任务状态失败'), 400
+        return jsonify(ok=True, enabled=enabled)
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -6692,6 +6734,9 @@ def api_scheduler_run_now(job_id):
     """立即执行定时任务（手动触发）"""
     try:
         sm = _get_scheduler()
+        error = _scheduler_job_error(sm, job_id)
+        if error is not None:
+            return error
         success = sm.run_job_now(job_id)
         return jsonify({'ok': success, 'msg': 'Task triggered' if success else 'Task not found'})
     except Exception as e:
@@ -6701,6 +6746,9 @@ def api_scheduler_run_now(job_id):
 @app.route('/api/scheduler/reload', methods=['POST'])
 def api_scheduler_reload():
     """从配置文件重载定时任务（用户手工编辑 scheduler_jobs.json 后可立即生效）"""
+    principal = g.security_principal
+    if not (principal.is_admin and principal.tenant_id == 1):
+        return jsonify(ok=False, error='只有安装租户管理员可以重载全局定时任务'), 403
     try:
         sm = _get_scheduler()
         affected = sm.reload_from_disk()
@@ -6718,6 +6766,9 @@ def api_scheduler_cancel(job_id):
     """
     try:
         sm = _get_scheduler()
+        error = _scheduler_job_error(sm, job_id)
+        if error is not None:
+            return error
         ok, msg = sm.cancel_job(job_id)
         return jsonify({'ok': ok, 'msg': msg})
     except Exception as e:
@@ -8016,9 +8067,11 @@ def api_pro_datasource(instance_id):
         ok, err = assert_visible(user, 'instance', instance_id)
         if not ok:
             return jsonify({'ok': False, **err}), 403
-        inst = im.get_instance(instance_id, mask_password=False)
+        inst = im.get_instance(instance_id, mask_password=True)
         if not inst:
             return jsonify({'ok': False, 'error': '数据源不存在'})
+        for key in ('ssh_password', 'ssh_key_password', 'jdbc_url'):
+            inst.pop(key, None)
         return jsonify({'ok': True, 'datasource': inst})
     except ImportError as e:
         import traceback
@@ -8106,6 +8159,7 @@ def api_pro_datasource_add():
             ssh_user=data.get('ssh_user', ''),
             ssh_password=data.get('ssh_password', ''),
             ssh_key_file=data.get('ssh_key_file', ''),
+            ssh_key_password=data.get('ssh_key_password', ''),
             ssh_enabled=bool(data.get('ssh_enabled', False)),
             # 是否经 SSH 隧道连接数据库；未显式传值时缺省启用（堡垒机场景）
             ssh_tunnel=bool(data.get('ssh_tunnel', False)),
@@ -8114,13 +8168,20 @@ def api_pro_datasource_add():
             seed_nodes=data.get('seed_nodes', ''),
             # GBase 8a 直连参数：此前新增接口漏传 tls_ca_file，导致表单里填的 CA
             # 路径根本没有落库，巡检时永远报「直连需要可信CA」。
-            tls_ca_file=data.get('tls_ca_file', '') if _db_type == 'gbase8a' else '',
-            gbase8a_allow_plaintext=(bool(data.get('gbase8a_allow_plaintext', False))
+            tls_ca_file=data.get('tls_ca_file', ''),
+            connect_mode=data.get('connect_mode', ''),
+            auth_source=data.get('auth_source', ''),
+            auth_mechanism=data.get('auth_mechanism', ''),
+            replica_set=data.get('replica_set', ''),
+            tls=_as_bool_flag(data.get('tls')),
+            tls_cert_key_file=data.get('tls_cert_key_file', ''),
+            tls_allow_invalid_certs=_as_bool_flag(data.get('tls_allow_invalid_certs')),
+            gbase8a_allow_plaintext=(_as_bool_flag(data.get('gbase8a_allow_plaintext'))
                                      if _db_type == 'gbase8a' else False),
             # SQL Server (JDBC) 类型缺省走 jdbc；其它类型保持 odbc（向后兼容）
             connection_mode=data.get('connection_mode') or ('jdbc' if _db_type == 'sqlserver_jdbc' else 'odbc'),
-            encrypt=bool(data.get('encrypt', False)) if _db_type == 'sqlserver_jdbc' else False,
-            trust_server_certificate=bool(data.get('trust_server_certificate', True)) if _db_type == 'sqlserver_jdbc' else True,
+            encrypt=bool(data.get('encrypt', False)) if _db_type in ('sqlserver', 'sqlserver_jdbc') else False,
+            trust_server_certificate=bool(data.get('trust_server_certificate', True)) if _db_type in ('sqlserver', 'sqlserver_jdbc') else True,
             driver_version=data.get('driver_version', '') or '',
             use_sid=bool(data.get('use_sid', False)),
             tags=data.get('tags', []),
@@ -8266,13 +8327,10 @@ def api_pro_datasource_test(instance_id):
         ok, err = assert_visible(user, 'instance', instance_id)
         if not ok:
             return jsonify({'ok': False, **err}), 403
-        if paths.PORTABLE_ROOT is not None:
-            data = im.get_instance_decrypted(instance_id)
-            if data is None:
-                return jsonify(ok=False,error='数据源不存在'),404
-            return jsonify(_conn_test_with_timeout(data['db_type'],data,'pro'))
-        result = im.test_connection(instance_id)
-        return jsonify(result)
+        data = im.get_instance_decrypted(instance_id)
+        if data is None:
+            return jsonify(ok=False, error='数据源不存在'), 404
+        return jsonify(_conn_test_with_timeout(data['db_type'], data, 'pro'))
     except ImportError as e:
         import traceback
         traceback.print_exc()

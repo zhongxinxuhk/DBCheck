@@ -708,21 +708,23 @@ class Inventory:
         stored["connection_mode"] = stored.get("connection_mode") or (
             "jdbc" if stored["db_type"] == "sqlserver_jdbc" else "odbc"
         )
-        stored["updated_at"] = now()
+        if not old or source_updates:
+            stored["updated_at"] = now()
         configuration_id = str(metadata.get("configuration_id") or "CI-" + iid).strip()
         if not configuration_id:
             raise ValueError("配置项编号不能为空")
         metadata["configuration_id"] = configuration_id
-        columns = {row["name"] for row in db.execute("PRAGMA table_info(instances)")}
-        values = {key: value for key, value in stored.items() if key in columns}
-        values["tags"] = json.dumps(values.get("tags", []), ensure_ascii=False)
-        names = list(values)
-        quoted = ",".join('"' + name + '"' for name in names)
-        marks = ",".join("?" for _ in names)
-        db.execute(
-            f"INSERT {'OR REPLACE ' if old else ''}INTO instances ({quoted}) VALUES ({marks})",
-            list(values.values()),
-        )
+        if not old or source_updates:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(instances)")}
+            values = {key: value for key, value in stored.items() if key in columns}
+            values["tags"] = json.dumps(values.get("tags", []), ensure_ascii=False)
+            names = list(values)
+            quoted = ",".join('"' + name + '"' for name in names)
+            marks = ",".join("?" for _ in names)
+            db.execute(
+                f"INSERT {'OR REPLACE ' if old else ''}INTO instances ({quoted}) VALUES ({marks})",
+                list(values.values()),
+            )
         version = old["version"] + 1 if old else 1
         try:
             db.execute(
