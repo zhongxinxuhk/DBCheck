@@ -180,11 +180,19 @@ class CompatibilityTests(unittest.TestCase):
         self.assertIs(inspector._inner.context,redacted)
 
     def test_oracle_timezone_retry_preserves_login_and_sysdba(self):
+        from modules import jdbc_connector
+        from unittest.mock import patch
+
         path=ROOT/'plugins/enabled/oracle_jdbc/main_plugin.py'
         spec=importlib.util.spec_from_file_location('oracle_timezone_regression',path)
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         inspector=module.OracleJdbcInspector('localhost',1521,'sys','fixture',sysdba=True)
-        with __import__('unittest').mock.patch('modules.jdbc_connector.open_jdbc_connection',return_value=(None,{'error':'fixture'})) as connect:
+        with (
+            patch.object(jdbc_connector, 'resolve_driver_jars', return_value=['fixture.jar']),
+            patch.object(jdbc_connector, '_start_jvm'),
+            patch.object(jdbc_connector, '_open_jpype_connection',
+                         return_value=(None, {'error': 'fixture'})) as connect,
+        ):
             inspector.connect()
         callback=connect.call_args.kwargs['on_error']
         context={'url':'jdbc:oracle:thin:@fixture','properties':{'internal_logon':'sysdba'}}

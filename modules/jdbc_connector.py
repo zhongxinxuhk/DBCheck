@@ -751,6 +751,18 @@ def _start_jvm(jars: List[str]) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # 统一建连入口
 # ═══════════════════════════════════════════════════════════════════════════
+def _oracle_timezone_retry(user, password):
+    def retry(error, context):
+        # Older server timezone files may not recognize the client region.
+        if 'ORA-01882' not in str(error):
+            return None
+        properties = dict(context['properties'], user=user, password=password)
+        properties['oracle.jdbc.timezoneAsRegion'] = 'false'
+        return context['url'], properties
+
+    return retry
+
+
 def open_jdbc_connection(
     db_type: str,
     host: str,
@@ -785,9 +797,8 @@ def open_jdbc_connection(
         mode: 'jaydebeapi' | 'jpype'。
         driver_class: 覆盖注册表默认驱动类（一般不需要，注册表已对齐 jar 内真实类）。
         properties: JDBC 属性 dict（user/password 自动注入，显式键覆盖）。
-        on_error: JPype 模式建连失败回调，签名 on_error(e, ctx) -> (new_url,
-            new_props) | None；返回非 None 则用新参数重试一次（如 SQL Server
-            SSL 回退）。
+        on_error: 建连失败回调，签名 on_error(e, ctx) -> (new_url, new_props) | None。
+            返回新参数时重试一次。Oracle 未指定回调时对 ORA-01882 启用时区兼容重试。
         **extra: 透传给 build_jdbc_url（如 sqlserver 的 instance_name /
             login_timeout_s / application_name、hgdb 的 connect_timeout_s /
             socket_timeout_s）。
@@ -833,6 +844,8 @@ def open_jdbc_connection(
 
     _driver_class = driver_class or _prof.get('driver_class')
     _basename = os.path.basename(_jars[0]) if _jars else ''
+    if db_type == 'oracle_jdbc' and on_error is None:
+        on_error = _oracle_timezone_retry(user, password)
 
     if mode == 'jpype':
         return _open_jpype_connection(
@@ -855,13 +868,23 @@ def open_jdbc_connection(
             'driver': _basename, 'url': _url, 'driver_class': _driver_class, 'mode': mode,
         }
 
+    driver_args = {'user': user, 'password': password, **properties} if properties else [user, password]
     try:
-        driver_args = {'user': user, 'password': password, **properties} if properties else [user, password]
-        conn = jaydebeapi.connect(_driver_class, _url, driver_args, _jars)
-        return conn, {'driver': _basename, 'url': _url,
-                      'driver_class': _driver_class, 'mode': mode}
+        try:
+            conn = jaydebeapi.connect(_driver_class, _url, driver_args, _jars)
+        except Exception as first_error:
+            retry = on_error(first_error, {
+                'db_type': db_type, 'url': _url,
+                'properties': dict(properties or {}), 'user': user,
+            }) if on_error else None
+            if not retry:
+                raise
+            _url, retry_properties = retry
+            conn = jaydebeapi.connect(_driver_class, _url, retry_properties, _jars)
     except Exception as e:  # noqa: BLE001
         return _jdbc_error_result(db_type, e, _url, _basename, _driver_class, mode)
+    return conn, {'driver': _basename, 'url': _url,
+                  'driver_class': _driver_class, 'mode': mode}
 
 
 def _jdbc_error_result(
