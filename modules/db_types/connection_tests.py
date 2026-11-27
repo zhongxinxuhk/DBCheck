@@ -17,6 +17,7 @@ import time
 from modules.core import paths
 from modules.core.paths import PROJECT_ROOT
 from modules.core.proc_registry import kill_process_tree
+from modules.db_types.connection_profile import POSTGRESQL_DEFAULT_DATABASE
 from modules.oracle_conn_test import _find_oracle_client_lib_dir
 
 JDBC_TEST_TIMEOUT = 50
@@ -61,7 +62,7 @@ def test_tidb_connection(host, port, user, password, database=None, driver_versi
         'database': database,
     }, extra_kwargs={'driver_version': driver_version})
 
-def test_pg_connection(host, port, user, password, database='postgres', driver_version=''):
+def test_pg_connection(host, port, user, password, database=POSTGRESQL_DEFAULT_DATABASE, driver_version=''):
     """测试 PostgreSQL 连接（统一 JDBC 子进程隔离；JDBC 不可用回退 psycopg2）。
 
     JVM 在独立子进程内执行，避免主进程 gevent hub 被钉死；与巡检引擎
@@ -375,13 +376,17 @@ def run_jdbc_test_subprocess(db_type, data, extra_kwargs=None, timeout=JDBC_TEST
     import tempfile as _tf
     from modules.jdbc_test_cli import RESULT_PREFIX
 
+    kwargs = dict(extra_kwargs or {})
+    if 'database' not in kwargs and data.get('database'):
+        kwargs['database'] = data['database']
+
     payload = {
         'db_type': db_type,
         'host': data.get('host'),
         'port': data.get('port'),
         'user': data.get('user'),
         'password': data.get('password'),
-        'kwargs': extra_kwargs or {},
+        'kwargs': kwargs,
     }
 
     # 参数走 stdin 临时文件而非命令行：避免密码出现在进程列表/任务管理器里；

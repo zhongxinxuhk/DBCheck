@@ -24,7 +24,12 @@ import logging
 from collections import deque
 from functools import partial
 from modules.pro.instance_manager import get_instance_manager
-from modules.db_types.connection_profile import connection_profile, monitor_jdbc_driver
+from modules.db_types.connection_profile import (
+    POSTGRESQL_DEFAULT_DATABASE,
+    POSTGRESQL_TYPES,
+    connection_profile,
+    monitor_jdbc_driver,
+)
 from modules.monitor.worker_transport import run_monitor_worker
 from modules.core.parallel import RoundExecutor, round_budget
 from modules.core.runtime_tuning import get as _tuning_get
@@ -753,6 +758,9 @@ class MonitorEngine:
         db_type = mq.normalize_db_type(inst.get('db_type'))
         connector = monitor_jdbc_driver(inst, db_type)
         if connector:
+            if connector in POSTGRESQL_TYPES and sql not in self._jdbc_batch_sqls(db_type):
+                result = self._run_monitor_batch(inst, connector, [sql], timeout)
+                return self._jdbc_pick(result, sql)
             template_key = db_type if connector != db_type or db_type in ('sqlserver', 'dm') else None
             return self._jdbc_query(inst, connector, sql, timeout=timeout,
                                     template_key=template_key)
@@ -828,6 +836,8 @@ class MonitorEngine:
                           'vastbase': 'postgres', 'highgo': 'highgo',
                           'halodb': 'halo',
                           'opengauss': 'postgres', 'greenplum': 'postgres'}.get(raw_type)
+            if raw_type in POSTGRESQL_TYPES:
+                default_db = POSTGRESQL_DEFAULT_DATABASE
             import psycopg2
             return psycopg2.connect(
                 host=host, port=port, user=user, password=password,

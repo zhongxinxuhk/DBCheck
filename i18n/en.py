@@ -2722,6 +2722,7 @@ EN = {
     "webui.home_monitor_status_down": "Unavailable",
     "webui.home_monitor_status_cooldown": "Cooling down",
     "webui.home_monitor_latency_prefix": "Latency ",
+    "webui.home_monitor_tunnel_connect_prefix": "SSH connection ",
     "webui.home_monitor_updated_prefix": "Updated ",
     "webui.home_monitor_waiting": "Waiting for collection data…",
     "webui.home_monitor_throughput": "Throughput (QPS / TPS)",

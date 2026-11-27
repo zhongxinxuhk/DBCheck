@@ -5,6 +5,9 @@
 
 from modules.db_types.compatibility import plaintext_allowed
 
+POSTGRESQL_TYPES = frozenset({'pg', 'postgresql'})
+POSTGRESQL_DEFAULT_DATABASE = 'postgres'
+
 BOOLEAN_FIELDS = frozenset({
     'sysdba', 'use_sid', 'tls', 'tls_allow_invalid_certs', 'encrypt',
     'trust_server_certificate', 'ssh_enabled', 'ssh_tunnel', 'enabled',
@@ -13,7 +16,7 @@ BOOLEAN_FIELDS = frozenset({
 FILE_FIELDS = ('ssh_key_file', 'tls_ca_file', 'tls_cert_key_file')
 CONNECTION_FIELDS = BOOLEAN_FIELDS | frozenset({
     'id', 'name', 'label', 'db_type', 'host', 'ip', 'port', 'user', 'password',
-    'database', 'service_name', 'sid', 'instance_name', 'tenant', 'jdbc_url',
+    'database', 'schema', 'service_name', 'sid', 'instance_name', 'tenant', 'jdbc_url',
     'connection_mode', 'driver_version', 'gbase_server_name', 'virtual_cluster',
     'connect_mode', 'auth_source', 'auth_mechanism', 'replica_set', 'seed_nodes',
     'ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key_password',
@@ -67,6 +70,8 @@ def connection_profile(source, db_type=None):
     profile = normalize_source_fields(profile)
     host = str(profile.get('host') or profile.get('ip') or '').strip()
     profile.update(host=host, ip=host)
+    if 'driver_version' in profile:
+        profile['driver_version'] = str(profile['driver_version'] or '').strip()
     if profile.get('ssh_tunnel') and not str(profile.get('ssh_host') or '').strip():
         raise ValueError('已启用 SSH 隧道，但未配置 SSH 主机地址')
     return profile
@@ -107,6 +112,8 @@ def monitor_jdbc_driver(source, dialect):
 
         if paths.PORTABLE_ROOT is not None or source.get('driver_version') or _find_dm_jdbc_jar():
             return 'dm'
+    if kind in POSTGRESQL_TYPES and str(source.get('driver_version') or '').strip():
+        return 'pg'
     if kind == 'uxdb_jdbc':
         return 'uxdb'
     if dialect in ('gbase', 'db2', 'clickhouse'):

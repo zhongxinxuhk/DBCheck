@@ -16,7 +16,12 @@ PostgreSQL 数据库巡检模块 - 基于 BaseInspectionEngine 重构版本
         inspector.generate_report(output_file, inspector_name)
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
+from modules.db_types.connection_profile import POSTGRESQL_DEFAULT_DATABASE
 from modules.inspection.engine import BaseInspectionEngine
 from modules.inspection import postgresql_compat
 from modules.core import entry
@@ -44,7 +49,7 @@ class PostgreSQLInspector(BaseInspectionEngine):
         """
         super().__init__(host, port, user, password, database, ssh_info, template_id)
         self.db_type = 'postgresql'
-        self.driver_version = driver_version or ''
+        self.driver_version = str(driver_version or '').strip()
 
     def _remember_version(self, version, parsed):
         """保存版本号，供模板选择、SQL 改写和报告版本字段复用。"""
@@ -72,23 +77,28 @@ class PostgreSQLInspector(BaseInspectionEngine):
             (ok, version) - ok 为 True 时 version 是版本号，否则是错误信息
         """
         try:
-            import os as _os
             from modules.jdbc_connector import open_jdbc_connection
-            from modules.core.paths import PROJECT_ROOT
             _conn, _meta = open_jdbc_connection(
                 'pg', self.host, int(self.port),
                 user=self.user, password=self.password,
-                database=self.database or 'postgres',
+                database=self.database or POSTGRESQL_DEFAULT_DATABASE,
                 driver_version=self.driver_version,
-                fallback_dirs=[_os.path.join(str(PROJECT_ROOT), 'drivers', 'postgresql')],
             )
             if _conn is None:
-                return self._connect_native((_meta or {}).get('error') or 'JDBC 连接失败')
+                raise RuntimeError((_meta or {}).get('error') or 'JDBC 连接失败')
             self.conn = _conn
             self.cursor = self.conn.cursor()
             ver, parsed = postgresql_compat.fetch_postgresql_version(self.cursor)
             return True, self._remember_version(ver, parsed)
         except Exception as e:
+            if self.conn is not None:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+                self.conn = self.cursor = None
+            if self.driver_version:
+                return False, str(e)
             return self._connect_native(str(e))
 
     def _connect_native(self, reason=''):
@@ -103,7 +113,7 @@ class PostgreSQLInspector(BaseInspectionEngine):
                 port=self.port,
                 user=self.user,
                 password=self.password,
-                dbname=self.database or 'postgres',
+                dbname=self.database or POSTGRESQL_DEFAULT_DATABASE,
                 client_encoding='UTF8',
                 connect_timeout=10
             )

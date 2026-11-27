@@ -16,6 +16,10 @@ MySQL 数据库巡检模块 - 基于 BaseInspectionEngine 重构版本
         inspector.generate_report(output_file, inspector_name)
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 from modules.inspection.engine import BaseInspectionEngine
 from modules.core import entry
@@ -53,15 +57,12 @@ class MySQLInspector(BaseInspectionEngine):
             (ok, version) - ok 为 True 时 version 是版本号，否则是错误信息
         """
         try:
-            import os as _os
             from modules.jdbc_connector import open_jdbc_connection
-            from modules.core.paths import PROJECT_ROOT
             _conn, _meta = open_jdbc_connection(
                 'mysql', self.host, int(self.port),
                 user=self.user, password=self.password,
                 database=self.database or 'mysql',
                 driver_version=self.driver_version,
-                fallback_dirs=[_os.path.join(str(PROJECT_ROOT), 'drivers', 'mysql')],
             )
             if _conn is None:
                 return self._connect_native((_meta or {}).get('error') or 'JDBC 连接失败')

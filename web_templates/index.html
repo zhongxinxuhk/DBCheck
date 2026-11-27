@@ -24637,7 +24637,14 @@ function updateMonitorStatus(id) {
   const avail = latest ? latest.metrics.available : (inst ? inst.available : undefined);
   if (dot) dot.className = 'monitor-dot ' + (avail ? 'up' : 'down');
   if (st) st.textContent = avail === false ? (latest && latest.metrics.status === 'cooldown' ? i18n('webui.home_monitor_status_cooldown') : i18n('webui.home_monitor_status_down')) : i18n('webui.home_monitor_status_normal');
-  if (lt) lt.textContent = (latest && latest.metrics.latency_ms != null) ? (i18n('webui.home_monitor_latency_prefix') + latest.metrics.latency_ms + ' ms') : '';
+  if (lt) {
+    const metrics = latest && latest.metrics;
+    const latencyLabel = i18n('webui.home_monitor_latency_prefix');
+    const label = metrics && metrics.latency_source === 'tunnel_connect'
+      ? (i18n('webui.home_monitor_tunnel_connect_prefix') || 'SSH ' + latencyLabel)
+      : latencyLabel;
+    lt.textContent = metrics && metrics.latency_ms != null ? label + metrics.latency_ms + ' ms' : '';
+  }
   if (up) up.textContent = latest ? (i18n('webui.home_monitor_updated_prefix') + (latest.ts || '').replace('T', ' ').slice(0, 19)) : '';
 }
 

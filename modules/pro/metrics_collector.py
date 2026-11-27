@@ -39,6 +39,12 @@ import threading
 import concurrent.futures as cf
 from datetime import datetime
 
+from modules.db_types.connection_profile import (
+    POSTGRESQL_DEFAULT_DATABASE,
+    POSTGRESQL_TYPES,
+    connection_profile,
+    monitor_jdbc_driver,
+)
 from modules.ssh import resolve_db_endpoint
 
 # ── 配置 ───────────────────────────────────────────────
@@ -57,7 +63,7 @@ if PORTABLE_ROOT is not None:
     JVM_METRICS_DB_TYPES += ('oracle','sqlserver','dm')
 
 # 子进程采集硬超时（秒）。Oracle thin 驱动连接不可达主机可能阻塞较久，超时就丢本轮。
-JVM_METRICS_SUBPROC_TIMEOUT = 50
+METRICS_SUBPROC_TIMEOUT = 50
 
 # 计数器型指标（用于差分算速率）——按 db_type 分派
 COUNTER_KEYS = {
@@ -404,7 +410,7 @@ class MetricsCollector:
         # 隧道可达地址，或留空让本函数接管。
         # sqlserver / gbase8a 由 modules.db_types.compatibility.verified_tunnel
         # 内部自建隧道（含 TDS / TLS 强制校验），此处不接管，避免双重转发。
-        if db_type in ('sqlserver', 'gbase8a'):
+        if db_type in ('sqlserver', 'sqlserver_jdbc', 'mssql', 'gbase8a'):
             _ep_host, _ep_port, _tnl = inst.get('host'), int(inst.get('port') or 0), None
         else:
             _ep_host, _ep_port, _tnl = resolve_db_endpoint(inst)
@@ -432,11 +438,23 @@ class MetricsCollector:
                                    password=password, database=db_name,
                                    connect_timeout=CONNECT_TIMEOUT,
                                    read_timeout=t, write_timeout=t)
+        if db_type in POSTGRESQL_TYPES and monitor_jdbc_driver(inst, 'pg'):
+            from modules.jdbc_connector import open_jdbc_connection
+
+            conn, metadata = open_jdbc_connection(
+                'pg', host, port, user, password,
+                database=inst.get('database') or POSTGRESQL_DEFAULT_DATABASE,
+                driver_version=inst['driver_version'],
+                jdbc_url=inst.get('jdbc_url'),
+            )
+            if conn is None:
+                raise ValueError(metadata.get('error') or 'PostgreSQL JDBC 连接失败')
+            return conn
         if db_type in ('postgresql', 'pg', 'ivorysql', 'kingbase', 'halodb', 'vastbase'):
             import psycopg2
             dbname = inst.get('database') or (
                 'kingbase' if db_type == 'kingbase'
-                else ('halo' if db_type == 'halodb' else 'postgres'))
+                else ('halo' if db_type == 'halodb' else POSTGRESQL_DEFAULT_DATABASE))
             return psycopg2.connect(host=host, port=port, user=user,
                                     password=password, dbname=dbname,
                                     connect_timeout=CONNECT_TIMEOUT,
@@ -974,9 +992,11 @@ class MetricsCollector:
                     if v > 0:
                         latency = float(v)
                         break
-            m['latency_ms'] = latency
+            if latency > 0:
+                m['latency_ms'] = latency
+                m['latency_source'] = 'oceanbase_rpc'
         except Exception:
-            m['latency_ms'] = 0.0
+            pass
 
         # ── 7) qps / tps：单点快照无时间差，缺速率上下文默认 0.0；
         #        优先从 GV$SYSSTAT 查询/事务类累计计数器取值（生产环境真实速率
@@ -1218,20 +1238,20 @@ class MetricsCollector:
                 m['dm_' + k] = v
         except Exception:
             pass
-        # 活跃会话：STATE='ACTIVE' 通用；兜底为「非 INACTIVE」或全量
+        # DM8 uses ACTIVE/IDLE or the legacy R/W/I state codes.
         try:
-            cur.execute("SELECT count(*) FROM v$session WHERE state = 'ACTIVE'")
-            m['active_sessions'] = _to_num(cur.fetchone()[0])
+            cur.execute("SELECT STATE, COUNT(*) FROM V$SESSIONS GROUP BY STATE")
+            states = [(str(state or '').strip().upper(), _to_num(count))
+                      for state, count in cur.fetchall()]
+            m['total_connections'] = sum(count for _, count in states)
+            m['active_sessions'] = sum(count for state, count in states
+                                       if state in ('ACTIVE', 'R', 'W'))
         except Exception:
             try:
-                cur.execute("SELECT count(*) FROM v$session WHERE state <> 'INACTIVE'")
-                m['active_sessions'] = _to_num(cur.fetchone()[0])
+                cur.execute("SELECT COUNT(*) FROM V$SESSIONS")
+                m['total_connections'] = _to_num(cur.fetchone()[0])
             except Exception:
-                try:
-                    cur.execute("SELECT count(*) FROM v$session")
-                    m['active_sessions'] = _to_num(cur.fetchone()[0])
-                except Exception:
-                    pass
+                pass
         return m
 
     def _attach_host(self, snapshot: dict, inst_id: str, inst: dict):
@@ -1616,38 +1636,13 @@ class MetricsCollector:
         self._fail[inst_id] = 0
 
     # ── JVM 类型：隔离到干净子进程采集（规避主进程 startJVM 冻结 hub）──
-    def _collect_jvm_subprocess(self, inst: dict) -> dict:
-        """对 oracle_jdbc / uxdb_jdbc 等 JVM 类型，在干净子进程里执行连接 + 深采。
-
-        主进程只负责 spawn、读取 stdout 最后一个 JSON 行并取回指标字典；
-        JPype/JVM 完全在子进程内，绝不污染 gevent hub。
-        返回指标字典（含 available/error），失败返回 None。
-        """
+    def _collect_metrics_subprocess(self, inst: dict) -> dict:
+        """Run database connection and metric sampling with a process timeout."""
         import subprocess as _sp
         from modules.core import paths
 
-        db_type = str(inst.get('db_type') or '').lower()
-        payload = {
-            'task_id': 'metrics-%s-%s' % (db_type, datetime.now().strftime('%Y%m%d%H%M%S')),
-            'db_type': db_type,
-            'db_info': {
-                'id': inst.get('id') or inst.get('instance_id'),
-                'instance_id': inst.get('id') or inst.get('instance_id'),
-                'name': inst.get('name') or '',
-                'host': inst.get('host'),
-                'port': int(inst.get('port') or 0),
-                'user': inst.get('user'),
-                'password': inst.get('password'),
-                'database': inst.get('database') or '',
-                'service_name': inst.get('service_name') or inst.get('database') or '',
-                'sysdba': bool(inst.get('sysdba', False)),
-                'jdbc_url': inst.get('jdbc_url') or None,
-            },
-        }
-        for field in ('driver_version','use_sid','connection_mode','encrypt','trust_server_certificate',
-                      'ssh_enabled','ssh_host','ssh_port','ssh_user','ssh_password','ssh_key_file','ssh_key_password','ssh_tunnel','_tunnel_ready'):
-            if field in inst:
-                payload['db_info'][field] = inst[field]
+        profile = connection_profile(inst)
+        payload = {'db_type': profile['db_type'], 'db_info': profile}
         raw = json.dumps(payload, ensure_ascii=True)
 
         if getattr(sys, 'frozen', False):
@@ -1663,12 +1658,12 @@ class MetricsCollector:
         try:
             proc = _sp.run(
                 cmd, input=raw.encode('utf-8'), capture_output=True,
-                timeout=JVM_METRICS_SUBPROC_TIMEOUT, env=env, cwd=str(paths.PROJECT_ROOT),
+                timeout=METRICS_SUBPROC_TIMEOUT, env=env, cwd=str(paths.PROJECT_ROOT),
             )
         except _sp.TimeoutExpired:
-            return {'available': False, 'error': 'jvm metrics subprocess timeout'}
+            return {'available': False, 'error': 'metrics subprocess timeout'}
         except Exception as e:  # noqa: BLE001
-            return {'available': False, 'error': 'jvm metrics spawn failed: %s' % str(e)[:200]}
+            return {'available': False, 'error': 'metrics spawn failed: %s' % str(e)[:200]}
 
         out = (proc.stdout or b'').decode('utf-8', errors='replace').strip()
         # 插件会向 stdout 打印 [Oracle JDBC] 调试信息；结构化结果在最后一行（以 { 开头）。
@@ -1700,27 +1695,27 @@ class MetricsCollector:
             snapshot['status'] = 'cooldown'
             return snapshot
 
-        # 可用性探针同样必须经隧道：直连 127.0.0.1:5432 会把「仅监听 SSH
-        # 主机回环」的实例误判为 down，且后续深采根本走不到。
-        _ep_host, _ep_port, _ = resolve_db_endpoint(inst)
-        up, latency = self._tcp_probe(_ep_host, _ep_port)
-        snapshot['available'] = bool(up)
-        snapshot['latency_ms'] = latency
-        if not up:
-            self._on_fail(inst_id)
-            return snapshot
+        tunneled = bool(inst.get('ssh_tunnel'))
+        isolated = (tunneled or db_type in JVM_METRICS_DB_TYPES
+                    or (db_type in POSTGRESQL_TYPES and monitor_jdbc_driver(inst, 'pg')))
+        snapshot.update(available=False, latency_ms=None)
+        if not tunneled:
+            host, port, _ = resolve_db_endpoint(inst)
+            up, latency = self._tcp_probe(host, port)
+            snapshot.update(available=bool(up), latency_ms=latency, latency_source='tcp_probe')
+            if not up:
+                self._on_fail(inst_id)
+                return snapshot
 
         conn = None
         try:
-            if db_type in JVM_METRICS_DB_TYPES:
-                # JVM 类型：连接 + 深采必须隔离到干净子进程（绝不在主进程 startJVM），
-                # 否则 gevent monkey-patch 下冻结整个 hub → 实时监视界面卡死。
-                metrics = self._collect_jvm_subprocess(inst)
+            if isolated:
+                metrics = self._collect_metrics_subprocess(inst)
                 if metrics:
                     snapshot.update(metrics)
                     self._compute_rates(inst_id, db_type, snapshot, metrics)
                 else:
-                    snapshot['error'] = 'jvm metrics subprocess returned nothing'
+                    snapshot['error'] = 'metrics subprocess returned nothing'
             else:
                 conn = self._connect(inst)
                 if conn is not None:
@@ -1738,7 +1733,10 @@ class MetricsCollector:
         # 宿主资源与数据库可用性解耦：无论 DB 连接成功还是失败（含连接异常），
         # 均采集宿主指标，修复社区版 DB 不可达实例「宿主资源」面板显示「暂无宿主数据」。
         self._attach_host(snapshot, inst_id, inst)
-        self._on_success(inst_id)
+        if snapshot['available']:
+            self._on_success(inst_id)
+        else:
+            self._on_fail(inst_id)
         return snapshot
 
     # ── 一轮采集（被调度器调用）──
