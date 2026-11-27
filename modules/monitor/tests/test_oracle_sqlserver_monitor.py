@@ -170,6 +170,51 @@ def test_oracle_monitor_forwards_sysdba_to_dbapi_driver(monkeypatch):
     assert captured['user'] == 'sys'
 
 
+def test_oracle_monitor_retries_unsupported_timezone_and_collects_sessions(monkeypatch):
+    from modules import jdbc_connector
+    from modules.monitor.jdbc_collect_cli import _collect
+
+    attempts = []
+    queries_by_sql = {
+        queries.CONNECTION_TEMPLATES['oracle']: (
+            [('STATE',), ('TOTAL_CONNECTIONS',)], [('active', 1)],
+        ),
+        'SELECT 1 FROM DUAL': ([('VALUE',)], [(1,)]),
+    }
+
+    class Cursor:
+        def execute(self, sql):
+            self.description, self.rows = queries_by_sql[sql]
+
+        def fetchall(self):
+            return self.rows
+
+        def close(self):
+            pass
+
+    def connect(driver, url, properties, jars):
+        attempts.append((url, properties))
+        if properties.get('oracle.jdbc.timezoneAsRegion') != 'false':
+            raise RuntimeError('ORA-01882: timezone region not found')
+        return types.SimpleNamespace(cursor=Cursor, close=lambda: None)
+
+    monkeypatch.setitem(sys.modules, 'jaydebeapi', types.SimpleNamespace(connect=connect))
+    monkeypatch.setattr(jdbc_connector, 'resolve_driver_jars', lambda *a, **kw: ['fixture.jar'])
+    monkeypatch.setattr(jdbc_connector, '_start_jvm', lambda *_: None)
+    monkeypatch.setattr(jdbc_connector, '_is_jvm_started', lambda: True)
+
+    result = _collect(dict(db_type='oracle_jdbc', host='localhost', port=1521, user='sys',
+                           service_name='ORCL', password='fixture', sysdba=True,
+                           queries=list(queries_by_sql)))
+    assert result['q0'] == {
+        'rows': [{'state': 'active', 'total_connections': 1}], 'error': None,
+    }
+    assert result['q1'] == {'rows': [{'value': 1}], 'error': None}
+    url = 'jdbc:oracle:thin:@//localhost:1521/ORCL'
+    login = {'user': 'sys', 'password': 'fixture', 'internal_logon': 'sysdba'}
+    assert attempts == [(url, login), (url, {**login, 'oracle.jdbc.timezoneAsRegion': 'false'})]
+
+
 def test_sqlserver_connection_dispatch(monkeypatch):
     captured = {}
 
