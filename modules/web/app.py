@@ -2991,8 +2991,7 @@ def _ct_dm(data, flavor):
 
 def _ct_sqlserver(data, flavor):
     if paths.PORTABLE_ROOT is not None:
-        ok,message = run_jdbc_test_subprocess('sqlserver_jdbc',dict(data,connection_mode='jdbc'))
-        return {'ok':ok,'msg':message,'message':message}
+        return _ct_sqlserver_jdbc(data, flavor)
     ok,msg=test_sqlserver_connection(data['host'],data['port'],data['user'],data['password'],data.get('database','master'),data)
     return {'ok':ok,('message' if flavor=='pro' else 'msg'):msg}
 
@@ -3003,14 +3002,12 @@ def _ct_gbase8a(data,flavor):
 
 
 def _ct_sqlserver_jdbc(data, flavor):
-    if paths.PORTABLE_ROOT is not None:
-        ok,message = run_jdbc_test_subprocess('sqlserver_jdbc',dict(data,connection_mode='jdbc'))
-        return {'ok':ok,'msg':message,'message':message}
     """SQL Server (JDBC) 连接测试：按 connection_mode 透传到双轨测试方法。
 
     缺省 / 空串 → 'jdbc'（本类型语义即 JDBC；旧实例无该字段时向后兼容）。
     """
-    _mode = (data.get('connection_mode') or 'jdbc').strip().lower()
+    portable = paths.PORTABLE_ROOT is not None
+    _mode = 'jdbc' if portable else (data.get('connection_mode') or 'jdbc').strip().lower()
     _host = data['host']
     _port = int(data['port'])
     _db = data.get('database', 'master') or 'master'
@@ -3033,6 +3030,8 @@ def _ct_sqlserver_jdbc(data, flavor):
                    trust_server_certificate=bool(data.get('trust_server_certificate', True)),
                    driver_version=data.get('driver_version') or None)
     ok, msg = run_jdbc_test_subprocess('sqlserver_jdbc', data, _kwargs)
+    if portable:
+        return {'ok': ok, 'msg': msg, 'message': msg}
     if not ok and _mode == 'auto':
         ok2, msg2 = _odbc()
         if ok2:
