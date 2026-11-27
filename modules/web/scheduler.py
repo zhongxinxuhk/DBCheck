@@ -355,7 +355,7 @@ def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None, job_
     """复用手动巡检的隔离子进程入口。
 
     复用 ``modules/jdbc_inspection_cli.py``：该 CLI 在未被 gevent monkey-patch 的
-    子进程里调用 ``app.run_inspection_task``，主进程（调度器线程）只负责 spawn、
+    子进程里调用巡检执行服务，主进程（调度器线程）只负责 spawn、
     读取 stdout 结束行（__DBCHECK_INSP_DONE__）并取回 ``report_path`` 供通知使用。
 
     中止支持（#64）：子进程句柄登记到 handle.proc，用户取消时由取消方调用
@@ -368,13 +368,11 @@ def _run_plugin_inspection_subprocess(db_info, inspector_name, handle=None, job_
     )
 
     db_type = db_info['db_type']
-    mapped = dict(db_info)
-    mapped.update(
-        ip=db_info.get('host') or db_info.get('ip') or '',
-        port=int(db_info.get('port') or 0),
-        name=db_info.get('label') or db_info.get('name') or db_type,
-        inspector_name=inspector_name,
-    )
+    from modules.db_types.connection_profile import inspection_profile
+
+    mapped = inspection_profile(db_info, db_type)
+    mapped['name'] = db_info.get('label') or db_info.get('name') or db_type
+    mapped['inspector_name'] = inspector_name
     job_options = job_options or {}
     payload = {
         'task_id': 'sched-' + uuid.uuid4().hex,

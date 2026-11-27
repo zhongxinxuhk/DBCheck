@@ -98,7 +98,7 @@ def open_db_tunnel(db_info: dict, log=print):
     if not ssh_host:
         return None
 
-    remote_host = (db_info.get('ip') or '').strip() or '127.0.0.1'
+    remote_host = (db_info.get('host') or db_info.get('ip') or '').strip() or '127.0.0.1'
     remote_port = int(db_info.get('port') or 0)
     tunnel = SSHTunnel(
         ssh_host,
@@ -114,6 +114,27 @@ def open_db_tunnel(db_info: dict, log=print):
     log(f'  🔗 SSH 隧道 {ssh_host} → {remote_host}:{remote_port} '
         f'已映射到 127.0.0.1:{tunnel.local_port}')
     return tunnel, '127.0.0.1', tunnel.local_port
+
+
+class DatabaseTunnelError(ValueError):
+    """The connection cannot use its requested SSH transport."""
+
+
+def prepare_db_endpoint(profile, log=None):
+    """Return driver options and a caller-owned tunnel for a single operation."""
+    if not profile.get('ssh_tunnel'):
+        return profile, None
+    if profile.get('jdbc_url'):
+        raise DatabaseTunnelError('通过 SSH 连接时请使用主机、端口和库名或服务名')
+    if not str(profile.get('ssh_host') or '').strip():
+        raise DatabaseTunnelError('已启用 SSH 隧道，但未配置 SSH 主机地址')
+    try:
+        tunnel, host, port = open_db_tunnel(profile, log=log or (lambda message: None))
+    except Exception as error:
+        endpoint = f"{profile['ssh_host']}:{profile.get('ssh_port', 22)}"
+        raise DatabaseTunnelError(f'SSH 隧道建立失败（{endpoint}）：{error}') from error
+    return dict(profile, host=host, ip=host, port=port,
+                ssh_tunnel=False, _tunnel_ready=True), tunnel
 
 
 # ── 隧道缓存：跨功能复用同一条 SSH 连接 ────────────────────────

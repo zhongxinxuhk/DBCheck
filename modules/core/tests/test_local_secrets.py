@@ -264,3 +264,27 @@ def test_jdbc_url_decrypt_failure_keeps_ciphertext(isolated_paths):
         except FileNotFoundError:
             pass
     assert _decrypt_jdbc_url(cipher) == cipher
+
+
+def test_source_revision_commits_and_rolls_back_with_source(isolated_paths):
+    import sqlite3
+
+    source_id = 'transactional-source'
+    writer = InstanceManager(str(isolated_paths / 'pro_data'))
+    assert writer.add_instance(DatabaseInstance(
+        id=source_id, name='original', db_type='gbase8a', host='example.test',
+        port=5258, user='observer',
+    ))['ok']
+    reader = InstanceManager(str(isolated_paths / 'pro_data'))
+    assert reader.get_instance_decrypted(source_id)['name'] == 'original'
+
+    with sqlite3.connect(writer.instances_db) as conn:
+        revision = writer._instances_revision(conn)
+        conn.execute('UPDATE instances SET name=? WHERE id=?', ('rolled back', source_id))
+        assert writer._instances_revision(conn) != revision
+        conn.rollback()
+        assert writer._instances_revision(conn) == revision
+        conn.execute('UPDATE instances SET name=? WHERE id=?', ('committed', source_id))
+
+    assert reader.get_instance_decrypted(source_id)['name'] == 'committed'
+    assert not (isolated_paths / 'pro_data' / 'instances.db.rev').exists()

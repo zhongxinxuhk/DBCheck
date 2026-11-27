@@ -46,7 +46,8 @@ from modules.core.runtime_tuning import get as tuning_get
 
 from modules.monitor.queries import normalize_db_type
 from modules.monitor import history_store  # 历史回放存储层（P2-4，仅非敏感白名单字段落库）
-from modules.monitor.native_collect import NATIVE_DB_TYPES, collect_native
+from modules.monitor.native_collect import NATIVE_DB_TYPES
+from modules.monitor.worker_transport import run_monitor_worker
 
 _log = logging.getLogger('dbcheck.monitor')
 
@@ -1155,7 +1156,10 @@ class ScreenCollector:
         # 0) MongoDB / Redis 原生驱动通道：SQL 引擎（DBAPI/JDBC）不覆盖的
         #    NoSQL 类型在此直连采集，连通性与指标一并拿到后提前返回。
         if db_type in NATIVE_DB_TYPES:
-            nd = collect_native(inst)
+            timeout = engine.QUERY_TIMEOUT
+            nd = run_monitor_worker({'source': inst, 'nosql': True}, timeout)
+            if nd.get('fatal'):
+                nd = {'alive': False, 'err': nd['fatal']}
             if not nd.get('alive'):
                 snap['err'] = nd.get('err')
                 snap['status'] = 'down'

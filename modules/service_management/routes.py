@@ -11,7 +11,7 @@ from flask import Blueprint, g, jsonify, request, send_file, current_app, redire
 from modules.core import paths
 from modules.core.data_security import redact
 from .catalog import all_items, load_catalog
-from .store import ServiceStore
+from .store import default_service_store
 from .service import validate_asset, validate_details, evidence_result, overview, run_inspection
 
 bp = Blueprint('service_management',__name__)
@@ -29,9 +29,7 @@ def store():
     supplied = current_app.config.get('SERVICE_STORE')
     if supplied is not None:
         return supplied
-    from modules.pro.instance_manager import _get_fernet
-    _get_fernet()
-    return ServiceStore(paths.DATA_DIR/'service_management'/'services.db',paths.DB_KEY_PATH.read_bytes())
+    return default_service_store()
 
 
 def catalog():

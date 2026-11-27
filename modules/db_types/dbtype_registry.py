@@ -155,10 +155,15 @@ def inspection_type(source):
 
     kind = (source.get('db_type') or 'mysql').strip().lower()
     kind = {'dm8': 'dm', 'oracle_full': 'oracle', 'mssql': 'sqlserver'}.get(kind, kind)
-    if paths.PORTABLE_ROOT is not None:
-        return {'oracle': 'oracle_jdbc', 'sqlserver': 'sqlserver_jdbc'}.get(kind, kind)
-    if kind == 'sqlserver' and source.get('connection_mode') in {'jdbc', 'auto'}:
-        return 'sqlserver_jdbc'
+    if kind == 'oracle' and (
+            paths.PORTABLE_ROOT is not None
+            or str(source.get('jdbc_url') or '').strip().lower().startswith('jdbc:')):
+        return 'oracle_jdbc'
+    if kind == 'sqlserver':
+        from modules.db_types.connection_profile import sqlserver_mode
+
+        if sqlserver_mode(dict(source, db_type=kind)) in ('jdbc', 'auto'):
+            return 'sqlserver_jdbc'
     return kind
 
 

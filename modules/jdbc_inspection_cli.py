@@ -138,18 +138,6 @@ def _write_stdout(text):
             pass
 
 
-def _make_emitter(task_id):
-    """构造替换 ``socketio.emit`` 的可调用对象。
-
-    ``run_inspection_task`` 内的事件调用形如 ``emit(event, data, room=task_id)``；
-    我们忽略 room，只把事件写到 stdout，供主进程转发给前端。
-    """
-    def _emit(event, data, **kwargs):
-        # 不转发 room/skip_sid 等 kwargs
-        _emit_line(event, data)
-    return _emit
-
-
 def main(argv=None):
     """子进程入口：stdin 读 JSON，执行巡检任务，stdout 输出事件流。"""
     _ensure_project_root_on_path()
@@ -170,7 +158,6 @@ def main(argv=None):
     task_id = payload.get('task_id')
     db_type = (payload.get('db_type') or '').strip()
     db_info = payload.get('db_info') or {}
-    db_info['_db_type'] = db_type
 
     if not task_id:
         _emit_line('error', {'msg': '巡检子进程缺少 task_id'})
@@ -190,21 +177,26 @@ def main(argv=None):
     limits = normalize_policy(payload.get('inspection_limits') or {})
     sql_safety.QUERY_TIMEOUT_SECONDS = limits['query_timeout']
     sql_safety.ROW_LIMIT = limits['row_limit']
-    os.environ['DBPULSE_INSPECTION_WORKER']='1'
-    # 导入主应用模块（会初始化 Flask/SocketIO，但在子进程里不会被 patch）
     try:
-        import modules.web.app as app
-    except Exception as e:  # noqa: BLE001
-        _emit_line('error', {'msg': f'巡检子进程无法加载应用模块: {e}'})
-        _emit_line('done', {'msg': f'无法加载应用模块: {e}', 'task_id': task_id})
+        from modules.core import paths
+        from modules.db_types.connection_profile import inspection_profile
+        from modules.inspection.execution import execute_inspection
+
+        paths.ensure_migrated()
+        # Task attributes are separate from driver options.
+        task_attributes = {key: db_info[key] for key in
+                           ('inspector_name', 'desensitize', 'output_dir', 'zip') if key in db_info}
+        db_info = {**inspection_profile(db_info, db_type), **task_attributes, '_db_type': db_type}
+    except Exception as error:
+        message = f'巡检子进程无法加载执行服务: {error}'
+        _emit_line('error', {'msg': message})
+        _write_stdout(DONE_PREFIX + json.dumps({
+            'status': 'error', 'task_id': task_id, 'error_msg': message,
+        }, ensure_ascii=True) + '\n')
         return 2
 
-    # 劫持 socketio.emit，使 run_inspection_task 的日志/事件直接写到 stdout
-    app.socketio.emit = _make_emitter(task_id)
-
-    # 初始化任务记录（与主进程 tasks 结构保持一致）
     task_metadata = payload.get('task_metadata') or {}
-    app.tasks[task_id] = {
+    task = {
         **{key: task_metadata.get(key) for key in ('datasource_id','owner_user_id','owner_tenant_id')},
         'id': task_id,
         'db_type': db_type,
@@ -221,18 +213,14 @@ def main(argv=None):
     # 若不先建隧道，预检直接判死（Connection refused），而预检失败只发
     # error/done 事件、不发 log 事件 —— 前端表现就是「巡检失败且没有日志」。
     _tunnel = None
-    if db_info.get('ssh_host') and db_info.get('ssh_tunnel', False):
+    if db_info.get('ssh_tunnel'):
         try:
-            from modules.ssh import open_db_tunnel
-            _opened = open_db_tunnel(
-                db_info, log=lambda m: _emit_line('log', {'msg': m}))
-            if _opened:
-                _tunnel, _lh, _lp = _opened
-                db_info['_conn_ip'] = _lh
-                db_info['_conn_port'] = _lp
-                db_info['_tunnel_ready'] = True
-                _emit_line('log', {'msg': f'✅ SSH 隧道就绪：远程 {db_info.get("ip")}:'
-                                           f'{db_info.get("port")} → 本地 {_lh}:{_lp}'})
+            from modules.ssh import prepare_db_endpoint
+
+            endpoint, _tunnel = prepare_db_endpoint(
+                db_info, log=lambda message: _emit_line('log', {'msg': message}))
+            db_info.update(_conn_ip=endpoint['ip'], _conn_port=endpoint['port'],
+                           _tunnel_ready=True)
         except Exception as e:  # noqa: BLE001
             _msg = (f'SSH 隧道建立失败（{db_info.get("ssh_host")}:'
                     f'{db_info.get("ssh_port", 22)}）：{e}')
@@ -255,11 +243,13 @@ def main(argv=None):
                                        '堡垒机/内网映射场景请开启「通过 SSH 隧道连接数据库」。'})
 
     # TCP 预检：自定义 jdbc_url 可能指向多主机/故障转移，此时跳过预检
-    _kw = db_info.get('jdbc_url') or db_info.get('ssh_info', {}).get('jdbc_url')
+    _kw = db_info.get('jdbc_url')
     if not _kw and db_type in JVM_INSPECTION_DB_TYPES:
         _preflight_err = _tcp_preflight(db_info.get('_conn_ip') or db_info.get('ip'),
                                         db_info.get('_conn_port') or db_info.get('port'))
         if _preflight_err:
+            if _tunnel is not None:
+                _tunnel.close()
             # 同步发一条 log 事件：否则前端日志面板全空白，只剩一句「巡检失败」
             _emit_line('log', {'msg': '❌ ' + _preflight_err})
             _emit_line('error', {'msg': _preflight_err})
@@ -303,16 +293,12 @@ def main(argv=None):
 
     final_status = {'status': 'error', 'task_id': task_id}
     try:
-        from modules.inspection.sql_safety import inspection_lease
-        with inspection_lease(db_info,db_type):
-            app.run_inspection_task(
-                task_id,db_info,payload.get('inspector_name','Jack'),
-                payload.get('template_id'),payload.get('chapter_ids'))
-        task = app.tasks.get(task_id, {})
+        execute_inspection(task_id, task, db_info, payload.get('inspector_name', 'Jack'),
+                           payload.get('template_id'), payload.get('chapter_ids'),
+                           emit=_emit_line)
         final_status = _task_snapshot(task)
     except SystemExit:
         # run_inspection_task 内部某些分支可能直接 sys.exit，视为异常结束
-        task = app.tasks.get(task_id, {})
         final_status = _task_snapshot(task)
         final_status['status'] = task.get('status', 'error')
         final_status['error_msg'] = task.get('error_msg') or '巡检子进程异常退出'

@@ -29,6 +29,7 @@ import hashlib
 import base64
 
 from modules.core import paths
+from modules.db_types.connection_profile import FILE_FIELDS, normalize_source_fields
 from modules.ssh import resolve_db_endpoint, tunnel_enabled
 
 paths.ensure_migrated()
@@ -381,10 +382,7 @@ class InstanceManager:
         # 初始化存储
         self._instances: Dict[str, DatabaseInstance] = {}
         self._groups: Dict[str, InstanceGroup] = {}
-        # 跨进程缓存失效依据：revision 戳文件（instances.db.rev / groups.db.rev）
-        # 每次本进程或通过本类写库都会更新 rev，读取时比对即可感知外部进程（Web 端）
-        # 的数据源改动。相比 mtime / 内容哈希 / SQLite data_version，rev 戳不受同秒写入、
-        # 文件大小不变、SQLite 页复用、跨连接版本同步等边界影响，最可靠。
+        self._cache_lock = RLock()
         self._instances_rev = 0
         self._groups_rev = 0
         # 低版本备份/升级前的库可能缺列，先补齐再加载，避免 SELECT/ORDER BY 失败。
@@ -395,7 +393,8 @@ class InstanceManager:
                     has_instances_table = instances.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='instances'"
                     ).fetchone() is not None
-                    self._ensure_instance_columns(instances)
+                    if has_instances_table:
+                        self._ensure_instances_table(instances)
             except sqlite3.Error as error:
                 # 修复失败不阻断启动；_load_data 仍会按原有兼容路径尝试读取。
                 print(f"[InstanceManager] 旧库列迁移跳过: {error}")
@@ -442,7 +441,6 @@ class InstanceManager:
             print(f"[InstanceManager][WARN] jdbc_url 存量加密迁移失败（不阻断启动）: {exc}")
             return 0
         if changed:
-            self._bump_rev(self.instances_db)
             print(f"[InstanceManager] 已将 {changed} 条历史 jdbc_url 迁移为加密存储")
         return changed
 
@@ -487,52 +485,56 @@ class InstanceManager:
                 print(f"[InstanceManager][WARN] 旧 JSON jdbc_url 加密迁移失败（不阻断启动）: {exc}")
         return changed
 
-    def _load_data(self):
+    def _load_data(self, *, require_instances=False):
         """加载数据（优先从 SQLite，回退到 JSON 兼容旧数据）"""
-        instances_rev = self._read_rev(self.instances_db)
+        instances_rev = 0
         groups_rev = self._read_rev(self.groups_db)
         loaded_from_sqlite = False
         # ── 加载实例 ──
         if os.path.exists(self.instances_db):
+            from contextlib import closing
+
             try:
-                conn = sqlite3.connect(self.instances_db)
-                conn.row_factory = sqlite3.Row
-                c = conn.cursor()
-                c.execute("SELECT * FROM instances ORDER BY created_at")
-                loaded = {}
-                for row in c.fetchall():
-                    d = dict(row)
-                    # 兼容旧数据：oracle_full → oracle
-                    if d.get('db_type') == 'oracle_full':
-                        d['db_type'] = 'oracle'
-                    # tags 从 JSON 字符串还原为列表
-                    if isinstance(d.get('tags'), str):
-                        try:
-                            d['tags'] = json.loads(d['tags'])
-                        except Exception:
-                            d['tags'] = []
-                    # sysdba / ssh_enabled / ssh_tunnel / enabled / encrypt / trust_server_certificate / use_sid 从 INTEGER 还原为 bool
-                    for bool_field in ('sysdba', 'ssh_enabled', 'ssh_tunnel', 'enabled', 'encrypt', 'trust_server_certificate', 'use_sid'):
-                        # ssh_tunnel 缺省为「关闭」：列刚 ALTER 出来时可能是 NULL，
-                        # NULL 与缺失都按 False 处理（与 UI 开关默认值一致）。
-                        d[bool_field] = bool(d.get(bool_field, False))
-                    # 存量行 connection_mode 可能为 NULL/''，按类型归一化：
-                    # sqlserver_jdbc 语义即 JDBC，缺省必须归 'jdbc'，否则会被固化成
-                    # 'odbc'，测试连接时错误走到 pyodbc 报 "ODBC Driver 17" 错误；
-                    # 其余类型保持 'odbc'（向后兼容）。须与保存路径(下方 save)一致。
-                    if not d.get('connection_mode'):
-                        d['connection_mode'] = 'jdbc' if d.get('db_type') == 'sqlserver_jdbc' else 'odbc'
-                    # jdbc_url 可能含账号口令：落盘密文，读入内存时透明解密。
-                    d['jdbc_url'] = _decrypt_jdbc_url(d.get('jdbc_url') or '')
-                    inst = DatabaseInstance.from_dict(d)
-                    loaded[inst.id] = inst
-                conn.close()
+                with closing(sqlite3.connect(self.instances_db)) as conn:
+                    conn.row_factory = sqlite3.Row
+                    conn.execute("BEGIN")
+                    instances_rev = self._instances_revision(conn)
+                    c = conn.cursor()
+                    c.execute("SELECT * FROM instances ORDER BY created_at")
+                    loaded = {}
+                    for row in c.fetchall():
+                        d = dict(row)
+                        # 兼容旧数据：oracle_full → oracle
+                        if d.get('db_type') == 'oracle_full':
+                            d['db_type'] = 'oracle'
+                        # tags 从 JSON 字符串还原为列表
+                        if isinstance(d.get('tags'), str):
+                            try:
+                                d['tags'] = json.loads(d['tags'])
+                            except Exception:
+                                d['tags'] = []
+                        # sysdba / ssh_enabled / ssh_tunnel / enabled / encrypt / trust_server_certificate / use_sid 从 INTEGER 还原为 bool
+                        for bool_field in ('sysdba', 'ssh_enabled', 'ssh_tunnel', 'enabled', 'encrypt', 'trust_server_certificate', 'use_sid'):
+                            # ssh_tunnel 缺省为「关闭」：列刚 ALTER 出来时可能是 NULL，
+                            # NULL 与缺失都按 False 处理（与 UI 开关默认值一致）。
+                            d[bool_field] = bool(d.get(bool_field, False))
+                        # 存量行 connection_mode 可能为 NULL/''，按类型归一化：
+                        # sqlserver_jdbc 语义即 JDBC，缺省必须归 'jdbc'，否则会被固化成
+                        # 'odbc'，测试连接时错误走到 pyodbc 报 "ODBC Driver 17" 错误；
+                        # 其余类型保持 'odbc'（向后兼容）。须与保存路径(下方 save)一致。
+                        if not d.get('connection_mode'):
+                            d['connection_mode'] = 'jdbc' if d.get('db_type') == 'sqlserver_jdbc' else 'odbc'
+                        # jdbc_url 可能含账号口令：落盘密文，读入内存时透明解密。
+                        d['jdbc_url'] = _decrypt_jdbc_url(d.get('jdbc_url') or '')
+                        inst = DatabaseInstance.from_dict(d)
+                        loaded[inst.id] = inst
                 # 整体替换（而非增量 merge）：反映 DB 中的「删除」——增量写法会让已删除
                 # 实例永久残留在内存，导致跨进程缓存失效后仍返回旧快照。
                 self._instances = loaded
                 loaded_from_sqlite = True
             except Exception:
-                pass
+                if require_instances:
+                    raise
 
         # JSON 回退（兼容旧数据）
         # 注意：一旦从 instances.db 成功加载，立即把 instances.json 重命名为 .bak，
@@ -608,7 +610,7 @@ class InstanceManager:
 
     @staticmethod
     def _read_rev(db_path):
-        """读取 revision 戳文件（instances.db.rev / groups.db.rev）。
+        """读取分组 revision 戳文件。
 
         每次本类写库都会更新该值，用于跨进程（Web / MCP 独立进程）感知数据源变更。
         文件不存在或损坏返回 0。
@@ -638,18 +640,39 @@ class InstanceManager:
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
+    @staticmethod
+    def _instances_revision(conn):
+        return conn.execute("SELECT version FROM instance_revision WHERE id=1").fetchone()[0]
+
     def _ensure_instances_fresh(self):
-        """惰性失效：若 instances.db 的 rev 戳被外部进程（Web 端改名 / 改类型 / 增删）
-        推高，重新加载内存缓存。解决 Web 与 MCP 作为独立进程各自持有旧快照的问题。"""
-        cur = self._read_rev(self.instances_db)
-        if cur != self._instances_rev:
-            self._load_data()
+        """Compare the committed source revision before serving a cached snapshot."""
+        from contextlib import closing
+
+        with self._cache_lock, closing(sqlite3.connect(self.instances_db)) as conn:
+            if self._instances_revision(conn) != self._instances_rev:
+                self._load_data(require_instances=True)
 
     def _ensure_groups_fresh(self):
-        """同 _ensure_instances_fresh，针对 groups.db。"""
-        cur = self._read_rev(self.groups_db)
-        if cur != self._groups_rev:
-            self._load_data()
+        with self._cache_lock:
+            if self._read_rev(self.groups_db) != self._groups_rev:
+                self._load_data()
+
+    @staticmethod
+    def prepare_source_write(updates):
+        """Validate and protect source fields for both data-source and ledger writes."""
+        values = normalize_source_fields(updates)
+        if paths.PORTABLE_ROOT is not None:
+            from modules.core.portable import preserve_file_reference
+
+            for field in FILE_FIELDS:
+                if values.get(field):
+                    values[field] = preserve_file_reference(values[field], field)
+        for field in ('password', 'ssh_password', 'ssh_key_password'):
+            if values.get(field):
+                values[field] = _encrypt_pwd(values[field])
+        if 'jdbc_url' in values:
+            values['jdbc_url'] = _encrypt_jdbc_url(values['jdbc_url'] or '')
+        return values
 
     @staticmethod
     def _instance_db_values(values):
@@ -663,12 +686,19 @@ class InstanceManager:
     def _ensure_instances_table(self, conn):
         conn.execute("CREATE TABLE IF NOT EXISTS instances (id TEXT PRIMARY KEY)")
         self._ensure_instance_columns(conn)
+        conn.execute("CREATE TABLE IF NOT EXISTS instance_revision "
+                     "(id INTEGER PRIMARY KEY CHECK (id=1), version TEXT NOT NULL)")
+        conn.execute("INSERT OR IGNORE INTO instance_revision VALUES (1, hex(randomblob(16)))")
+        for operation in ('INSERT', 'UPDATE', 'DELETE'):
+            conn.execute(f"""CREATE TRIGGER IF NOT EXISTS instance_revision_{operation.lower()}
+                AFTER {operation} ON instances BEGIN
+                    UPDATE instance_revision SET version=hex(randomblob(16)) WHERE id=1;
+                END""")
 
     def _insert_instance(self, conn, instance, *, migrate=False):
-        from modules.db_types.compatibility import plaintext_allowed
-
         values = instance.to_dict()
-        values['gbase8a_allow_plaintext'] = plaintext_allowed(values['gbase8a_allow_plaintext'])
+        if not migrate:
+            values = self.prepare_source_write(values)
         values['connection_mode'] = values['connection_mode'] or (
             'jdbc' if values['db_type'] == 'sqlserver_jdbc' else 'odbc'
         )
@@ -687,7 +717,6 @@ class InstanceManager:
             self._ensure_instances_table(conn)
             for instance in self._instances.values():
                 self._insert_instance(conn, instance, migrate=True)
-        self._bump_rev(self.instances_db)
         self._save_groups()
 
     def _save_groups(self):
@@ -1341,18 +1370,6 @@ class InstanceManager:
         self._ensure_instances_fresh()
         if instance.id in self._instances:
             return {"ok": False, "message": "实例ID已存在"}
-        if paths.PORTABLE_ROOT is not None:
-            from modules.core.portable import preserve_file_reference
-            for field in ('ssh_key_file','tls_ca_file','tls_cert_key_file'):
-                value = getattr(instance,field,'')
-                if value:
-                    setattr(instance,field,preserve_file_reference(value,field))
-        # 加密密码
-        instance.password = _encrypt_pwd(instance.password)
-        if instance.ssh_password:
-            instance.ssh_password = _encrypt_pwd(instance.ssh_password)
-        if instance.ssh_key_password:
-            instance.ssh_key_password = _encrypt_pwd(instance.ssh_key_password)
         from contextlib import closing
 
         try:
@@ -1360,29 +1377,18 @@ class InstanceManager:
                 self._insert_instance(conn, instance)
         except sqlite3.IntegrityError:
             return {"ok": False, "message": "实例ID已存在"}
-        self._bump_rev(self.instances_db)
         return {"ok": True, "message": "实例添加成功", "instance_id": instance.id}
 
     def update_instance(self, instance_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """更新实例（密码变更时自动加密）"""
         from contextlib import closing
-        from modules.db_types.compatibility import plaintext_allowed
 
         updates = {key: value for key, value in updates.items()
                    if key in DatabaseInstance.__dataclass_fields__
                    and key not in ('id', 'created_at', 'updated_at') and value is not None
                    and (value != '' or key in ('ssh_host', 'ssh_user', 'ssh_key_file',
                                                 'tls_ca_file', 'tls_cert_key_file'))}
-        if 'gbase8a_allow_plaintext' in updates:
-            updates['gbase8a_allow_plaintext'] = plaintext_allowed(updates['gbase8a_allow_plaintext'])
-        if paths.PORTABLE_ROOT is not None:
-            from modules.core.portable import preserve_file_reference
-            for field in ('ssh_key_file', 'tls_ca_file', 'tls_cert_key_file'):
-                if updates.get(field):
-                    updates[field] = preserve_file_reference(updates[field], field)
-        for key in ('password', 'ssh_password', 'ssh_key_password'):
-            if updates.get(key):
-                updates[key] = _encrypt_pwd(updates[key])
+        updates = self.prepare_source_write(updates)
         updates['updated_at'] = datetime.now().isoformat()
         values = self._instance_db_values(updates)
         assignments = ', '.join(f'"{key}"=?' for key in values)
@@ -1391,7 +1397,6 @@ class InstanceManager:
                                   (*values.values(), instance_id))
             if not result.rowcount:
                 return {"ok": False, "message": "实例不存在"}
-        self._bump_rev(self.instances_db)
         return {"ok": True, "message": "实例更新成功"}
 
     def delete_instance(self, instance_id: str) -> Dict[str, Any]:
@@ -1408,7 +1413,6 @@ class InstanceManager:
                 conn.execute("DELETE FROM operations_inventory WHERE instance_id=?", (instance_id,))
             conn.execute("DELETE FROM history.inspection_history WHERE instance_id=?", (instance_id,))
             conn.execute("DELETE FROM history.instance_trend WHERE instance_id=?", (instance_id,))
-        self._bump_rev(self.instances_db)
         return {"ok": True, "message": "实例及历史数据删除成功"}
 
     def get_all_instances(self, mask_password: bool = True) -> List[Dict]:
@@ -1461,7 +1465,7 @@ class InstanceManager:
         if d.get('ssh_key_password'):
             d['ssh_key_password'] = _decrypt_pwd(d['ssh_key_password'])
         if paths.PORTABLE_ROOT is not None:
-            for field in ('ssh_key_file','tls_ca_file','tls_cert_key_file'):
+            for field in FILE_FIELDS:
                 if d.get(field):
                     d[field] = str(paths.resolve_portable_file(d[field]))
         return d
@@ -1536,7 +1540,6 @@ class InstanceManager:
                 conn.execute('UPDATE instances SET "group"=?, updated_at=? WHERE "group"=?',
                              ('default', datetime.now().isoformat(), group_name))
                 conn.execute('DELETE FROM group_store.groups WHERE name=?', (group_name,))
-            self._bump_rev(self.instances_db)
             self._bump_rev(self.groups_db)
             return {"ok": True, "message": "分组删除成功"}
 

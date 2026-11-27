@@ -132,3 +132,59 @@ def test_background_queries_share_config_snapshot(monkeypatch):
     assert all(config is source for config, _ in calls)
     assert result['slow']['error'] is None
     assert result['conn']['error'] is None
+
+
+def test_monitor_worker_kills_blocked_process_and_can_subsequently_run(monkeypatch):
+    import sys
+
+    import pytest
+
+    from modules.core.proc_registry import active_count
+    from modules.monitor import worker_transport
+
+    baseline = active_count()
+    monkeypatch.setattr(worker_transport, '_worker_command',
+                        lambda: [sys.executable, '-c', 'import time; time.sleep(30)'])
+    with pytest.raises(TimeoutError, match='超时'):
+        worker_transport.run_monitor_worker({}, timeout=0.15)
+    assert active_count() == baseline
+
+    monkeypatch.setattr(worker_transport, '_worker_command',
+                        lambda: [sys.executable, '-c', 'print("{}")'])
+    assert worker_transport.run_monitor_worker({}, timeout=3) == {}
+
+
+def test_monitor_worker_uses_bounded_fetch_and_rejects_large_results(monkeypatch):
+    from modules.monitor import jdbc_collect_cli as cli
+
+    limits = []
+
+    class Cursor:
+        description = [('Count',)]
+
+        def execute(self, sql):
+            self.large_result = sql == 'SELECT 1'
+
+        def fetchmany(self, limit):
+            limits.append(limit)
+            return [(1,)] * (limit if self.large_result else 1)
+
+        def close(self):
+            pass
+
+    class Connection:
+        cursor = Cursor
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(MonitorEngine, '_create_connection', lambda *args: Connection())
+    result = cli._collect({
+        'db_type': 'gbase8a', 'native_sql': True,
+        'source': {'host': 'db.example', 'port': 5258, 'db_type': 'gbase8a'},
+        'queries': ['SELECT 1', 'SELECT 2'],
+    })
+    assert limits == [cli.MAX_QUERY_ROWS + 1] * 2
+    assert result['q0']['rows'] == []
+    assert f'{cli.MAX_QUERY_ROWS} 行' in result['q0']['error']
+    assert result['q1'] == {'rows': [{'count': 1}], 'error': None}

@@ -216,8 +216,8 @@ def test_oracle_monitor_retries_unsupported_timezone_and_collects_sessions(monke
         def execute(self, sql):
             self.description, self.rows = queries_by_sql[sql]
 
-        def fetchall(self):
-            return self.rows
+        def fetchmany(self, limit):
+            return self.rows[:limit]
 
         def close(self):
             pass
@@ -248,7 +248,7 @@ def test_oracle_monitor_retries_unsupported_timezone_and_collects_sessions(monke
 def test_sqlserver_connection_dispatch(monkeypatch):
     captured = {}
 
-    def connect(conn_str, timeout):
+    def connect(conn_str, timeout, **_):
         captured['conn_str'] = conn_str
         captured['timeout'] = timeout
         return types.SimpleNamespace()
@@ -259,6 +259,7 @@ def test_sqlserver_connection_dispatch(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, 'pyodbc', fake)
 
+    monkeypatch.setattr('modules.core.paths.PORTABLE_ROOT', None)
     engine = MonitorEngine()
     engine._create_connection(
         {'host': 'mssql-db', 'port': 1433, 'user': 'sa',
@@ -269,9 +270,9 @@ def test_sqlserver_connection_dispatch(monkeypatch):
     conn_str = captured['conn_str']
     assert 'DRIVER={ODBC Driver 18 for SQL Server}' in conn_str
     assert 'SERVER={mssql-db,1433}' in conn_str
-    assert 'Database={master}' in conn_str
+    assert 'DATABASE={master}' in conn_str
     assert 'PWD={secret;with}}characters};' in conn_str
-    assert 'TrustServerCertificate=yes' in conn_str
+    assert 'TrustServerCertificate=no' in conn_str
     assert captured['timeout'] == 10
 
 
@@ -302,7 +303,7 @@ def test_sqlserver_monitor_honors_jdbc_mode(monkeypatch):
 
     monkeypatch.setattr(engine, '_jdbc_run_batch', jdbc)
     assert engine.probe('ms', 'sqlserver_jdbc') is None
-    assert batch == [(source, 'sqlserver_jdbc', 'sqlserver')]
+    assert batch == [(dict(source, host='', ip=''), 'sqlserver_jdbc', 'sqlserver')]
 
 
 def test_jdbc_batch_includes_postgres_legacy_and_screen_queries():

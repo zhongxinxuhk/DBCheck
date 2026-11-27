@@ -9,7 +9,7 @@ import json
 import hashlib
 import uuid
 
-from flask import current_app
+from flask import current_app, has_app_context
 from modules.core.data_security import redact
 from .catalog import FIELDS, load_catalog
 from .delivery_catalog import WORKFLOW_KEYS
@@ -242,11 +242,28 @@ class ReportSources:
 
 def sources_for(identity):
     from modules.access import get_principal
-    from .routes import store
-    resolver = current_app.config.get('DELIVERY_PRINCIPAL_RESOLVER') or get_principal
+    from modules.access import filter_visible
+
+    context = has_app_context()
+    resolver = (current_app.config.get('DELIVERY_PRINCIPAL_RESOLVER') if context else None) or get_principal
     principal = resolver(identity['id'])
     if principal is None or principal.tenant_id != identity['tenant_id']:
         raise PermissionError('数据源身份已失效')
+    if not context:
+        from modules.core import paths
+        from modules.clusters.store import ClusterStore
+        from modules.operations.inventory import Inventory
+        from modules.pro import get_instance_manager
+        from .store import default_service_store
+
+        manager = get_instance_manager()
+        visible = {row['id'] for row in filter_visible(principal, manager.get_all_instances(), 'instance')}
+        clusters = [cluster for cluster in ClusterStore(paths.DATA_DIR / 'clusters.db').list(principal)
+                    if {member['instance_id'] for member in cluster['spec']['members']} <= visible]
+        return ReportSources(default_service_store(), Inventory(manager), principal, visible,
+                             clusters=clusters)
+    from .routes import store
+
     supplied = current_app.config.get('REPORT_INVENTORY')
     if supplied is not None:
         allowed = current_app.config['REPORT_VISIBLE_IDS'](principal)

@@ -19,15 +19,13 @@
 # Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
 
 import time
-import os
-import sys
 import threading
-import json
 import logging
 from collections import deque
 from functools import partial
 from modules.pro.instance_manager import get_instance_manager
-from modules.core.paths import PROJECT_ROOT
+from modules.db_types.connection_profile import connection_profile, monitor_jdbc_driver
+from modules.monitor.worker_transport import run_monitor_worker
 from modules.core.parallel import RoundExecutor, round_budget
 from modules.core.runtime_tuning import get as _tuning_get
 from modules.ssh import resolve_db_endpoint
@@ -44,26 +42,9 @@ _log = logging.getLogger('dbcheck.monitor')
 # 「独立非 gevent 子进程 + JDBC」通道：主进程绝不 startJVM（否则 JPype/JVM
 # 与 gevent hub 死锁，整个 Web UI 冻结）。每轮每实例只 spawn 一次子进程，
 # 一次跑完该实例全部采集 SQL（连接/慢查/性能计数/容量），结果缓存供本轮复用。
-JDBC_BATCH_DB_TYPES = frozenset(('gbase', 'db2', 'clickhouse'))
 JDBC_BATCH_TTL = 12.0        # 批量结果缓存时长（s），略短于采样间隔 15s
 SLOW_FALLBACK_RECHECK = 300  # 依赖可能在运行中被安装或修复
 JDBC_BATCH_TIMEOUT = 90      # 子进程硬超时（含 JVM 冷启动 4~10s）
-
-# ── JDBC 专属数据源（*_jdbc）─────────────────────────────────
-# 这些类型被用户配置成 *_jdbc 的原因就是「python 原生驱动连不上」（旧版
-# Oracle / TCPS / EZConnect / TNS 别名等），且 jdbc_url 优先于 host/port
-# （见 instance_manager 字段注释）；metrics_collector 侧早有约定
-# 「oracle_jdbc 一律走插件 JDBC，绝不走 oracledb」。监控引擎此前把它们
-# 归一成 oracle/pg 走 oracledb thin / psycopg2 直连 → 实时监控（pro collector，
-# 走 JDBC 插件）有数据、监控大屏（MonitorEngine）判宕机。
-# 修复：路由进 JDBC 批量子进程通道（主进程绝不起 JVM）；连接器用原始插件
-# id（oracle_jdbc/uxdb），采集 SQL 模板用归一键（oracle/pg）。
-JDBC_ONLY_TYPES = {
-    # raw db_type   → (JDBC 连接器 db_type, monitor 模板键)
-    'oracle_jdbc': ('oracle_jdbc', 'oracle'),
-    'uxdb_jdbc':   ('uxdb',        'pg'),
-}
-
 
 # ── 驱动异常 → 友好提示 ──────────────────────────────────────
 # 驱动原始异常（如 "<class 'dmPython.Connection'> returned a result with
@@ -677,7 +658,7 @@ class MonitorEngine:
             _add(s)
         return sqls
 
-    def _jdbc_query(self, inst, db_type, sql, timeout=None, template_key=None):
+    def _jdbc_query(self, inst, db_type, sql, timeout=None, template_key=None, *, native=False):
         """JDBC 批量通道查询单条 SQL：结果来自每轮一次的子进程批量采集缓存。
 
         首个调用方（引擎采集线程或大屏采样线程）触发一次子进程批量执行，
@@ -687,15 +668,15 @@ class MonitorEngine:
         *_jdbc 专属类型的连接器 id 与模板键不同（oracle_jdbc vs oracle）。
         """
         instance_id = inst.get('id')
-        signature = (db_type, template_key, inst.get('updated_at'))
+        signature = (db_type, template_key, native, inst.get('updated_at'))
         with self._lock:
             cache = self._jdbc_cache.setdefault(instance_id, {'lock': threading.Lock()})
         with cache['lock']:
             if (cache.get('signature') == signature
                     and time.monotonic() - cache['ts'] <= JDBC_BATCH_TTL):
                 return self._jdbc_pick(cache['res'], sql)
-            res = self._jdbc_run_batch(inst, db_type, timeout,
-                                       template_key=template_key)
+            runner = self._native_run_batch if native else self._jdbc_run_batch
+            res = runner(inst, db_type, timeout, template_key=template_key)
             cache.update(ts=time.monotonic(), res=res, signature=signature)
             return self._jdbc_pick(res, sql)
 
@@ -710,119 +691,29 @@ class MonitorEngine:
         return entry
 
     def _jdbc_run_batch(self, inst, db_type, timeout=None, template_key=None):
-        """spawn 隔离子进程，一次跑完该实例本轮全部采集 SQL。
-
-        参数经 stdin 临时文件传入（密码不进进程列表），结果取 stdout 中
-        最后一个以 { 开头的行（与 jdbc_test_cli / jdbc_metrics_cli 同源约定）。
-        ``db_type`` 传给 JDBC 连接器（原始插件 id，如 oracle_jdbc/uxdb）；
-        ``template_key`` 决定采集 SQL 模板集合（oracle/pg 等），缺省同 db_type。
-        """
-        import subprocess as _sp
-        import tempfile as _tf
-
-        if getattr(sys, 'frozen', False):
-            cmd = [sys.executable, '--jdbc-collect-cli']
-        else:
-            cmd = [sys.executable, os.path.join(
-                str(PROJECT_ROOT), 'modules', 'monitor', 'jdbc_collect_cli.py')]
-
         sqls = self._jdbc_batch_sqls(template_key or db_type)
-        # JDBC 子进程连接的是父进程隧道暴露出的本地端口：子进程本身不持有
-        # SSH 凭据，直接连 127.0.0.1:<local_port> 即可，由父进程完成转发。
-        _jdb_host, _jdb_port, tunnel = resolve_db_endpoint(inst)
-        jdbc_url = (inst.get('jdbc_url') or '').strip()
-        if tunnel and jdbc_url:
-            raise ValueError('SSH 监控请使用主机、端口、库名或服务名配置')
-        if db_type == 'oracle_jdbc' and jdbc_url.startswith('('):
-            jdbc_url = 'jdbc:oracle:thin:@' + jdbc_url
-        payload = {
-            'db_type': db_type,
-            'host': _jdb_host,
-            'port': _jdb_port,
-            'user': inst.get('user') or '',
-            'password': inst.get('password') or '',
-            'database': inst.get('database') or inst.get('service_name') or '',
-            # JDBC 连接层按巡检口径解析服务名，需透传当前和旧版字段。
-            'service_name': inst.get('service_name') or '',
-            'sid': inst.get('sid') or '',
-            'use_sid': bool(inst.get('use_sid', False)),
-            'sysdba': bool(inst.get('sysdba', False)),
-            'jdbc_url': jdbc_url,
-            'ssl': bool(inst.get('ssl', False)),
-            'encrypt': bool(inst.get('encrypt', False)),
-            'trust_server_certificate': bool(inst.get('trust_server_certificate', True)),
-            'driver_version': inst.get('driver_version') or '',
-            'gbase_server_name': inst.get('gbase_server_name') or '',
-            'queries': sqls,
-        }
+        return self._run_monitor_batch(inst, db_type, sqls, timeout)
 
-        _in_fd, _in_path = _tf.mkstemp(prefix='dbc_mjdbc_in_', suffix='.json')
-        _out_fd, _out_path = _tf.mkstemp(prefix='dbc_mjdbc_out_', suffix='.log')
-        os.close(_out_fd)
+    def _native_run_batch(self, inst, db_type, timeout=None, template_key=None):
+        sqls = self._jdbc_batch_sqls(template_key or db_type)
+        return self._run_monitor_batch(inst, db_type, sqls, timeout, native=True)
+
+    @staticmethod
+    def _run_monitor_batch(inst, db_type, sqls, timeout, *, native=False):
+        timeout = timeout or JDBC_BATCH_TIMEOUT
         try:
-            with os.fdopen(_in_fd, 'w', encoding='utf-8') as f:
-                json.dump(payload, f, ensure_ascii=True)
-
-            env = os.environ.copy()
-            env['DBCheck_NO_GEVENT_PATCH'] = '1'   # 子进程绝不能被 monkey-patch
-            env['PYTHONIOENCODING'] = 'utf-8'
-
-            kw = {}
-            if os.name == 'nt':
-                kw['creationflags'] = (getattr(_sp, 'CREATE_NO_WINDOW', 0x08000000)
-                                       | getattr(_sp, 'CREATE_NEW_PROCESS_GROUP', 0x00000200))
-            else:
-                kw['start_new_session'] = True
-
-            with open(_in_path, 'r', encoding='utf-8') as fin, \
-                    open(_out_path, 'w', encoding='utf-8', errors='replace') as fout:
-                proc = _sp.Popen(cmd, stdin=fin, stdout=fout, stderr=_sp.STDOUT,
-                                 env=env, cwd=str(PROJECT_ROOT), **kw)
-                try:
-                    rc = proc.wait(timeout=timeout or JDBC_BATCH_TIMEOUT)
-                except _sp.TimeoutExpired:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-                    raise RuntimeError('JDBC 采集子进程超时（%ds）'
-                                       % (timeout or JDBC_BATCH_TIMEOUT))
-
-            # 解析输出：最后一个以 { 开头的行是结构化结果
-            result = None
-            with open(_out_path, 'r', encoding='utf-8', errors='replace') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('{'):
-                        result = line
-            if result is None:
-                # 附带子进程输出尾部，便于定位 spawn/导入失败的真实原因
-                with open(_out_path, 'r', encoding='utf-8', errors='replace') as f:
-                    _tail = f.read()[-400:]
-                raise RuntimeError('JDBC 采集子进程无结果输出（exit=%s）: %s'
-                                   % (rc, _tail.replace('\n', ' | ')))
-            try:
-                data = json.loads(result)
-            except Exception as e:
-                raise RuntimeError('JDBC 采集子进程输出解析失败: %s' % e)
-
-            fatal = (data or {}).get('fatal')
-            res = {}
-            for i, s in enumerate(sqls):
-                entry = (data or {}).get('q%d' % i)
-                if fatal:
-                    res[s] = ('__err__', fatal)
-                elif entry is None or entry.get('error'):
-                    res[s] = ('__err__', (entry or {}).get('error') or '采集失败')
-                else:
-                    res[s] = entry.get('rows') or []
-            return res
-        finally:
-            for p in (_in_path, _out_path):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+            data = run_monitor_worker({
+                'source': inst, 'db_type': db_type, 'queries': sqls, 'timeout': timeout,
+                'native_sql': native,
+            }, timeout)
+        except (TimeoutError, ValueError, RuntimeError, OSError) as error:
+            data = {'fatal': str(error)}
+        result = {}
+        for index, sql in enumerate(sqls):
+            entry = data.get(f'q{index}') or {}
+            error = data.get('fatal') or entry.get('error')
+            result[sql] = ('__err__', error or '采集失败') if error or not entry else entry['rows']
+        return result
 
     # ═══════════════════════════════════════════════════════════
     #  通用连接+查询
@@ -858,78 +749,18 @@ class MonitorEngine:
         if timeout is None:
             timeout = self.QUERY_TIMEOUT
 
-        # 归一到模板键（oracle_jdbc→oracle、tdsqlc_mysql→mysql 等）再分派：
-        # _create_connection 的 python 驱动分支按协议族分派（TDSQL-C 兼容 MySQL
-        # 协议、oracle_jdbc 实例字段与 oracle 相同），与 jdbc 插件 id 无关。
-        raw_type = (inst.get('db_type') or '').strip().lower()
-        db_type = mq.normalize_db_type(raw_type)
-        from modules.core.paths import PORTABLE_ROOT
-        if db_type == 'sqlserver':
-            mode = (inst.get('connection_mode') or
-                    ('jdbc' if raw_type == 'sqlserver_jdbc' else 'odbc')).strip().lower()
-            if mode == 'auto':
-                from modules.entrypoints.main_sqlserver_dual import jdbc_unavailable_reason
-                mode = 'jdbc' if jdbc_unavailable_reason() is None else 'odbc'
-            if mode == 'jdbc' or PORTABLE_ROOT is not None:
-                return self._jdbc_query(inst, 'sqlserver_jdbc', sql, timeout=timeout,
-                                        template_key=db_type)
-        if raw_type == 'oracle' and (inst.get('jdbc_url') or '').strip().lower().startswith('jdbc:'):
-            return self._jdbc_query(inst, 'oracle_jdbc', sql, timeout=timeout, template_key=db_type)
-        if PORTABLE_ROOT is not None and raw_type in ('oracle', 'dm'):
-            connector = {'oracle': 'oracle_jdbc', 'dm': 'dm'}[raw_type]
-            return self._jdbc_query(inst, connector, sql, timeout=timeout, template_key=db_type)
-        if db_type == 'dm':
-            from modules.entrypoints.main_dm import _find_dm_jdbc_jar
-            if inst.get('driver_version') or _find_dm_jdbc_jar():
-                return self._jdbc_query(inst, 'dm', sql, timeout=timeout, template_key=db_type)
+        inst = connection_profile(inst)
+        db_type = mq.normalize_db_type(inst.get('db_type'))
+        connector = monitor_jdbc_driver(inst, db_type)
+        if connector:
+            template_key = db_type if connector != db_type or db_type in ('sqlserver', 'dm') else None
+            return self._jdbc_query(inst, connector, sql, timeout=timeout,
+                                    template_key=template_key)
 
-        # *_jdbc 专属数据源：必须走 JDBC 子进程通道，绝不能被归一成
-        # oracle/pg 后用 python 原生驱动直连（否则实时监控有数据、大屏判宕机）
-        if raw_type in JDBC_ONLY_TYPES:
-            conn_type, tmpl_key = JDBC_ONLY_TYPES[raw_type]
-            return self._jdbc_query(inst, conn_type, sql, timeout=timeout,
-                                    template_key=tmpl_key)
-
-        # gbase/db2/clickhouse：JDBC 批量子进程通道（主进程绝不起 JVM）
-        if db_type in JDBC_BATCH_DB_TYPES:
-            return self._jdbc_query(inst, db_type, sql, timeout=timeout)
-
-        password = inst['password']
-        conn = None
-        cursor = None
-
-        try:
-            conn = self._create_connection(inst, password, db_type, timeout)
-            cursor = conn.cursor()
-            cursor.execute(sql)
-            columns = [col[0] for col in cursor.description]
-            rows = []
-            for row in cursor.fetchall():
-                row_dict = {}
-                for i, col in enumerate(columns):
-                    val = row[i]
-                    # 序列化非标准类型
-                    if val is not None and not isinstance(val, (int, float, str, bool)):
-                        try:
-                            val = str(val)
-                        except Exception:
-                            val = None
-                    # 列名统一小写：dmPython/oracledb 等驱动返回大写标识符，
-                    # 下游消费者（screen_metrics/前端模板）一律按小写键取值
-                    row_dict[col.lower() if isinstance(col, str) else col] = val
-                rows.append(row_dict)
-            return rows
-        finally:
-            try:
-                if cursor:
-                    cursor.close()
-            except Exception:
-                pass
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+        if sql in self._jdbc_batch_sqls(db_type):
+            return self._jdbc_query(inst, db_type, sql, timeout=timeout, native=True)
+        result = self._run_monitor_batch(inst, db_type, [sql], timeout, native=True)
+        return self._jdbc_pick(result, sql)
 
     def _create_connection(self, inst, password, db_type, timeout):
         """根据 db_type 创建数据库连接"""
@@ -958,10 +789,9 @@ class MonitorEngine:
             options.update(host=host, port=port, password=password,
                            database='', virtual_cluster='', schema='',
                            ssh_tunnel=False)
-            if _tun is None:
-                options.pop('_tunnel_ready', None)
-            else:
+            if _tun is not None:
                 options['_tunnel_ready'] = True
+            options['monitor_stream_results'] = True
             return connect_gbase8a(options)
 
         if db_type in ('mysql', 'mariadb', 'oceanbase', 'starrocks', 'doris'):
@@ -977,6 +807,7 @@ class MonitorEngine:
                 host=host, port=port, user=user, password=password,
                 database=db_name,
                 charset='utf8mb4', connect_timeout=timeout, read_timeout=timeout,
+                cursorclass=pymysql.cursors.SSCursor,
             )
 
         elif db_type in ('postgresql', 'pg', 'hgdb', 'kingbase', 'uxdb', 'vastbase',
@@ -1033,47 +864,13 @@ class MonitorEngine:
             return conn
 
         elif db_type in ('sqlserver', 'sqlserver_jdbc', 'mssql'):
-            from modules.db_types.compatibility import connect_sqlserver, is_loopback_endpoint
-            if _tun is not None or is_loopback_endpoint(inst):
-                return connect_sqlserver(dict(inst, host=host, port=port, password=password,
-                                              ssh_tunnel=False, _tunnel_ready=_tun is not None))
-            # sqlserver_jdbc（插件标识）与 sqlserver 同为 SQL Server 线协议，
-            # pyodbc/ODBC 直连（绝不走 JDBC 插件——JPype 进程内启动会与 gevent 死锁）。
-            # 驱动分级探测：优先新版 ODBC Driver 17/18（支持 Encrypt），
-            # 其次 Native Client；仅当只剩旧版 DBNETLIB 驱动时去掉加密参数
-            #（它不认识 TrustServerCertificate/Encrypt，会报"无效的连接字符串属性"+SSL 错误）。
-            import pyodbc
-            drivers = []
-            try:
-                drivers = [d for d in pyodbc.drivers() if 'sql server' in d.lower()]
-            except Exception:
-                pass
-            modern = [d for d in drivers if 'odbc driver' in d.lower()]
-            native = [d for d in drivers if 'native client' in d.lower()]
-            if modern:
-                driver, legacy = '{%s}' % modern[-1], False
-            elif native:
-                driver, legacy = '{%s}' % native[0], False
-            elif drivers:
-                driver, legacy = '{%s}' % drivers[-1], True
-            else:
-                driver, legacy = '{ODBC Driver 17 for SQL Server}', False
-            def quote(value):
-                return '{' + str(value).replace('}', '}}') + '}'
+            from modules.db_types.compatibility import connect_sqlserver
 
-            conn_str = (
-                f"DRIVER={driver};"
-                f"SERVER={quote(f'{host},{port}')};"
-                f"UID={quote(user)};PWD={quote(password)};"
-                f"Connect Timeout={timeout};"
+            return connect_sqlserver(
+                dict(inst, host=host, ip=host, port=port, password=password,
+                     ssh_tunnel=False, _tunnel_ready=bool(_tun or inst.get('_tunnel_ready'))),
+                timeout=timeout,
             )
-            if not legacy:
-                conn_str += "TrustServerCertificate=yes;Encrypt=yes;"
-            if inst.get('database'):
-                conn_str += f"Database={quote(inst['database'])};"
-            conn = pyodbc.connect(conn_str, timeout=int(timeout))
-            conn.timeout = int(timeout)
-            return conn
 
         elif db_type == 'dm':
             import dmPython
@@ -1086,6 +883,7 @@ class MonitorEngine:
                 host=host, port=port, user=user, password=password,
                 database=inst.get('database') or '',
                 charset='utf8mb4', connect_timeout=timeout, read_timeout=timeout,
+                cursorclass=pymysql.cursors.SSCursor,
                 autocommit=True,
             )
 
