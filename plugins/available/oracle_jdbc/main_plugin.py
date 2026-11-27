@@ -17,6 +17,8 @@ import os
 import traceback
 from typing import Any, Dict, List, Optional
 
+from modules.jdbc_connector import resolve_oracle_service_name
+
 # 注意：不在此文件导入 inspection_engine 或 plugin_core
 # 避免循环导入，插件注册通过 plugin_adapter.py 完成
 
@@ -446,7 +448,7 @@ def getData(ip, port, user, password, database='ORCL', ssh_info=None, template_i
     :param use_sid: 连接串使用 SID 格式（jdbc:oracle:thin:@host:port:SID）而非服务名格式
     :return: OracleJdbcInspector 对象，失败返回 None
     """
-    db_name = service_name or database or 'ORCL'
+    db_name = resolve_oracle_service_name(service_name, database=database)
     inspector = OracleJdbcInspector(ip, int(port), user, password, db_name, ssh_info, template_id, sysdba=sysdba, driver_version=driver_version, use_sid=use_sid, jdbc_url=jdbc_url)
     ok, msg = inspector.connect()
     if not ok:
@@ -466,14 +468,15 @@ def get_task_config():
         'connect_test': test_connection,
         'connect_test_args': lambda info: [
             info['ip'], info['port'], info['user'], info['password'],
-            info.get('service_name') or info.get('sid') or info.get('database') or 'ORCL',
+            resolve_oracle_service_name(info.get('service_name'), info.get('sid'), info.get('database')),
             bool(info.get('sysdba', False)), info.get('jdbc_url'),
             info.get('driver_version', ''), bool(info.get('use_sid', False))
         ],
         'getdata_args': lambda info, template_id=None: (
             [info['ip'], info['port'], info['user'], info['password']],
             {'ssh_info': {}, 'template_id': template_id,
-             'service_name': info.get('service_name') or info.get('sid') or info.get('database') or 'ORCL',
+             'service_name': resolve_oracle_service_name(
+                 info.get('service_name'), info.get('sid'), info.get('database')),
              'jdbc_url': info.get('jdbc_url'),
              'sysdba': bool(info.get('sysdba', False)),
              'driver_version': info.get('driver_version', ''),

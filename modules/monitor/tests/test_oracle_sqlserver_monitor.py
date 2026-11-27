@@ -6,6 +6,8 @@
 import sys
 import types
 
+import pytest
+
 import modules.monitor.queries as queries
 from modules.monitor import screen_metrics
 from modules.monitor.engine import MonitorEngine
@@ -168,6 +170,34 @@ def test_oracle_monitor_forwards_sysdba_to_dbapi_driver(monkeypatch):
                          service_name='ORCL', password='fixture', sysdba=True)) == {}
     assert captured['internal_logon'] == 'sysdba'
     assert captured['user'] == 'sys'
+
+
+@pytest.mark.parametrize(('fields', 'connect_target'), [
+    ({}, '//ora-db:1521/ORCL'),
+    ({'use_sid': True}, 'ora-db:1521:ORCL'),
+    ({'service_name': '  ', 'database': 'LEGACY'}, '//ora-db:1521/LEGACY'),
+    ({'sid': 'LEGACY', 'use_sid': True}, 'ora-db:1521:LEGACY'),
+    ({'sid': 'LEGACY', 'database': 'OLD_DB'}, '//ora-db:1521/LEGACY'),
+    ({'service_name': 'PDB1', 'sid': 'LEGACY', 'database': 'OLD_DB'}, '//ora-db:1521/PDB1'),
+    ({'jdbc_url': 'jdbc:oracle:thin:@//other-db:1521/ORCLCDB'}, '//other-db:1521/ORCLCDB'),
+])
+def test_oracle_monitor_uses_inspection_connect_target(monkeypatch, fields, connect_target):
+    from modules import jdbc_connector
+    from modules.monitor.jdbc_collect_cli import _collect
+
+    urls = []
+
+    def connect(driver, url, properties, jars):
+        urls.append(url)
+        return types.SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setitem(sys.modules, 'jaydebeapi', types.SimpleNamespace(connect=connect))
+    monkeypatch.setattr(jdbc_connector, 'resolve_driver_jars', lambda *a, **kw: ['fixture.jar'])
+    monkeypatch.setattr(jdbc_connector, '_start_jvm', lambda *_: None)
+    monkeypatch.setattr(jdbc_connector, '_is_jvm_started', lambda: True)
+
+    assert _collect(dict(db_type='oracle_jdbc', host='ora-db', port=1521, **fields)) == {}
+    assert urls == ['jdbc:oracle:thin:@' + connect_target]
 
 
 def test_oracle_monitor_retries_unsupported_timezone_and_collects_sessions(monkeypatch):

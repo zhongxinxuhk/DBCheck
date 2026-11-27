@@ -31,9 +31,7 @@ modules/monitor/jdbc_collect_cli.py — 监控大屏 JDBC 批量采集子进程
       "queries": ["SELECT ...", "SELECT ..."]   # 有序，结果按 q0/q1/... 回填
     }
 
-    Oracle（oracle_jdbc）必须透传 service_name / sid / use_sid / sysdba：
-    缺 service_name 时 build_jdbc_url 会回落到 database 字段（监控路径把真实
-    服务名放在此处），再回落硬编码默认 ORCLCDB；sys 用户需 sysdba=true 触发
+    Oracle JDBC 连接层与巡检共用服务名解析规则。sys 用户需 sysdba=true 触发
     internal_logon=sysdba，否则 ORA-28009。
 
 出参 JSON 结构（qN 与 queries 下标一一对应）::

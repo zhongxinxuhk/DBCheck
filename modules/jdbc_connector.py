@@ -43,7 +43,6 @@ JDBC_PROFILES: Dict[str, Dict[str, Any]] = {
         # use_sid=True 时走 @host:port:SID 旧格式（见 build_jdbc_url 特判）
         'url': 'jdbc:oracle:thin:@//{host}:{port}/{service}',
         'port': 1521,
-        'service_default': 'ORCLCDB',
     },
     'sqlserver_jdbc': {
         'driver_class': 'com.microsoft.sqlserver.jdbc.SQLServerDriver',
@@ -338,6 +337,12 @@ def setup_jvm_env() -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # 连接串构造：每种库只差这里
 # ═══════════════════════════════════════════════════════════════════════════
+def resolve_oracle_service_name(service_name=None, sid=None, database=None) -> str:
+    """Resolve the Oracle service or SID from current and legacy source fields."""
+    return (str(service_name or '').strip() or str(sid or '').strip()
+            or str(database or '').strip() or 'ORCL')
+
+
 def build_jdbc_url(
     db_type: str,
     host: str,
@@ -374,10 +379,11 @@ def build_jdbc_url(
     if not _db:
         _tpl = _tpl.replace('/{db}', '')
 
-    # Oracle：use_sid 走 @host:port:SID 旧格式（service_name 字段承载 SID 值）
-    if db_type == 'oracle_jdbc' and use_sid:
-        _sid = service_name or extra.get('sid') or database or _prof.get('service_default') or 'ORCL'
-        return f'jdbc:oracle:thin:@{host}:{_port}:{_sid}'
+    if db_type == 'oracle_jdbc':
+        target = resolve_oracle_service_name(service_name, extra.get('sid'), database)
+        if use_sid:
+            return f'jdbc:oracle:thin:@{host}:{_port}:{target}'
+        return _tpl.format(host=host, port=_port, service=target)
 
     # SQL Server：encrypt=false 时省略 trustServerCertificate（部分驱动/服务器在
     # 强制加密场景下带 false 会走异常 SSL 分支报 unexpected_message）；命名实例
@@ -406,10 +412,7 @@ def build_jdbc_url(
         )
         return _url
 
-    # Oracle：service_name 缺失时优先回落到 database（监控子进程把真实服务名
-    # 经 database 字段带入），再回落硬编码默认（ORCLCDB）。此前顺序是
-    # service_name or 默认 or _db，导致真实服务名被默认覆盖 → 连错服务 ORA-12514。
-    _svc = service_name or _db or _prof.get('service_default')
+    _svc = service_name or _db
     _server = gbase_server_name or _prof.get('server_default') or 'gbase01'
 
     # HGDB：追加 PG 系超时参数段（connectTimeout/loginTimeout/socketTimeout），

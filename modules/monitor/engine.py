@@ -95,6 +95,10 @@ def _friendly_db_error(e):
         return 'GBase 8a 缺少可信 CA，请配置 CA 或显式开启允许明文直连'
     if 'ora-28009' in low:
         return 'Oracle SYS 账号需要启用 SYSDBA 登录'
+    if 'ora-12514' in low:
+        return 'Oracle 监听器未识别请求的服务名（ORA-12514），请核对数据源的服务名或 JDBC URL'
+    if 'ora-12505' in low:
+        return 'Oracle 监听器未识别请求的 SID（ORA-12505），请核对数据源的 SID 或 JDBC URL'
     if 'ssh 监控请使用' in low:
         return str(e)
     if any(code in low for code in ('ora-00942', 'ora-01031', 'permission denied',
@@ -713,11 +717,7 @@ class MonitorEngine:
             'user': inst.get('user') or '',
             'password': inst.get('password') or '',
             'database': inst.get('database') or inst.get('service_name') or '',
-            # Oracle 专属字段必须透传：监控子进程此前漏传 service_name/sid/
-            # use_sid/sysdba，导致 build_jdbc_url 对 oracle_jdbc 落到硬编码默认
-            # 'ORCLCDB'（或旧 SID 格式默认 'ORCL'），连错服务名 → ORA-12514 →
-            # 大屏误判宕机；而测试连接（插件 test_connection）正确传 service_name
-            # → 测试过、监控挂。sys 用户必须以 SYSDBA 登录，漏传则同样连不上。
+            # JDBC 连接层按巡检口径解析服务名，需透传当前和旧版字段。
             'service_name': inst.get('service_name') or '',
             'sid': inst.get('sid') or '',
             'use_sid': bool(inst.get('use_sid', False)),
