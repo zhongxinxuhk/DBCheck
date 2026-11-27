@@ -6,12 +6,51 @@
 import sqlite3
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from modules.inspection import gbase_compat as gb
 from modules.inspection.engine import BaseInspectionEngine
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DB_PATH = _REPO_ROOT / 'data' / 'inspection.db'
+
+
+@pytest.mark.parametrize(('code', 'message', 'hint'), [
+    (1816, "Unknown VC 'gbase'", "虚拟集群 'gbase'（错误 1816）"),
+    (1064, 'SQL syntax error', '切换虚拟集群的命令（错误 1064）'),
+])
+def test_gbase8a_rejected_vc_does_not_change_inspection_scope(code, message, hint):
+    import pymysql
+
+    from modules.db_types.compatibility import connect_gbase8a
+
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    error = pymysql.OperationalError(code, message)
+    cursor.execute.side_effect = error
+    with patch('pymysql.connect', return_value=connection) as connect:
+        with pytest.raises(ValueError, match=hint) as caught:
+            connect_gbase8a(dict(host='127.0.0.1', port=5258, user='fixture',
+                                 password='fixture', database='gbase'))
+
+    assert caught.value.__cause__ is error
+    cursor.execute.assert_called_once_with('USE VC gbase')
+    connection.close.assert_called_once()
+    connect.assert_called_once()
+
+
+def test_gbase8a_without_vc_leaves_account_scope_in_place():
+    from modules.db_types.compatibility import connect_gbase8a
+
+    connection = MagicMock()
+    with patch('pymysql.connect', return_value=connection):
+        result = connect_gbase8a(dict(host='127.0.0.1', port=5258, user='fixture',
+                                      password='fixture', database=''))
+
+    assert result is connection
+    connection.cursor.assert_not_called()
 
 
 class _FakeCursor:
