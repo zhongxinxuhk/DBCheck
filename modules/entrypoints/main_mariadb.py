@@ -20,6 +20,10 @@ MariaDB 与 MySQL 协议/参数高度兼容，本模块以**最小改动、最�
         inspector.generate_report(output_file, inspector_name)
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 from modules.inspection.engine import BaseInspectionEngine
 from modules.core import entry
@@ -58,15 +62,12 @@ class MariaDBInspector(BaseInspectionEngine):
             (ok, version) - ok 为 True 时 version 是版本号（形如 '10.6.12-MariaDB'），否则是错误信息
         """
         try:
-            import os as _os
             from modules.jdbc_connector import open_jdbc_connection
-            from modules.core.paths import PROJECT_ROOT
             _conn, _meta = open_jdbc_connection(
                 'mariadb', self.host, int(self.port),
                 user=self.user, password=self.password,
                 database=self.database or 'mysql',
                 driver_version=self.driver_version,
-                fallback_dirs=[_os.path.join(str(PROJECT_ROOT), 'drivers', 'mariadb')],
             )
             if _conn is None:
                 return self._connect_native((_meta or {}).get('error') or 'JDBC 连接失败')

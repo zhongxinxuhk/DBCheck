@@ -29,6 +29,10 @@ OceanBase 社区版 MySQL 租户与 MySQL 协议/参数高度兼容，本模块�
 #   规则目录预留 pro/rules/builtin/oceanbase_oracle.yaml（空壳 + 注释）。本期不实现。
 """
 
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025-2026 sec.hn.cn (X.U zx) <xuzhongxin@sec.hn.cn>
+# Author: sec.hn.cn  (X.U zx) - https://github.com/zhongxinxuhk/DBCheck
+
 import os
 from modules.inspection.engine import BaseInspectionEngine
 from modules.inspection.init_db import OCEANBASE_LOG_DISK_PLACEHOLDER_SQL
@@ -72,15 +76,12 @@ class OceanBaseInspector(BaseInspectionEngine):
             （形如 '5.7.25-OceanBase-...' / '4.2.1.0-OceanBase'），否则是错误信息
         """
         try:
-            import os as _os
             from modules.jdbc_connector import open_jdbc_connection
-            from modules.core.paths import PROJECT_ROOT
             _conn, _meta = open_jdbc_connection(
                 'oceanbase', self.host, int(self.port) or self.DEFAULT_PORT,
                 user=self.user, password=self.password,
                 database=self.database or None,  # 空=连到租户（不指定 db，URL 无 db 段）
                 driver_version=self.driver_version,
-                fallback_dirs=[_os.path.join(str(PROJECT_ROOT), 'drivers', 'oceanbase')],
             )
             if _conn is None:
                 return self._connect_native((_meta or {}).get('error') or 'JDBC 连接失败')

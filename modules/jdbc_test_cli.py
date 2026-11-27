@@ -426,6 +426,8 @@ def _test_pg_jdbc(payload):
     驱动 jar 优先「数据库驱动管理」（catalog postgresql），否则回退
     drivers/postgresql/ 自动发现。与巡检引擎同一套统一连接层。
     """
+    from modules.db_types.connection_profile import POSTGRESQL_DEFAULT_DATABASE
+
     _host = payload.get('host')
     try:
         _port = int(payload.get('port') or 5432)
@@ -434,8 +436,8 @@ def _test_pg_jdbc(payload):
     _user = payload.get('user') or ''
     _pw = payload.get('password') or ''
     _kw = payload.get('kwargs') or {}
-    _dv = _kw.get('driver_version') or ''
-    _db = _kw.get('database') or 'postgres'
+    _dv = str(_kw.get('driver_version') or '').strip()
+    _db = _kw.get('database') or POSTGRESQL_DEFAULT_DATABASE
 
     _err = _tcp_preflight(_host, _port)
     if _err:
@@ -446,11 +448,12 @@ def _test_pg_jdbc(payload):
         _conn, _meta = open_jdbc_connection(
             'pg', _host, _port, _user, _pw,
             database=_db, driver_version=_dv,
-            fallback_dirs=[os.path.join(str(PROJECT_ROOT), 'drivers', 'postgresql')],
         )
         if _conn is None:
-            return _pg_fallback('PostgreSQL', _host, _port, _user, _pw, _db,
-                                (_meta or {}).get('error') or 'JDBC 连接失败')
+            error = (_meta or {}).get('error') or 'JDBC 连接失败'
+            if _dv:
+                return False, error
+            return _pg_fallback('PostgreSQL', _host, _port, _user, _pw, _db, error)
         _cur = _conn.cursor()
         try:
             _cur.execute('SELECT 1')
@@ -460,6 +463,8 @@ def _test_pg_jdbc(payload):
             _conn.close()
         return True, f'PostgreSQL 连接成功（JDBC 驱动：{(_meta or {}).get("driver")}）'
     except Exception as e:  # noqa: BLE001
+        if _dv:
+            return False, str(e)
         return _pg_fallback('PostgreSQL', _host, _port, _user, _pw, _db, str(e))
 
 
@@ -695,7 +700,6 @@ def _test_mysql_jdbc(payload):
         _conn, _meta = open_jdbc_connection(
             'mysql', _host, _port, _user, _pw,
             database=_db, driver_version=_dv,
-            fallback_dirs=[os.path.join(str(PROJECT_ROOT), 'drivers', 'mysql')],
         )
         if _conn is None:
             return _mysql_fallback('MySQL', _host, _port, _user, _pw, _db,
@@ -734,7 +738,6 @@ def _test_mariadb_jdbc(payload):
         _conn, _meta = open_jdbc_connection(
             'mariadb', _host, _port, _user, _pw,
             database=_db, driver_version=_dv,
-            fallback_dirs=[os.path.join(str(PROJECT_ROOT), 'drivers', 'mariadb')],
         )
         if _conn is None:
             return _mysql_fallback('MariaDB', _host, _port, _user, _pw, _db,
@@ -812,7 +815,6 @@ def _test_oceanbase_jdbc(payload):
         _conn, _meta = open_jdbc_connection(
             'oceanbase', _host, _port, _user, _pw,
             database=_db or None, driver_version=_dv,
-            fallback_dirs=[os.path.join(str(PROJECT_ROOT), 'drivers', 'oceanbase')],
         )
         if _conn is None:
             return _oceanbase_native_fallback(_host, _port, _user, _pw, _db,

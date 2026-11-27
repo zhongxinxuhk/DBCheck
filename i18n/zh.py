@@ -2751,6 +2751,7 @@ ZI = {
     "webui.home_monitor_status_down": "不可用",
     "webui.home_monitor_status_cooldown": "退避中",
     "webui.home_monitor_latency_prefix": "延迟 ",
+    "webui.home_monitor_tunnel_connect_prefix": "SSH 建连 ",
     "webui.home_monitor_updated_prefix": "更新于 ",
     "webui.home_monitor_waiting": "等待采集数据…",
     "webui.home_monitor_throughput": "⚡ 吞吐（QPS / TPS）",

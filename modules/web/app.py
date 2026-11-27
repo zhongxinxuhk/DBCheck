@@ -1456,11 +1456,14 @@ from modules.db_types.dbtype_registry import (
 )
 
 
-def _conn_ok(flavor):
-    """按路由风格返回成功响应（regular 用 msg，pro 用 message）。"""
+def _conn_test_result(flavor, ok, message):
     if flavor == 'pro':
-        return {'ok': True, 'message': '连接成功'}
-    return {'ok': True, 'msg': '连接成功'}
+        return {'ok': ok, ('message' if ok else 'error'): message}
+    return {'ok': ok, 'msg': message}
+
+
+def _conn_ok(flavor):
+    return _conn_test_result(flavor, True, '连接成功')
 
 
 def _parse_plugin_conn_result(db_type, ok, msg):
@@ -1480,10 +1483,11 @@ def _parse_plugin_conn_result(db_type, ok, msg):
 
 # —— 各 db_type 连接测试处理器（flavor 感知：'regular' / 'pro'） —— #
 def _ct_mysql(data, flavor):
-    if flavor == 'regular':
+    if flavor == 'regular' or data.get('driver_version'):
         ok, msg = test_mysql_connection(data['host'], data['port'], data['user'],
-                                        data['password'], data.get('database'))
-        return {'ok': ok, 'msg': msg}
+                                        data['password'], data.get('database'),
+                                        data.get('driver_version') or '')
+        return _conn_test_result(flavor, ok, msg)
     import pymysql
     _db = data.get('database') or None
     _kw = dict(host=data['host'], port=data['port'], user=data['user'],
@@ -1495,17 +1499,17 @@ def _ct_mysql(data, flavor):
 
 
 def _ct_mariadb(data, flavor):
-    """MariaDB 连接测试：regular 走 MariaDB JDBC 子进程（jdbc:mariadb:// +
+    """MariaDB 连接测试：regular 或指定驱动版本时走 MariaDB JDBC 子进程（jdbc:mariadb:// +
     org.mariadb.jdbc.Driver，类型 'mariadb'）；pro 走 pymysql 直连。
 
     历史 bug：曾复用 _ct_mysql → 测试连接被路由到 MySQL 链路（jdbc:mysql:// +
     mysql catalog），登记了 MariaDB 专用驱动的用户会误报「mysql 驱动未找到」。
     """
-    if flavor == 'regular':
+    if flavor == 'regular' or data.get('driver_version'):
         ok, msg = test_mariadb_connection(data['host'], data['port'], data['user'],
                                           data['password'], data.get('database'),
                                           data.get('driver_version', '') or '')
-        return {'ok': ok, 'msg': msg}
+        return _conn_test_result(flavor, ok, msg)
     import pymysql
     _db = data.get('database') or None
     _kw = dict(host=data['host'], port=data['port'], user=data['user'],
@@ -1518,11 +1522,11 @@ def _ct_mariadb(data, flavor):
 
 def _ct_oceanbase(data, flavor):
     _ob_user = data['user'] + '@' + data['tenant'] if data.get('tenant') else data['user']
-    if flavor == 'regular':
+    if flavor == 'regular' or data.get('driver_version'):
         ok, msg = test_oceanbase_connection(data['host'], data['port'], _ob_user,
                                             data['password'], data.get('database'),
                                             data.get('driver_version', '') or '')
-        return {'ok': ok, 'msg': msg}
+        return _conn_test_result(flavor, ok, msg)
     # pro flavor（数据源管理页面）：原生 pymysql 直连。复用 OceanBase 专属回退，
     # 捕获 (2013, 'Lost connection ...') 等并给出针对 OB 的诊断（租户格式 / host
     # 白名单 / 建议装官方 JDBC 驱动），而非抛一个裸的 pymysql 错误元组。
@@ -1541,10 +1545,10 @@ def _ct_pg(data, flavor, db_default='postgres'):
     # 注意：data.get('database') 可能是空串/None（前端未填），必须 or db_default 兜底，
     # 否则子进程测试函数里 '' or 'postgres' 会退到 PG 默认库，误报 database not exist。
     _db = data.get('database') or db_default
-    if flavor == 'regular':
+    if flavor == 'regular' or data.get('driver_version'):
         ok, msg = test_pg_connection(data['host'], data['port'], data['user'],
                                      data['password'], _db, data.get('driver_version', '') or '')
-        return {'ok': ok, 'msg': msg}
+        return _conn_test_result(flavor, ok, msg)
     import psycopg2
     psycopg2.connect(host=data['host'], port=data['port'], user=data['user'],
                      password=data['password'], dbname=_db, connect_timeout=10).close()
